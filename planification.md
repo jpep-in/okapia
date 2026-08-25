@@ -581,6 +581,28 @@ quelques centaines de lignes.
 libre d'aspect voisin, soit une police 8×16 dessinée pour le projet — auquel cas elle devient un actif du
 projet, sous GPLv3 comme le reste.
 
+**Le firmware possède le `modelid`.** C'est sa place naturelle : le champ `productKind` est patché au
+chargement de la ROM (§7.11), donc avant que Basilisk ne démarre — impossible à changer une fois Mac OS
+lancé. L'utilisateur n'a pas à savoir que « Mac OS 8 exige la valeur 14 » : le firmware offre un choix
+**« OS invité : System 7 / Mac OS 8 »** par image disque, et traduit.
+
+Portée réelle du problème, à ne pas surestimer : **`14` convient de System 7.5 à Mac OS 8.1**, soit
+l'essentiel de la cible. Seuls les System antérieurs à 7.5 imposent `5`. Un défaut à `14` est donc juste
+presque toujours.
+
+**Détection automatique — plus tard, et seulement si elle devient bon marché.** Déduire l'OS invité en
+lisant l'image disque est possible, à deux niveaux de coût très différents :
+
+- **le nom du volume est facile** : il est en clair dans le *Master Directory Block*, à l'offset 1024 d'une
+  partition HFS. Une cinquantaine de lignes, et le sélecteur de démarrage affiche « Macintosh HD » au lieu
+  de « disk0.img » ;
+- **la version du Système est lourde** : il faut parcourir l'arbre B du catalogue HFS jusqu'au fichier
+  `System` du dossier Système béni, ouvrir son fork de ressources et décoder la ressource `'vers'`.
+  Plusieurs centaines de lignes pour trancher un cas de bord.
+
+À faire dans cet ordre, jamais l'inverse : le nom de volume a une valeur d'usage immédiate, la détection
+de version n'en a qu'une d'élégance.
+
 **Calendrier** : après M6. Ce n'est pas un préalable au boot de Mac OS, et le construire trop tôt
 retarderait le cœur. Mais la structure doit l'admettre dès maintenant, d'où `hal_circle`.
 
