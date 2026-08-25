@@ -58,6 +58,8 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **One MAC address**: `CNetDevice` has no promiscuous mode.
 - **QEMU lies**: `raspi3b` accepts 8 bpp + palette that the Pi 5 refuses. Validate on hardware.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
+- **`config.h` declares, it never includes.** It is pulled in ahead of everything else; adding a system
+  header there breaks the include order across the whole core.
 - **Prefer the path upstream actually walks.** `EXCEPTIONS_VIA_LONGJMP` exists in the core but no upstream
   platform enables it, so nobody tests it and nothing defines its `JMP_BUF`/`SETJMP` macros. C++ exceptions
   are measured working under Circle, so the core uses them — add `-fexceptions` per file, since Circle

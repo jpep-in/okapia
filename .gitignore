@@ -21,3 +21,7 @@ build/
 kernel*.img
 
 .DS_Store
+
+# Link probe intermediates
+tests/*/obj/
+tests/link-probe/undefined.txt

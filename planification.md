@@ -865,6 +865,40 @@ est levé pour l'interpréteur. Il faudra le réévaluer si un JIT arrive un jou
 Note : les fichiers `.o` font plusieurs fois cette taille (`cpufunctbl.o` pèse 2 Mo) parce que Circle
 compile avec `-g`. Ce sont les sections `text`/`data` qui comptent, pas la taille du fichier objet.
 
+**Première édition de liens complète — faite le 2026-08-26.** `tests/link-probe/` compile **le cœur
+entier** — 21 fichiers Macintosh, le CPU `uae_cpu_2021`, le FPU `fpu_uae`, `video_blit`, les tables
+générées (dont `cpuemu` en huit parties), les neuf bouchons `dummy/` et nos fichiers de compatibilité :
+**50 unités, aucune erreur.**
+
+Le lien produit **163 symboles indéfinis**, dont **87 sont fournis par les bibliothèques** (libc, libm,
+libstdc++, Circle) et seront résolus au lien final. **Il reste donc 76 fonctions à écrire**, et elles se
+répartissent d'elles-mêmes en cinq fichiers :
+
+| Futur fichier | Symboles | Nature |
+|---|---|---|
+| `sys_circle.cpp` | 25 | accès aux images disque, CD-ROM, disquettes — `sys_unix.cpp` en couvre une partie (§8) |
+| `main_circle.cpp` | 15 | verrous `B2_*_mutex`, `ErrorAlert`/`WarningAlert`/`QuitEmulator`, drapeaux d'interruption, variables globales `CPUType`/`FPUType`/`ScratchMem` |
+| `extfs_circle.cpp` | 14 | dossier partagé — `extfs_unix.cpp` est réutilisable presque tel quel (§7.6) |
+| `timer_circle.cpp` | 8 | `TimerDateTime`, `Microseconds`, ticks et repos du CPU |
+| `video_circle.cpp` | 4 | `VideoInit`, `VideoExit`, `VideoInterrupt`, `VideoQuitFullScreen` |
+
+Plus une poignée d'isolés : `FlushCodeCache` (vidage du cache d'instructions), `access`, `creat`,
+`gethostname` (absents de newlib), et `cpu_do_check_ticks` / `emulated_ticks` / `tick_inhibit` /
+`idle_wait` / `idle_resume`, qui relèvent du cadencement.
+
+La liste vit dans `tests/link-probe/platform-todo.txt` et sert d'indicateur : elle doit rétrécir à chaque
+fichier écrit, et atteindre zéro marque la fin de la phase 3.
+
+**Deux ajustements qu'il a fallu faire**, tous deux dans `src/circle/compat/` plutôt que dans l'amont :
+`<sys/ioctl.h>`, absent de newlib, et `gethostbyname`/`struct hostent`, que circle-newlib ne fournit pas
+(il n'a que `getaddrinfo`). Les deux ne servent qu'au tunnel UDP d'`ether.cpp`, un chemin qu'Okapia
+n'emprunte pas mais qui est choisi **à l'exécution** et doit donc compiler. Les bouchons signalent leur
+appel plutôt que de mentir.
+
+**Piège rencontré, à ne pas refaire** : ne jamais mettre un `#include` de header système dans `config.h`.
+Ce fichier est tiré avant tout le reste, et y faire entrer `<arpa/inet.h>` a cassé l'ordre d'inclusion de
+**tout** le cœur (`locale_t` non défini, 39 fichiers en échec). Un `config.h` déclare, il n'inclut pas.
+
 ### Phase 4 — ROM et mémoire Mac
 
 - [ ] chargement de `Q650.ROM` depuis la SD, taille et somme de contrôle vérifiées
