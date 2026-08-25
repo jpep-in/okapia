@@ -36,16 +36,6 @@
 /* #undef HAVE_SIGACTION */
 /* #undef ENABLE_VOSF */
 
-/*
- * EXCEPTIONS_VIA_LONGJMP is a code path no current macemu platform feeds: nothing
- * upstream defines JMP_BUF/SETJMP/LONGJMP. Okapia's sysdeps.h will own them.
- * Plain setjmp is right here — Circle has no POSIX signals to mask.
- */
-#include <setjmp.h>
-#define JMP_BUF           jmp_buf
-#define SETJMP(x)         setjmp (x)
-#define LONGJMP(x, n)     longjmp (x, n)
-
 #define PACKAGE_NAME      "Okapia"
 #define PACKAGE_VERSION   "0.1"
 #define VERSION           "0.1"

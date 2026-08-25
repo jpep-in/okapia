@@ -58,6 +58,10 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **One MAC address**: `CNetDevice` has no promiscuous mode.
 - **QEMU lies**: `raspi3b` accepts 8 bpp + palette that the Pi 5 refuses. Validate on hardware.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
+- **Prefer the path upstream actually walks.** `EXCEPTIONS_VIA_LONGJMP` exists in the core but no upstream
+  platform enables it, so nobody tests it and nothing defines its `JMP_BUF`/`SETJMP` macros. C++ exceptions
+  are measured working under Circle, so the core uses them — add `-fexceptions` per file, since Circle
+  builds with `-fno-exceptions` (`Rules.mk:188`).
 - **Serial first, always.** Initialise the serial port and logger before anything else: a failure
   before the log exists is indistinguishable from a hang. Every other init failure should warn and
   continue, not abort.

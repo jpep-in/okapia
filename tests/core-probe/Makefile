@@ -9,7 +9,7 @@ include ../../external/circle-stdlib/Config.mk
 MACEMU  = ../../external/macemu/BasiliskII/src
 CIRCLEH = ../../external/circle-stdlib/libs/circle
 
-CORE_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -DEXCEPTIONS_VIA_LONGJMP \
+CORE_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE \
                -DAARCH=64 -D__circle__
 
 CORE_INCLUDES = -I. \
@@ -31,7 +31,7 @@ PROBE_SRCS = $(wildcard $(MACEMU)/*.cpp) $(wildcard $(MACEMU)/uae_cpu_2021/*.cpp
 probe:
 	@for src in $(PROBE_SRCS); do \
 	    printf '\n=== %s\n' "$$(basename $$src)"; \
-	    $(CXX) $(ARCH) -std=gnu++17 -fno-exceptions -fno-rtti -c \
+	    $(CXX) $(ARCH) -std=gnu++17 -fexceptions -fno-rtti -c \
 	        $(CORE_DEFINES) $(CORE_INCLUDES) $(CFLAGS_FOR_TARGET) \
 	        "$$src" -o /dev/null 2>&1 | grep -E "error:" | head -3; \
 	done

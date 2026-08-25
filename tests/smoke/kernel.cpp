@@ -24,6 +24,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 #include "kernel.h"
+#include "exctest.h"
 #include <circle_glue.h>
 #include <stdio.h>
 #include <dirent.h>
@@ -420,6 +421,20 @@ TShutdownMode CKernel::Run (void)
     DrawTestPattern ();
     ReportStorage ();
     ReportStdio ();
+
+    // Decides which exception mechanism Okapia asks Basilisk to use.
+    const int nCaught = TestCppException ();
+    if (nCaught == 2)
+    {
+        m_Logger.Write (FROM_KERNEL, LogNotice,
+                        "C++ exceptions work: threw and caught across 4 frames");
+    }
+    else
+    {
+        m_Logger.Write (FROM_KERNEL, LogError,
+                        "C++ exceptions broken (got %d): use EXCEPTIONS_VIA_LONGJMP",
+                        nCaught);
+    }
 
     m_Logger.Write (FROM_KERNEL, LogNotice,
                    "Running. Press keys or move the mouse; halts after 30 s.");

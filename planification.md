@@ -688,11 +688,15 @@ Les quatre exceptions, toutes qualifiées :
 - un **`config.h`** à la main : le cœur inclut `<config.h>`, normalement produit par autoconf, qui n'existe
   pas en bare-metal. Une trentaine de lignes déclarant les tailles de types et les en-têtes présents ;
 - un **`sysdeps.h` Okapia**, comme chaque plateforme amont a le sien (`Unix/`, `Windows/`, `BeOS/`,
-  `AmigaOS/`). Il doit notamment fournir `JMP_BUF`, `SETJMP` et `LONGJMP` : **aucune plateforme amont ne les
-  définit**, `EXCEPTIONS_VIA_LONGJMP` étant un chemin hérité que plus personne n'alimente. `setjmp` nu
-  convient, Circle n'ayant pas de signaux à masquer ;
+  `AmigaOS/`) : types de base, ordre des octets, en-têtes système ;
 - compiler en **`-std=gnu++17`** et non `c++17` : ce dernier définit `__STRICT_ANSI__`, qui masque `strdup`
   et consorts dans newlib.
+
+**V2bis — Les exceptions C++ fonctionnent-elles sous Circle ? — oui, mesuré.** Un jet rattrapé à travers
+quatre niveaux d'appels, dans le test de la phase 1 (`tests/smoke/exctest.cpp`). C'est ce qui permet de
+garder le chemin d'exception **par défaut de l'amont** plutôt que le chemin `setjmp` que personne
+n'emprunte. Le test reste dans le smoke test : si un futur modèle ou une future version de Circle casse le
+déroulement de pile, on le saura au démarrage et non au milieu du boot de Mac OS.
 
 **Conséquence sur le risque R3** (« dépendances POSIX cachées ») : il est largement levé. Le cœur de
 Basilisk II est bien plus portable que le plan initial ne le redoutait — l'essentiel du couplage à Unix
