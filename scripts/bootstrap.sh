@@ -11,6 +11,10 @@ MACEMU_REF="474ea0ab55cac933de35fa349820c9dd0944bf77"         # no useful tags: 
 # circle-stdlib also declares doctest, json, mbedtls and mongoose. Those serve
 # its TLS support and its samples only: we never build them.
 CIRCLE_STDLIB_SUBMODULES="libs/circle libs/circle-newlib"
+# Circle's own submodules: hostap carries wpa_supplicant, needed for WPA2 on the
+# built-in WiFi. Its headers are included unconditionally by circle-stdlib, so it
+# is required to build at all. lvgl is a GUI toolkit we never use.
+CIRCLE_SUBMODULES="addon/wlan/hostap"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -37,6 +41,7 @@ add "$CIRCLE_STDLIB_URL" external/circle-stdlib "$CIRCLE_STDLIB_REF"
 # --force re-checks-out worktrees left empty by an interrupted clone: git records
 # the submodule as initialised even when the checkout never happened.
 git -C external/circle-stdlib submodule update --init --force $CIRCLE_STDLIB_SUBMODULES
+git -C external/circle-stdlib/libs/circle submodule update --init --force $CIRCLE_SUBMODULES
 
 add "$MACEMU_URL" external/macemu "$MACEMU_REF"
 
@@ -48,6 +53,7 @@ check external/circle-stdlib/libs/circle-newlib/newlib            "circle-newlib
 check external/circle-stdlib/configure                            "circle-stdlib configure"
 check external/macemu/BasiliskII/src/uae_cpu_2021/newcpu.cpp      "macemu uae_cpu_2021"
 check external/macemu/BasiliskII/src/dummy                        "macemu dummy stubs"
+check external/circle-stdlib/libs/circle/addon/wlan/hostap/wpa_supplicant "wpa_supplicant (WiFi)"
 
 say "Pinned"
 printf '  circle-stdlib  %s  %s\n' \

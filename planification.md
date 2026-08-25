@@ -356,6 +356,36 @@ display resolution from application* ». La résolution est imposée par le firm
 limite indolore pour l'utilisateur : la seule chose perdue est le raccourci sans conversion, qui n'était
 qu'une optimisation. Sur Pi ≤ 4, ce raccourci reste possible en option quand le Mac est en 8 bits.
 
+### 7.2bis Stratégie matérielle : trois cibles, un seul code
+
+| Cible | Rôle |
+|---|---|
+| **Pi 3** | cible de **simulation** — c'est le modèle qu'émule QEMU, donc celui du développement logique et de la CI |
+| **Pi 4** | cible de **référence** — le tableau de fonctionnalités de Circle y est complet |
+| **Pi 5** | cible de **compatibilité** — fonctionne, par le chemin générique |
+
+La difficulté n'est pas que le Pi 5 ajoute du matériel (RP1, NVMe, RTC), c'est qu'il **retire du contrôle
+à l'application** : plus de choix de résolution, plus de FIQ, plus de VCHIQ. Rien ne garantit qu'un modèle
+ultérieur sera plus permissif — il faut concevoir pour cette tendance, pas contre elle.
+
+**1. Découvrir, jamais supposer.** Les capacités d'affichage sont relevées au démarrage — résolution
+imposée ou non, profondeur indexée acceptée ou non, VSync et double tampon disponibles ou non — et le
+compositeur consulte ce relevé. Un matériel qui retire encore quelque chose fait basculer un booléen, il ne
+fait pas réécrire un chemin. Corollaire déjà appliqué dans le test de la phase 1 : le programme affiche ce
+que le firmware a **accordé**, jamais ce qu'il a demandé.
+
+**2. Le chemin générique est le chemin principal.** La composition logicielle vers un framebuffer fixe
+fonctionne partout. Les raccourcis matériels — 8 bpp avec palette matérielle, zéro-copie — sont des
+optimisations optionnelles là où elles existent, **jamais des prérequis**. C'est l'inverse du plan initial,
+qui faisait du raccourci l'architecture avant de découvrir qu'il n'existe pas sur Pi 5.
+
+**3. Les `#ifdef RASPPI` restent confinés à `hal_circle`.** Circle fixe `RASPPI` à la compilation : un
+binaire par modèle, c'est incontournable. Mais le code Macintosh n'en voit jamais un seul, et tout ce qui
+est au-dessus de la couche matérielle compile à l'identique pour les trois cibles.
+
+Les nouveautés propres à un modèle (RTC et NVMe du Pi 5) sont traitées comme des **bonus détectés à
+l'exécution**, jamais comme des dépendances — l'horloge du §7.7 en est déjà l'exemple.
+
 ### 7.3 Cadencement et multicœur
 
 Contraintes Circle (`doc/multicore.txt`) : **toutes les IRQ périphériques sont traitées sur le cœur 0** ;
@@ -725,6 +755,29 @@ Cible : `raspi3b`, AArch64.
 - [ ] débogage GDB (`-s -S`)
 
 **Succès** : `Circle boot OK / Framebuffer OK / Keyboard OK / SD OK / GDB OK`.
+
+**Fait le 2026-08-26.** Relevé réel sous QEMU `raspi3b`, Circle 51, GCC 15.2.1 :
+
+```
+Frame buffer requested 640x480x8
+Frame buffer granted   640x480, 8 bpp, pitch 640, 300 KB at 0x3C100000
+Palette test ok (256 entries)
+okapia.txt: Okapia smoke test: this line was read from the SD card.
+Keyboard attached / Mouse attached
+```
+
+Le pitch vaut exactement largeur × bpp / 8 : pas de remplissage de ligne sous QEMU. Le port GDB 1234
+répond. Le mode indexé 8 bits et sa palette fonctionnent **sous QEMU** — reste à vérifier sur matériel,
+et surtout sur Pi 5 (§9 V1), où c'est précisément ce qui est en doute.
+
+**Deux enseignements repris dans `AGENTS.md`** : la série doit être initialisée avant tout le reste, sinon
+un échec précoce ne se distingue pas d'un blocage ; et `DEPTH` étant compilé dans `libcircle.a`, un mode
+indexé exige notre propre `CBcmFrameBuffer` plutôt que `CScreenDevice`.
+
+**Question ouverte** : le test n'utilise pas la couche `stdio` de circle-stdlib (`CConsole` +
+`CGlueStdioInit`), qui provoquait un blocage au démarrage non encore diagnostiqué. Il lit la carte par les
+appels FatFs directs. Or Okapia a besoin de `stdio` — c'est ce qui rend `extfs_unix.cpp` et `prefs_unix.cpp`
+réutilisables (§8). **À élucider avant la phase 3**, où le sujet devient bloquant.
 
 ### Phase 2 — Le même binaire sur Pi 3 ou Pi 4
 

@@ -1,0 +1,1 @@
+Okapia smoke test: this line was read from the SD card.

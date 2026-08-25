@@ -58,6 +58,14 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **One MAC address**: `CNetDevice` has no promiscuous mode.
 - **QEMU lies**: `raspi3b` accepts 8 bpp + palette that the Pi 5 refuses. Validate on hardware.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
+- **Serial first, always.** Initialise the serial port and logger before anything else: a failure
+  before the log exists is indistinguishable from a hang. Every other init failure should warn and
+  continue, not abort.
+- **`DEPTH` is compiled into `libcircle.a`** (`lib/screen.cpp`), so `-DDEPTH=8` in an application
+  Makefile does nothing. An indexed mode needs our own `CBcmFrameBuffer` — which Okapia wants anyway,
+  since the screen belongs to the Mac, not to `CScreenDevice`.
+- **macOS build frictions**, all handled by `scripts/install-tools.sh`: BSD `getopt` ignores `--long`,
+  Bash 3.2 has no `mapfile`, BSD `sed` has no `\b`, and zsh aborts a command when a glob matches nothing.
 
 ## Code
 
