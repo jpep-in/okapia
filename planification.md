@@ -843,6 +843,28 @@ Règle : aucun stub silencieux. Tout stub journalise son appel et échoue propre
 
 **Succès** : le binaire contient le cœur et atteint l'initialisation du moteur 68k.
 
+**Générateur d'opcodes — fait le 2026-08-26.** `scripts/gen-cpu.sh` monte la chaîne à deux étages :
+`table68k` → `build68k` (compilé **pour macOS**) → `cpudefs.cpp` → `gencpu` (idem) → `cpuemu.cpp`,
+`cpustbl.cpp`, `cpufunctbl.cpp`, `cputbl.h`. Environ **195 000 lignes générées**, toutes compilées pour
+AArch64 sans une seule erreur. `cpuemu.cpp` se compile en huit unités (`-DPART_1` à `-DPART_8`), comme en
+amont.
+
+**Budget de taille mesuré**, et il est rassurant :
+
+| | text | data |
+|---|---|---|
+| `cpuemu1-8` (l'interpréteur) | ~310 Ko | — |
+| `cpufunctbl` (table de dispatch) | — | **512 Ko** (65 536 pointeurs) |
+| `cpudefs` + `cpustbl` | ~34 Ko | ~25 Ko |
+| **Cœur 68k complet** | **~861 Ko** | |
+
+À comparer aux 497 Ko du noyau de la phase 1 (Circle + newlib + notre test) et aux **4 Mo** de
+`KERNEL_MAX_SIZE`. La marge est confortable : le risque « dépassement de taille du noyau » du §7.2quater
+est levé pour l'interpréteur. Il faudra le réévaluer si un JIT arrive un jour.
+
+Note : les fichiers `.o` font plusieurs fois cette taille (`cpufunctbl.o` pèse 2 Mo) parce que Circle
+compile avec `-g`. Ce sont les sections `text`/`data` qui comptent, pas la taille du fichier objet.
+
 ### Phase 4 — ROM et mémoire Mac
 
 - [ ] chargement de `Q650.ROM` depuis la SD, taille et somme de contrôle vérifiées
