@@ -666,9 +666,37 @@ firmware donne réellement (largeur, hauteur, profondeur, pitch), tester `SetPal
 révèle, c'est si la profondeur 8 bits et la synchronisation verticale sont utilisables. **Décide du statut
 du Pi 5.** Sans matériel Pi 5 sous la main, cet essai peut attendre — le plan ne dépend pas de lui.
 
-**V2 — Le cœur compile-t-il ?** Compiler `uae_cpu_2021` et `src/*.cpp` avec la toolchain Circle en
-`DIRECT_ADDRESSING` et `fpu_uae`, sans lier, puis inventorier les symboles non résolus. C'est l'inventaire
-réel du travail — plus fiable que toute lecture de code.
+**V2 — Le cœur compile-t-il ? — fait le 2026-08-26, concluant.**
+
+Sondage de compilation seule (`tests/core-probe/`, cible `probe`) sur les 28 fichiers du cœur, avec la
+toolchain Circle, en `DIRECT_ADDRESSING`, `FPU_UAE`, `EXCEPTIONS_VIA_LONGJMP` :
+
+**24 sur 28 compilent tels quels**, dont `newcpu.cpp` (le cœur 68k), `memory.cpp`, `basilisk_glue.cpp`,
+`fpu_uae.cpp`, `video_blit.cpp`, `emul_op.cpp`, `extfs.cpp`, `rom_patches` mis à part, et toute la couche
+Macintosh (adb, audio, disk, scsi, sony, timer, video, xpram, slot_rom).
+
+Les quatre exceptions, toutes qualifiées :
+
+| Fichier | Cause | Coût |
+|---|---|---|
+| `bincue.cpp` | dépend de SDL (`SDL_mutex`) | **nul** : option amont `--with-bincue`, désactivée par défaut, on ne le compile pas |
+| `rom_patches.cpp`, `rsrc_patches.cpp` | `htons`/`ntohs` non déclarés | **un include** : circle-newlib les fournit dans `<arpa/inet.h>` |
+| `ether.cpp` | `<sys/ioctl.h>` absent de newlib | **mineur** : sert à `ioctl(FIONBIO)` sur une socket UDP, un chemin que `ether_circle.cpp` n'empruntera pas |
+
+**Ce que ce sondage a établi qu'il faut écrire**, et qui n'était pas dans le plan :
+
+- un **`config.h`** à la main : le cœur inclut `<config.h>`, normalement produit par autoconf, qui n'existe
+  pas en bare-metal. Une trentaine de lignes déclarant les tailles de types et les en-têtes présents ;
+- un **`sysdeps.h` Okapia**, comme chaque plateforme amont a le sien (`Unix/`, `Windows/`, `BeOS/`,
+  `AmigaOS/`). Il doit notamment fournir `JMP_BUF`, `SETJMP` et `LONGJMP` : **aucune plateforme amont ne les
+  définit**, `EXCEPTIONS_VIA_LONGJMP` étant un chemin hérité que plus personne n'alimente. `setjmp` nu
+  convient, Circle n'ayant pas de signaux à masquer ;
+- compiler en **`-std=gnu++17`** et non `c++17` : ce dernier définit `__STRICT_ANSI__`, qui masque `strdup`
+  et consorts dans newlib.
+
+**Conséquence sur le risque R3** (« dépendances POSIX cachées ») : il est largement levé. Le cœur de
+Basilisk II est bien plus portable que le plan initial ne le redoutait — l'essentiel du couplage à Unix
+vit dans la couche plateforme, pas dans le cœur.
 
 **V3 — Mémoire exécutable.** Écrire quelques instructions ARM64 dans un tampon, `dc civac` / `ic ivau` /
 `isb`, sauter dedans. Cela échouera : Circle marque toutes les pages au-delà de `_etext` en **`PXN = 1`**
