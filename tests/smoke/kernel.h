@@ -36,6 +36,7 @@
 #include <circle/usb/usbhcidevice.h>
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
+#include <circle/input/console.h>
 #include <SDCard/emmc.h>
 #include <wrap_fatfs.h>
 #include <circle/types.h>
@@ -61,6 +62,7 @@ private:
     void DrawTestPattern (void);
     bool TestPalette (void);         // indexed modes only
     void ReportStorage (void);
+    void ReportStdio (void);     // newlib stdio on top of FatFs
     void AttachInputDevices (void);
 
     static void KeyPressedHandler (const char *pString);
@@ -81,6 +83,11 @@ private:
     CUSBHCIDevice      m_USBHCI;
     CEMMCDevice        m_EMMC;
     FATFS              m_FileSystem;
+    // Both devices must be non-null: CConsole's two-device constructor asserts on
+    // it, and an assertion inside a member constructor fires before the serial
+    // log exists — a silent hang. Okapia's console lives on serial anyway,
+    // because the screen belongs to the Mac.
+    CConsole           m_Console;
 
     // Okapia owns its frame buffer rather than using CScreenDevice: the screen
     // belongs to the emulated Mac, and CScreenDevice bakes its colour depth into
@@ -91,6 +98,7 @@ private:
 
     bool m_bScreenAvailable;
     bool m_bStorageAvailable;
+    bool m_bStdioAvailable;
 
     static CKernel *s_pThis;
 };

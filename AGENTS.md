@@ -61,6 +61,11 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **Serial first, always.** Initialise the serial port and logger before anything else: a failure
   before the log exists is indistinguishable from a hang. Every other init failure should warn and
   continue, not abort.
+- **A failed assertion inside a member constructor is a silent hang.** Member constructors run before
+  `Initialize()`, so before serial exists. When a kernel produces no output at all, suspect a
+  constructor argument, not the boot. (Cost us an hour: `CConsole(0, &m_Serial)` violates
+  `assert (m_pInputDevice != 0)`. Use `CConsole(&m_Serial, &m_Serial)` — console on serial, since the
+  screen belongs to the Mac.)
 - **`DEPTH` is compiled into `libcircle.a`** (`lib/screen.cpp`), so `-DDEPTH=8` in an application
   Makefile does nothing. An indexed mode needs our own `CBcmFrameBuffer` — which Okapia wants anyway,
   since the screen belongs to the Mac, not to `CScreenDevice`.

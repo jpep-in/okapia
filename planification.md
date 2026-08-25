@@ -774,10 +774,22 @@ et surtout sur Pi 5 (§9 V1), où c'est précisément ce qui est en doute.
 un échec précoce ne se distingue pas d'un blocage ; et `DEPTH` étant compilé dans `libcircle.a`, un mode
 indexé exige notre propre `CBcmFrameBuffer` plutôt que `CScreenDevice`.
 
-**Question ouverte** : le test n'utilise pas la couche `stdio` de circle-stdlib (`CConsole` +
-`CGlueStdioInit`), qui provoquait un blocage au démarrage non encore diagnostiqué. Il lit la carte par les
-appels FatFs directs. Or Okapia a besoin de `stdio` — c'est ce qui rend `extfs_unix.cpp` et `prefs_unix.cpp`
-réutilisables (§8). **À élucider avant la phase 3**, où le sujet devient bloquant.
+**La couche `stdio` est validée**, ce qui conditionnait la réutilisation d'`extfs_unix.cpp` et de
+`prefs_unix.cpp` (§8) :
+
+```
+stdio fopen/fgets: Okapia smoke test: this line was read from the SD card.
+stdio opendir/readdir: 1 entries
+```
+
+Le blocage initialement observé venait d'un `CConsole (0, &m_Serial)` : ce constructeur exige **deux**
+périphériques non nuls (`assert (m_pInputDevice != 0)`, `lib/input/console.cpp:48`). Une assertion qui
+échoue dans un **constructeur de membre** s'exécute avant l'initialisation série : sortie muette,
+indiscernable d'un blocage au démarrage. La bonne forme est `CConsole (&m_Serial, &m_Serial)` — console
+sur la série, ce qui est de toute façon la configuration d'Okapia, l'écran appartenant au Mac.
+
+Note de chemin : sous `stdio`, la carte se lit en `/okapia.txt`, pas `SD:/okapia.txt` — `CGlueStdioInit`
+monte la partition par défaut sur la racine. Les appels FatFs directs, eux, gardent le préfixe `SD:`.
 
 ### Phase 2 — Le même binaire sur Pi 3 ou Pi 4
 

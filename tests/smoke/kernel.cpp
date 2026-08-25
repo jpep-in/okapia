@@ -24,6 +24,9 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 #include "kernel.h"
+#include <circle_glue.h>
+#include <stdio.h>
+#include <dirent.h>
 #include <circle/bcmframebuffer.h>
 #include <circle/devicenameservice.h>
 #include <circle/string.h>
@@ -38,11 +41,13 @@ CKernel::CKernel (void)
     m_Logger (m_Options.GetLogLevel (), &m_Timer),
     m_USBHCI (&m_Interrupt, &m_Timer, TRUE),          // TRUE: plug and play
     m_EMMC (&m_Interrupt, &m_Timer, &m_ActLED),
+    m_Console (&m_Serial, &m_Serial),
     m_pFrameBuffer (0),
     m_pKeyboard (0),
     m_pMouse (0),
     m_bScreenAvailable (false),
-    m_bStorageAvailable (false)
+    m_bStorageAvailable (false),
+    m_bStdioAvailable (false)
 {
     s_pThis = this;
     // Nothing here. CActLED drives the activity LED through the mailbox virtual
@@ -119,6 +124,16 @@ bool CKernel::Initialize (void)
     if (!m_USBHCI.Initialize ())
     {
         m_Logger.Write (FROM_KERNEL, LogWarning, "No USB: input tests skipped");
+    }
+
+    if (!m_Console.Initialize ())
+    {
+        m_Logger.Write (FROM_KERNEL, LogWarning, "Console failed: no stdio");
+    }
+    else
+    {
+        CGlueStdioInit (m_Console);   // newlib stdio onto FatFs and the console
+        m_bStdioAvailable = true;
     }
 
     return true;
@@ -296,6 +311,48 @@ void CKernel::ReportStorage (void)
     }
 }
 
+void CKernel::ReportStdio (void)
+{
+    if (!m_bStdioAvailable || !m_bStorageAvailable)
+    {
+        m_Logger.Write (FROM_KERNEL, LogNotice, "stdio unavailable: skipping");
+        return;
+    }
+
+    // This is the layer that makes extfs_unix.cpp and prefs_unix.cpp reusable
+    // almost as-is, so it is worth proving early rather than at phase 3.
+    FILE *pFile = fopen ("/okapia.txt", "r");
+    if (pFile == 0)
+    {
+        m_Logger.Write (FROM_KERNEL, LogError, "stdio: fopen failed");
+        return;
+    }
+    char Buffer[128];
+    if (fgets (Buffer, sizeof Buffer, pFile) != 0)
+    {
+        char *p = Buffer;
+        while (*p != '\0' && *p != '\n') p++;
+        *p = '\0';
+        m_Logger.Write (FROM_KERNEL, LogNotice, "stdio fopen/fgets: %s", Buffer);
+    }
+    fclose (pFile);
+
+    DIR *pDir = opendir ("/");
+    if (pDir == 0)
+    {
+        m_Logger.Write (FROM_KERNEL, LogError, "stdio: opendir failed");
+        return;
+    }
+    unsigned nEntries = 0;
+    while (readdir (pDir) != 0)
+    {
+        nEntries++;
+    }
+    closedir (pDir);
+    m_Logger.Write (FROM_KERNEL, LogNotice,
+                    "stdio opendir/readdir: %u entries", nEntries);
+}
+
 //
 // Input
 //
@@ -362,6 +419,7 @@ TShutdownMode CKernel::Run (void)
     TestPalette ();
     DrawTestPattern ();
     ReportStorage ();
+    ReportStdio ();
 
     m_Logger.Write (FROM_KERNEL, LogNotice,
                    "Running. Press keys or move the mouse; halts after 30 s.");
