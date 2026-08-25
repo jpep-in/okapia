@@ -529,10 +529,27 @@ Deux ROM Quadra 650 sont disponibles localement, toutes deux vérifiées bonnes 
 | **`F1ACAD13`** | `Quad650.ROM` — **Quadra 650** | **retenue** : celle que la communauté Basilisk II recommande |
 | `F1A6F343` | `Quad610.ROM` — ligne **Centris 610** | repli |
 
-**L'identité de la machine ne dépend pas de la ROM.** La préférence `modelid` est écrite directement dans
-le champ `productKind` de la ROM chargée (`rom_patches.cpp:1036`) et vaut « Gestalt Model ID moins 6 » — le
-défaut de Basilisk est `5`, soit Mac IIci. Afficher un autre modèle dans « À propos de ce Macintosh » est
-donc un réglage, pas un changement de ROM.
+**L'identité de la machine ne dépend pas de la ROM — et ne doit surtout pas en être déduite.**
+
+La préférence `modelid` est écrite dans le champ `productKind` de la ROM chargée
+(`rom_patches.cpp:1036`) et vaut « Gestalt Model ID moins 6 ». C'est ce que le Mac lit via Gestalt pour
+savoir quelle machine il est. Juste au-dessus, Basilisk **désactive les slots NuBus** dans la même
+structure `UniversalInfo` : la machine émulée n'est pas un Quadra 650, c'est une machine synthétique dont
+on choisit l'étiquette. La ROM fournit le code, pas l'identité.
+
+Basilisk n'expose que deux valeurs, et le critère est **la version de Mac OS visée** :
+
+| `modelid` | Machine annoncée | Pour |
+|---|---|---|
+| `5` | Mac IIci | System 7.x, **obligatoire avant 7.5** |
+| **`14`** | Quadra 900 | **Mac OS 8.x — retenu**, puisque la cible est 8.1 |
+
+D'autres valeurs fonctionnent parfois mais ne sont pas supportées : un `29` (Quadra 800) ne rend le
+*System Profiler* correct sous 8.1 qu'avec la ROM Quadra 800 assortie, toute autre combinaison le cassant.
+Hors des deux valeurs sûres, il faut une cohérence ROM ↔ `modelid`, payée en fragilité.
+
+**Déduire le `modelid` de la ROM serait donc un piège** : avec une ROM Quadra 650, la déduction donnerait
+l'identifiant d'un Quadra 650, et Mac OS 8 pourrait refuser de démarrer faute de la valeur validée.
 
 Au chargement, produire un message explicite (« ROM absente / non reconnue / non 32-bit clean ») plutôt
 qu'un plantage.
