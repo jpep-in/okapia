@@ -183,15 +183,57 @@ choix, assumé.
 
 ### 4.2 Références, hors build
 
-| Dépôt | Usage |
-|---|---|
-| `github.com/randyrossi/bmc64` | modèle d'émulateur complet sur Circle |
-| `github.com/amcchord/M5Tab-Macintosh` | portage embarqué de Basilisk (licence non déclarée : lecture seule) |
-| `github.com/rcarmo/macemu-jit` | JIT 68k→AArch64, **et** son corpus de tests, réutilisable sans le JIT |
-| `github.com/BlitterStudio/amiberry` | amont du backend JIT ARM/ARM64 |
-| `github.com/rsta2/circle` | pour lire le code et les docs sans passer par le sous-module |
+Matériel d'étude, **cloné à la demande et non par défaut** : chaque dépôt tiré est du disque occupé et une
+invitation à s'éparpiller. `scripts/fetch-reference.sh` sans argument liste ce qui existe et ce qui est déjà
+local ; avec un nom, il clone en superficiel dans `reference/`, ignoré par Git.
 
----
+| Dépôt | Quand il devient utile |
+|---|---|
+| `bmc64` | dès l'écriture de `main_circle.cpp` — boucle d'émulation, cadencement, audio, framebuffer sur Circle |
+| `M5Tab-Macintosh` | au portage de Basilisk et à la vidéo (tuiles sales). **Lecture seule : aucune licence déclarée** |
+| `infinite-mac` | au provisionnement des images et au catalogue de systèmes |
+| `macemu-jit` | pour son corpus de tests ; pour son JIT seulement si le sujet s'ouvre |
+| `amiberry` | uniquement si le JIT s'ouvre |
+
+Aucune n'est nécessaire avant la phase 3. Quand une nouvelle devient utile en cours de route, elle se
+demande explicitement — elle ne se tire pas par réflexe.
+
+### 4.3 Épinglage et mise à jour
+
+Les deux amonts n'ont pas les mêmes usages, la politique s'y adapte.
+
+| | Pratique amont | Ce qu'on épingle |
+|---|---|---|
+| **circle-stdlib** | versions taguées régulières (`v20` à ce jour, qui coïncide avec `master`) | **le tag** — lisible, comparable, associé à des notes de version. Circle vient avec, épinglé par circle-stdlib : nous n'avons pas à le gérer séparément |
+| **macemu** | pas de version utile — les derniers tags et *releases* datent de 2017, le travail se fait sur `master` (~45 commits sur les douze derniers mois) | **un SHA**, sans alternative |
+
+**Ne jamais lancer `git submodule update --remote`** : cette commande déplace les pins en aveugle. La
+mise à jour est toujours un acte délibéré.
+
+**Voir le retard** — `scripts/check-upstreams.sh` affiche, pour chaque sous-module, le SHA épinglé, sa date,
+son tag éventuel, et les commits amont non intégrés. Il *fetch* mais ne modifie rien : c'est le seul script
+qui a besoin du réseau. Le SHA épinglé vit dans l'index Git, pas dans un tableau de documentation qui
+divergerait.
+
+**Déplacer un pin** — jamais en même temps qu'un autre changement, et pas sans validation :
+
+- [ ] lire les commits amont concernés (`check-upstreams.sh` en donne la liste)
+- [ ] `cd` dans le sous-module, `git checkout <tag ou SHA>`
+- [ ] réappliquer les patches de `patches/macemu/` — **si l'un ne s'applique plus, c'est l'information la
+      plus utile de l'opération** : le régler avant d'aller plus loin
+- [ ] compiler pour QEMU, dérouler les tests hôte
+- [ ] démarrer Mac OS sous QEMU
+- [ ] valider sur matériel
+- [ ] comparer au relevé de référence (§ phase 11)
+- [ ] commit dédié, dont le message dit **pourquoi** cette montée de version
+
+**Cadence** : sur besoin — un correctif, une fonctionnalité attendue — ou juste avant chaque jalon. Pas de
+mise à jour de confort en cours de phase : une régression amont au mauvais moment coûte des jours de
+recherche pour un bug qui n'est pas le nôtre.
+
+C'est aussi la raison pour laquelle les modifications de macemu restent des **patches** dans
+`patches/macemu/` et non un fork : un patch qui cesse de s'appliquer est un signal immédiat et lisible,
+là où un fork accumule silencieusement la dette de rebase.
 
 ## 5. Licence
 

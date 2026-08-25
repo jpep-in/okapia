@@ -1,0 +1,6 @@
+[submodule "external/circle-stdlib"]
+	path = external/circle-stdlib
+	url = https://codeberg.org/larchcone/circle-stdlib.git
+[submodule "external/macemu"]
+	path = external/macemu
+	url = https://github.com/kanjitalk755/macemu.git

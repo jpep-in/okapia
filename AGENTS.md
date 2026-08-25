@@ -33,8 +33,9 @@ After `scripts/bootstrap.sh`, no network needed:
 - `external/macemu/` — Basilisk II + SheepShaver (`kanjitalk755` upstream)
 - `external/circle-stdlib/` — newlib + libstdc++; **Circle lives in `libs/circle/`**, docs in
   `libs/circle/doc/` (`qemu.txt`, `multicore.txt`, `memorymap.txt`, `stdlib-support.txt`, `issues.txt`)
-- `reference/` — `bmc64` (architectural model), `M5Tab-Macintosh` (**read-only, no declared licence**),
-  `macemu-jit`, `amiberry`, `infinite-mac`
+- `reference/` — study material, **cloned on demand, not by default**. `scripts/fetch-reference.sh` with no
+  argument lists what exists and what is local. If you need one that isn't there, **ask before cloning** —
+  don't go read it on the web instead.
 
 **Never modify `external/` or `reference/`.** Upstream changes go to `patches/macemu/`, minimal, documented.
 
