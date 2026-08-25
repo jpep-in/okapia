@@ -947,6 +947,21 @@ Plus une poignée d'isolés : `FlushCodeCache` (vidage du cache d'instructions),
 La liste vit dans `tests/link-probe/platform-todo.txt` et sert d'indicateur : elle doit rétrécir à chaque
 fichier écrit, et atteindre zéro marque la fin de la phase 3.
 
+**Avancement** : 76 → **58** avec `main_circle.cpp` (mémoire Mac, chargement ROM, drapeaux
+d'interruption, verrous, alertes, cache d'instructions, repos CPU).
+
+Trois frictions de frontière rencontrées à l'écriture, valables pour tout fichier plateforme :
+
+- **`ASSERT_STATIC` manque** dès qu'on inclut un en-tête Circle : `circle/types.h` l'attend de l'`assert.h`
+  *de Circle*, mais c'est celui de newlib qui gagne la recherche. `src/circle/okapia_circle.h` définit la
+  macro puis inclut Circle — à inclure avant tout `<circle/...>` ;
+- **`circle/new.h` est inutilisable avec la STL** : son `operator new (size_t, void*)` a une spécification
+  d'exception différente de celle de `<new>`. Pour un bloc brut, appeler
+  `CMemorySystem::HeapAllocate (size, HEAP_ANY)` directement ;
+- **les globales mémoire appartiennent à `basilisk_glue.cpp`** (`RAMBaseHost`, `RAMSize`, `ROMBaseHost`,
+  `ROMSize`, `RAMBaseMac`, `ROMBaseMac`, `MEMBaseDiff`). La couche plateforme les **remplit**, elle ne les
+  définit pas — sous peine de doublon à l'édition de liens.
+
 **Deux ajustements qu'il a fallu faire**, tous deux dans `src/circle/compat/` plutôt que dans l'amont :
 `<sys/ioctl.h>`, absent de newlib, et `gethostbyname`/`struct hostent`, que circle-newlib ne fournit pas
 (il n'a que `getaddrinfo`). Les deux ne servent qu'au tunnel UDP d'`ether.cpp`, un chemin qu'Okapia

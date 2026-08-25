@@ -19,6 +19,7 @@ CPU_SRCS   = $(wildcard $(MACEMU)/uae_cpu_2021/*.cpp) \
 GEN_SRCS   = $(GEN)/cpudefs.cpp $(GEN)/cpustbl.cpp $(GEN)/cpufunctbl.cpp
 DUMMY_SRCS = $(wildcard $(MACEMU)/dummy/*.cpp)
 COMPAT_SRCS = $(wildcard $(OKAPIA)/compat/*.cpp)
+PLATFORM_SRCS = $(wildcard $(OKAPIA)/*.cpp)
 
 DEFINES  = -DDIRECT_ADDRESSING -DFPU_UAE -DAARCH=64 -D__circle__ -D_GNU_SOURCE
 INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) \
@@ -33,11 +34,11 @@ CORE_FLAGS = $(ARCH) -std=gnu++17 -fexceptions -fno-rtti -O2 -Wno-narrowing
 
 OBJDIR = obj
 
-ALL_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) $(COMPAT_SRCS)
+ALL_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) $(COMPAT_SRCS) $(PLATFORM_SRCS)
 ALL_OBJS = $(addprefix $(OBJDIR)/,$(notdir $(ALL_SRCS:.cpp=.o))) \
            $(addprefix $(OBJDIR)/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
 
-VPATH = $(OKAPIA)/compat:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(GEN)
+VPATH = $(OKAPIA):$(OKAPIA)/compat:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(GEN)
 
 $(OBJDIR)/%.o: %.cpp | $(OBJDIR)
 	@printf '  CC  %s\n' "$(notdir $<)"

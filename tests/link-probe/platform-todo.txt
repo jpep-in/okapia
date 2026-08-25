@@ -1,19 +1,5 @@
                  w __cxa_pure_virtual
-B2_create_mutex()
-B2_delete_mutex(B2_mutex*)
-B2_lock_mutex(B2_mutex*)
-B2_unlock_mutex(B2_mutex*)
-CPUIs68060
-CPUType
-ClearInterruptFlag(unsigned int)
-ErrorAlert(char const*)
-FPUType
-FlushCodeCache(void*, unsigned int)
-InterruptFlags
 Microseconds(unsigned int&, unsigned int&)
-QuitEmulator()
-ScratchMem
-SetInterruptFlag(unsigned int)
 SysAddCDROMPrefs()
 SysAddDiskPrefs()
 SysAddFloppyPrefs()
@@ -40,12 +26,10 @@ Sys_open(char const*, bool, bool)
 Sys_read(void*, void*, long, unsigned long)
 Sys_write(void*, void*, long, unsigned long)
 TimerDateTime()
-TwentyFourBitAddressing
 VideoExit()
 VideoInit(bool)
 VideoInterrupt()
 VideoQuitFullScreen()
-WarningAlert(char const*)
 access
 add_path_component(char*, char const*)
 close_rfork(char const*, int)
@@ -62,8 +46,6 @@ get_finfo(char const*, unsigned int, unsigned int, bool)
 get_rfork_size(char const*)
 gethostname
 host_encoding_to_macroman(char const*)
-idle_resume()
-idle_wait()
 macroman_to_host_encoding(char const*)
 open_rfork(char const*, int)
 set_finfo(char const*, unsigned int, unsigned int, bool)
