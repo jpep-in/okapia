@@ -514,9 +514,28 @@ mode est inopérant en WiFi.
 
 ### 7.11 ROM
 
-`Q650.ROM` — la mieux éprouvée, recommandée par M5Tab. **Une seule ROM de référence** tant que le système
-n'est pas stable. Vérifier taille et somme de contrôle au chargement, et produire un message explicite
-(« ROM absente / non reconnue / non 32-bit clean ») plutôt qu'un plantage. Jamais versionnée.
+**Une seule ROM de référence** tant que le système n'est pas stable. Jamais versionnée (`roms/` est ignoré).
+
+**Validation outillée** : `scripts/check-rom.py` contrôle taille, somme de contrôle et mot de version avant
+tout démarrage. Basilisk n'accepte une ROM que si le mot 16 bits big-endian à l'offset 8 vaut **`0x067C`**,
+marqueur « 32-bit clean » obligatoire en `DIRECT_ADDRESSING` (`rom_patches.cpp:838`). La somme de contrôle
+est le mot long de tête, égal à la somme de tous les mots de 16 bits depuis l'offset 4.
+
+Deux ROM Quadra 650 sont disponibles localement, toutes deux vérifiées bonnes (1024 Ko, somme conforme,
+`0x067C`). Malgré des noms de fichiers voisins, elles proviennent de machines différentes :
+
+| Somme | Origine réelle | |
+|---|---|---|
+| **`F1ACAD13`** | `Quad650.ROM` — **Quadra 650** | **retenue** : celle que la communauté Basilisk II recommande |
+| `F1A6F343` | `Quad610.ROM` — ligne **Centris 610** | repli |
+
+**L'identité de la machine ne dépend pas de la ROM.** La préférence `modelid` est écrite directement dans
+le champ `productKind` de la ROM chargée (`rom_patches.cpp:1036`) et vaut « Gestalt Model ID moins 6 » — le
+défaut de Basilisk est `5`, soit Mac IIci. Afficher un autre modèle dans « À propos de ce Macintosh » est
+donc un réglage, pas un changement de ROM.
+
+Au chargement, produire un message explicite (« ROM absente / non reconnue / non 32-bit clean ») plutôt
+qu'un plantage.
 
 ### 7.12 Le firmware Okapia — un « Open Firmware qui aurait pu exister »
 
