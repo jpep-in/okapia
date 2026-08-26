@@ -1007,6 +1007,28 @@ Ce fichier est tiré avant tout le reste, et y faire entrer `<arpa/inet.h>` a ca
 
 **Succès** : `ROM loaded / ROM patches applied / Mac RAM allocated / 68040 initialized / Entering 68k`.
 
+**Atteint le 2026-08-26**, sous QEMU `raspi3b`, avec la ROM `F1ACAD13` :
+
+```
+okapia: Free before Mac RAM: 935 MB low, 935 MB high
+okapia: Mac memory: 256 MB RAM at 0x807e80, ROM at 0x10807e80, Mac base diff 0x807E80
+okapia: ROM: /okapia.rom, 1024 KB, 32-bit clean
+okapia-video: Output: 640x480, 32 bpp, pitch 2560
+okapia-video: 12 modes offered, 1200 KB guest buffer
+okapia-video: Mac mode 640x480 8 bpp, shown at 1x scale, origin 0,0
+okapia: Mac RAM at 0x807e80 (Mac 0x00000000), ROM at 0x10807e80 (Mac 0x10000000)
+okapia: CPU type 4, FPU 1, 24-bit addressing off
+okapia: Entering 68k execution
+```
+
+`kernel8.img` pèse **1,76 Mo** — cœur 68k, Circle, newlib et couche plateforme compris, contre 4 Mo de
+`KERNEL_MAX_SIZE`. L'allocation des 256 Mo intervient bien avant les pilotes : 935 Mo étaient libres, et
+l'ordre d'initialisation tient.
+
+**Ce qui manque pour aller plus loin**, et qui est le sujet de la phase 5 : le **tick 60 Hz n'est pas encore
+branché**. Sans interruption périodique, la ROM s'exécute mais n'avance pas — elle attend un temps qui ne
+passe jamais. C'est le prochain travail, et il conditionne tout le reste du démarrage.
+
 ### Phase 5 — Exécution 68k
 
 - [ ] exécution de la ROM, exceptions, accès mémoire, endianness
