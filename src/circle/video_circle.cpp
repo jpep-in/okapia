@@ -124,9 +124,11 @@ static void build_mode_list (vector<video_mode> &modes)
 
     // 1, 2, 4 and 8 bits are indexed; grey and black-and-white are the same modes
     // with a different palette, which the core computes for us (video.cpp:569).
-    static const video_depth depths[] = {
-        VDEPTH_1BIT, VDEPTH_2BIT, VDEPTH_4BIT, VDEPTH_8BIT, VDEPTH_16BIT, VDEPTH_32BIT
-    };
+    // Only 8 bits for now. Offering 1-bit as well let the Mac paint in 1 bit —
+    // 80 bytes per row — while the compositor read 640, which put the startup
+    // icon in the wrong place. Depth switching comes back once the compositor
+    // follows the guest's choice properly.
+    static const video_depth depths[] = { VDEPTH_8BIT };
 
     for (unsigned i = 0; i < sizeof sizes / sizeof sizes[0]; i++)
     {
