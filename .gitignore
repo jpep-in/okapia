@@ -35,3 +35,5 @@ src/kernel/*.o
 src/kernel/*.d
 src/kernel/kernel8.*
 qemu/serial.log
+src/kernel/kernel8.lst
+.idea/
