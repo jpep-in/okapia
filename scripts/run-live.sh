@@ -23,6 +23,16 @@ printf 'Serial log: %s\n' "$LOG"
 # Do not add zoom-to-fit: it opens a tiny window and defers to manual resizing,
 # which reintroduces a fractional scale and makes the picture shimmer.
 #
+# Two emulators writing the same card is a guaranteed way to destroy the volume,
+# and it looks exactly like random corruption after the fact. This is the only
+# script that runs on the master card, so it is the one that has to refuse.
+if command -v lsof >/dev/null && lsof -t -- "$SD" >/dev/null 2>&1; then
+    echo "Refusing to start: ${SD} is already open by another process." >&2
+    echo "Close the running emulator first — two of them will corrupt the volume." >&2
+    lsof -- "$SD" >&2 || true
+    exit 1
+fi
+
 # OUTPUT_W/OUTPUT_H override this; keep them multiples of 640x480.
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" \
     -drive "file=${SD},if=sd,format=raw,cache=writethrough" \

@@ -286,6 +286,20 @@ void Circle_monitor_desc::composite (void)
         {
             memcpy (pDst, RowBuffer, mode.x * nBytesPerOutputPixel);
         }
+        else if (s_nScale == 2 && ((uintptr) pDst & 7) == 0)
+        {
+            // Doubling is the common case and the scalar loop below costs one
+            // store per output pixel. Two output pixels are one 64-bit store,
+            // which halves them; the output pitch is a multiple of 8, so the
+            // alignment only has to be checked once per row.
+            u64 *pOut = (u64 *) pDst;
+            const uint32 *pIn = (const uint32 *) RowBuffer;
+            for (unsigned x = 0; x < mode.x; x++)
+            {
+                u64 v = pIn[x];
+                pOut[x] = v | (v << 32);
+            }
+        }
         else
         {
             uint32 *pOut = (uint32 *) pDst;

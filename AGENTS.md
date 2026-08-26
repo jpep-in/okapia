@@ -84,6 +84,14 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **`uae_cpu_2021`, not `uae_cpu`** — that's what macemu builds on AArch64.
 - **One MAC address**: `CNetDevice` has no promiscuous mode.
 - **QEMU lies**: `raspi3b` accepts 8 bpp + palette that the Pi 5 refuses. Validate on hardware.
+- **Never run two emulators on the same card.** Two QEMUs writing `qemu/sd.img` destroys the volume, and
+  afterwards it looks exactly like random corruption — which is most of what the boot "non-determinism"
+  really was. `run-live.sh` now refuses to start when the image is already open; `run-test.sh` and
+  `screenshot.sh` work on copies and are always safe to run alongside anything.
+- **Judge the boot by the screen, not by proxy metrics.** A high opcode rate and "guest buffer has
+  content" are equally true of the question-mark floppy, so neither can tell a booted Finder from a
+  stalled Mac — reading them as success cost this project a long detour. `scripts/screenshot.sh
+  [seconds] [width height]` boots a throwaway copy and captures what is actually on the Mac's screen.
 - **Killing QEMU corrupts the disk image**, because killing it is pulling the plug on a running Mac:
   MacOS caches HFS blocks in RAM and only sets the "unmounted cleanly" bit (MDB `drAtrb` bit 8, at image
   offset 1034) when it unmounts during Shut Down. The damage accumulates run after run until the Mac
