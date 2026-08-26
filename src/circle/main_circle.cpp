@@ -244,10 +244,23 @@ bool ChoiceAlert (const char *text, const char *pos, const char *neg)
 
 static bool s_bQuitRequested = false;
 
+// newcpu.h:281. Leaving the interpreter takes two steps, and doing only one is
+// a silent hang: quit_program alone is tested by the OUTER loop (newcpu.cpp
+// :1562), while m68k_do_execute() spins in an inner for(;;) that only SPCFLAG_BRK
+// interrupts. m68k_emulop_return() sets both, which is why we call it rather than
+// poking the flag ourselves. Upstream then does exit(0); we have nowhere to exit
+// to, so we unwind through Start680x0() and let the kernel tear down in order.
+extern void m68k_emulop_return (void);
+
 void QuitEmulator (void)
 {
     CLogger::Get ()->Write (FROM, LogNotice, "Emulator quit requested");
     s_bQuitRequested = true;
+
+    // Without this the Mac powers off, the 68k loop keeps running past the
+    // PowerOff() trap, and the disk image is never closed — which is exactly
+    // how the HFS volume ends up dirty (AGENTS.md).
+    m68k_emulop_return ();
 }
 
 bool QuitRequested (void)

@@ -195,8 +195,10 @@ bool CKernel::StartMacintosh (void)
             m_Logger.Write (FROM, LogNotice, "Sys_open ok, %lu MB",
                             (unsigned long) (SysGetFileSize (fh) / (1024 * 1024)));
 
-            // The Mac reports readErr (-19) after mounting, so exercise the read
-            // path itself: block 0, then the HFS Master Directory Block at 1024.
+            // Exercise the read path itself: block 0, then the HFS Master
+            // Directory Block at 1024. A readable MDB says the file layer and
+            // the image agree; it does not say the volume is consistent, which
+            // only fsck_hfs on the host can tell you.
             extern size_t Sys_read (void *fh, void *buffer, loff_t offset, size_t length);
             static char Buf[512];
 
@@ -212,16 +214,6 @@ bool CKernel::StartMacintosh (void)
             size_t n2 = Sys_read (fh, Buf, 400u * 1024 * 1024, 512);
             m_Logger.Write (FROM, LogNotice, "Sys_read(400MB, 512) -> %u", (unsigned) n2);
             Sys_close (fh);
-
-            // Upstream's SysAddFloppyPrefs adds /dev/fd0 and /dev/fd1 on any
-            // platform that is not Linux or macOS. Those must not open here.
-            void *fd0 = Sys_open ("/dev/fd0", false, false);
-            m_Logger.Write (FROM, LogNotice, "Sys_open(/dev/fd0) -> %s",
-                            fd0 != 0 ? "OPENED, which is wrong" : "refused, as it should");
-            if (fd0 != 0)
-            {
-                Sys_close (fd0);
-            }
         }
     }
 
@@ -268,8 +260,12 @@ TShutdownMode CKernel::Run (void)
         return ShutdownHalt;
     }
 
+    // ExitAll() closes the drivers in order — DiskExit() is what finally calls
+    // Sys_close() on the disk image, flushing FatFs to the card. It saves the
+    // PRAM itself, so no separate XPRAMExit() here.
     ExitAll ();
-    XPRAMExit ();
+
+    m_Logger.Write (FROM, LogNotice, "Shut down cleanly, disk closed");
 
     return QuitRequested () ? ShutdownHalt : ShutdownReboot;
 }

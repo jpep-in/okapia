@@ -26,6 +26,33 @@ Target is Quadra-class, not a workstation.
 - Everything outside the 257 MB must fit a 1 GB board. Kernel < 4 MB.
 - Measure before optimising — but don't write obvious waste while waiting.
 
+## Data safety
+
+**This is what separates an emulator people use daily from a proof of concept.** One corrupted volume
+ends that trust and no amount of speed buys it back, so this constraint outranks performance and
+features: when in doubt, lose speed, never data. It must hold across every edge case — power cut,
+`kill -9`, reset, full card, cable pulled mid-write — not just the happy path.
+
+The model is BlueSCSI: real SCSI-emulating hardware keeps disk images on an SD card and survives the plug
+being pulled, because every write it acknowledged is already on the card. Okapia is there today for data
+— guest writes are 512-aligned multiples (`DiskPrime` enforces it), so FatFs takes the full-sector path
+straight to `disk_write` → `CDevice::Write`, with no write-back cache in between. Only the directory entry
+(size, mtime) waits for `f_close`, which costs nothing on a preallocated image; **do not add a per-write
+`fsync`**, it buys an mtime and costs SD write amplification on a small machine.
+
+- **No write-back cache between the guest and the card.** If an optimisation ever adds one, it owes a
+  flush policy and a test in the same change.
+- **Acceptable after a pulled plug**: a volume marked in use, which Disk First Aid repairs — that is what
+  a real Mac does too, and no emulator can save the guest's own RAM cache. **Not acceptable**: lost
+  writes, structural damage, a card the Mac can no longer mount.
+- **Every path that writes guest data must survive an abrupt stop at any instruction.** Ask it of new code
+  before it lands, not after someone reports a broken disk.
+- **Prove it, don't assume it**: `scripts/run-test.sh` ends the guest with SIGKILL, runs `fsck_hfs` on the
+  volume and reports how many bytes were actually written — so a green verdict cannot come from a run that
+  exercised nothing.
+- Still owed as features land: full card, a write error from the SD layer, removal mid-write, shutdown
+  during a write, a second volume, and the shared folder's own writes.
+
 ## Work locally
 
 After `scripts/bootstrap.sh`, no network needed:
@@ -57,10 +84,45 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **`uae_cpu_2021`, not `uae_cpu`** — that's what macemu builds on AArch64.
 - **One MAC address**: `CNetDevice` has no promiscuous mode.
 - **QEMU lies**: `raspi3b` accepts 8 bpp + palette that the Pi 5 refuses. Validate on hardware.
-- **Boot outcome is not yet deterministic**: the same build reaches Happy Mac on one run and the
-  question-mark floppy on the next. Never conclude from a single run. The QEMU window costs about a third
-  of guest speed (97% of the Mac's 60 Hz nominal headless, 61% with a window), so run automated
-  regression checks headless and keep the window for watching.
+- **Killing QEMU corrupts the disk image**, because killing it is pulling the plug on a running Mac:
+  MacOS caches HFS blocks in RAM and only sets the "unmounted cleanly" bit (MDB `drAtrb` bit 8, at image
+  offset 1034) when it unmounts during Shut Down. The damage accumulates run after run until the Mac
+  mounts the volume, reads the catalogue, gives up and falls back to the question-mark floppy. That was
+  the whole of the boot "non-determinism": the image was decaying, not the emulator. Check a suspect
+  image with `dd ... skip=1034 count=2` — `0100` is clean, `0000` is dirty — and repair with `fsck_hfs`.
+- **Shutting the Mac down properly does work, and the whole chain must be intact.** Finder → Shut Down
+  calls `PowerOff()` (trap `0xA05B`), which `rom_patches.cpp:1621` replaced with `EMUL_OP_SHUTDOWN`, which
+  calls `QuitEmulator()`. That must call **`m68k_emulop_return()`** (`newcpu.h:281`), which is the only
+  correct way out: leaving the interpreter takes two steps, and doing one is a silent hang. `quit_program`
+  alone is tested by the outer loop (`newcpu.cpp:1562`), while `m68k_do_execute()` spins in an inner
+  `for(;;)` that only `SPCFLAG_BRK` interrupts — so the Mac powers off and the emulator runs on, never
+  reaching `ExitAll()`, the only thing that closes the disk image.
+  Circle then halts, and `LEAVE_QEMU_ON_HALT` exits QEMU via semihosting, **which needs `-semihosting`
+  on the QEMU command line**; without it the kernel halts and QEMU just sits there.
+- **QEMU invents a durability hole that hardware does not have**: its drive defaults to `cache=writeback`,
+  so guest writes stop in the host page cache. Both run scripts pass `cache=writethrough` to close it.
+- **A timed run has nobody to click Shut Down**, so use `scripts/run-test.sh [seconds]` and never point
+  one at `qemu/sd.img` (written after doing exactly that and corrupting a freshly rebuilt image). It runs
+  on a copy **in order to see damage, not to look away from it**: from a known-good copy, whatever
+  `fsck_hfs` reports was caused by that one run, whereas on the master the damage accumulates and nothing
+  is attributable. It ends in SIGKILL — the harshest case — and reports how many bytes the guest actually
+  wrote, so a green verdict cannot come from a run that exercised nothing. A failing copy is kept for
+  inspection. Rebuild a card from `qemu/sd-contents/` with `scripts/make-sd-image.sh 1024`.
+- **A guest that reads its disk and still won't boot is a volume problem, not a driver problem.** The
+  trace to run first is `OKAPIA_TRACE=1` (`src/kernel/Makefile`): successful reads with no short reads,
+  followed by a catalogue scan and then a second driver init, means the file layer is fine.
+- **Trace upstream with the linker, not with a patch.** `--wrap=<mangled symbol>` hooks a Basilisk
+  function without touching `external/` — see `trace_disk_circle.cpp` and `exception_trace.cpp`. Circle
+  invokes `ld` directly, so it is bare `--wrap`, never `-Wl,--wrap`. Only calls crossing a translation
+  unit are wrapped.
+- **The QEMU window costs about a third of guest speed** (97% of the Mac's 60 Hz nominal headless, 61%
+  with a window), so run automated regression checks headless and keep the window for watching.
+- **Objects in `src/kernel/emu/` do not depend on the Makefile**, so changing a `-D`, a flag or a
+  `#define` in `external/` rebuilds nothing: `make` links stale objects and you test a kernel that no
+  longer matches the sources. This silently cost 4.8x guest speed — objects compiled while Basilisk's
+  `D(bug())` tracing was on flooded the serial port (20 MB and 2.8M lines per run, 3000 k opcodes/s
+  instead of 14400 k). After any flag change: `make okapia-clean && rm -f kernel8.img kernel8.elf`.
+  `strings kernel8.img | grep 'EmulOp %04x'` tells you in one second whether debug tracing is linked in.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
 - **`config.h` declares, it never includes.** It is pulled in ahead of everything else; adding a system
   header there breaks the include order across the whole core.
@@ -79,6 +141,11 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **`DEPTH` is compiled into `libcircle.a`** (`lib/screen.cpp`), so `-DDEPTH=8` in an application
   Makefile does nothing. An indexed mode needs our own `CBcmFrameBuffer` — which Okapia wants anyway,
   since the screen belongs to the Mac, not to `CScreenDevice`.
+- **Circle's cooked mouse silently drops every report** until `Setup()` gives it screen dimensions, so a
+  working keyboard alongside a dead mouse says nothing about USB, ADB or interrupts. Okapia wants raw
+  deltas anyway: `RegisterStatusHandler()` hands over `dx/dy` for `ADBMouseMoved()`, whereas the cooked
+  `RegisterEventHandler()` reports absolute coordinates that must not be passed as relative motion
+  (`input_circle.cpp`). The ADB button and move calls set the interrupt flag themselves — don't double it.
 - **macOS build frictions**, all handled by `scripts/install-tools.sh`: BSD `getopt` ignores `--long`,
   Bash 3.2 has no `mapfile`, BSD `sed` has no `\b`, and zsh aborts a command when a glob matches nothing.
 

@@ -14,8 +14,13 @@ SD_IMAGE="${REPO_ROOT}/qemu/sd.img"
 
 [ -f "$KERNEL" ] || { echo "No kernel at $KERNEL — build it first." >&2; exit 1; }
 
-ARGS=(-M raspi3b -kernel "$KERNEL" -serial stdio)
-[ -f "$SD_IMAGE" ] && ARGS+=(-drive "file=${SD_IMAGE},if=sd,format=raw")
+# -semihosting lets a halting kernel exit QEMU by itself (LEAVE_QEMU_ON_HALT,
+# sysinit.cpp:200). Without it the Mac can shut down and QEMU still hangs around.
+ARGS=(-M raspi3b -kernel "$KERNEL" -serial stdio -semihosting)
+# cache=writethrough: QEMU defaults to writeback, so guest writes would sit in the
+# host page cache instead of the image. Real hardware has no such window — Circle
+# writes straight through to the card — so don't let QEMU invent one.
+[ -f "$SD_IMAGE" ] && ARGS+=(-drive "file=${SD_IMAGE},if=sd,format=raw,cache=writethrough")
 # The mouse cursor does not work under QEMU (documented in Circle's doc/qemu.txt),
 # but the device is still enumerated and its events arrive.
 ARGS+=(-device usb-kbd -device usb-mouse)

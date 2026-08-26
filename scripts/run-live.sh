@@ -25,8 +25,9 @@ printf 'Serial log: %s\n' "$LOG"
 #
 # OUTPUT_W/OUTPUT_H override this; keep them multiples of 640x480.
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" \
-    -drive "file=${SD},if=sd,format=raw" \
+    -drive "file=${SD},if=sd,format=raw,cache=writethrough" \
     -device usb-kbd -device usb-mouse \
+    -semihosting \
     -global "bcm2835-fb.xres=${OUTPUT_W:-1280}" -global "bcm2835-fb.yres=${OUTPUT_H:-960}" \
     -display cocoa \
     -serial "file:${LOG}" &
