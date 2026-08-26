@@ -1054,6 +1054,32 @@ l'ordre d'initialisation tient.
 branché**. Sans interruption périodique, la ROM s'exécute mais n'avance pas — elle attend un temps qui ne
 passe jamais. C'est le prochain travail, et il conditionne tout le reste du démarrage.
 
+### État au 2026-08-26 : le Mac atteint le Happy Mac
+
+Sous QEMU `raspi3b`, avec la ROM `F1ACAD13` et une image Mac OS 7.6 de 500 Mo :
+
+```
+RESET → Patch BootGlobs → Fix MemSize → SonyOpen → InstallDrivers
+DiskOpen : disk inserted, 1024000 blocks, adding drive 1 → InstallSERD
+écran gris → Happy Mac
+```
+
+Le Happy Mac n'apparaît qu'une fois les *boot blocks* lus et un dossier Système reconnu : le volume est donc
+bien monté et lu. Puis **l'exécution se fige** : seul `EmulOp 7129` (`M68K_EMUL_OP_IRQ`) tourne encore, ce
+qui veut dire que le Mac ne fait plus que traiter ses interruptions — il attend.
+
+**Écarté par la mesure** : le Time Manager fonctionne (une seule tâche programmée, `PrimeTime time=300000`,
+soit cinq minutes — il attend, il n'est pas cassé) ; l'activité clavier et souris ne débloque rien ; le
+temps non plus (trois minutes ne changent rien).
+
+**Piège de méthode découvert, et coûteux** : `-display none` **change le comportement du guest**. Toutes
+les mesures faites en mode sans affichage montraient la disquette clignotante, là où une fenêtre ouverte
+donne le Happy Mac. Reproduire avec fenêtre avant toute conclusion sur l'avancement du démarrage.
+
+**Deux mesures qui n'en étaient pas**, à ne pas refaire : `DiskPrime` **n'émet aucune trace** dans
+`disk.cpp`, donc en compter les occurrences ne prouve rien ; et `info blockstats` de QEMU rapporte zéro
+lecture même quand la carte est manifestement lue, le contrôleur SD ne passant pas par la couche bloc.
+
 ### Phase 5 — Exécution 68k
 
 - [ ] exécution de la ROM, exceptions, accès mémoire, endianness

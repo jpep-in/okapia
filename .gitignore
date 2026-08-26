@@ -28,3 +28,10 @@ kernel*.img
 # Link probe intermediates
 tests/*/obj/
 tests/link-probe/undefined.txt
+
+# Kernel build intermediates
+src/kernel/emu/
+src/kernel/*.o
+src/kernel/*.d
+src/kernel/kernel8.*
+qemu/serial.log
