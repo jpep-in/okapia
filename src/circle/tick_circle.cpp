@@ -46,6 +46,15 @@ static const unsigned HOST_TICK_USEC = 1000000 / HZ;
 
 static void OneSecond (void)
 {
+    // INTFLAG_1HZ is what drives DiskInterrupt(), and therefore volume mounting
+    // (emul_op.cpp:484). Worth confirming it actually fires.
+    static unsigned s_nSeconds;
+    if (++s_nSeconds <= 3 || (s_nSeconds % 15) == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice, "1 Hz tick %u, Mac started: %s",
+                                s_nSeconds, HasMacStarted () ? "yes" : "no");
+    }
+
     SetInterruptFlag (INTFLAG_1HZ);
 
     // XPRAM is written back by the kernel when it changes, not on a timer

@@ -28,6 +28,9 @@ extern void TickInit (void);
 extern void TickStart (void);
 extern void TickStop (void);
 
+// From src/circle/input_circle.cpp
+extern void InputInit (void);
+
 static const char *ROM_PATH  = "/okapia.rom";
 static const char *DISK_PATH = "/machd76.image";
 static const uint32 MAC_RAM  = 256 * 1024 * 1024;
@@ -234,6 +237,11 @@ bool CKernel::StartMacintosh (void)
                     ROMBaseHost, (unsigned) ROMBaseMac);
     m_Logger.Write (FROM, LogNotice, "CPU type %d, FPU %d, 24-bit addressing %s",
                     CPUType, FPUType, TwentyFourBitAddressing ? "on" : "off");
+
+    // USB devices are attached once, before the 68k loop takes over. Circle's
+    // plug-and-play needs polling from core 0, which is not available while
+    // Start680x0() runs; hot-plug will come with the multicore split (§7.3).
+    InputInit ();
 
     // The heartbeat, armed only now: everything it pokes must already exist.
     TickInit ();
