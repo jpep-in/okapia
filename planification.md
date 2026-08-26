@@ -859,15 +859,15 @@ au lieu des 2 Mo de Circle seul — ce qui évite une erreur d'édition de liens
 
 Cible : `raspi3b`, AArch64.
 
-- [ ] démarrage, journal série
-- [ ] framebuffer : afficher résolution, profondeur, pitch, adresse, une mire, un compteur d'images
-- [ ] palette 8 bits (QEMU la gère : son modèle `bcm2835_fb` traite 8, 16 et 32 bpp avec table)
-- [ ] minuterie
-- [ ] clavier USB (`-device usb-kbd`)
-- [ ] souris USB (`-device usb-mouse` ; la documentation Circle note que le curseur ne fonctionne pas —
+- [x] démarrage, journal série
+- [x] framebuffer : afficher résolution, profondeur, pitch, adresse, une mire, un compteur d'images
+- [x] palette 8 bits (QEMU la gère : son modèle `bcm2835_fb` traite 8, 16 et 32 bpp avec table)
+- [x] minuterie
+- [x] clavier USB (`-device usb-kbd`)
+- [x] souris USB (`-device usb-mouse` ; la documentation Circle note que le curseur ne fonctionne pas —
       ne pas en faire un critère bloquant)
-- [ ] carte SD (`-drive if=sd`), lecture d'un fichier via FatFs
-- [ ] débogage GDB (`-s -S`)
+- [x] carte SD (`-drive if=sd`), lecture d'un fichier via FatFs
+- [x] débogage GDB (`-s -S`)
 
 **Succès** : `Circle boot OK / Framebuffer OK / Keyboard OK / SD OK / GDB OK`.
 
@@ -910,6 +910,9 @@ monte la partition par défaut sur la racine. Les appels FatFs directs, eux, gar
 
 Ne pas repousser le matériel à la fin. Reprendre la phase 1 sur carte réelle, dans la même semaine.
 
+**Bloquée : pas de carte en main.** Rien n'est vérifié sur matériel réel — tout ce qui suit n'est
+établi que sous QEMU, et `raspi3b` ment (§Pitfalls d'`AGENTS.md`).
+
 - [ ] `RASPPI=3` puis `4`, journal série (UART ou Debug Probe)
 - [ ] HDMI réel, SD réelle, USB réel
 - [ ] cycle édition → compilation → flash → redémarrage → journal, sans manipuler la carte SD
@@ -917,10 +920,12 @@ Ne pas repousser le matériel à la fin. Reprendre la phase 1 sur carte réelle,
 
 ### Phase 3 — Le cœur Basilisk compile et démarre
 
-- [ ] `uae_cpu_2021` + `src/*.cpp` compilés avec circle-stdlib
-- [ ] `src/dummy/*` en place pour tout ce qui n'est pas encore écrit
-- [ ] `prefs_unix.cpp` adapté, configuration lue depuis la SD
-- [ ] `main_circle.cpp` : allocation du bloc 257 Mo **en premier**, `MEMBaseDiff`, tick 60 Hz par IRQ
+- [x] `uae_cpu_2021` + `src/*.cpp` compilés avec circle-stdlib
+- [x] `src/dummy/*` en place pour tout ce qui n'est pas encore écrit
+- [ ] `prefs_unix.cpp` adapté, configuration lue depuis la SD — **non fait** : c'est `prefs_dummy.cpp`
+      qui est lié, et `CKernel::SetDefaultPreferences()` fixe tout en dur. Rien n'est configurable
+      sans recompiler (cf. §7.12, le firmware Okapia)
+- [x] `main_circle.cpp` : allocation du bloc 257 Mo **en premier**, `MEMBaseDiff`, tick 60 Hz par IRQ
 
 Règle : aucun stub silencieux. Tout stub journalise son appel et échoue proprement s'il est indispensable.
 
@@ -1026,9 +1031,11 @@ Ce fichier est tiré avant tout le reste, et y faire entrer `<arpa/inet.h>` a ca
 
 ### Phase 4 — ROM et mémoire Mac
 
-- [ ] chargement de `Q650.ROM` depuis la SD, taille et somme de contrôle vérifiées
-- [ ] application des ROM patches
-- [ ] initialisation du 68040, affichage de PC et SP initiaux
+- [x] chargement de `Q650.ROM` depuis la SD, taille vérifiée et image refusée si elle n'est pas
+      32-bit clean (mot de version, `rom_patches.cpp:838`) — ce n'est pas une somme de contrôle
+- [x] application des ROM patches
+- [ ] initialisation du 68040 faite, mais **PC et SP initiaux ne sont pas affichés** — on journalise
+      le type de CPU, la FPU et le mode d'adressage, pas l'état de départ
 
 **Succès** : `ROM loaded / ROM patches applied / Mac RAM allocated / 68040 initialized / Entering 68k`.
 
@@ -1082,33 +1089,45 @@ lecture même quand la carte est manifestement lue, le contrôleur SD ne passant
 
 ### Phase 5 — Exécution 68k
 
-- [ ] exécution de la ROM, exceptions, accès mémoire, endianness
-- [ ] instrumentation des traps, traces des erreurs de bus et d'adresse
-- [ ] niveaux de journalisation : `ERROR WARN INFO DEBUG TRACE_68K TRACE_IO`
+- [x] exécution de la ROM, exceptions, accès mémoire, endianness
+- [x] instrumentation des traps, traces des erreurs de bus et d'adresse : `exception_trace.cpp`,
+      accroché par `--wrap` sans patcher `external/`, activé par `make OKAPIA_TRACE=1`
+- [ ] niveaux de journalisation : `ERROR WARN INFO DEBUG TRACE_68K TRACE_IO` — **non fait**, on n'a
+      que les niveaux de `CLogger` et deux interrupteurs de compilation
 
 **Succès** : la ROM avance jusqu'à réclamer ses périphériques.
 
 ### Phase 6 — Disque
 
-- [ ] image brute sur SD, lecture, écriture, vidage, erreurs, mode lecture seule
-- [ ] journalisation des opérations
+- [x] image brute sur SD, lecture et écriture : le Finder démarre, et une coupure par `SIGKILL`
+      laisse le volume structurellement sain (`scripts/run-test.sh`)
+- [ ] **erreurs et mode lecture seule jamais exercés** : carte pleine, échec d'écriture remonté par
+      la couche SD, image en lecture seule, retrait en cours d'écriture (cf. §Data safety d'`AGENTS.md`)
+- [x] journalisation des opérations : `trace_disk_circle.cpp`, bloc par bloc avec détection des
+      lectures courtes, sous `make OKAPIA_TRACE=1`
 
-**Succès** : la ROM détecte un disque amorçable.
+**Succès** : atteint — la ROM détecte un disque amorçable et le Finder s'affiche.
 
 ### Phase 7 — Vidéo
 
-- [ ] framebuffer de sortie fixe, initialisé une fois
-- [ ] table des modes déclarée (au minimum 640×480 en 1/2/4/8 bits au départ)
-- [ ] compositeur : `Screen_blitter_init()`, `ExpandMap[]`, doublement entier, centrage
-- [ ] `switch_to_current_mode()`, `set_palette()`, `set_gamma()`
-- [ ] mesure du temps de composition, compteur d'images
+- [x] framebuffer de sortie fixe, initialisé une fois
+- [ ] table des modes : **seul le 8 bits est offert**. Le 1 bit a été retiré après un défaut
+      d'affichage (le Mac peignait 80 octets par ligne, le compositeur en lisait 640). Les « 256
+      couleurs » et « 256 niveaux de gris » vus dans Moniteurs sont deux variantes du même mode
+- [x] compositeur : `Screen_blitter_init()`, `ExpandMap[]`, doublement entier, centrage
+- [x] `switch_to_current_mode()`, `set_palette()`, `set_gamma()`
+- [ ] compteur d'images et images/s en place, mais **le temps de composition n'est pas mesuré** —
+      donc le coût réel de la vidéo reste inconnu (phase 11)
 
 **Succès** : Happy Mac, puis les premiers éléments graphiques du démarrage.
 
 ### Phase 8 — Clavier et souris
 
-- [ ] correspondance des codes, modificateurs, appui/relâchement
-- [ ] mouvement et boutons, raccourcis de débogage hors Mac
+- [x] correspondance des codes, modificateurs, appui/relâchement
+- [x] mouvement et boutons : `RegisterStatusHandler()` pour des déplacements bruts `dx/dy`. L'API
+      « cooked » jetait chaque rapport faute de `Setup()`, et livre des coordonnées absolues
+      qu'il ne faut pas passer en relatif
+- [ ] raccourcis de débogage hors Mac — non faits
 
 **Succès** : Mac OS utilisable.
 
@@ -1116,6 +1135,12 @@ lecture même quand la carte est manifestement lue, le contrôleur SD ne passant
 
 Sous QEMU **et** sur Pi 3/4 : ROM chargée, disque amorçable, Finder affiché, clavier et souris
 fonctionnels, système stable plusieurs minutes, redémarrage reproductible, journaux propres.
+
+**Atteint sous QEMU, pas sur matériel** (phase 2 bloquée). Vérifié le 2026-08-26 : ROM chargée, disque
+amorçable, Finder affiché, clavier et souris fonctionnels, extinction et redémarrage propres depuis le
+menu Spécial, journaux propres (58 lignes pour 30 s, contre 2,8 millions avant la reconstruction). Reste
+en défaut : la fluidité — la souris traîne et la vidéo semble coûteuse, ce qui n'a pas encore été mesuré
+(phase 11).
 
 ### Phase 9 — Dossier partagé
 
@@ -1129,8 +1154,13 @@ fonctionnels, système stable plusieurs minutes, redémarrage reproductible, jou
 - [ ] `TimerDateTime()` avec la chaîne NTP → RTC → SD, source journalisée
 - [ ] patch `xpram_dirty` et écriture différée
 - [ ] patch d'écriture d'horloge
-- [ ] arrêt propre sur « Shut Down », vidage périodique du cache disque
-- [ ] essai de coupure brutale : intégrité du disque vérifiée
+- [x] arrêt propre sur « Shut Down » : `QuitEmulator()` appelle `m68k_emulop_return()`, la boucle 68k rend
+      la main, `ExitAll()` ferme l'image, le noyau s'arrête et QEMU quitte via le semihosting
+- [x] essai de coupure brutale : `scripts/run-test.sh` termine par `SIGKILL` puis vérifie au `fsck_hfs`,
+      en signalant le volume d'écritures réellement effectuées
+- vidage périodique du cache disque : **écarté**, les écritures invité descendent déjà en direct
+      (`disk_write` → `CDevice::Write`), un `fsync` par écriture n'achèterait qu'une date de modification
+      contre de l'amplification d'écriture sur la carte
 
 ### Phase 11 — Mesures de référence
 
