@@ -16,7 +16,14 @@ CPU_SRCS    = $(wildcard $(MACEMU)/uae_cpu_2021/*.cpp) \
 GEN_SRCS    = $(GEN)/cpudefs.cpp $(GEN)/cpustbl.cpp $(GEN)/cpufunctbl.cpp
 DUMMY_SRCS  = $(wildcard $(MACEMU)/dummy/*.cpp)
 COMPAT_SRCS = $(wildcard $(OKAPIA)/compat/*.cpp)
-PLATFORM_SRCS = $(wildcard $(OKAPIA)/*.cpp)
+# The trace wrappers reference __real_* symbols the linker only creates when the
+# matching --wrap is passed, so they come in and out together with the LDFLAGS
+# block below.
+TRACE_SRCS  = $(OKAPIA)/trace_disk_circle.cpp $(OKAPIA)/exception_trace.cpp
+PLATFORM_SRCS = $(filter-out $(TRACE_SRCS),$(wildcard $(OKAPIA)/*.cpp))
+ifeq ($(OKAPIA_TRACE),1)
+PLATFORM_SRCS += $(TRACE_SRCS)
+endif
 # Upstream Unix files reused unchanged.
 REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 
@@ -32,7 +39,7 @@ OBJS = okapia_main.o kernel.o $(EMU_OBJS)
 
 include $(CIRCLEHOME)/Rules.mk
 
-EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE -DOKAPIA_TRACE_EXCEPTIONS
+EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE
 EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform
@@ -44,6 +51,16 @@ INCLUDE := $(EMU_INCLUDES) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
 # the emulator objects.
 DEFINE += $(EMU_DEFINES)
 LIBS := $(CIRCLE_STDLIB_LIBS)
+
+# Diagnostics, off by default: build with OKAPIA_TRACE=1 to hook upstream
+# functions at link time rather than patching external/ (AGENTS.md). Circle
+# invokes ld directly, so these are bare --wrap, not -Wl,--wrap. The symbols are
+# Sys_read(void*, void*, loff_t, size_t) and Exception(int, uaecptr), mangled.
+ifeq ($(OKAPIA_TRACE),1)
+LDFLAGS += --wrap=_Z8Sys_readPvS_lm --wrap=_Z9Exceptionij
+endif
+# Toggling OKAPIA_TRACE does not invalidate kernel8.img on its own:
+# rm kernel8.img kernel8.elf first, or you will run the previous kernel.
 
 # The core throws C++ exceptions for 68k faults; Circle builds with
 # -fno-exceptions, and later flags win.
