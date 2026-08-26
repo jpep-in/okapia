@@ -133,6 +133,11 @@ void CKernel::SetDefaultPreferences (void)
     PrefsReplaceBool ("fpu", true);         // a 68040 always has one
     PrefsReplaceBool ("nosound", true);     // audio comes later
     PrefsReplaceBool ("nonet", true);       // networking comes later
+
+    // No floppy drives. Without an explicit entry, SonyInit calls
+    // SysAddFloppyPrefs(), whose fallback branch adds the Linux /dev/fd0 and
+    // /dev/fd1 — phantom drives the Mac then tries, and fails, to mount.
+    PrefsAddString ("floppy", "");
 }
 
 /*
@@ -169,6 +174,53 @@ bool CKernel::StartMacintosh (void)
                     nMDB >= 2 ? (unsigned char) MDB[1] : 0,
                     (nMDB >= 2 && MDB[0] == 'B' && MDB[1] == 'D') ? "(HFS)" : "(unexpected)");
     (void) nRead;
+
+    // Exercise the exact path DiskInit will take, so a failure names itself
+    // instead of surfacing as a Mac that never finds a boot volume.
+    {
+        extern void *Sys_open (const char *name, bool read_only, bool is_cdrom);
+        extern void Sys_close (void *fh);
+        extern loff_t SysGetFileSize (void *fh);
+
+        void *fh = Sys_open (DISK_PATH, false, false);
+        if (fh == 0)
+        {
+            m_Logger.Write (FROM, LogError, "Sys_open refused %s", DISK_PATH);
+        }
+        else
+        {
+            m_Logger.Write (FROM, LogNotice, "Sys_open ok, %lu MB",
+                            (unsigned long) (SysGetFileSize (fh) / (1024 * 1024)));
+
+            // The Mac reports readErr (-19) after mounting, so exercise the read
+            // path itself: block 0, then the HFS Master Directory Block at 1024.
+            extern size_t Sys_read (void *fh, void *buffer, loff_t offset, size_t length);
+            static char Buf[512];
+
+            size_t n0 = Sys_read (fh, Buf, 0, 512);
+            m_Logger.Write (FROM, LogNotice, "Sys_read(0, 512) -> %u", (unsigned) n0);
+
+            size_t n1 = Sys_read (fh, Buf, 1024, 512);
+            m_Logger.Write (FROM, LogNotice,
+                            "Sys_read(1024, 512) -> %u, signature %02X%02X",
+                            (unsigned) n1, (unsigned char) Buf[0], (unsigned char) Buf[1]);
+
+            // And far into the file, where a 32-bit offset would break.
+            size_t n2 = Sys_read (fh, Buf, 400u * 1024 * 1024, 512);
+            m_Logger.Write (FROM, LogNotice, "Sys_read(400MB, 512) -> %u", (unsigned) n2);
+            Sys_close (fh);
+
+            // Upstream's SysAddFloppyPrefs adds /dev/fd0 and /dev/fd1 on any
+            // platform that is not Linux or macOS. Those must not open here.
+            void *fd0 = Sys_open ("/dev/fd0", false, false);
+            m_Logger.Write (FROM, LogNotice, "Sys_open(/dev/fd0) -> %s",
+                            fd0 != 0 ? "OPENED, which is wrong" : "refused, as it should");
+            if (fd0 != 0)
+            {
+                Sys_close (fd0);
+            }
+        }
+    }
 
     m_Logger.Write (FROM, LogNotice, "Initialising the emulator");
     if (!InitAll (0))
