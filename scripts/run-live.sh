@@ -15,9 +15,13 @@ LOG="${REPO_ROOT}/qemu/serial.log"
 [ -f "$KERNEL" ] || { echo "Build first: gmake -C src/kernel" >&2; exit 1; }
 
 printf 'Serial log: %s\n' "$LOG"
+# zoom-to-fit lets the window be resized so the whole 640x480 screen shows:
+# without it, a Retina display draws at 2x and only a quarter of the Mac's
+# screen fits in the default window.
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" \
     -drive "file=${SD},if=sd,format=raw" \
     -device usb-kbd -device usb-mouse \
+    -display cocoa,zoom-to-fit=on \
     -serial "file:${LOG}" &
 QPID=$!
 
