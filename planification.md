@@ -415,6 +415,31 @@ transferts d'interruption. Un téléchargement soutenu rendra le pointeur pâteu
 cartes, pas un défaut du port. Sur Pi 4 et 5 le contrôleur réseau est natif et le problème disparaît. Sous
 QEMU la question ne se pose pas.
 
+### 7.3bis Le tick 60 Hz : pourquoi un accumulateur
+
+Le 60 Hz du Mac n'est pas un réglage d'affichage, c'est **son unité de temps**. Chaque VBL incrémente la
+variable `Ticks` en mémoire basse ; `TickCount()` rend des soixantièmes de seconde, et tout le système s'y
+adosse — Time Manager, clignotement du curseur, temporisations applicatives. Faire battre le Mac à une
+autre fréquence fausserait toutes ses horloges : à 100 Hz, il croirait le temps 1,66 fois plus rapide.
+
+Circle bat à `HZ = 100`, valeur **codée en dur** dans `circle/timer.h` et non surchargeable depuis
+`sysconfig.h`. D'où l'accumulateur de `tick_circle.cpp` : il travaille en microsecondes, chaque tick hôte
+ajoutant 10 000 µs et un tick Mac partant dès que 16 625 µs sont atteints, le reste étant reporté. **Le
+débit moyen est donc exact** — pas de dérive — au prix d'un jitter : des périodes de 10 ou de 20 ms.
+
+Ce jitter n'affecte ni les horloges (la moyenne est juste) ni l'image (le compositeur est indépendant du
+VBL). Il compterait pour l'audio, qui aura son propre DMA, et pour un affichage sans déchirement, qui
+voudra de toute façon le **VSync réel** plutôt qu'un timer.
+
+Repli si les mesures du §11 le réclament : patcher Circle en **`HZ = 300`**, multiple exact de 60 — un tick
+Mac tous les cinq ticks hôte, sans jitter. À peser : huit fichiers de Circle dépendent de `HZ`, dont l'USB,
+dont les temporisations sont exprimées en `MSEC2HZ()`. C'est un patch qui touche tout le système pour un
+bénéfice local, d'où le choix de ne pas le prendre d'emblée.
+
+**Contrainte d'implémentation** : le gestionnaire s'exécute en contexte d'interruption sur le cœur 0 et ne
+fait que poser des drapeaux. Il n'est armé qu'une fois l'émulateur prêt — une interruption levée avant que
+le Mac ne puisse la servir est perdue, et une première VBL perdue ne se distingue pas d'un blocage.
+
 ### 7.4 Entrées
 
 `CUSBKeyboardDevice` et `CUSBMouseDevice` → `input_circle.cpp` → ADB Basilisk. À traiter : table de

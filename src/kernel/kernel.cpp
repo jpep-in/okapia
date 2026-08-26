@@ -23,6 +23,11 @@ extern bool MacMemoryAllocate (uint32 nRAMSize);
 extern bool MacROMLoad (const char *pFileName);
 extern bool QuitRequested (void);
 
+// From src/circle/tick_circle.cpp
+extern void TickInit (void);
+extern void TickStart (void);
+extern void TickStop (void);
+
 static const char *ROM_PATH  = "/okapia.rom";
 static const uint32 MAC_RAM  = 256 * 1024 * 1024;
 
@@ -154,8 +159,13 @@ bool CKernel::StartMacintosh (void)
     m_Logger.Write (FROM, LogNotice, "CPU type %d, FPU %d, 24-bit addressing %s",
                     CPUType, FPUType, TwentyFourBitAddressing ? "on" : "off");
 
+    // The heartbeat, armed only now: everything it pokes must already exist.
+    TickInit ();
+    TickStart ();
+
     m_Logger.Write (FROM, LogNotice, "Entering 68k execution");
-    Start680x0 ();                          // does not return until the Mac stops
+    Start680x0 ();
+    TickStop ();                          // does not return until the Mac stops
 
     m_Logger.Write (FROM, LogNotice, "68k execution ended");
     return true;
