@@ -15,12 +15,13 @@ LOG="${REPO_ROOT}/qemu/serial.log"
 [ -f "$KERNEL" ] || { echo "Build first: gmake -C src/kernel" >&2; exit 1; }
 
 printf 'Serial log: %s\n' "$LOG"
-# zoom-to-fit lets the window be resized so the whole 640x480 screen shows:
-# without it, a Retina display draws at 2x and only a quarter of the Mac's
-# screen fits in the default window.
+# A 1280x960 output is exactly twice the Mac's 640x480, so the compositor scales
+# by an integer factor and every guest pixel becomes a clean 2x2 block. A
+# non-integer window scale is what makes the picture shimmer.
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" \
     -drive "file=${SD},if=sd,format=raw" \
     -device usb-kbd -device usb-mouse \
+    -global bcm2835-fb.xres=1280 -global bcm2835-fb.yres=960 \
     -display cocoa,zoom-to-fit=on \
     -serial "file:${LOG}" &
 QPID=$!
