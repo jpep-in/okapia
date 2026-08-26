@@ -29,6 +29,7 @@ static CUSBKeyboardDevice *s_pKeyboard;
 static CMouseDevice       *s_pMouse;
 static unsigned char       s_LastKeys[6];
 static unsigned char       s_LastModifiers;
+static unsigned            s_LastMouseButtons;
 
 /*
  *  USB HID usage -> Mac ADB key code. Index is the HID usage ID.
@@ -140,28 +141,29 @@ static void KeyStatusHandler (unsigned char ucModifiers, const unsigned char Raw
     memcpy (s_LastKeys, RawKeys, sizeof s_LastKeys);
 }
 
-static void MouseEventHandler (TMouseEvent Event, unsigned nButtons,
-                               unsigned nPosX, unsigned nPosY, int nWheelMove)
+static void MouseStatusHandler (unsigned nButtons, int nDeltaX,
+                                int nDeltaY, int nWheelMove)
 {
-    switch (Event)
+    (void) nWheelMove;
+
+    if (nDeltaX != 0 || nDeltaY != 0)
     {
-    case MouseEventMouseMove:
-        // Relative mode: Circle reports a displacement here.
-        ADBMouseMoved ((int) nPosX, (int) nPosY);
-        break;
-
-    case MouseEventMouseDown:
-        ADBMouseDown (nButtons & MOUSE_BUTTON_LEFT ? 0 : 1);
-        break;
-
-    case MouseEventMouseUp:
-        ADBMouseUp (nButtons & MOUSE_BUTTON_LEFT ? 0 : 1);
-        break;
-
-    default:
-        return;
+        ADBMouseMoved (nDeltaX, nDeltaY);
     }
-    SetInterruptFlag (INTFLAG_ADB);
+
+    static const unsigned ButtonMasks[] =
+    {
+        MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE
+    };
+    unsigned nChanged = nButtons ^ s_LastMouseButtons;
+    for (unsigned i = 0; i < sizeof ButtonMasks / sizeof ButtonMasks[0]; i++)
+    {
+        if (nChanged & ButtonMasks[i])
+        {
+            if (nButtons & ButtonMasks[i]) ADBMouseDown (i); else ADBMouseUp (i);
+        }
+    }
+    s_LastMouseButtons = nButtons;
 }
 
 /*
@@ -188,8 +190,7 @@ void InputAttachDevices (void)
             CDeviceNameService::Get ()->GetDevice ("mouse1", FALSE);
         if (s_pMouse != 0)
         {
-            s_pMouse->RegisterEventHandler (MouseEventHandler);
-            // The Mac tracks its own pointer; we send movement, not position.
+            s_pMouse->RegisterStatusHandler (MouseStatusHandler);
             ADBSetRelMouseMode (true);
             CLogger::Get ()->Write (FROM, LogNotice, "Mouse attached, relative mode");
         }
@@ -200,5 +201,6 @@ void InputInit (void)
 {
     memset (s_LastKeys, 0, sizeof s_LastKeys);
     s_LastModifiers = 0;
+    s_LastMouseButtons = 0;
     InputAttachDevices ();
 }
