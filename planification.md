@@ -953,13 +953,24 @@ fichier écrit, et atteindre zéro marque la fin de la phase 3.
 |---|---|---|
 | `main_circle.cpp` | 76 → 58 | écrit : mémoire Mac, ROM, interruptions, verrous, alertes |
 | `timer_circle.cpp` | 58 → 50 | écrit sur `CTimer` |
-| `extfs_unix.cpp` **réutilisé** | 50 → **36** | **aucune logique écrite** : le fichier amont compile tel quel, il ne manquait qu'un `utime` de quinze lignes |
+| `extfs_unix.cpp` **réutilisé** | 50 → 36 | **aucune logique écrite** : le fichier amont compile tel quel, il ne manquait qu'un `utime` de quinze lignes |
+| `sys_unix.cpp` **réutilisé** | 36 → **13** | **zéro modification, zéro shim** : tout l'accès aux images disque compile en l'état |
 
 Le pari du §8 est donc vérifié sur son premier cas réel : le dossier partagé, avec ses forks de ressources
 et sa table de types, a coûté un shim au lieu de 400 lignes.
 
-Reste : `sys_circle` (25), `video_circle` (4), et sept isolés — `access`, `creat`, `gethostname` que newlib
-n'a pas, et `cpu_do_check_ticks` / `emulated_ticks` / `tick_inhibit` qui relèvent du cadencement.
+**Il reste treize symboles**, et un seul représente un vrai travail :
+
+- **`video_circle.cpp`** (4) : `VideoInit`, `VideoExit`, `VideoInterrupt`, `VideoQuitFullScreen`. Quatre
+  points d'entrée, mais tout le compositeur du §7.2 derrière ;
+- **compat libc** (4) : `access`, `creat`, `sleep`, `gethostname`, absents de newlib ;
+- **cadencement** (3) : `cpu_do_check_ticks`, `emulated_ticks`, `tick_inhibit` ;
+- **`disk_sparsebundle_factory`** (1) : format d'image propre à macOS, à bouchonner ;
+- `__cxa_pure_virtual` (faible, runtime C++).
+
+**Ce que ces chiffres disent du plan.** Les deux fichiers les plus volumineux de la couche plateforme —
+39 symboles à eux deux, l'accès disque et le partage de fichiers — ont été obtenus en réutilisant l'amont
+sans écrire de logique. Le §8 tablait là-dessus sans pouvoir le démontrer ; c'est démontré.
 
 Trois frictions de frontière rencontrées à l'écriture, valables pour tout fichier plateforme :
 

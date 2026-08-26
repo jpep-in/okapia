@@ -21,7 +21,7 @@ DUMMY_SRCS = $(wildcard $(MACEMU)/dummy/*.cpp)
 COMPAT_SRCS = $(wildcard $(OKAPIA)/compat/*.cpp)
 PLATFORM_SRCS = $(wildcard $(OKAPIA)/*.cpp)
 # Upstream Unix files reused unchanged. extfs_unix.cpp needs only the utime shim.
-REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp
+REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 
 DEFINES  = -DDIRECT_ADDRESSING -DFPU_UAE -DAARCH=64 -D__circle__ -D_GNU_SOURCE
 INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) \
