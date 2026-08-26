@@ -57,9 +57,10 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **`uae_cpu_2021`, not `uae_cpu`** — that's what macemu builds on AArch64.
 - **One MAC address**: `CNetDevice` has no promiscuous mode.
 - **QEMU lies**: `raspi3b` accepts 8 bpp + palette that the Pi 5 refuses. Validate on hardware.
-- **`-display none` changes guest behaviour.** With a window open the Mac finds its boot volume and
-  reaches Happy Mac; headless it sits on the flashing floppy. Reproduce with a window before concluding
-  anything about boot progress.
+- **Boot outcome is not yet deterministic**: the same build reaches Happy Mac on one run and the
+  question-mark floppy on the next. Never conclude from a single run. The QEMU window costs about a third
+  of guest speed (97% of the Mac's 60 Hz nominal headless, 61% with a window), so run automated
+  regression checks headless and keep the window for watching.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
 - **`config.h` declares, it never includes.** It is pulled in ahead of everything else; adding a system
   header there breaks the include order across the whole core.
