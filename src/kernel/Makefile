@@ -32,7 +32,7 @@ OBJS = okapia_main.o kernel.o $(EMU_OBJS)
 
 include $(CIRCLEHOME)/Rules.mk
 
-EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE
+EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE -DOKAPIA_TRACE_EXCEPTIONS
 EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform

@@ -30,6 +30,13 @@
 
 #define FROM "okapia-video"
 
+// Composite one VBL in this many. 1 is every frame; higher trades refresh rate
+// for guest speed. Measured under QEMU, 1 left the Mac at a seventh of its
+// proper pace.
+#ifndef VIDEO_COMPOSITE_EVERY
+#define VIDEO_COMPOSITE_EVERY 6
+#endif
+
 // video.h has DepthModeForPixelDepth but no inverse; this is the one we need.
 static inline int DepthBits (video_depth depth)
 {
@@ -373,7 +380,16 @@ void VideoInterrupt (void)
         return;
     }
 
-    s_pMonitor->composite ();
+    // The compositor runs inside the Mac's VBL, so its cost is taken straight
+    // out of the guest's execution time. Converting and scaling 640x480 on every
+    // interrupt starved the emulation: the Mac was servicing about 8 VBLs a
+    // second instead of 60. Compositing every Nth interrupt gives the time back.
+    static unsigned s_nSkip;
+    if (++s_nSkip >= VIDEO_COMPOSITE_EVERY)
+    {
+        s_nSkip = 0;
+        s_pMonitor->composite ();
+    }
 
     // Diagnosis for early bring-up: is the guest drawing at all? A frame buffer
     // that stays blank means the Mac never got as far as its first pixel, which

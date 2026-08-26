@@ -51,8 +51,17 @@ static void OneSecond (void)
     static unsigned s_nSeconds;
     if (++s_nSeconds <= 3 || (s_nSeconds % 15) == 0)
     {
-        CLogger::Get ()->Write (FROM, LogNotice, "1 Hz tick %u, Mac started: %s",
-                                s_nSeconds, HasMacStarted () ? "yes" : "no");
+        // Do the Mac's two clocks agree? Ticks (low memory 0x16A) is bumped by
+        // our 60 Hz VBL; Microseconds() comes from Circle's counter. If they
+        // drift apart, a delay the Mac waits on may never appear to elapse.
+        uint32 hi, lo;
+        Microseconds (hi, lo);
+        uint64 us = ((uint64) hi << 32) | lo;
+        uint32 macTicks = ReadMacInt32 (0x16A);
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "1 Hz #%u: Mac Ticks %u (expect ~%u), Microseconds %lu s",
+                                s_nSeconds, (unsigned) macTicks, s_nSeconds * 60,
+                                (unsigned long) (us / 1000000));
     }
 
     SetInterruptFlag (INTFLAG_1HZ);
