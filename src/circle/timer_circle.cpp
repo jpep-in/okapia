@@ -131,7 +131,7 @@ int32 timer_host2mac_time (tm_time_t hosttime)
     uint64 t = (uint64) hosttime.tv_sec * 1000000 + hosttime.tv_nsec / 1000;
     if (t > 0x7fffffff)
     {
-        return 0x7fffffff;              // clamp, as upstream does
+        return (int32) (t / 1000);      // too large for microseconds: milliseconds
     }
     return -(int32) t;                  // negative means microseconds
 }
