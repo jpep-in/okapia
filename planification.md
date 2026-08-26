@@ -954,7 +954,12 @@ fichier écrit, et atteindre zéro marque la fin de la phase 3.
 | `main_circle.cpp` | 76 → 58 | écrit : mémoire Mac, ROM, interruptions, verrous, alertes |
 | `timer_circle.cpp` | 58 → 50 | écrit sur `CTimer` |
 | `extfs_unix.cpp` **réutilisé** | 50 → 36 | **aucune logique écrite** : le fichier amont compile tel quel, il ne manquait qu'un `utime` de quinze lignes |
-| `sys_unix.cpp` **réutilisé** | 36 → **13** | **zéro modification, zéro shim** : tout l'accès aux images disque compile en l'état |
+| `sys_unix.cpp` **réutilisé** | 36 → 13 | **zéro modification, zéro shim** : tout l'accès aux images disque compile en l'état |
+| `video_circle.cpp` | 13 → 9 | écrit : sortie fixe, table des modes, compositeur, palette |
+| compat + cadencement | 9 → **1** | `access`, `creat`, `sleep`, `gethostname`, les compteurs de ticks, le facteur *sparsebundle* |
+
+**Terminé.** Le seul symbole restant est `__cxa_pure_virtual`, **faible**, fourni par libsupc++ au lien
+final. La couche plateforme compile et se lie contre le cœur complet : 59 unités.
 
 Le pari du §8 est donc vérifié sur son premier cas réel : le dossier partagé, avec ses forks de ressources
 et sa table de types, a coûté un shim au lieu de 400 lignes.

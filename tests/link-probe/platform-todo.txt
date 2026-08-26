@@ -1,13 +1,1 @@
                  w __cxa_pure_virtual
-VideoExit()
-VideoInit(bool)
-VideoInterrupt()
-VideoQuitFullScreen()
-access
-cpu_do_check_ticks()
-creat
-disk_sparsebundle_factory(char const*, bool, disk_generic**)
-emulated_ticks
-gethostname
-sleep
-tick_inhibit
