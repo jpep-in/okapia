@@ -947,8 +947,19 @@ Plus une poignée d'isolés : `FlushCodeCache` (vidage du cache d'instructions),
 La liste vit dans `tests/link-probe/platform-todo.txt` et sert d'indicateur : elle doit rétrécir à chaque
 fichier écrit, et atteindre zéro marque la fin de la phase 3.
 
-**Avancement** : 76 → **58** avec `main_circle.cpp` (mémoire Mac, chargement ROM, drapeaux
-d'interruption, verrous, alertes, cache d'instructions, repos CPU).
+**Avancement** : 76 → **36**.
+
+| Étape | Restant | Comment |
+|---|---|---|
+| `main_circle.cpp` | 76 → 58 | écrit : mémoire Mac, ROM, interruptions, verrous, alertes |
+| `timer_circle.cpp` | 58 → 50 | écrit sur `CTimer` |
+| `extfs_unix.cpp` **réutilisé** | 50 → **36** | **aucune logique écrite** : le fichier amont compile tel quel, il ne manquait qu'un `utime` de quinze lignes |
+
+Le pari du §8 est donc vérifié sur son premier cas réel : le dossier partagé, avec ses forks de ressources
+et sa table de types, a coûté un shim au lieu de 400 lignes.
+
+Reste : `sys_circle` (25), `video_circle` (4), et sept isolés — `access`, `creat`, `gethostname` que newlib
+n'a pas, et `cpu_do_check_ticks` / `emulated_ticks` / `tick_inhibit` qui relèvent du cadencement.
 
 Trois frictions de frontière rencontrées à l'écriture, valables pour tout fichier plateforme :
 

@@ -29,22 +29,8 @@ VideoInit(bool)
 VideoInterrupt()
 VideoQuitFullScreen()
 access
-add_path_component(char*, char const*)
-close_rfork(char const*, int)
 cpu_do_check_ticks()
 creat
 emulated_ticks
-extfs_exit()
-extfs_init()
-extfs_read(int, void*, unsigned long)
-extfs_remove(char const*)
-extfs_rename(char const*, char const*)
-extfs_write(int, void*, unsigned long)
-get_finfo(char const*, unsigned int, unsigned int, bool)
-get_rfork_size(char const*)
 gethostname
-host_encoding_to_macroman(char const*)
-macroman_to_host_encoding(char const*)
-open_rfork(char const*, int)
-set_finfo(char const*, unsigned int, unsigned int, bool)
 tick_inhibit
