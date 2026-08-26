@@ -1116,8 +1116,12 @@ lecture même quand la carte est manifestement lue, le contrôleur SD ne passant
       couleurs » et « 256 niveaux de gris » vus dans Moniteurs sont deux variantes du même mode
 - [x] compositeur : `Screen_blitter_init()`, `ExpandMap[]`, doublement entier, centrage
 - [x] `switch_to_current_mode()`, `set_palette()`, `set_gamma()`
-- [ ] compteur d'images et images/s en place, mais **le temps de composition n'est pas mesuré** —
-      donc le coût réel de la vidéo reste inconnu (phase 11)
+- [x] compteur d'images et coût de composition mesurés. Relevé sous QEMU `raspi3b`, 640×480 8 bits :
+      composition 1530 µs, **8,5 % du temps mural** à 55 images/s, invité à 20 542 k opcodes/s
+- [x] cadence pilotée par la préférence `frameskip` d'amont, plus par une constante. Le défaut d'amont
+      (6, soit 10 Hz) était codé en dur : l'écran ne se rafraîchissait que 9 fois par seconde et, le
+      curseur étant dessiné par le Mac dans son propre framebuffer, cela se lisait comme une souris qui
+      traîne. Défaut d'Okapia : 1
 
 **Succès** : Happy Mac, puis les premiers éléments graphiques du démarrage.
 
@@ -1175,7 +1179,12 @@ Doom. Point de comparaison connu : M5Tab atteint 2-3 MIPS sur un RISC-V à 400 M
 
 1. synchronisation verticale
 2. **suivi des zones modifiées à l'écriture** (tuiles marquées au moment de l'écriture 68k), la piste la
-   plus rentable
+   plus rentable. Amont a déjà un modèle réutilisable : `update_display_dynamic()`
+   (`Unix/video_x.cpp:2343`), le mode « Dynamic » du menu Window Refresh Rate, soit `frameskip = 0`.
+   Il découpe l'écran en grille 16×16, garde une copie d'ombre, compare par `memcmp` boîte par boîte
+   en étalant le balayage sur 8 ticks, ne pousse que les boîtes modifiées et fusionne les boîtes
+   voisines en bandes. Le comparer coûte bien moins que convertir : la cible est 60 Hz sous les 3 %
+   de temps mural, contre 8,5 % aujourd'hui à 55 Hz
 3. double tampon si le modèle le permet
 4. composition sur le cœur 2 (**S2**) si les mesures le justifient
 5. modes 16 et 32 bits (Thousands, Millions)

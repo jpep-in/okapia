@@ -123,6 +123,12 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   `D(bug())` tracing was on flooded the serial port (20 MB and 2.8M lines per run, 3000 k opcodes/s
   instead of 14400 k). After any flag change: `make okapia-clean && rm -f kernel8.img kernel8.elf`.
   `strings kernel8.img | grep 'EmulOp %04x'` tells you in one second whether debug tracing is linked in.
+- **A decimated screen reads as a laggy mouse.** The Mac draws its own cursor into its own framebuffer,
+  so the pointer can never move more often than the compositor runs. Upstream's `frameskip` default is 6
+  — the "10 Hz" rung of Basilisk's Window Refresh Rate menu (60 Hz = 1, 30 = 2, 15 = 4, 10 = 6, 7.5 = 8,
+  5 = 12, and **0 = Dynamic**) — which showed up here as a 9 Hz display and a mouse that dragged. Honour
+  the preference, never hardcode the rate, and report the composite rate rather than the VBL rate: calling
+  55 VBL/s "fps" hid a 9 Hz screen behind a reassuring number.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
 - **`config.h` declares, it never includes.** It is pulled in ahead of everything else; adding a system
   header there breaks the include order across the whole core.

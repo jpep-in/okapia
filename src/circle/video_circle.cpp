@@ -33,9 +33,14 @@
 // Composite one VBL in this many. 1 is every frame; higher trades refresh rate
 // for guest speed. Measured under QEMU, 1 left the Mac at a seventh of its
 // proper pace.
-#ifndef VIDEO_COMPOSITE_EVERY
-#define VIDEO_COMPOSITE_EVERY 6
-#endif
+// Upstream exposes this as the "frameskip" preference — the same scale as the
+// Window Refresh Rate menu in Basilisk (60 Hz = 1, 30 = 2, 15 = 4, 10 = 6,
+// 7.5 = 8, 5 = 12), with 0 meaning Dynamic. Its default is 6, and hardcoding
+// that here left the screen refreshing 9 times a second; the cursor is drawn by
+// the Mac into its own framebuffer, so it inherited that rate and looked like a
+// laggy mouse. Compositing every VBL measures at 9.8% of wall time, which we can
+// afford, so the default here is 1. Dynamic is not implemented yet (phase 12).
+static unsigned s_nFrameSkip = 1;
 
 // video.h has DepthModeForPixelDepth but no inverse; this is the one we need.
 static inline int DepthBits (video_depth depth)
@@ -250,8 +255,14 @@ void Circle_monitor_desc::set_gamma (uint8 *gamma, int num)
  *  one row into the output format; the scale factor then repeats it.
  */
 
+// Phase 11 wants the cost of compositing, not a guess. CLOCKHZ is 1 MHz, so
+// these are microseconds; the pair is read by the report in VideoInterrupt().
+static u64 s_nCompositeUsec;
+static unsigned s_nComposites;
+
 void Circle_monitor_desc::composite (void)
 {
+    const unsigned nStart = CTimer::GetClockTicks ();
     const video_mode &mode = get_current_mode ();
     const unsigned nBytesPerOutputPixel = s_nOutputDepth / 8;
 
@@ -293,6 +304,9 @@ void Circle_monitor_desc::composite (void)
             memcpy (pDst + s * s_nOutputPitch, pDst, mode.x * s_nScale * nBytesPerOutputPixel);
         }
     }
+
+    s_nCompositeUsec += (unsigned) (CTimer::GetClockTicks () - nStart);
+    s_nComposites++;
 }
 
 /*
@@ -309,6 +323,19 @@ bool VideoInit (bool classic)
         CLogger::Get ()->Write (FROM, LogError, "No frame buffer");
         return false;
     }
+
+    // 0 means Dynamic upstream: a 16x16 box grid, refreshed at a rate that
+    // follows how much actually changed (video_x.cpp:2343). We do not have it
+    // yet, so say so rather than silently behaving like something else.
+    int32 nSkip = PrefsFindInt32 ("frameskip");
+    if (nSkip <= 0)
+    {
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "frameskip %d (Dynamic) is not implemented; compositing every VBL",
+                                (int) nSkip);
+        nSkip = 1;
+    }
+    s_nFrameSkip = (unsigned) nSkip;
 
     s_nOutputWidth  = s_pOutput->GetWidth ();
     s_nOutputHeight = s_pOutput->GetHeight ();
@@ -385,7 +412,7 @@ void VideoInterrupt (void)
     // interrupt starved the emulation: the Mac was servicing about 8 VBLs a
     // second instead of 60. Compositing every Nth interrupt gives the time back.
     static unsigned s_nSkip;
-    if (++s_nSkip >= VIDEO_COMPOSITE_EVERY)
+    if (++s_nSkip >= s_nFrameSkip)
     {
         s_nSkip = 0;
         s_pMonitor->composite ();
@@ -413,9 +440,21 @@ void VideoInterrupt (void)
             }
         }
 
+        // s_nFrames counts VBLs, not composites — the screen is only refreshed
+        // every VIDEO_COMPOSITE_EVERY of them, and reporting the VBL rate as
+        // "fps" hid a 9 Hz display behind a reassuring 55.
+        unsigned nPerComposite = s_nComposites
+                               ? (unsigned) (s_nCompositeUsec / s_nComposites) : 0;
+        unsigned nLoadPerMille = nNow
+                               ? (unsigned) (s_nCompositeUsec / nNow / 1000) : 0;
+
         CLogger::Get ()->Write (FROM, LogNotice,
-                                "%u frames, %u fps, guest buffer %s",
+                                "%u VBL (%u/s), screen %u/s, composite %u us "
+                                "(%u.%u%% of wall), guest buffer %s",
                                 s_nFrames, s_nFrames / (nNow ? nNow : 1),
+                                s_nComposites / (nNow ? nNow : 1),
+                                nPerComposite,
+                                nLoadPerMille / 10, nLoadPerMille % 10,
                                 nNonZero > 0 ? "has content" : "still blank");
     }
 }

@@ -127,6 +127,11 @@ void CKernel::SetDefaultPreferences (void)
     PrefsInit (0, argc, argv);
 
     PrefsReplaceInt32 ("ramsize", (int32) MAC_RAM);
+
+    // Upstream defaults frameskip to 6, i.e. a 10 Hz screen. Compositing every
+    // VBL costs about a tenth of wall time here, and the Mac draws its own
+    // cursor, so a decimated screen reads as a laggy mouse.
+    PrefsReplaceInt32 ("frameskip", 1);
     PrefsReplaceString ("rom", ROM_PATH);
     PrefsAddString ("disk", DISK_PATH);
 
