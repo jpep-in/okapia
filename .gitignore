@@ -2,8 +2,11 @@
 roms/
 *.rom
 *.img
+*.image
 *.dsk
 *.hfv
+# Local SD contents: disk images and ROMs staged for QEMU
+qemu/sd-contents/
 
 # Reference clones, fetched by script
 reference/

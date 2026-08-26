@@ -22,9 +22,31 @@ uint16 emulated_ticks;
 // Set while the Mac must not be interrupted, e.g. during a mode switch.
 bool tick_inhibit;
 
+/*
+ *  The interpreter calls this when emulated_ticks wraps, so roughly every 65536
+ *  opcodes. Nothing periodic belongs here — interrupts come from the timer on
+ *  core 0 — but it is the one place that proves the 68k is executing at all, and
+ *  it costs a counter to say so.
+ */
+
+static unsigned s_nWraps;
+static unsigned s_nLastReport;
+
 void cpu_do_check_ticks (void)
 {
-    // Nothing periodic belongs here: interrupts arrive from the timer on core 0.
-    // Emulation runs on a secondary core with no scheduler, so there is nothing
-    // to yield to either. Kept as the hook the interpreter expects.
+    s_nWraps++;
+
+    unsigned nNow = CTimer::Get ()->GetTicks () / HZ;      // seconds since boot
+    if (nNow != s_nLastReport && (nNow % 5) == 0)
+    {
+        s_nLastReport = nNow;
+
+        // 65536 opcodes per wrap; the guest executes several cycles per opcode,
+        // so this is an opcode rate, not a MIPS figure.
+        u64 nOpcodes = (u64) s_nWraps * 65536;
+        CLogger::Get ()->Write ("okapia-68k", LogNotice,
+                                "running: %lu k opcodes in %u s (%lu k/s)",
+                                (unsigned long) (nOpcodes / 1000), nNow,
+                                (unsigned long) (nOpcodes / 1000 / (nNow ? nNow : 1)));
+    }
 }

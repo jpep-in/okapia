@@ -29,6 +29,7 @@ extern void TickStart (void);
 extern void TickStop (void);
 
 static const char *ROM_PATH  = "/okapia.rom";
+static const char *DISK_PATH = "/machd76.image";
 static const uint32 MAC_RAM  = 256 * 1024 * 1024;
 
 CKernel::CKernel (void)
@@ -124,6 +125,7 @@ void CKernel::SetDefaultPreferences (void)
 
     PrefsReplaceInt32 ("ramsize", (int32) MAC_RAM);
     PrefsReplaceString ("rom", ROM_PATH);
+    PrefsAddString ("disk", DISK_PATH);
 
     // 14 = Quadra 900. Required for Mac OS 8.x; see plan §7.11.
     PrefsReplaceInt32 ("modelid", 14);
@@ -145,6 +147,28 @@ bool CKernel::StartMacintosh (void)
     {
         return false;
     }
+
+    // Prove the disk image is reachable before handing it to the emulator: a
+    // Mac that cannot find a boot volume looks the same as one that hangs.
+    FILE *pDisk = fopen (DISK_PATH, "rb");
+    if (pDisk == 0)
+    {
+        m_Logger.Write (FROM, LogError, "Disk image not found: %s", DISK_PATH);
+        return false;
+    }
+    char Header[64];
+    size_t nRead = fread (Header, 1, sizeof Header, pDisk);
+    fseek (pDisk, 1024, SEEK_SET);
+    char MDB[8];
+    size_t nMDB = fread (MDB, 1, sizeof MDB, pDisk);
+    fclose (pDisk);
+    m_Logger.Write (FROM, LogNotice,
+                    "Disk %s: readable, MDB signature %02X%02X %s",
+                    DISK_PATH,
+                    nMDB >= 2 ? (unsigned char) MDB[0] : 0,
+                    nMDB >= 2 ? (unsigned char) MDB[1] : 0,
+                    (nMDB >= 2 && MDB[0] == 'B' && MDB[1] == 'D') ? "(HFS)" : "(unexpected)");
+    (void) nRead;
 
     m_Logger.Write (FROM, LogNotice, "Initialising the emulator");
     if (!InitAll (0))

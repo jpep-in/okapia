@@ -366,9 +366,39 @@ void VideoExit (void)
 
 void VideoInterrupt (void)
 {
-    if (s_pMonitor != 0)
+    if (s_pMonitor == 0)
     {
-        s_pMonitor->composite ();
+        return;
+    }
+
+    s_pMonitor->composite ();
+
+    // Diagnosis for early bring-up: is the guest drawing at all? A frame buffer
+    // that stays blank means the Mac never got as far as its first pixel, which
+    // looks identical to a working compositor with nothing to show.
+    static unsigned s_nFrames;
+    static unsigned s_nLastReport;
+    s_nFrames++;
+
+    unsigned nNow = CTimer::Get ()->GetTicks () / HZ;
+    if (nNow != s_nLastReport && (nNow % 5) == 0)
+    {
+        s_nLastReport = nNow;
+
+        unsigned nNonZero = 0;
+        const video_mode &mode = s_pMonitor->get_current_mode ();
+        for (uint32 i = 0; i < mode.bytes_per_row * mode.y; i += 997)   // sparse probe
+        {
+            if (s_pMacPixels[i] != 0)
+            {
+                nNonZero++;
+            }
+        }
+
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "%u frames, %u fps, guest buffer %s",
+                                s_nFrames, s_nFrames / (nNow ? nNow : 1),
+                                nNonZero > 0 ? "has content" : "still blank");
     }
 }
 
