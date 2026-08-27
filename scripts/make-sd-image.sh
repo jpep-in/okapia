@@ -10,6 +10,15 @@ SIZE_MB="${1:-64}"
 
 command -v mformat >/dev/null || { echo "mtools missing: brew install mtools" >&2; exit 1; }
 
+# Rewriting the card under a running emulator destroys that session's volume,
+# and the damage looks like a mysterious boot failure afterwards. run-live.sh
+# refuses to start on a busy card; this has to refuse to replace one.
+if command -v lsof >/dev/null && [ -f "$IMAGE" ] && lsof -t -- "$IMAGE" >/dev/null 2>&1; then
+    echo "Refusing to rebuild: ${IMAGE} is in use by another process." >&2
+    lsof -- "$IMAGE" >&2 || true
+    exit 1
+fi
+
 mkdir -p "$(dirname "$IMAGE")" "$CONTENTS"
 rm -f "$IMAGE"
 
