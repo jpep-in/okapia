@@ -1238,8 +1238,10 @@ sortie 60 Hz avant d'envisager quoi que ce soit d'autre.
       tourner du code 68k pour interroger le mixeur du Mac — et le bloc obtenu est permuté en
       petit-boutiste (le Mac émet du gros-boutiste, Circle attend l'inverse). `libsound.a` n'est pas
       dans la ligne d'édition de liens de circle-stdlib : ajoutée côté Okapia
-- [ ] **rien n'est audible sous QEMU** : `raspi3b` n'émule aucune sortie son. Le périphérique s'initialise
-      et la file se remplit, mais la vérification à l'oreille demande du matériel réel (phase 2)
+- [ ] **rien n'est audible sous QEMU** : `raspi3b` n'émule aucune sortie son, et prétendre le contraire
+      a gelé le Mac — le son d'alerte système promis puis jamais rendu, suivi d'un arrêt brutal et d'une
+      carte perdue. Le son est donc coupé par défaut sous `CIRCLE_QEMU` ; `-DOKAPIA_FORCE_SOUND` le
+      rallume pour exercer la plomberie. La vérification à l'oreille demande du matériel réel (phase 2)
 - [ ] sortie HDMI plutôt que PWM (le jack n'existe pas sur Pi 5), contrôleur de volume et de coupure
       réellement appliqués — pour l'instant le Mac les demande, on les mémorise sans les appliquer
 - [ ] essais : sons système, lecture AIFF, jeux

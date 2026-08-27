@@ -176,6 +176,10 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **`DEPTH` is compiled into `libcircle.a`** (`lib/screen.cpp`), so `-DDEPTH=8` in an application
   Makefile does nothing. An indexed mode needs our own `CBcmFrameBuffer` — which Okapia wants anyway,
   since the screen belongs to the Mac, not to `CScreenDevice`.
+- **Never claim a device the guest cannot actually use.** Sound was reported open while QEMU models no
+  output at all: the Mac played its alert, waited for a completion that never came, and froze — and the
+  hard stop that followed cost a card. A device that will not start must leave the platform hook exactly
+  as the `src/dummy/` version leaves it, and the decision belongs at init, not in a hook the 68k calls.
 - **Circle's cooked mouse silently drops every report** until `Setup()` gives it screen dimensions, so a
   working keyboard alongside a dead mouse says nothing about USB, ADB or interrupts. Okapia wants raw
   deltas anyway: `RegisterStatusHandler()` hands over `dx/dy` for `ADBMouseMoved()`, whereas the cooked

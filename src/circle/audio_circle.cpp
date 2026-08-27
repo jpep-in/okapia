@@ -84,6 +84,18 @@ void AudioInit (void)
         return;
     }
 
+    // Start now rather than when the Mac adds its first source. A queue-mode
+    // device plays silence while the queue is empty, and starting here means a
+    // refusal is discovered before anything has been promised to the Mac.
+    if (!s_pSound->Start () || !s_pSound->IsActive ())
+    {
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "Sound device would not start; the Mac stays silent");
+        delete s_pSound;
+        s_pSound = 0;
+        return;                 // audio_open stays false, exactly like the dummy
+    }
+
     s_bOpen    = true;
     audio_open = true;
 
@@ -109,21 +121,13 @@ void AudioExit (void)
 
 void audio_enter_stream (void)
 {
-    if (s_bOpen && !s_pSound->IsActive ())
-    {
-        if (!s_pSound->Start ())
-        {
-            CLogger::Get ()->Write (FROM, LogWarning, "Sound device refused to start");
-        }
-    }
+    // The device is already running and plays silence when the queue is empty.
+    // Starting it here instead would mean discovering a refusal from the 68k
+    // context, with the Mac already committed to a sound it will never hear.
 }
 
 void audio_exit_stream (void)
 {
-    if (s_bOpen && s_pSound->IsActive ())
-    {
-        s_pSound->Cancel ();
-    }
 }
 
 /*

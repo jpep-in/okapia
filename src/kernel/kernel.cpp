@@ -139,7 +139,19 @@ void CKernel::SetDefaultPreferences (void)
     PrefsReplaceInt32 ("modelid", 14);
     PrefsReplaceInt32 ("cpu", 4);           // 68040
     PrefsReplaceBool ("fpu", true);         // a 68040 always has one
+#ifdef CIRCLE_QEMU
+    // QEMU's raspi3b models no sound output at all. Claiming a sound device the
+    // Mac cannot actually hear is worse than silence: it froze the guest once,
+    // and the hard stop that followed cost a card. Force it on with
+    // OKAPIA_FORCE_SOUND if you want to exercise the plumbing anyway.
+  #ifdef OKAPIA_FORCE_SOUND
     PrefsReplaceBool ("nosound", false);
+  #else
+    PrefsReplaceBool ("nosound", true);
+  #endif
+#else
+    PrefsReplaceBool ("nosound", false);
+#endif
     PrefsReplaceBool ("nonet", true);       // networking comes later
 
     // No floppy drives. Without an explicit entry, SonyInit calls
