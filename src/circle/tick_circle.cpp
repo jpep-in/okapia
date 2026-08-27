@@ -44,6 +44,11 @@ static bool     s_bRunning;
 static const unsigned MAC_TICK_USEC  = 16625;
 static const unsigned HOST_TICK_USEC = 1000000 / HZ;
 
+// audio_circle.cpp: AudioPump raises INTFLAG_AUDIO while the sound queue has
+// room, so the 68k side fetches the next block. Nothing here runs 68k code.
+extern void AudioPump (void);
+extern void AudioReport (unsigned nSeconds);
+
 static void OneSecond (void)
 {
     // INTFLAG_1HZ is what drives DiskInterrupt(), and therefore volume mounting
@@ -66,6 +71,13 @@ static void OneSecond (void)
 
     SetInterruptFlag (INTFLAG_1HZ);
 
+    // Sound only says anything once the Mac has a source playing, which is
+    // exactly when you want to see whether blocks are getting through.
+    if ((s_nSeconds % 5) == 0)
+    {
+        AudioReport (s_nSeconds);
+    }
+
     // XPRAM is written back by the kernel when it changes, not on a timer
     // (plan §7.8), so there is nothing periodic to do for it here.
 }
@@ -80,6 +92,8 @@ static void OneTick (void)
 
     SetInterruptFlag (INTFLAG_60HZ);
     TriggerInterrupt ();
+
+    AudioPump ();
 }
 
 static void PeriodicHandler (void)

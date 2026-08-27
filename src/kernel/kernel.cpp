@@ -139,7 +139,7 @@ void CKernel::SetDefaultPreferences (void)
     PrefsReplaceInt32 ("modelid", 14);
     PrefsReplaceInt32 ("cpu", 4);           // 68040
     PrefsReplaceBool ("fpu", true);         // a 68040 always has one
-    PrefsReplaceBool ("nosound", true);     // audio comes later
+    PrefsReplaceBool ("nosound", false);
     PrefsReplaceBool ("nonet", true);       // networking comes later
 
     // No floppy drives. Without an explicit entry, SonyInit calls

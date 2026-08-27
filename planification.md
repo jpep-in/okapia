@@ -1232,7 +1232,16 @@ sortie 60 Hz avant d'envisager quoi que ce soit d'autre.
 
 ### Phase 14 — Audio
 
-- [ ] HDMI, tampons, DMA, synchronisation, latence
+- [x] couche plateforme écrite (`audio_circle.cpp`) : 44100 Hz, 16 bits, stéréo, file d'attente de
+      100 ms drainée par le DMA de Circle. Le tick 60 Hz lève `INTFLAG_AUDIO` tant que la file a de la
+      place ; `AudioInterrupt()` s'exécute alors dans le contexte 68k — obligatoire, puisqu'il fait
+      tourner du code 68k pour interroger le mixeur du Mac — et le bloc obtenu est permuté en
+      petit-boutiste (le Mac émet du gros-boutiste, Circle attend l'inverse). `libsound.a` n'est pas
+      dans la ligne d'édition de liens de circle-stdlib : ajoutée côté Okapia
+- [ ] **rien n'est audible sous QEMU** : `raspi3b` n'émule aucune sortie son. Le périphérique s'initialise
+      et la file se remplit, mais la vérification à l'oreille demande du matériel réel (phase 2)
+- [ ] sortie HDMI plutôt que PWM (le jack n'existe pas sur Pi 5), contrôleur de volume et de coupure
+      réellement appliqués — pour l'instant le Mac les demande, on les mémorise sans les appliquer
 - [ ] essais : sons système, lecture AIFF, jeux
 
 ### Phase 15 — Séquence de démarrage Macintosh

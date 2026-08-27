@@ -14,7 +14,9 @@ CPU_SRCS    = $(wildcard $(MACEMU)/uae_cpu_2021/*.cpp) \
               $(MACEMU)/uae_cpu_2021/fpu/fpu_uae.cpp \
               $(MACEMU)/CrossPlatform/video_blit.cpp
 GEN_SRCS    = $(GEN)/cpudefs.cpp $(GEN)/cpustbl.cpp $(GEN)/cpufunctbl.cpp
-DUMMY_SRCS  = $(wildcard $(MACEMU)/dummy/*.cpp)
+# audio_dummy.cpp is replaced by src/circle/audio_circle.cpp; the others stay.
+DUMMY_SRCS  = $(filter-out $(MACEMU)/dummy/audio_dummy.cpp,\
+                           $(wildcard $(MACEMU)/dummy/*.cpp))
 COMPAT_SRCS = $(wildcard $(OKAPIA)/compat/*.cpp)
 # The trace wrappers reference __real_* symbols the linker only creates when the
 # matching --wrap is passed, so they come in and out together with the LDFLAGS
@@ -50,7 +52,9 @@ INCLUDE := $(EMU_INCLUDES) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
 # path without DIRECT_ADDRESSING — so these apply to the kernel too, not just to
 # the emulator objects.
 DEFINE += $(EMU_DEFINES)
-LIBS := $(CIRCLE_STDLIB_LIBS)
+# Circle's sound classes live in their own library, which circle-stdlib does
+# not put in the default link line. It depends on libcircle, so it comes first.
+LIBS := $(CIRCLEHOME)/lib/sound/libsound.a $(CIRCLE_STDLIB_LIBS)
 
 # Diagnostics, off by default: build with OKAPIA_TRACE=1 to hook upstream
 # functions at link time rather than patching external/ (AGENTS.md). Circle
