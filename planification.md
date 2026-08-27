@@ -1111,9 +1111,17 @@ lecture même quand la carte est manifestement lue, le contrôleur SD ne passant
 ### Phase 7 — Vidéo
 
 - [x] framebuffer de sortie fixe, initialisé une fois
-- [ ] table des modes : **seul le 8 bits est offert**. Le 1 bit a été retiré après un défaut
-      d'affichage (le Mac peignait 80 octets par ligne, le compositeur en lisait 640). Les « 256
-      couleurs » et « 256 niveaux de gris » vus dans Moniteurs sont deux variantes du même mode
+- [x] table des modes : les six profondeurs sont offertes (1, 2, 4, 8, 16, 32 bits), en 640×480 pour
+      toutes et jusqu'à 1024×768 pour les modes indexés. Le défaut d'affichage du 1 bit venait de
+      l'unité passée aux blitters — ils comptent des **octets source**, pas des pixels, ce qui ne se
+      voit qu'en dessous de 8 bits. Les modes directs ont leurs propres convertisseurs, la table
+      d'amont étant indexée sur la profondeur de sortie. Vérifié au Speedometer : les six tests de
+      couleur donnent des valeurs (B&W 43,73 · 2 bits 41,79 · 4 bits 44,97 · 8 bits 48,39 ·
+      16 bits 57,31)
+- [ ] **anomalie non expliquée** : à mode actif identique (640×480 8 bits), une composition coûte
+      270 µs quand 6 modes sont offerts et 1224 µs quand il y en a 22. Ni le tas, ni la taille du
+      tampon (plafonner ne change rien), ni le mode réellement choisi. Trois hypothèses testées,
+      trois fausses
 - [x] compositeur : `Screen_blitter_init()`, `ExpandMap[]`, doublement entier, centrage
 - [x] `switch_to_current_mode()`, `set_palette()`, `set_gamma()`
 - [x] compteur d'images et coût de composition mesurés. Relevé sous QEMU `raspi3b`, 640×480 8 bits :
@@ -1171,6 +1179,23 @@ en défaut : la fluidité — la souris traîne et la vidéo semble coûteuse, c
 Avant toute optimisation. À mesurer : MIPS 68k, part du temps CPU par poste (émulation, vidéo, audio,
 disque), images par seconde, images Mac réellement modifiées, bande passante du framebuffer, latence de la
 souris, température, fréquence CPU.
+
+**Premier relevé, 2026-08-27, QEMU `raspi3b` sur MacBook Pro M4**, 640×480 8 bits affiché en 1280×960 :
+
+| | headless | fenêtre `cocoa` |
+|---|---|---|
+| composition | 236 µs, 1,3 % du mural | 452 µs, 2,2 % |
+| écran | 55 images/s | 50 images/s |
+| invité | 20 162 k opcodes/s | 23 584 k opcodes/s |
+
+Speedometer 4 dans l'invité, colonne « This Machine » contre l'enregistrement « Mac Quadra 650 » :
+CPU 44,24 (Quadra 1,32) · Graf 34,92 (1,31) · **Disk 9,61 (1,93)** · Math 473,19 (19,17) ·
+**FPU Ave 9,03 (1,01)** · Color Ave 47,24 (1,08). Les deux points faibles relatifs sont cohérents avec
+l'état du portage : le chemin disque n'a jamais été optimisé, et `fpu_uae` est une FPU logicielle.
+
+Réserve : entre un run réglé sur 0:60 et un sur 0:480, tous les scores varient d'un facteur 8, soit
+exactement le rapport des durées. L'horloge invité n'est pas en cause — relevé sous charge pendant le
+bench : Mac Ticks 30894 pour ~30600 attendus à 519 s. À reproduire avant d'enquêter.
 
 Repères d'époque : Speedometer, Norton System Info, MacBench, décompression StuffIt, copies de fichiers,
 Doom. Point de comparaison connu : M5Tab atteint 2-3 MIPS sur un RISC-V à 400 MHz, soit un Quadra 610.
