@@ -34,17 +34,23 @@ features: when in doubt, lose speed, never data. It must hold across every edge 
 `kill -9`, reset, full card, cable pulled mid-write — not just the happy path.
 
 The model is BlueSCSI: real SCSI-emulating hardware keeps disk images on an SD card and survives the plug
-being pulled, because every write it acknowledged is already on the card. Okapia is there today for data
-— guest writes are 512-aligned multiples (`DiskPrime` enforces it), so FatFs takes the full-sector path
-straight to `disk_write` → `CDevice::Write`, with no write-back cache in between. Only the directory entry
-(size, mtime) waits for `f_close`, which costs nothing on a preallocated image; **do not add a per-write
-`fsync`**, it buys an mtime and costs SD write amplification on a small machine.
+being pulled, because every write it acknowledged is already on the card. **Okapia is not there yet, and
+the gap is measured**: from a freshly built card the Finder boots, and one SIGKILLed session is enough to
+make the same card refuse to boot — screenshot before and after, same kernel. What the card holds
+afterwards is only what a pulled plug does to a real Mac (`drAtrb` 0000, orphaned blocks, "MDB needs minor
+repair"), which says the writes do reach the card; what a real Mac does **not** do is refuse to start from
+that volume. Finding out why ours does is the open question, and it outranks video work.
+
+Until then: **`run-live.sh` sessions must end with Finder → Shut Down.** Anything else costs the card, and
+`scripts/make-sd-image.sh 1024` is the recovery. Do not read a boot failure as a code regression before
+rebuilding the card and looking at the screen — that mistake has now cost this project two long
+investigations.
 
 - **No write-back cache between the guest and the card.** If an optimisation ever adds one, it owes a
   flush policy and a test in the same change.
 - **Acceptable after a pulled plug**: a volume marked in use, which Disk First Aid repairs — that is what
   a real Mac does too, and no emulator can save the guest's own RAM cache. **Not acceptable**: lost
-  writes, structural damage, a card the Mac can no longer mount.
+  writes, structural damage, or — as today — a card the Mac can no longer start from.
 - **Every path that writes guest data must survive an abrupt stop at any instruction.** Ask it of new code
   before it lands, not after someone reports a broken disk.
 - **Prove it, don't assume it**: `scripts/run-test.sh` ends the guest with SIGKILL, runs `fsck_hfs` on the
