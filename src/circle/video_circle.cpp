@@ -152,20 +152,80 @@ static void build_mode_list (vector<video_mode> &modes)
 
     // 1, 2, 4 and 8 bits are indexed; grey and black-and-white are the same modes
     // with a different palette, which the core computes for us (video.cpp:569).
-    // Only 8 bits for now. Offering 1-bit as well let the Mac paint in 1 bit —
-    // 80 bytes per row — while the compositor read 640, which put the startup
-    // icon in the wrong place. Depth switching comes back once the compositor
-    // follows the guest's choice properly.
-    static const video_depth depths[] = { VDEPTH_8BIT };
+    // 16 and 32 bits are direct — Thousands and Millions in the Monitors panel.
+    static const video_depth depths[] = {
+        VDEPTH_1BIT, VDEPTH_2BIT, VDEPTH_4BIT, VDEPTH_8BIT,
+        VDEPTH_16BIT, VDEPTH_32BIT
+    };
+
+    // The guest buffer is sized for the largest mode offered, and measurement
+    // says that size costs more than the pixels actually scanned: at 640x480x8
+    // a composite takes 270 us when the buffer holds 1.2 MB and 1270 us when it
+    // holds 3 MB, for identical work. The reason is not understood yet — it is
+    // not the heap, since a Pi 3 has no high memory and both sizes take the same
+    // path. Until it is, cap what we offer rather than pay 5x for a mode nobody
+    // asked for: every depth at 640x480, and the indexed depths above it.
+    const uint32 nMaxBuffer = 1536 * 1024;
 
     for (unsigned i = 0; i < sizeof sizes / sizeof sizes[0]; i++)
     {
         for (unsigned d = 0; d < sizeof depths / sizeof depths[0]; d++)
         {
+            if (TrivialBytesPerRow (sizes[i].x, depths[d]) * sizes[i].y > nMaxBuffer)
+            {
+                continue;
+            }
             add_mode (modes, sizes[i].x, sizes[i].y, sizes[i].id, depths[d]);
         }
     }
 }
+
+/*
+ *  Pixel conversion
+ *
+ *  video_blit.cpp covers the indexed depths, but its blitter table is keyed on
+ *  the OUTPUT depth: for a 32-bit visual it answers Blit_Copy_Raw, which assumes
+ *  the source already has the output's format. That works for X11 and SDL, which
+ *  recreate the window at the Mac's depth. Okapia keeps one 32-bit output and
+ *  composites into it, so the two direct depths need their own routines.
+ *
+ *  Both take a source byte count, like every blitter here.
+ */
+
+// Mac 16-bit is xRGB1555, big-endian. 5 bits to 8 is (c << 3) | (c >> 2), which
+// maps 31 to 255 rather than 248 and keeps white white.
+static void Convert_16_To_32 (uint8 *pDst, const uint8 *pSrc, uint32 nSrcBytes)
+{
+    uint32 *q = (uint32 *) pDst;
+    for (uint32 i = 0; i < nSrcBytes; i += 2)
+    {
+        unsigned v = ((unsigned) pSrc[i] << 8) | pSrc[i + 1];
+        unsigned r = (v >> 10) & 0x1F;
+        unsigned g = (v >> 5)  & 0x1F;
+        unsigned b =  v        & 0x1F;
+        *q++ = 0xFF000000
+             | ((r << 3 | r >> 2) << 16)
+             | ((g << 3 | g >> 2) << 8)
+             |  (b << 3 | b >> 2);
+    }
+}
+
+// Mac 32-bit is xRGB8888, big-endian: the bytes are x, R, G, B in that order.
+static void Convert_32_To_32 (uint8 *pDst, const uint8 *pSrc, uint32 nSrcBytes)
+{
+    uint32 *q = (uint32 *) pDst;
+    for (uint32 i = 0; i < nSrcBytes; i += 4)
+    {
+        *q++ = 0xFF000000
+             | ((uint32) pSrc[i + 1] << 16)
+             | ((uint32) pSrc[i + 2] << 8)
+             |  (uint32) pSrc[i + 3];
+    }
+}
+
+// Whichever of the two families the current mode needs.
+static void (*s_Convert) (uint8 *dest, const uint8 *source, uint32 length);
+static unsigned s_nMacBits = 8;
 
 /*
  *  Guest buffer and compositor placement
@@ -230,6 +290,16 @@ void Circle_monitor_desc::switch_to_current_mode (void)
     visual.Gshift     = 8;
     visual.Bshift     = 0;
     Screen_blitter_init (visual, true, DepthBits (mode.depth));
+
+    s_nMacBits = DepthBits (mode.depth);
+    if (IsDirectMode (mode))
+    {
+        s_Convert = (s_nMacBits == 16) ? Convert_16_To_32 : Convert_32_To_32;
+    }
+    else
+    {
+        s_Convert = Screen_blit;
+    }
 }
 
 /*
@@ -286,7 +356,9 @@ void Circle_monitor_desc::composite (void)
     const unsigned nStart = CTimer::GetClockTicks ();
     const video_mode &mode = get_current_mode ();
     const unsigned nOutBytes = s_nOutputDepth / 8;
-    const unsigned nSrcBytes = mode.bytes_per_row / mode.x;   // 1 at 8 bpp
+    // Pixels that share a byte cannot be split across tiles: at 1 bpp a byte
+    // holds eight of them. Align the tile edges to whole source bytes.
+    const unsigned nAlign = (s_nMacBits < 8) ? (8 / s_nMacBits) : 1;
 
     static uint8 RowBuffer[4096 * 4];
     if (mode.x * nOutBytes > sizeof RowBuffer)
@@ -312,10 +384,14 @@ void Circle_monitor_desc::composite (void)
 
         for (unsigned bx = 0; bx < nBoxes; bx++)
         {
-            const unsigned x0 = bx * mode.x / nBoxes;
-            const unsigned x1 = (bx + 1) * mode.x / nBoxes;
-            const unsigned nWidth = x1 - x0;
-            const unsigned nSpan  = nWidth * nSrcBytes;
+            const unsigned x0 = (bx * mode.x / nBoxes) & ~(nAlign - 1);
+            const unsigned x1 = (bx == nBoxes - 1)
+                              ? mode.x
+                              : (((bx + 1) * mode.x / nBoxes) & ~(nAlign - 1));
+            const unsigned nWidth = (x1 > x0) ? (x1 - x0) : 0;
+
+            // Source bytes, which is what every blitter here counts.
+            const unsigned nSpan = nWidth * s_nMacBits / 8;
 
             if (nWidth == 0 || y1 == y0)
             {
@@ -327,7 +403,8 @@ void Circle_monitor_desc::composite (void)
             {
                 for (unsigned y = y0; y < y1; y++)
                 {
-                    const uint32 nOff = y * mode.bytes_per_row + x0 * nSrcBytes;
+                    const uint32 nOff = y * mode.bytes_per_row
+                                      + x0 * s_nMacBits / 8;
                     if (memcmp (s_pMacPixels + nOff, s_pShadow + nOff, nSpan) != 0)
                     {
                         bDirty = true;
@@ -343,11 +420,11 @@ void Circle_monitor_desc::composite (void)
 
             for (unsigned y = y0; y < y1; y++)
             {
-                const uint32 nOff = y * mode.bytes_per_row + x0 * nSrcBytes;
+                const uint32 nOff = y * mode.bytes_per_row + x0 * s_nMacBits / 8;
                 const uint8 *pSrc = s_pMacPixels + nOff;
 
                 memcpy (s_pShadow + nOff, pSrc, nSpan);
-                Screen_blit (RowBuffer, pSrc, nWidth);
+                s_Convert (RowBuffer, pSrc, nSpan);
 
                 uint8 *pDst = s_pOutputPixels
                             + (s_nOriginY + y * s_nScale) * s_nOutputPitch
