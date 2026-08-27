@@ -86,6 +86,7 @@ static uint8  *s_pShadow;
 // pixels do not reveal: a mode switch, a new palette, a new gamma ramp.
 static bool    s_bFullRedraw = true;
 static unsigned s_nDirtyBoxes;
+static unsigned s_nLastWindow;
 static uint32  s_nMacBufferSize;
 
 /*
@@ -204,9 +205,9 @@ static void Convert_16_To_32 (uint8 *pDst, const uint8 *pSrc, uint32 nSrcBytes)
         unsigned g = (v >> 5)  & 0x1F;
         unsigned b =  v        & 0x1F;
         *q++ = 0xFF000000
-             | ((r << 3 | r >> 2) << 16)
+             |  (r << 3 | r >> 2)
              | ((g << 3 | g >> 2) << 8)
-             |  (b << 3 | b >> 2);
+             | ((b << 3 | b >> 2) << 16);
     }
 }
 
@@ -217,9 +218,9 @@ static void Convert_32_To_32 (uint8 *pDst, const uint8 *pSrc, uint32 nSrcBytes)
     for (uint32 i = 0; i < nSrcBytes; i += 4)
     {
         *q++ = 0xFF000000
-             | ((uint32) pSrc[i + 1] << 16)
+             |  (uint32) pSrc[i + 1]
              | ((uint32) pSrc[i + 2] << 8)
-             |  (uint32) pSrc[i + 3];
+             | ((uint32) pSrc[i + 3] << 16);
     }
 }
 
@@ -283,12 +284,12 @@ void Circle_monitor_desc::switch_to_current_mode (void)
     VisualFormat visual;
     visual.fullscreen = true;
     visual.depth      = s_nOutputDepth;
-    visual.Rmask      = 0x00FF0000;
+    visual.Rmask      = 0x000000FF;
     visual.Gmask      = 0x0000FF00;
-    visual.Bmask      = 0x000000FF;
-    visual.Rshift     = 16;
+    visual.Bmask      = 0x00FF0000;
+    visual.Rshift     = 0;
     visual.Gshift     = 8;
-    visual.Bshift     = 0;
+    visual.Bshift     = 16;
     Screen_blitter_init (visual, true, DepthBits (mode.depth));
 
     s_nMacBits = DepthBits (mode.depth);
@@ -321,10 +322,14 @@ void Circle_monitor_desc::set_palette (uint8 *pal, int num)
     for (int i = 0; i < 256; i++)
     {
         int c = i & (num - 1);  // repeat when fewer than 256 entries, as SDL does
+        // Red in the low byte. Circle's COLOR32 macro says the opposite, but its
+        // own SetPalette builds entries as red << 0, green << 8, blue << 16
+        // (bcmframebuffer.cpp:134), and that is the one that reaches the
+        // firmware. Following COLOR32 put a blue desktop on screen in orange.
         ExpandMap[i] = 0xFF000000
-                     | ((uint32) pal[c * 3 + 0] << 16)
+                     |  (uint32) pal[c * 3 + 0]
                      | ((uint32) pal[c * 3 + 1] << 8)
-                     |  (uint32) pal[c * 3 + 2];
+                     | ((uint32) pal[c * 3 + 2] << 16);
     }
 
     // Every pixel now maps to a different colour, so what the output shows no
@@ -609,6 +614,10 @@ void VideoInterrupt (void)
         // s_nFrames counts VBLs, not composites — the screen is only refreshed
         // every VIDEO_COMPOSITE_EVERY of them, and reporting the VBL rate as
         // "fps" hid a 9 Hz display behind a reassuring 55.
+        // Everything below is measured over the last interval, not since boot.
+        // Lifetime averages only ever creep upwards after an expensive mode is
+        // visited, which reads as a machine degrading over time, and they made
+        // the dynamic rate below sluggish to recover.
         unsigned nPerComposite = s_nComposites
                                ? (unsigned) (s_nCompositeUsec / s_nComposites) : 0;
 
@@ -631,20 +640,27 @@ void VideoInterrupt (void)
                 s_nFrameSkip = nWanted;
             }
         }
-        unsigned nLoadPerMille = nNow
-                               ? (unsigned) (s_nCompositeUsec / nNow / 1000) : 0;
+        unsigned nWindow = nNow - s_nLastWindow;
+        unsigned nLoadPerMille = nWindow
+                               ? (unsigned) (s_nCompositeUsec / nWindow / 1000) : 0;
+        s_nLastWindow = nNow;
 
         unsigned nBoxesPer = s_nComposites ? s_nDirtyBoxes / s_nComposites : 0;
+        unsigned nScreenRate = nWindow ? s_nComposites / nWindow : 0;
 
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "%u VBL (%u/s), screen %u/s, composite %u us "
                                 "(%u.%u%% of wall), %u/256 boxes, guest buffer %s",
                                 s_nFrames, s_nFrames / (nNow ? nNow : 1),
-                                s_nComposites / (nNow ? nNow : 1),
+                                nScreenRate,
                                 nPerComposite,
                                 nLoadPerMille / 10, nLoadPerMille % 10,
                                 nBoxesPer,
                                 nNonZero > 0 ? "has content" : "still blank");
+
+        s_nCompositeUsec = 0;
+        s_nComposites    = 0;
+        s_nDirtyBoxes    = 0;
     }
 }
 
