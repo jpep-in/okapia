@@ -1178,8 +1178,14 @@ Doom. Point de comparaison connu : M5Tab atteint 2-3 MIPS sur un RISC-V à 400 M
 ### Phase 12 — Vidéo optimisée
 
 1. synchronisation verticale
-2. **suivi des zones modifiées à l'écriture** (tuiles marquées au moment de l'écriture 68k), la piste la
-   plus rentable. Amont a déjà un modèle réutilisable : `update_display_dynamic()`
+2. [x] **suivi des zones modifiées** — fait, par comparaison plutôt que par marquage à l'écriture.
+   Grille 16×16, copie d'ombre, `memcmp` par tuile, seules les tuiles changées sont converties et
+   écrites. Un redessin complet est forcé au changement de mode et de palette. Relevé sous QEMU
+   `raspi3b`, 640×480 affiché en 1280×960 : composition **6 191 → 236 µs** en headless (35,5 % → 1,3 %
+   du mural), et **74 637 → 452 µs** avec fenêtre `cocoa` (98,7 % → **2,2 %**), écran à 50 images/s,
+   invité à **23 584 k opcodes/s**. Marquer les tuiles au moment de l'écriture 68k reste possible mais
+   n'a plus d'urgence : comparer 300 Ko coûte bien moins qu'écrire 2,4 Mo dans un framebuffer suivi
+   page à page par QEMU. Le modèle d'amont était `update_display_dynamic()`
    (`Unix/video_x.cpp:2343`), le mode « Dynamic » du menu Window Refresh Rate, soit `frameskip = 0`.
    Il découpe l'écran en grille 16×16, garde une copie d'ombre, compare par `memcmp` boîte par boîte
    en étalant le balayage sur 8 ticks, ne pousse que les boîtes modifiées et fusionne les boîtes

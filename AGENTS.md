@@ -144,6 +144,10 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   crawling. **Never tune the compositor headless and assume it holds with a window**; that mistake sent
   this project bisecting code that was never at fault. `scripts/run-live.sh` now opens a monitor socket,
   so a live session can be captured: `echo "screendump /tmp/x.ppm" | nc -U /tmp/okapia-monitor.sock`.
+- **The compositor only redraws what changed** (16x16 grid, shadow copy, `memcmp` per tile). That is what
+  makes a window affordable: 452 us instead of 74 637 under `-display cocoa`. Anything that changes what
+  the output should show **without changing the guest bytes** must set `s_bFullRedraw` — a mode switch and
+  a palette change already do; a gamma ramp for direct modes would too.
 - **`frameskip 0` is Dynamic and now works**: the compositor holds itself to about an eighth of wall time,
   re-measured every second, capped at one refresh per 12 VBLs. That is the default. It settles on every
   VBL headless and on 3 Hz under a cocoa window — a slideshow, but the guest runs. The fix for the rate

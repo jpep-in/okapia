@@ -77,6 +77,15 @@ static unsigned s_nOutputWidth, s_nOutputHeight, s_nOutputDepth, s_nOutputPitch;
  */
 
 static uint8  *s_pMacPixels;
+
+// A copy of what the output already shows, so a box can be skipped when the
+// guest has not touched it. Same size as the guest buffer, allocated once.
+static uint8  *s_pShadow;
+
+// Set whenever the output stops matching the shadow for a reason the guest
+// pixels do not reveal: a mode switch, a new palette, a new gamma ramp.
+static bool    s_bFullRedraw = true;
+static unsigned s_nDirtyBoxes;
 static uint32  s_nMacBufferSize;
 
 /*
@@ -179,6 +188,7 @@ bool Circle_monitor_desc::allocate_mac_frame_buffer (const video_mode &mode)
 
     memset (s_pMacPixels, 0, nSize);
     set_mac_frame_base (Host2MacAddr (s_pMacPixels));
+    s_bFullRedraw = true;
 
     // Largest integer factor that still fits, then centre what we get.
     s_nScale = 1;
@@ -246,6 +256,10 @@ void Circle_monitor_desc::set_palette (uint8 *pal, int num)
                      | ((uint32) pal[c * 3 + 1] << 8)
                      |  (uint32) pal[c * 3 + 2];
     }
+
+    // Every pixel now maps to a different colour, so what the output shows no
+    // longer follows from the guest bytes: the shadow is stale everywhere.
+    s_bFullRedraw = true;
 }
 
 void Circle_monitor_desc::set_gamma (uint8 *gamma, int num)
@@ -271,60 +285,113 @@ void Circle_monitor_desc::composite (void)
 {
     const unsigned nStart = CTimer::GetClockTicks ();
     const video_mode &mode = get_current_mode ();
-    const unsigned nBytesPerOutputPixel = s_nOutputDepth / 8;
+    const unsigned nOutBytes = s_nOutputDepth / 8;
+    const unsigned nSrcBytes = mode.bytes_per_row / mode.x;   // 1 at 8 bpp
 
     static uint8 RowBuffer[4096 * 4];
-    if (mode.x * nBytesPerOutputPixel > sizeof RowBuffer)
+    if (mode.x * nOutBytes > sizeof RowBuffer)
     {
         return;
     }
 
-    for (unsigned y = 0; y < mode.y; y++)
+    // A Finder sitting still changes almost nothing between two frames, and
+    // writing the output is the expensive half — 12x more so once QEMU has a
+    // display attached and tracks dirty pages. So compare first: the guest
+    // buffer is ordinary memory and reading it is cheap. Upstream does the same
+    // on X11 (update_display_dynamic, video_x.cpp:2343) with the same 16x16
+    // grid, and the shadow copy is what makes the comparison possible.
+    const unsigned nBoxes = 16;
+    unsigned nDirty = 0;
+
+    for (unsigned by = 0; by < nBoxes; by++)
     {
-        const uint8 *pSrc = s_pMacPixels + y * mode.bytes_per_row;
-        Screen_blit (RowBuffer, pSrc, mode.x);
+        // Boundaries are computed from the mode so a size that is not a
+        // multiple of 16 still covers every pixel exactly once.
+        const unsigned y0 = by * mode.y / nBoxes;
+        const unsigned y1 = (by + 1) * mode.y / nBoxes;
 
-        // Horizontal scale into the output row, then repeat it vertically.
-        uint8 *pDst = s_pOutputPixels
-                    + (s_nOriginY + y * s_nScale) * s_nOutputPitch
-                    + s_nOriginX * nBytesPerOutputPixel;
+        for (unsigned bx = 0; bx < nBoxes; bx++)
+        {
+            const unsigned x0 = bx * mode.x / nBoxes;
+            const unsigned x1 = (bx + 1) * mode.x / nBoxes;
+            const unsigned nWidth = x1 - x0;
+            const unsigned nSpan  = nWidth * nSrcBytes;
 
-        if (s_nScale == 1)
-        {
-            memcpy (pDst, RowBuffer, mode.x * nBytesPerOutputPixel);
-        }
-        else if (s_nScale == 2 && ((uintptr) pDst & 7) == 0)
-        {
-            // Doubling is the common case and the scalar loop below costs one
-            // store per output pixel. Two output pixels are one 64-bit store,
-            // which halves them; the output pitch is a multiple of 8, so the
-            // alignment only has to be checked once per row.
-            u64 *pOut = (u64 *) pDst;
-            const uint32 *pIn = (const uint32 *) RowBuffer;
-            for (unsigned x = 0; x < mode.x; x++)
+            if (nWidth == 0 || y1 == y0)
             {
-                u64 v = pIn[x];
-                pOut[x] = v | (v << 32);
+                continue;
             }
-        }
-        else
-        {
-            uint32 *pOut = (uint32 *) pDst;
-            const uint32 *pIn = (const uint32 *) RowBuffer;
-            for (unsigned x = 0; x < mode.x; x++)
+
+            bool bDirty = s_bFullRedraw;
+            if (!bDirty)
             {
-                for (unsigned s = 0; s < s_nScale; s++)
+                for (unsigned y = y0; y < y1; y++)
                 {
-                    *pOut++ = pIn[x];
+                    const uint32 nOff = y * mode.bytes_per_row + x0 * nSrcBytes;
+                    if (memcmp (s_pMacPixels + nOff, s_pShadow + nOff, nSpan) != 0)
+                    {
+                        bDirty = true;
+                        break;
+                    }
+                }
+            }
+            if (!bDirty)
+            {
+                continue;
+            }
+            nDirty++;
+
+            for (unsigned y = y0; y < y1; y++)
+            {
+                const uint32 nOff = y * mode.bytes_per_row + x0 * nSrcBytes;
+                const uint8 *pSrc = s_pMacPixels + nOff;
+
+                memcpy (s_pShadow + nOff, pSrc, nSpan);
+                Screen_blit (RowBuffer, pSrc, nWidth);
+
+                uint8 *pDst = s_pOutputPixels
+                            + (s_nOriginY + y * s_nScale) * s_nOutputPitch
+                            + (s_nOriginX + x0 * s_nScale) * nOutBytes;
+
+                if (s_nScale == 1)
+                {
+                    memcpy (pDst, RowBuffer, nWidth * nOutBytes);
+                }
+                else if (s_nScale == 2 && ((uintptr) pDst & 7) == 0)
+                {
+                    // Two output pixels are one 64-bit store, which halves them.
+                    u64 *pOut = (u64 *) pDst;
+                    const uint32 *pIn = (const uint32 *) RowBuffer;
+                    for (unsigned x = 0; x < nWidth; x++)
+                    {
+                        u64 v = pIn[x];
+                        pOut[x] = v | (v << 32);
+                    }
+                }
+                else
+                {
+                    uint32 *pOut = (uint32 *) pDst;
+                    const uint32 *pIn = (const uint32 *) RowBuffer;
+                    for (unsigned x = 0; x < nWidth; x++)
+                    {
+                        for (unsigned t = 0; t < s_nScale; t++)
+                        {
+                            *pOut++ = pIn[x];
+                        }
+                    }
+                }
+
+                for (unsigned t = 1; t < s_nScale; t++)
+                {
+                    memcpy (pDst + t * s_nOutputPitch, pDst,
+                            nWidth * s_nScale * nOutBytes);
                 }
             }
         }
-
-        for (unsigned s = 1; s < s_nScale; s++)
-        {
-            memcpy (pDst + s * s_nOutputPitch, pDst, mode.x * s_nScale * nBytesPerOutputPixel);
-        }
     }
+
+    s_bFullRedraw = false;
+    s_nDirtyBoxes += nDirty;
 
     s_nCompositeUsec += (unsigned) (CTimer::GetClockTicks () - nStart);
     s_nComposites++;
@@ -393,6 +460,13 @@ bool VideoInit (bool classic)
     if (s_pMacPixels == 0)
     {
         CLogger::Get ()->Write (FROM, LogError, "Cannot allocate the Mac frame buffer");
+        return false;
+    }
+
+    s_pShadow = (uint8 *) CMemorySystem::HeapAllocate (s_nMacBufferSize, HEAP_ANY);
+    if (s_pShadow == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "Cannot allocate the compositor shadow");
         return false;
     }
 
@@ -483,13 +557,16 @@ void VideoInterrupt (void)
         unsigned nLoadPerMille = nNow
                                ? (unsigned) (s_nCompositeUsec / nNow / 1000) : 0;
 
+        unsigned nBoxesPer = s_nComposites ? s_nDirtyBoxes / s_nComposites : 0;
+
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "%u VBL (%u/s), screen %u/s, composite %u us "
-                                "(%u.%u%% of wall), guest buffer %s",
+                                "(%u.%u%% of wall), %u/256 boxes, guest buffer %s",
                                 s_nFrames, s_nFrames / (nNow ? nNow : 1),
                                 s_nComposites / (nNow ? nNow : 1),
                                 nPerComposite,
                                 nLoadPerMille / 10, nLoadPerMille % 10,
+                                nBoxesPer,
                                 nNonZero > 0 ? "has content" : "still blank");
     }
 }
