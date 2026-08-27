@@ -137,6 +137,17 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   `D(bug())` tracing was on flooded the serial port (20 MB and 2.8M lines per run, 3000 k opcodes/s
   instead of 14400 k). After any flag change: `make okapia-clean && rm -f kernel8.img kernel8.elf`.
   `strings kernel8.img | grep 'EmulOp %04x'` tells you in one second whether debug tracing is linked in.
+- **A QEMU window makes frame buffer writes 12x more expensive.** The same composite measures 1.5 ms
+  headless at 640x480, 6 ms headless at 1280x960, and **74 ms with `-display cocoa`** — QEMU tracks dirty
+  pages on the frame buffer once a display is attached. At `frameskip 1` that is 98% of wall time, the
+  guest gets 4% of the machine and the boot never finishes: a Happy Mac that looks frozen but is only
+  crawling. **Never tune the compositor headless and assume it holds with a window**; that mistake sent
+  this project bisecting code that was never at fault. `scripts/run-live.sh` now opens a monitor socket,
+  so a live session can be captured: `echo "screendump /tmp/x.ppm" | nc -U /tmp/okapia-monitor.sock`.
+- **`frameskip 0` is Dynamic and now works**: the compositor holds itself to about an eighth of wall time,
+  re-measured every second, capped at one refresh per 12 VBLs. That is the default. It settles on every
+  VBL headless and on 3 Hz under a cocoa window — a slideshow, but the guest runs. The fix for the rate
+  itself is phase 12's dirty regions, not a slower clock.
 - **A decimated screen reads as a laggy mouse.** The Mac draws its own cursor into its own framebuffer,
   so the pointer can never move more often than the compositor runs. Upstream's `frameskip` default is 6
   — the "10 Hz" rung of Basilisk's Window Refresh Rate menu (60 Hz = 1, 30 = 2, 15 = 4, 10 = 6, 7.5 = 8,

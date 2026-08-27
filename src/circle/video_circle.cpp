@@ -40,7 +40,14 @@
 // the Mac into its own framebuffer, so it inherited that rate and looked like a
 // laggy mouse. Compositing every VBL measures at 9.8% of wall time, which we can
 // afford, so the default here is 1. Dynamic is not implemented yet (phase 12).
-static unsigned s_nFrameSkip = 1;
+static unsigned s_nFrameSkip = 6;
+
+// frameskip 0 means Dynamic: hold the compositor to a share of wall time and let
+// the rate follow whatever the machine actually costs. That matters more than it
+// sounds — the same composite takes 1.5 ms headless and 74 ms with a QEMU window
+// attached, because QEMU then tracks dirty pages on the frame buffer. A fixed
+// rate that is comfortable in one case starves the guest in the other.
+static bool s_bDynamic;
 
 // video.h has DepthModeForPixelDepth but no inverse; this is the one we need.
 static inline int DepthBits (video_depth depth)
@@ -342,14 +349,8 @@ bool VideoInit (bool classic)
     // follows how much actually changed (video_x.cpp:2343). We do not have it
     // yet, so say so rather than silently behaving like something else.
     int32 nSkip = PrefsFindInt32 ("frameskip");
-    if (nSkip <= 0)
-    {
-        CLogger::Get ()->Write (FROM, LogWarning,
-                                "frameskip %d (Dynamic) is not implemented; compositing every VBL",
-                                (int) nSkip);
-        nSkip = 1;
-    }
-    s_nFrameSkip = (unsigned) nSkip;
+    s_bDynamic = (nSkip <= 0);
+    s_nFrameSkip = s_bDynamic ? 6 : (unsigned) nSkip;   // 6 until the first measure
 
     s_nOutputWidth  = s_pOutput->GetWidth ();
     s_nOutputHeight = s_pOutput->GetHeight ();
@@ -459,6 +460,26 @@ void VideoInterrupt (void)
         // "fps" hid a 9 Hz display behind a reassuring 55.
         unsigned nPerComposite = s_nComposites
                                ? (unsigned) (s_nCompositeUsec / s_nComposites) : 0;
+
+        // Dynamic: keep compositing to about an eighth of wall time. A VBL is
+        // 16667 us, so a composite costing C us fits in ceil(C * 8 / 16667)
+        // of them. Capped, because past a point the screen is a slideshow and
+        // the answer is phase 12's dirty regions, not a slower rate.
+        if (s_bDynamic && nPerComposite > 0)
+        {
+            unsigned nWanted = (nPerComposite * 8) / 16667 + 1;
+            if (nWanted > 12)
+            {
+                nWanted = 12;
+            }
+            if (nWanted != s_nFrameSkip)
+            {
+                CLogger::Get ()->Write (FROM, LogNotice,
+                                        "dynamic: composite %u us, refresh every %u VBL",
+                                        nPerComposite, nWanted);
+                s_nFrameSkip = nWanted;
+            }
+        }
         unsigned nLoadPerMille = nNow
                                ? (unsigned) (s_nCompositeUsec / nNow / 1000) : 0;
 

@@ -11,6 +11,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KERNEL="${REPO_ROOT}/src/kernel/kernel8.img"
 SD="${REPO_ROOT}/qemu/sd.img"
 LOG="${REPO_ROOT}/qemu/serial.log"
+# A control socket on the live session, so its screen can be captured without
+# disturbing it: echo "screendump /tmp/x.ppm" | nc -U "$MONITOR"
+MONITOR="${OKAPIA_MONITOR:-/tmp/okapia-monitor.sock}"
+rm -f "$MONITOR"
 
 [ -f "$KERNEL" ] || { echo "Build first: gmake -C src/kernel" >&2; exit 1; }
 
@@ -40,6 +44,7 @@ qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" \
     -semihosting \
     -global "bcm2835-fb.xres=${OUTPUT_W:-1280}" -global "bcm2835-fb.yres=${OUTPUT_H:-960}" \
     -display cocoa \
+    -monitor "unix:${MONITOR},server,nowait" \
     -serial "file:${LOG}" &
 QPID=$!
 
