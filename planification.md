@@ -1246,7 +1246,33 @@ sortie 60 Hz avant d'envisager quoi que ce soit d'autre.
       réellement appliqués — pour l'instant le Mac les demande, on les mémorise sans les appliquer
 - [ ] essais : sons système, lecture AIFF, jeux
 
-### Volume de secours — la réponse au volume sale
+### Ce que la coupure brutale abîme réellement — mesuré
+
+Enquête du 2026-08-28, base certifiée saine par Disk First Aid, traces `--wrap` sur `Sys_read` et
+`Sys_write`.
+
+| fait | mesure |
+|---|---|
+| écritures perdues | **aucune** — 39 écritures pour atteindre le Finder, toutes complètes |
+| dégâts après coupure | `drAtrb 0000` + « MDB needs minor repair », rien d'autre |
+| refus ou lenteur ? | **refus** : 346 lectures en 0,44 s, puis plus rien pendant 37 s |
+| ce que le Mac examine | catalogue (176 nœuds) entrelacé de la bitmap — un contrôle de cohérence |
+| écritures pendant ce contrôle | **zéro** : il ne tente aucune réparation |
+| flush périodique | oui, MDB + nœuds sales réécrits ~50 s après la fin du démarrage |
+| coupure *après* le flush | **échoue aussi** : le bit reste à zéro tant que le volume est monté |
+| bit 8 de `drAtrb` reposé à la main | **démarre**, et MacOS affiche quand même « pas éteint correctement » |
+
+Conclusion : les données survivent, le volume est structurellement intact, et **un seul bit conditionne le
+démarrage**. Le dialogue d'arrêt incorrect vient d'ailleurs (fichier Système ou PRAM), donc ce bit ne sert
+qu'à cela. Le comportement est identique à Basilisk sur macOS, où un plantage fait sauter le volume 7.6 au
+profit du 8.1 — ce n'est donc pas propre à Okapia.
+
+**Question ouverte** : un vrai Mac de l'époque, prise arrachée, redémarre. Qu'est-ce qui, sur matériel,
+fait accepter un volume marqué en cours d'usage ? Piste : un vrai disque porte sa table de partition et
+son pilote SCSI, que la ROM charge ; Basilisk substitue `.Disk` et l'image est un volume HFS nu. C'est la
+couche que l'encapsulation ajoute.
+
+### Volume de secours — contournement, à ne retenir que si la question ci-dessus reste sans réponse
 
 Un Mac refuse de **démarrer** sur un volume marqué en cours d'usage, mais le **monte** sans difficulté en
 disque secondaire, et ce montage déclenche le *scavenge* HFS qui le répare. Constaté de longue date sous
