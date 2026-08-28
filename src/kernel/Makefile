@@ -61,7 +61,7 @@ LIBS := $(CIRCLEHOME)/lib/sound/libsound.a $(CIRCLE_STDLIB_LIBS)
 # invokes ld directly, so these are bare --wrap, not -Wl,--wrap. The symbols are
 # Sys_read(void*, void*, loff_t, size_t) and Exception(int, uaecptr), mangled.
 ifeq ($(OKAPIA_TRACE),1)
-LDFLAGS += --wrap=_Z8Sys_readPvS_lm --wrap=_Z9Exceptionij
+LDFLAGS += --wrap=_Z8Sys_readPvS_lm --wrap=_Z9Sys_writePvS_lm --wrap=_Z9Exceptionij
 endif
 # Toggling OKAPIA_TRACE does not invalidate kernel8.img on its own:
 # rm kernel8.img kernel8.elf first, or you will run the previous kernel.

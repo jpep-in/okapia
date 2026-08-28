@@ -56,6 +56,16 @@ investigations.
 - **Prove it, don't assume it**: `scripts/run-test.sh` ends the guest with SIGKILL, runs `fsck_hfs` on the
   volume and reports how many bytes were actually written — so a green verdict cannot come from a run that
   exercised nothing.
+- **`fsck_hfs` on macOS is a weak instrument here.** It supports HFS standard poorly: it calls the
+  reference image corrupt and then cannot repair it either, B-tree rebuild included. Treat "corrupt" from
+  it as a hint, not a verdict, and prefer what the Mac itself says — a volume that boots is worth more
+  than a clean bill from a host tool that barely speaks HFS. Disk First Aid inside the guest is the
+  period-correct check.
+- **The guest writes everything we are asked to write.** Measured with `--wrap=Sys_write` under
+  `OKAPIA_TRACE=1`: a boot to the Finder issues 39 writes, every one complete, none short. So an
+  interrupted session does not lose writes in our layer — what it loses is whatever MacOS still held in
+  its own RAM cache, which is the same exposure a real Mac has. Do not go looking for a bug in the file
+  layer before re-checking that.
 - Still owed as features land: full card, a write error from the SD layer, removal mid-write, shutdown
   during a write, a second volume, and the shared folder's own writes.
 
