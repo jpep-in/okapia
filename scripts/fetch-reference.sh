@@ -15,6 +15,7 @@ macemu-jit|https://github.com/rcarmo/macemu-jit.git||68k->AArch64 JIT backend, a
 amiberry|https://github.com/BlitterStudio/amiberry.git||Upstream of the ARM/ARM64 JIT backend that macemu-jit imported.
 infinite-mac|https://github.com/mihaip/infinite-mac.git|Images|Disk-image provisioning and system-version catalogue. Cloned without Images/ (hundreds of MB).
 BlueSCSI-v2|https://github.com/BlueSCSI/BlueSCSI-v2.git||SCSI device emulation from disk images on an RP2040. The durability model Okapia targets, and a Macintosh image sanity check worth copying. GPLv3, same as us.
+hfsutils|https://github.com/JotaRandom/hfsutils.git||HFS volume access (libhfs) and repair (hfsck), Robert Leslie 1996-1998, fork maintained by Pablo Lezaeta. GPLv2-or-later, so usable. libhfs scavenges a volume that was not unmounted cleanly, which is exactly the repair Okapia needs.
 '
 
 list() {

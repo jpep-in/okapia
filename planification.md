@@ -1348,6 +1348,31 @@ participe au montage, et Basilisk ne le charge jamais. Nous ne pouvons pas repro
 chemin ; refuser (ou au moins signaler) un volume nu là où un vrai Mac attend une image de périphérique
 serait la même prudence.
 
+### Réparer le volume nous-mêmes — chemin identifié, `reference/hfsutils`
+
+`libhfs` (Robert Leslie, 1996-1998 ; fork maintenu par Pablo Lezaeta) fait déjà exactement ce qu'il faut,
+et sous une licence **GPLv2 or later**, donc compatible avec notre GPLv3.
+
+- **`volume.c:440`** : au montage, si `HFS_ATRB_UMOUNTED` est absent, il lance `v_scavenge()`. C'est
+  précisément le traitement que subit un volume sale monté depuis un autre Système.
+- **`volume.c:140`** : au démontage, il repose le bit.
+- Donc un simple **`hfs_mount()` en lecture-écriture suivi de `hfs_umount()`** suffit à rendre un volume
+  amorçable. `hfsck` (1705 lignes, contrôles plus profonds du MDB et des B-trees, interactif via `ask()`)
+  vient en second temps, pas d'emblée.
+
+**Portage** : `libhfs` fait 7649 lignes et isole tout le système dans `os.h` — `os_open`, `os_read`,
+`os_write`, `os_seek`, `os_close`. Ses `.c` n'incluent aucun en-tête système. Le portage se réduit donc à
+un seul fichier implémentant ces cinq fonctions sur notre couche fichier, exactement comme la couche
+plateforme de Basilisk.
+
+**Enchaînement visé** : `HfsInspect` détecte déjà le volume marqué en usage au démarrage ; il ne reste qu'à
+proposer la réparation, la faire, et démarrer normalement. Le dialogue à l'écran relève de la phase 16
+(firmware Okapia) ; une première version peut se contenter d'une préférence et d'une ligne de journal.
+
+**Contrainte** : c'est du code qui écrit dans le volume de l'utilisateur. Il tombe donc entièrement sous
+§Data safety — jamais de réparation sur un volume qu'on ne sait pas valider, et `scripts/run-test.sh` doit
+l'exercer avant qu'il ne soit activé par défaut.
+
 ### Pré-contrôle du volume au démarrage — fait
 
 `src/circle/hfs_volume_circle.cpp` lit le MDB avant de lancer le 68k et annonce ce que le Mac va trouver :
