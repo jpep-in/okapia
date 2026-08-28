@@ -45,9 +45,19 @@ it for two minutes, so it is a refusal and not slowness.
 
 Setting `drAtrb` bit 8 back by hand — offset 1034, nothing else touched — makes the same card boot, and
 MacOS still shows "this computer was not shut down properly", which it detects by some other route. So
-that bit does not drive the warning; its only role here is gating the mount, and gating it harder than a
-real Mac does. **Why our Mac refuses a volume marked in use is the open question**, and it outranks video
-work. Nothing about it is caused by a lost write.
+that bit does not drive the warning; its only role is gating **the boot**.
+
+**And that is Mac behaviour, not our bug.** A Mac refuses to start from a volume marked in use, but
+mounts it happily as a secondary disk — and that mount runs the HFS scavenge that repairs it. Years of
+field experience with Basilisk on macOS show the whole cycle: a crash leaves the 7.6 volume dirty, the
+next launch boots the 8.1 volume instead, 8.1 mounts and repairs 7.6, and after a clean shutdown 7.6
+boots again untouched. Okapia reproduces this exactly. What we lack is not correctness but a **second
+bootable volume**: with one disk there is no fallback and nobody to run the repair.
+
+So the fix is period-correct, not a patch: carry a small rescue System as a second `disk` preference —
+`disk.cpp:161` already loops over them, and a `*` prefix mounts read-only, which makes a rescue volume
+that no crash can ever dirty. **Never mark the volume clean ourselves**: that hides real corruption and
+is exactly the trade this project refuses.
 
 Earlier readings that blamed catalogue destruction were taken on a baseline that was already corrupt:
 check `qemu/sd-contents/machd76.image` with Disk First Aid **inside the guest** before trusting any

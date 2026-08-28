@@ -1246,6 +1246,22 @@ sortie 60 Hz avant d'envisager quoi que ce soit d'autre.
       réellement appliqués — pour l'instant le Mac les demande, on les mémorise sans les appliquer
 - [ ] essais : sons système, lecture AIFF, jeux
 
+### Volume de secours — la réponse au volume sale
+
+Un Mac refuse de **démarrer** sur un volume marqué en cours d'usage, mais le **monte** sans difficulté en
+disque secondaire, et ce montage déclenche le *scavenge* HFS qui le répare. Constaté de longue date sous
+Basilisk : un plantage salit le volume 7.6, le lancement suivant démarre sur 8.1, qui monte et répare 7.6,
+et après un arrêt propre 7.6 redémarre seul. Okapia reproduit ce comportement à l'identique — ce qui lui
+manque n'est pas la correction mais le **second volume amorçable**.
+
+- [ ] embarquer un petit Système de secours comme seconde préférence `disk` (`disk.cpp:161` boucle déjà
+      sur plusieurs entrées)
+- [ ] le monter **en lecture seule** (préfixe `*`), pour qu'aucune coupure ne puisse le salir à son tour
+- [ ] essai : salir le volume principal, vérifier que le secours démarre, monte et répare, puis qu'un
+      arrêt propre rend le principal amorçable
+- **Écarté** : forcer `drAtrb` nous-mêmes. Cela masquerait une vraie corruption, exactement l'arbitrage
+      que §Data safety refuse.
+
 ### Phase 15 — Séquence de démarrage Macintosh
 
 - [ ] analyse de la carte de ressources du dump ROM, extraction des ressources `snd ` et des icônes
