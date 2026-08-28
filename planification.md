@@ -1267,10 +1267,21 @@ démarrage**. Le dialogue d'arrêt incorrect vient d'ailleurs (fichier Système 
 qu'à cela. Le comportement est identique à Basilisk sur macOS, où un plantage fait sauter le volume 7.6 au
 profit du 8.1 — ce n'est donc pas propre à Okapia.
 
-**Question ouverte** : un vrai Mac de l'époque, prise arrachée, redémarre. Qu'est-ce qui, sur matériel,
-fait accepter un volume marqué en cours d'usage ? Piste : un vrai disque porte sa table de partition et
-son pilote SCSI, que la ROM charge ; Basilisk substitue `.Disk` et l'image est un volume HFS nu. C'est la
-couche que l'encapsulation ajoute.
+**Piste de l'encapsulation : écartée par l'expérience.** Le même volume 7.6, enveloppé dans un conteneur
+avec table de partition Apple (`ER` + `PM` + `Apple_HFS`), démarre normalement puis **refuse exactement
+pareil** après une coupure brutale. Table de partition et pilote embarqué ne changent rien : Basilisk ne
+charge jamais le pilote du disque, il substitue son `.Disk` par patch ROM. Seule la table compte, et
+seulement pour situer le volume (`find_hfs_partition`, `disk.cpp:120`).
+
+**Ce qui est vérifié en revanche** : un volume sale est refusé **au démarrage** mais monté sans difficulté
+**en disque secondaire**, et ce montage le répare. Démontré ici : carte à deux disques, démarrage sur un
+volume propre, le volume sale apparaît sur le bureau et MacOS y écrit (7 octets, `drAtrb` 0000 → 0003).
+C'est le cycle observé de longue date sous Basilisk, reproduit sur notre pile.
+
+**Question ouverte, resserrée** : la politique de sélection du volume de démarrage de MacOS refuse un
+volume marqué en cours d'usage. Reste à établir si un vrai Mac fait autrement, et par quel mécanisme.
+Aucune issue correspondante en amont (`kanjitalk755/macemu`), ce qui suggère que les utilisateurs le
+contournent avec plusieurs disques plutôt qu'ils ne le signalent.
 
 ### Volume de secours — contournement, à ne retenir que si la question ci-dessus reste sans réponse
 

@@ -33,6 +33,10 @@ extern void InputInit (void);
 
 static const char *ROM_PATH  = "/okapia.rom";
 static const char *DISK_PATH = "/machd76.image";
+// The leading '*' mounts read-only (disk.cpp:163). A rescue volume that no
+// crash can dirty in its turn is the whole point: otherwise one interruption
+// takes out the fallback along with the main disk, since both are mounted.
+static const char *RESCUE_PATH = "*/boot71.hda";
 static const uint32 MAC_RAM  = 256 * 1024 * 1024;
 
 CKernel::CKernel (void)
@@ -134,6 +138,12 @@ void CKernel::SetDefaultPreferences (void)
     PrefsReplaceInt32 ("frameskip", 0);   // 0 = Dynamic
     PrefsReplaceString ("rom", ROM_PATH);
     PrefsAddString ("disk", DISK_PATH);
+
+    // A second bootable volume, as a real setup would have. disk.cpp:161 loops
+    // over these in order, so the Mac falls back to this one when the first is
+    // unusable. Unlike machd76.image this carries an Apple partition map and a
+    // real SCSI driver, which is also the difference worth testing.
+    PrefsAddString ("disk", RESCUE_PATH);
 
     // 14 = Quadra 900. Required for Mac OS 8.x; see plan §7.11.
     PrefsReplaceInt32 ("modelid", 14);
