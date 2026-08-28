@@ -1312,6 +1312,28 @@ encore expliquer qu'un vrai Mac redémarre après une prise arrachée.
 Aucune issue correspondante en amont (`kanjitalk755/macemu`) : les utilisateurs contournent avec plusieurs
 disques plutôt qu'ils ne le signalent.
 
+### Pré-contrôle du volume au démarrage — fait
+
+`src/circle/hfs_volume_circle.cpp` lit le MDB avant de lancer le 68k et annonce ce que le Mac va trouver :
+nom du volume, géométrie, blocs libres, `drAtrb`. Si le volume est marqué en cours d'usage, il le dit et
+prédit l'échec (`MountVol` → `badMDBErr`) au lieu de laisser apparaître une disquette inexpliquée. Il
+trouve la partition `Apple_HFS` comme le fait Basilisk, donc il regarde bien le même volume.
+
+**Lecture seule, délibérément.** Réparer est une décision distincte : un contrôle qui tamponnerait un
+volume abîmé serait pire que pas de contrôle (§Data safety). Un réparateur digne de ce nom devrait
+parcourir la bitmap et le catalogue, recalculer `drFreeBks`, et ne reposer le bit 8 que si tout concorde
+— c'est-à-dire refaire le travail de Disk First Aid.
+
+### Piste à tester : le substitut `.Disk` de Basilisk
+
+Sur matériel, la ROM charge le pilote du disque depuis sa partition et ce pilote participe au montage.
+Basilisk substitue `.Disk` par patch ROM et ne charge jamais celui du disque — c'est la seule différence
+structurelle qui reste. `DiskControl`/`DiskStatus` (`disk.cpp`) traitent un jeu de csCodes et rendent
+`nsDrvErr`/`statusErr` au-delà. **À vérifier** : quels csCodes le Mac demande pendant le montage qui
+échoue, et si l'un d'eux reçoit une erreur qui fait avorter le montage en `badMDBErr`. La trace
+`op_illg_1` voit déjà les traps `Control` et `Status` ; il reste à y ajouter le csCode et l'`ioResult`,
+comme cela a été fait pour `MountVol`.
+
 ### Volume de secours — contournement, à ne retenir que si la question ci-dessus reste sans réponse
 
 Un Mac refuse de **démarrer** sur un volume marqué en cours d'usage, mais le **monte** sans difficulté en

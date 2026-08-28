@@ -240,6 +240,13 @@ bool CKernel::StartMacintosh (void)
             // And far into the file, where a 32-bit offset would break.
             size_t n2 = Sys_read (fh, Buf, 400u * 1024 * 1024, 512);
             m_Logger.Write (FROM, LogNotice, "Sys_read(400MB, 512) -> %u", (unsigned) n2);
+
+            // Two more reads turn "the Mac shows a floppy" into a diagnosis:
+            // a volume still marked in use is refused by MountVol (badMDBErr),
+            // and nothing downstream explains why.
+            extern bool HfsInspect (void *fh, const char *pName);
+            HfsInspect (fh, DISK_PATH);
+
             Sys_close (fh);
         }
     }
