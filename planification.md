@@ -1312,6 +1312,32 @@ encore expliquer qu'un vrai Mac redémarre après une prise arrachée.
 Aucune issue correspondante en amont (`kanjitalk755/macemu`) : les utilisateurs contournent avec plusieurs
 disques plutôt qu'ils ne le signalent.
 
+### Ce que fait BlueSCSI, lu dans son code
+
+`reference/BlueSCSI-v2` (GPLv3, comme nous — code réutilisable). Trois enseignements.
+
+**Sa durabilité vient de l'absence de cache, pas d'un garde-fou.** `SYNCHRONIZE CACHE` (0x35) :
+« We don't have a cache. do nothing. » Et le vidage en fin d'écriture porte le commentaire « Normally
+does nothing as we do not change image file size and data writes are not cached »
+(`BlueSCSI_disk.cpp:2740`). **C'est exactement notre modèle**, déjà mesuré : écriture directe, aucun cache
+entre l'invité et la carte, 39 écritures sur 39 complètes.
+
+**Il ne connaît rien au système de fichiers invité.** Aucune trace de MDB, de `drAtrb`, de réparation ou
+de *scavenge*. Il ne répare jamais un volume : il n'en a pas l'idée.
+
+**Son garde-fou est un contrôle de format, pas de coupure.** `QuirksCheck.cpp` refuse les volumes HFS nus
+— « This is a bare HFS Volume. Use DiskJockey to convert it to a Device image. » — puis valide le pilote
+SCSI déclaré par le DDR et met en garde contre le pilote LIDO. Conséquence directe : **les utilisateurs de
+BlueSCSI ne font jamais tourner que de vraies images de périphérique**, avec table de partition et pilote
+chargé par la ROM du Mac.
+
+Ce qui rouvre — sans la trancher — la seule hypothèse restante : sur matériel, le pilote du disque
+participe au montage, et Basilisk ne le charge jamais. Nous ne pouvons pas reproduire ce chemin.
+
+**À reprendre chez eux** : le contrôle de format à l'ouverture. Notre `HfsInspect` fait déjà la moitié du
+chemin ; refuser (ou au moins signaler) un volume nu là où un vrai Mac attend une image de périphérique
+serait la même prudence.
+
 ### Pré-contrôle du volume au démarrage — fait
 
 `src/circle/hfs_volume_circle.cpp` lit le MDB avant de lancer le 68k et annonce ce que le Mac va trouver :
