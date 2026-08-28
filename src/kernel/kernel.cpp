@@ -36,7 +36,7 @@ static const char *DISK_PATH = "/machd76.image";
 // The leading '*' mounts read-only (disk.cpp:163). A rescue volume that no
 // crash can dirty in its turn is the whole point: otherwise one interruption
 // takes out the fallback along with the main disk, since both are mounted.
-static const char *RESCUE_PATH = "*/boot71.hda";
+static const char *RESCUE_PATH = "*/boot71.image";
 static const uint32 MAC_RAM  = 256 * 1024 * 1024;
 
 CKernel::CKernel (void)

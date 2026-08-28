@@ -1278,10 +1278,24 @@ seulement pour situer le volume (`find_hfs_partition`, `disk.cpp:120`).
 volume propre, le volume sale apparaît sur le bureau et MacOS y écrit (7 octets, `drAtrb` 0000 → 0003).
 C'est le cycle observé de longue date sous Basilisk, reproduit sur notre pile.
 
-**Question ouverte, resserrée** : la politique de sélection du volume de démarrage de MacOS refuse un
-volume marqué en cours d'usage. Reste à établir si un vrai Mac fait autrement, et par quel mécanisme.
-Aucune issue correspondante en amont (`kanjitalk755/macemu`), ce qui suggère que les utilisateurs le
-contournent avec plusieurs disques plutôt qu'ils ne le signalent.
+**Observé au niveau Toolbox** (trace `op_illg_1`, `OKAPIA_TRACE=1`) : les deux démarrages sont identiques
+jusqu'au trap #1886, puis divergent nettement.
+
+| | volume propre | volume sale |
+|---|---|---|
+| après `MountVol` (#1870) | lectures puis **`Write` (#1893)** | lectures seulement |
+| appels `MountVol` | 4 | 2 |
+| écritures | oui | **aucune** |
+| fin | démarre | arrêt à 2,98 s, trap #8633 |
+
+`MountVol` écrit sur un volume propre — c'est MacOS qui efface le bit 8 pour le marquer en usage. Sur un
+volume déjà marqué, il n'a rien à écrire, part sur une autre branche, lit 442 fois et renonce. **Le refus
+vient du Gestionnaire de fichiers de MacOS**, pas de Basilisk ni de la couche Okapia.
+
+**Question ouverte** : le code d'erreur que rend `MountVol`. L'obtenir demande de lire `ioResult` dans le
+bloc de paramètres après le trap, donc d'accrocher la sortie et pas seulement l'entrée. Aucune issue
+correspondante en amont (`kanjitalk755/macemu`) : les utilisateurs contournent avec plusieurs disques
+plutôt qu'ils ne le signalent.
 
 ### Volume de secours — contournement, à ne retenir que si la question ci-dessus reste sans réponse
 
