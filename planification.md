@@ -1292,10 +1292,25 @@ jusqu'au trap #1886, puis divergent nettement.
 volume déjà marqué, il n'a rien à écrire, part sur une autre branche, lit 442 fois et renonce. **Le refus
 vient du Gestionnaire de fichiers de MacOS**, pas de Basilisk ni de la couche Okapia.
 
-**Question ouverte** : le code d'erreur que rend `MountVol`. L'obtenir demande de lire `ioResult` dans le
-bloc de paramètres après le trap, donc d'accrocher la sortie et pas seulement l'entrée. Aucune issue
-correspondante en amont (`kanjitalk755/macemu`) : les utilisateurs contournent avec plusieurs disques
-plutôt qu'ils ne le signalent.
+**Réponse obtenue** — en surveillant `ioResult` dans le bloc de paramètres après le trap :
+
+| volume | `MountVol` | code |
+|---|---|---|
+| propre | trap #1870 | **`noErr`** |
+| sale, seul sur la carte | trap #1868 | **`badMDBErr` (-60)** — *bad master directory block* |
+
+Un seul appel, un seul verdict. **MacOS valide le MDB, le juge indigne de confiance parce que le volume
+est marqué en cours d'usage, et refuse le montage.** Ce n'est pas un bug : c'est une politique de sûreté
+délibérée du Gestionnaire de fichiers, et elle explique tout ce qu'on observe depuis le début.
+
+**Correction d'une conclusion antérieure** : envelopper le volume dans un conteneur partitionné ne change
+rien, mais cela ne teste **pas** l'hypothèse du pilote. Basilisk ne charge jamais le pilote embarqué du
+disque — il substitue son `.Disk` par patch ROM. Sur matériel réel, la ROM charge ce pilote et le fait
+participer au montage. Cette piste-là reste donc **non testée**, pas écartée, et c'est la seule qui puisse
+encore expliquer qu'un vrai Mac redémarre après une prise arrachée.
+
+Aucune issue correspondante en amont (`kanjitalk755/macemu`) : les utilisateurs contournent avec plusieurs
+disques plutôt qu'ils ne le signalent.
 
 ### Volume de secours — contournement, à ne retenir que si la question ci-dessus reste sans réponse
 

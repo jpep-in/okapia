@@ -20,6 +20,10 @@
 
 #include "sysdeps.h"
 #include "okapia_circle.h"
+#include "cpu_emulation.h"
+#include "macos_util.h"
+#include "readcpu.h"
+#include "newcpu.h"
 
 extern "C" void __real__Z9op_illg_1j (unsigned int opcode);
 
@@ -52,11 +56,69 @@ static const char *TrapName (unsigned int nTrap)
 static unsigned s_nTraps;
 static unsigned s_nNamed;
 
+// A File Manager call leaves its result in the parameter block: ioResult holds
+// 1 while the call is in progress and the OSErr once it finishes. So remember
+// the block that MountVol was handed, then watch it until it settles.
+static uint32 s_nPendingPB;
+static unsigned s_nPendingTrap;
+
+// macos_util.h stops short of the volume errors, which are exactly the ones
+// worth naming here.
+enum
+{
+    volOnLinErr = -55,          // drive volume already on-line
+    noMacDskErr = -57,          // not a Macintosh disk
+    badMDBErr   = -60,          // bad master directory block
+    wrPermErr   = -61           // read/write permission denied
+};
+
+static const char *ErrName (int16 nErr)
+{
+    switch (nErr)
+    {
+    case 0:      return "noErr";
+    case ioErr:  return "ioErr";
+    case nsvErr: return "nsvErr (no such volume)";
+    case paramErr: return "paramErr";
+    case wPrErr: return "wPrErr (write protected)";
+    case permErr: return "permErr";
+    case nsDrvErr: return "nsDrvErr";
+    case extFSErr: return "extFSErr (external file system)";
+    case noDriveErr: return "noDriveErr";
+    case offLinErr: return "offLinErr";
+    case badMDBErr: return "badMDBErr (bad master directory block)";
+    case volOnLinErr: return "volOnLinErr (already mounted)";
+    case noMacDskErr: return "noMacDskErr (not a Mac disk)";
+    case wrPermErr: return "wrPermErr (permission denied)";
+    case memFullErr: return "memFullErr";
+    default:     return "?";
+    }
+}
+
 extern "C" void __wrap__Z9op_illg_1j (unsigned int opcode)
 {
     if ((opcode & 0xF000) == 0xA000)
     {
         s_nTraps++;
+
+        // Has the call we are watching finished?
+        if (s_nPendingPB != 0)
+        {
+            int16 nResult = (int16) ReadMacInt16 (s_nPendingPB + ioResult);
+            if (nResult != 1)
+            {
+                CLogger::Get ()->Write ("okapia-trap", LogNotice,
+                                        "  -> MountVol (trap #%u) returned %d  %s",
+                                        s_nPendingTrap, (int) nResult, ErrName (nResult));
+                s_nPendingPB = 0;
+            }
+        }
+
+        if ((opcode & 0x0FFF) == 0x000F)        // MountVol
+        {
+            s_nPendingPB   = (uint32) m68k_areg (regs, 0);
+            s_nPendingTrap = s_nTraps;
+        }
 
         // Naming only the file-system traps keeps the log readable: a boot
         // makes tens of thousands of Toolbox calls and the interesting ones
