@@ -27,40 +27,14 @@
 
 extern "C" void __real__Z9op_illg_1j (unsigned int opcode);
 
-// The File Manager traps worth naming; everything else is counted, not printed.
-static const char *TrapName (unsigned int nTrap)
+// A Control or Status parameter block (CntrlParam): csCode says what is being
+// asked of the driver, ioResult what it answered. Offsets from Inside Macintosh.
+enum
 {
-    switch (nTrap & 0x0FFF)
-    {
-    case 0x000F: return "MountVol";
-    case 0x000E: return "UnmountVol";
-    case 0x0013: return "FlushVol";
-    case 0x0017: return "Eject";
-    case 0x0060: return "FSDispatch";
-    case 0x0001: return "Close";
-    case 0x0002: return "Read";
-    case 0x0003: return "Write";
-    case 0x0004: return "Control";
-    case 0x0005: return "Status";
-    case 0x0007: return "GetVolInfo";
-    case 0x0008: return "Create";
-    case 0x0009: return "Delete";
-    case 0x000A: return "OpenRF";
-    case 0x0014: return "GetVol";
-    case 0x0015: return "SetVol";
-    case 0x001C: return "GetEOF";
-    default:     return 0;
-    }
-}
-
-static unsigned s_nTraps;
-static unsigned s_nNamed;
-
-// A File Manager call leaves its result in the parameter block: ioResult holds
-// 1 while the call is in progress and the OSErr once it finishes. So remember
-// the block that MountVol was handed, then watch it until it settles.
-static uint32 s_nPendingPB;
-static unsigned s_nPendingTrap;
+    pbIoResult  = 16,
+    pbIoCRefNum = 24,
+    pbCsCode    = 26
+};
 
 // macos_util.h stops short of the volume errors, which are exactly the ones
 // worth naming here.
@@ -76,22 +50,78 @@ static const char *ErrName (int16 nErr)
 {
     switch (nErr)
     {
-    case 0:      return "noErr";
-    case ioErr:  return "ioErr";
-    case nsvErr: return "nsvErr (no such volume)";
-    case paramErr: return "paramErr";
-    case wPrErr: return "wPrErr (write protected)";
-    case permErr: return "permErr";
-    case nsDrvErr: return "nsDrvErr";
-    case extFSErr: return "extFSErr (external file system)";
-    case noDriveErr: return "noDriveErr";
-    case offLinErr: return "offLinErr";
-    case badMDBErr: return "badMDBErr (bad master directory block)";
-    case volOnLinErr: return "volOnLinErr (already mounted)";
-    case noMacDskErr: return "noMacDskErr (not a Mac disk)";
-    case wrPermErr: return "wrPermErr (permission denied)";
-    case memFullErr: return "memFullErr";
-    default:     return "?";
+    case 0:            return "noErr";
+    case ioErr:        return "ioErr";
+    case nsvErr:       return "nsvErr";
+    case paramErr:     return "paramErr";
+    case wPrErr:       return "wPrErr";
+    case permErr:      return "permErr";
+    case nsDrvErr:     return "nsDrvErr (no such drive)";
+    case extFSErr:     return "extFSErr";
+    case noDriveErr:   return "noDriveErr";
+    case offLinErr:    return "offLinErr";
+    case controlErr:   return "controlErr (driver refused the call)";
+    case statusErr:    return "statusErr (driver refused the call)";
+    case volOnLinErr:  return "volOnLinErr (already mounted)";
+    case noMacDskErr:  return "noMacDskErr";
+    case badMDBErr:    return "badMDBErr (bad master directory block)";
+    case wrPermErr:    return "wrPermErr";
+    case memFullErr:   return "memFullErr";
+    default:           return "?";
+    }
+}
+
+static unsigned s_nTraps;
+static unsigned s_nLogged;
+
+// Several driver calls can be in flight at once, so watch a few at a time.
+struct TPending
+{
+    uint32      nPB;
+    const char *pWhat;
+    unsigned    nCsCode;
+    unsigned    nTrap;
+};
+static TPending s_Pending[8];
+
+static void WatchPB (uint32 nPB, const char *pWhat, unsigned nCsCode)
+{
+    for (unsigned i = 0; i < 8; i++)
+    {
+        if (s_Pending[i].nPB == 0)
+        {
+            s_Pending[i].nPB     = nPB;
+            s_Pending[i].pWhat   = pWhat;
+            s_Pending[i].nCsCode = nCsCode;
+            s_Pending[i].nTrap   = s_nTraps;
+            return;
+        }
+    }
+}
+
+// ioResult holds 1 while a call is in progress and the OSErr once it settles.
+static void ReapPending (void)
+{
+    for (unsigned i = 0; i < 8; i++)
+    {
+        if (s_Pending[i].nPB == 0)
+        {
+            continue;
+        }
+        int16 nResult = (int16) ReadMacInt16 (s_Pending[i].nPB + pbIoResult);
+        if (nResult != 1)
+        {
+            if (s_nLogged < 800)
+            {
+                s_nLogged++;
+                CLogger::Get ()->Write ("okapia-trap", LogNotice,
+                                        "  -> %s csCode %u (trap #%u) = %d  %s",
+                                        s_Pending[i].pWhat, s_Pending[i].nCsCode,
+                                        s_Pending[i].nTrap, (int) nResult,
+                                        ErrName (nResult));
+            }
+            s_Pending[i].nPB = 0;
+        }
     }
 }
 
@@ -100,36 +130,30 @@ extern "C" void __wrap__Z9op_illg_1j (unsigned int opcode)
     if ((opcode & 0xF000) == 0xA000)
     {
         s_nTraps++;
+        ReapPending ();
 
-        // Has the call we are watching finished?
-        if (s_nPendingPB != 0)
-        {
-            int16 nResult = (int16) ReadMacInt16 (s_nPendingPB + ioResult);
-            if (nResult != 1)
-            {
-                CLogger::Get ()->Write ("okapia-trap", LogNotice,
-                                        "  -> MountVol (trap #%u) returned %d  %s",
-                                        s_nPendingTrap, (int) nResult, ErrName (nResult));
-                s_nPendingPB = 0;
-            }
-        }
+        const unsigned nTrap = opcode & 0x0FFF;
+        const uint32   nPB   = (uint32) m68k_areg (regs, 0);
 
-        if ((opcode & 0x0FFF) == 0x000F)        // MountVol
+        // Only the calls that can explain a refused mount: the mount itself,
+        // and everything the Mac asks of the disk driver. Reads and writes are
+        // the bulk of the traffic and say nothing here.
+        switch (nTrap)
         {
-            s_nPendingPB   = (uint32) m68k_areg (regs, 0);
-            s_nPendingTrap = s_nTraps;
-        }
+        case 0x000F:
+            WatchPB (nPB, "MountVol", 0);
+            break;
 
-        // Naming only the file-system traps keeps the log readable: a boot
-        // makes tens of thousands of Toolbox calls and the interesting ones
-        // are the handful around the volume decision.
-        const char *pName = TrapName (opcode);
-        if (pName != 0 && s_nNamed < 600)
-        {
-            s_nNamed++;
-            CLogger::Get ()->Write ("okapia-trap", LogNotice,
-                                    "A%03X %s (trap #%u)",
-                                    opcode & 0x0FFF, pName, s_nTraps);
+        case 0x0004:
+            WatchPB (nPB, "Control", (unsigned) ReadMacInt16 (nPB + pbCsCode));
+            break;
+
+        case 0x0005:
+            WatchPB (nPB, "Status", (unsigned) ReadMacInt16 (nPB + pbCsCode));
+            break;
+
+        default:
+            break;
         }
     }
 

@@ -1324,15 +1324,19 @@ volume abîmé serait pire que pas de contrôle (§Data safety). Un réparateur 
 parcourir la bitmap et le catalogue, recalculer `drFreeBks`, et ne reposer le bit 8 que si tout concorde
 — c'est-à-dire refaire le travail de Disk First Aid.
 
-### Piste à tester : le substitut `.Disk` de Basilisk
+### Le substitut `.Disk` est hors de cause — vérifié
 
 Sur matériel, la ROM charge le pilote du disque depuis sa partition et ce pilote participe au montage.
 Basilisk substitue `.Disk` par patch ROM et ne charge jamais celui du disque — c'est la seule différence
-structurelle qui reste. `DiskControl`/`DiskStatus` (`disk.cpp`) traitent un jeu de csCodes et rendent
-`nsDrvErr`/`statusErr` au-delà. **À vérifier** : quels csCodes le Mac demande pendant le montage qui
-échoue, et si l'un d'eux reçoit une erreur qui fait avorter le montage en `badMDBErr`. La trace
-`op_illg_1` voit déjà les traps `Control` et `Status` ; il reste à y ajouter le csCode et l'`ioResult`,
-comme cela a été fait pour `MountVol`.
+structurelle qui reste. La trace `op_illg_1` rapporte désormais le csCode et l'`ioResult` de chaque `Control` et `Status`, comme
+pour `MountVol`. Verdict : sur le montage qui échoue, **`badMDBErr` est la seule valeur non nulle de tout
+le run**. `Status` csCode 8 (DriveStatus) et `Control` csCode 9 rendent `noErr`, exactement comme sur un
+montage réussi. Le pilote ne refuse rien et n'est pas sollicité différemment.
+
+**Toutes les hypothèses côté émulateur sont donc épuisées** : écritures perdues (non), dégâts structurels
+(non), table de partition (non), pilote embarqué non chargé (sans effet mesurable), refus du pilote
+substitué (non). Le refus est une décision de `MountVol` fondée sur le seul contenu du MDB : volume
+marqué en cours d'usage, donc MDB jugé non fiable. Reposer le bit 8 seul suffit à le faire accepter.
 
 ### Volume de secours — contournement, à ne retenir que si la question ci-dessus reste sans réponse
 
