@@ -34,12 +34,25 @@ features: when in doubt, lose speed, never data. It must hold across every edge 
 `kill -9`, reset, full card, cable pulled mid-write — not just the happy path.
 
 The model is BlueSCSI: real SCSI-emulating hardware keeps disk images on an SD card and survives the plug
-being pulled, because every write it acknowledged is already on the card. **Okapia is not there yet, and
-the gap is measured**: from a freshly built card the Finder boots, and one SIGKILLed session is enough to
-make the same card refuse to boot — screenshot before and after, same kernel. What the card holds
-afterwards is only what a pulled plug does to a real Mac (`drAtrb` 0000, orphaned blocks, "MDB needs minor
-repair"), which says the writes do reach the card; what a real Mac does **not** do is refuse to start from
-that volume. Finding out why ours does is the open question, and it outranks video work.
+being pulled, because every write it acknowledged is already on the card. **Okapia keeps the data and
+loses the boot**, and the gap is now measured down to one bit.
+
+From a volume Disk First Aid certifies healthy, one SIGKILLed session leaves exactly what a pulled plug
+leaves on a real Mac: `drAtrb` 0000 and "MDB needs minor repair", nothing else — no orphaned blocks, no
+catalogue damage. Writes are not lost either: `--wrap=Sys_write` counts 39 writes to reach the Finder,
+every one complete. **The data survives.** But the Mac then shows the question-mark floppy, and stays on
+it for two minutes, so it is a refusal and not slowness.
+
+Setting `drAtrb` bit 8 back by hand — offset 1034, nothing else touched — makes the same card boot, and
+MacOS still shows "this computer was not shut down properly", which it detects by some other route. So
+that bit does not drive the warning; its only role here is gating the mount, and gating it harder than a
+real Mac does. **Why our Mac refuses a volume marked in use is the open question**, and it outranks video
+work. Nothing about it is caused by a lost write.
+
+Earlier readings that blamed catalogue destruction were taken on a baseline that was already corrupt:
+check `qemu/sd-contents/machd76.image` with Disk First Aid **inside the guest** before trusting any
+durability measurement, and note that macOS's `fsck_hfs` speaks HFS standard poorly enough to condemn a
+volume it cannot then repair.
 
 Until then: **`run-live.sh` sessions must end with Finder → Shut Down.** Anything else costs the card, and
 `scripts/make-sd-image.sh 1024` is the recovery. Do not read a boot failure as a code regression before
