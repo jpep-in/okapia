@@ -30,15 +30,25 @@ endif
 # Upstream Unix files reused unchanged.
 REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 
+# libhfs (Robert Leslie, GPLv2-or-later) reads and repairs HFS volumes. It is
+# what lets Okapia scavenge a volume left dirty by an interrupted session,
+# which is otherwise refused by MountVol. Its C files include no system headers
+# of their own — everything is behind os_open/os_read/... in os.h — so os.c
+# compiles unchanged against newlib.
+HFS         = ../../external/hfsutils/libhfs
+HFS_SRCS    = $(wildcard $(HFS)/*.c)
+
 EMU_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) \
            $(COMPAT_SRCS) $(PLATFORM_SRCS) $(REUSED_SRCS)
+
+HFS_OBJS = $(addprefix emu/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
 EMU_OBJS = $(addprefix emu/,$(notdir $(EMU_SRCS:.cpp=.o))) \
            $(addprefix emu/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
 
 # Our entry point is okapia_main.cpp, not main.cpp: VPATH also finds the core's
 # main.cpp, and identical names silently resolve to the wrong file.
-OBJS = okapia_main.o kernel.o $(EMU_OBJS)
+OBJS = okapia_main.o kernel.o $(EMU_OBJS) $(HFS_OBJS)
 
 include $(CIRCLEHOME)/Rules.mk
 
@@ -47,7 +57,7 @@ include $(CIRCLEHOME)/Rules.mk
 # plausible floor until phase 10 provides a real source.
 OKAPIA_BUILD_TIME := $(shell date +%s)
 EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
-EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) \
+EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) -I$(HFS) \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform
 
@@ -80,6 +90,11 @@ VPATH = $(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(MACEMU)/uae_cpu_20
 
 emu:
 	@mkdir -p emu
+
+# libhfs is plain C. It wants its own include path and none of the C++ flags.
+emu/hfs_%.o: $(HFS)/%.c | emu
+	@printf '  CC    libhfs/%s\n' "$(notdir $<)"
+	@$(CC) $(CFLAGS) -I$(HFS) -Wno-unused-result -c -o $@ $<
 
 emu/%.o: %.cpp | emu
 	@printf '  CC    %s\n' "$(notdir $<)"

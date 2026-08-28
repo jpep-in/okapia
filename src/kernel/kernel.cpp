@@ -245,9 +245,19 @@ bool CKernel::StartMacintosh (void)
             // a volume still marked in use is refused by MountVol (badMDBErr),
             // and nothing downstream explains why.
             extern bool HfsInspect (void *fh, const char *pName);
-            HfsInspect (fh, DISK_PATH);
+            extern bool HfsRepair (const char *pPath);
 
+            bool bClean = HfsInspect (fh, DISK_PATH);
             Sys_close (fh);
+
+            // A volume the last session left mounted is refused by MountVol,
+            // so repair it before the Mac ever sees it. libhfs scavenges on
+            // mount and marks the volume clean on unmount — the same thing a
+            // second System would do, without needing one.
+            if (!bClean)
+            {
+                HfsRepair (DISK_PATH);
+            }
         }
     }
 

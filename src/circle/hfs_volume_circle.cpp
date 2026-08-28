@@ -18,21 +18,27 @@
 #include "sysdeps.h"
 #include "okapia_circle.h"
 
+extern "C" {
+#include "hfs.h"
+}
+
 #define FROM "okapia-hfs"
 
 extern size_t Sys_read (void *fh, void *buffer, loff_t offset, size_t length);
 
-// Master Directory Block, at offset 1024 of the volume (Inside Macintosh IV).
+// Only two things are parsed by hand here, and both have a reason.
+//
+// The clean/dirty bit has to be read *before* mounting, because mounting is
+// what repairs it — after that the answer is gone. And the volume has to be
+// located the way Basilisk locates it (find_hfs_partition, disk.cpp:120), not
+// the way libhfs would, because Basilisk is what will serve it to the Mac.
+// Everything else — name, geometry, counts, dates, blessed folder — comes from
+// hfs_vstat() rather than being reparsed here.
 enum
 {
-    kMDBOffset      = 1024,
-    drSigWord       = 0x00,     // 'BD'
-    drAtrb          = 0x0A,     // bit 8 set = volume was unmounted cleanly
-    drNmFls         = 0x0C,
-    drAlBlkSiz      = 0x14,
-    drNmAlBlks      = 0x12,
-    drFreeBks       = 0x22,
-    drVN            = 0x24      // Str27 volume name
+    kMDBOffset = 1024,
+    kDrAtrb    = 0x0A,          // bit 8 set = volume was unmounted cleanly
+    kUnmounted = 0x0100
 };
 
 static uint16 BE16 (const uint8 *p)  { return (uint16) ((p[0] << 8) | p[1]); }
@@ -41,12 +47,6 @@ static uint32 BE32 (const uint8 *p)
     return ((uint32) p[0] << 24) | ((uint32) p[1] << 16)
          | ((uint32) p[2] << 8)  |  (uint32) p[3];
 }
-
-/*
- *  Where the HFS volume starts inside the file: 0 for a bare image, or the
- *  Apple_HFS partition for a real disk image. Same scan Basilisk does
- *  (find_hfs_partition, disk.cpp:120), so we look at what it will look at.
- */
 
 static loff_t FindVolumeStart (void *fh)
 {
@@ -70,11 +70,6 @@ static loff_t FindVolumeStart (void *fh)
     return 0;
 }
 
-/*
- *  Reports what the Mac is about to find. Returns true when the volume claims
- *  to have been unmounted cleanly, which is the state it will accept.
- */
-
 bool HfsInspect (void *fh, const char *pName)
 {
     uint8 MDB[512];
@@ -85,8 +80,7 @@ bool HfsInspect (void *fh, const char *pName)
         CLogger::Get ()->Write (FROM, LogWarning, "%s: cannot read the MDB", pName);
         return false;
     }
-
-    if (BE16 (MDB + drSigWord) != 0x4244)   // 'BD'
+    if (BE16 (MDB) != 0x4244)               // 'BD'
     {
         CLogger::Get ()->Write (FROM, LogWarning,
                                 "%s: no HFS volume at offset %lu",
@@ -94,35 +88,69 @@ bool HfsInspect (void *fh, const char *pName)
         return false;
     }
 
-    // The volume name is a Pascal string; keep it short and safe.
-    char Name[28];
-    unsigned nLen = MDB[drVN];
-    if (nLen > sizeof Name - 1)
+    const uint16 nAtrb = BE16 (MDB + kDrAtrb);
+    if (nAtrb & kUnmounted)
     {
-        nLen = sizeof Name - 1;
+        return true;
     }
-    memcpy (Name, MDB + drVN + 1, nLen);
-    Name[nLen] = '\0';
 
-    const uint16 nAtrb  = BE16 (MDB + drAtrb);
-    const bool   bClean = (nAtrb & 0x0100) != 0;
+    CLogger::Get ()->Write (FROM, LogWarning,
+                            "%s: marked in use (drAtrb %04X) — the last session did not "
+                            "shut down, and MountVol would answer badMDBErr",
+                            pName, (unsigned) nAtrb);
+    return false;
+}
 
-    CLogger::Get ()->Write (FROM, LogNotice,
-                            "%s: \"%s\", %u blocks of %u bytes, %u free, drAtrb %04X",
-                            pName, Name,
-                            (unsigned) BE16 (MDB + drNmAlBlks),
-                            (unsigned) BE32 (MDB + drAlBlkSiz),
-                            (unsigned) BE16 (MDB + drFreeBks),
-                            (unsigned) nAtrb);
+/*
+ *  Repair a volume the last session left mounted.
+ *
+ *  libhfs does the work by itself: mounting a volume without HFS_ATRB_UMOUNTED
+ *  runs v_scavenge() (volume.c:440), and unmounting sets the bit again
+ *  (volume.c:140). So a mount/unmount pair is the whole repair — the same
+ *  treatment the volume would get from another System, which is what makes it
+ *  bootable again.
+ *
+ *  This writes to the user's volume, so it refuses anything it cannot mount
+ *  read-write rather than guessing (AGENTS.md, Data safety).
+ */
 
-    if (!bClean)
+bool HfsRepair (const char *pPath)
+{
+    CLogger::Get ()->Write (FROM, LogNotice, "%s: repairing", pPath);
+
+    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDWR);
+    if (pVolume == 0)
     {
-        // Say what will happen, rather than letting it look like a mystery.
-        CLogger::Get ()->Write (FROM, LogWarning,
-                                "%s: marked in use — the last session did not shut down. "
-                                "MountVol will answer badMDBErr and the Mac will not start "
-                                "from it. Mount it from another System to have it repaired.",
-                                pName);
+        CLogger::Get ()->Write (FROM, LogError, "%s: cannot mount for repair (%s)",
+                                pPath, hfs_error != 0 ? hfs_error : "no reason given");
+        return false;
     }
-    return bClean;
+
+    // Now that libhfs holds the volume, let it describe it: no point reparsing
+    // fields it already understands, and it knows the blessed folder too.
+    hfsvolent Ent;
+    if (hfs_vstat (pVolume, &Ent) == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "%s: \"%s\", %lu KB free of %lu KB, %lu files, "
+                                "%lu folders, System folder %lu",
+                                pPath, Ent.name,
+                                (unsigned long) (Ent.freebytes / 1024),
+                                (unsigned long) (Ent.totbytes / 1024),
+                                (unsigned long) Ent.numfiles,
+                                (unsigned long) Ent.numdirs,
+                                (unsigned long) Ent.blessed);
+    }
+
+    // The scavenge already happened inside hfs_mount(); unmounting is what
+    // records that the volume is consistent again.
+    if (hfs_umount (pVolume) < 0)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "%s: repair did not complete (%s)",
+                                pPath, hfs_error != 0 ? hfs_error : "no reason given");
+        return false;
+    }
+
+    CLogger::Get ()->Write (FROM, LogNotice, "%s: repaired and marked clean", pPath);
+    return true;
 }

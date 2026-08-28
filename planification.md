@@ -1348,7 +1348,7 @@ participe au montage, et Basilisk ne le charge jamais. Nous ne pouvons pas repro
 chemin ; refuser (ou au moins signaler) un volume nu là où un vrai Mac attend une image de périphérique
 serait la même prudence.
 
-### Réparer le volume nous-mêmes — chemin identifié, `reference/hfsutils`
+### Réparer le volume nous-mêmes — **fait**, via `libhfs`
 
 `libhfs` (Robert Leslie, 1996-1998 ; fork maintenu par Pablo Lezaeta) fait déjà exactement ce qu'il faut,
 et sous une licence **GPLv2 or later**, donc compatible avec notre GPLv3.
@@ -1365,9 +1365,27 @@ et sous une licence **GPLv2 or later**, donc compatible avec notre GPLv3.
 un seul fichier implémentant ces cinq fonctions sur notre couche fichier, exactement comme la couche
 plateforme de Basilisk.
 
-**Enchaînement visé** : `HfsInspect` détecte déjà le volume marqué en usage au démarrage ; il ne reste qu'à
-proposer la réparation, la faire, et démarrer normalement. Le dialogue à l'écran relève de la phase 16
-(firmware Okapia) ; une première version peut se contenter d'une préférence et d'une ligne de journal.
+**Fait le 2026-08-28.** `external/hfsutils` en sous-module, `libhfs` compilé dans le noyau (14 objets,
+48 Ko), `os.c` inchangé sur newlib. Au démarrage : `HfsInspect` lit le bit de démontage, et s'il manque
+`HfsRepair` monte le volume en lecture-écriture — ce qui déclenche le scavenge — puis le démonte, ce qui
+le remarque propre.
+
+```
+okapia-hfs: marked in use (drAtrb 0000) — the last session did not shut down
+okapia-hfs: repairing
+okapia-hfs: "Mac HD 7.6", 467904 KB free of 511984 KB, 419 files, 45 folders, System folder 714
+okapia-hfs: repaired and marked clean
+```
+
+Vérifié à l'écran : après une coupure par `SIGKILL`, le Mac démarre et affiche le dialogue d'époque
+« Cet ordinateur n'a pas été éteint correctement ». **Plus besoin de second volume ni de reconstruction de
+carte.** Reste à faire : le dialogue de confirmation (phase 16) et l'exercice par `run-test.sh` avant que
+ce soit considéré comme acquis.
+
+**Ce qui reste écrit à la main, et pourquoi** : la lecture du bit de démontage doit précéder tout montage,
+puisque monter le répare ; et la localisation du volume doit suivre celle de Basilisk
+(`find_hfs_partition`), pas celle de libhfs, puisque c'est Basilisk qui servira le volume au Mac. Tout le
+reste — nom, géométrie, comptes, dossier Système béni — vient de `hfs_vstat()`.
 
 **Contrainte** : c'est du code qui écrit dans le volume de l'utilisateur. Il tombe donc entièrement sous
 §Data safety — jamais de réparation sur un volume qu'on ne sait pas valider, et `scripts/run-test.sh` doit

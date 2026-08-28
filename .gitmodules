@@ -4,3 +4,6 @@
 [submodule "external/macemu"]
 	path = external/macemu
 	url = https://github.com/kanjitalk755/macemu.git
+[submodule "external/hfsutils"]
+	path = external/hfsutils
+	url = https://github.com/JotaRandom/hfsutils.git
