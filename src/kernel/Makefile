@@ -42,7 +42,11 @@ OBJS = okapia_main.o kernel.o $(EMU_OBJS)
 
 include $(CIRCLEHOME)/Rules.mk
 
-EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE
+# No RTC on a Pi and no NTP yet, so the clock starts at zero. Stamping 1904
+# dates into a volume makes its MDB inconsistent; the build time is a
+# plausible floor until phase 10 provides a real source.
+OKAPIA_BUILD_TIME := $(shell date +%s)
+EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
 EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform

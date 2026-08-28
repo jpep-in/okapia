@@ -40,12 +40,19 @@ static const uint32 MAC_UNIX_EPOCH_DIFF = 2082844800U;
 uint32 TimerDateTime (void)
 {
     unsigned nUnixSeconds = CTimer::Get ()->GetTime ();
-    if (nUnixSeconds == 0)
+
+    // With no RTC and no NTP yet (phase 10), CTimer::GetTime() counts from zero
+    // at boot, so it reports 1970 plus a few seconds — which the Mac stamps
+    // into the volume as a 1904 date. That is not merely cosmetic: it leaves
+    // drLsMod earlier than drCrDate, an impossible state, and a volume whose
+    // MDB says it was last modified 114 years before it was created is exactly
+    // what fsck_hfs calls "MDB needs minor repair". Falling back to the build
+    // time keeps dates ordered and plausible until a real source exists.
+    if (nUnixSeconds < OKAPIA_BUILD_TIME)
     {
-        // Circle has no time set: report the Mac epoch rather than 1970, so a
-        // wrong clock looks obviously wrong instead of plausibly wrong.
-        return 0;
+        nUnixSeconds += OKAPIA_BUILD_TIME;
     }
+
     return (uint32) nUnixSeconds + MAC_UNIX_EPOCH_DIFF;
 }
 

@@ -1164,6 +1164,16 @@ en défaut : la fluidité — la souris traîne et la vidéo semble coûteuse, c
 ### Phase 10 — Horloge, PRAM, arrêt propre
 
 - [ ] `TimerDateTime()` avec la chaîne NTP → RTC → SD, source journalisée
+- [x] **repli sur l'heure de compilation** : sans RTC ni NTP, `CTimer::GetTime()` compte depuis zéro, donc
+      on annonçait 1970 + quelques secondes et le Mac estampillait le volume en **1904**. Ce n'était pas
+      cosmétique : `drLsMod` se retrouvait antérieur à `drCrDate`, un état impossible, et c'est ce que
+      `fsck_hfs` appelle « MDB needs minor repair ». Mesuré avant : `drLsMod` 2082844811 contre
+      `drCrDate` 3612702325. Après correction : ordre correct. **Cela ne débloque pas le démarrage** — le
+      refus tient au seul bit 8 — mais cela cesse d'abîmer les dates des volumes de l'utilisateur
+- [ ] **idée à creuser** : à défaut de RTC et de NTP, repartir de la **dernière heure connue du volume**,
+      c'est-à-dire `drLsMod` du MDB. `HfsInspect` le lit déjà au démarrage : le volume se souvient à peu
+      près de quand il a servi, ce qui est une bien meilleure borne que l'heure de compilation et suit
+      l'usage réel de la machine
 - [ ] patch `xpram_dirty` et écriture différée
 - [ ] patch d'écriture d'horloge
 - [x] arrêt propre sur « Shut Down » : `QuitEmulator()` appelle `m68k_emulop_return()`, la boucle 68k rend
