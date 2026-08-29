@@ -79,4 +79,12 @@ struct hostent *gethostbyname (const char *name);
 #define PACKAGE_VERSION   "0.1"
 #define VERSION           "0.1"
 
+/* Basilisk's own version, not Okapia's: slot_rom.cpp:258 formats it into the
+   slot ROM's revision string, beside "Christian Bauer" and "BasiliskII".
+   Upstream gets these from autoconf (AC_INIT([Basilisk II], 1.0)); with no
+   configure step here they have to be stated. Without them the tree does not
+   build from clean — only incrementally, on objects compiled earlier. */
+#define VERSION_MAJOR     1
+#define VERSION_MINOR     0
+
 #endif
