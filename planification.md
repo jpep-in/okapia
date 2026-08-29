@@ -1451,6 +1451,43 @@ manque n'est pas la correction mais le **second volume amorçable**.
       disque amorçable, SD illisible
 - [ ] aucun de ces éléments n'est versionné : tout vient de la ROM de l'utilisateur
 
+### Phase 15bis — Choisir son Système parmi les images de la carte
+
+Le besoin : plusieurs images sur la carte SD, et l'on choisit laquelle démarre. Trois briques, dont la
+première existe déjà à moitié et les deux autres se construisent l'une sur l'autre.
+
+**1. Lire la configuration depuis la carte** — c'est la case non faite de la phase 3, et le préalable de
+tout le reste. Aujourd'hui `CKernel::SetDefaultPreferences()` fixe tout en dur : chemin du disque, RAM,
+`modelid`. Tant que cela n'est pas lu depuis la carte, aucun choix n'est possible sans recompiler.
+`prefs_unix.cpp` sait déjà lire et écrire ce format, et la carte porte déjà un `BasiliskII_Prefs` écrit
+par le noyau. C'est donc surtout du câblage : lier `prefs_unix.cpp` à la place de `prefs_dummy.cpp`, lui
+donner le chemin de la carte, et retirer les valeurs en dur au profit de défauts.
+
+- [ ] `prefs_unix.cpp` lié, préférences lues et écrites sur la carte
+- [ ] `disk`, `ramsize`, `modelid`, `frameskip` viennent du fichier, les constantes deviennent des défauts
+
+**2. Décrire les images présentes** — sans quoi un choix se fait à l'aveugle sur des noms de fichiers.
+`libhfs` est déjà dans le noyau et sait tout ce qu'il faut : `hfs_mount` puis `hfs_vstat` donnent le nom
+du volume, sa taille, son occupation et le CNID du dossier Système béni. **Un `blessed` non nul dit que le
+volume est amorçable** — c'est le critère, et il est exact plutôt qu'heuristique.
+
+- [ ] balayer la carte, retenir les fichiers que `libhfs` ouvre comme volumes HFS
+- [ ] pour chacun : nom du volume, taille, place libre, amorçable ou non
+- [ ] journaliser cet inventaire au démarrage, avant toute interface — c'est déjà utile en soi
+
+**3. Poser le `modelid` assorti au Système** — la leçon du 2026-08-29 : un System 7.1 muni de son enabler
+s'arrête sur un cadre vide si on lui annonce un Quadra 900. Le `modelid` suit le Système, pas la ROM, et
+deux Systèmes de familles différentes ne peuvent pas partager une configuration.
+
+- [ ] lire la version du Système dans la ressource `vers` du fichier Système, via `libhfs` (le fork de
+      ressources est accessible, le format `vers` tient en quelques octets)
+- [ ] en déduire `5` avant 7.5, `14` à partir de Mac OS 8, et le journaliser
+- [ ] à défaut de détection fiable, le stocker par image dans les préférences plutôt que de deviner
+
+**Ordre conseillé** : 1 puis 2 donne déjà une machine configurable qui annonce ce qu'elle porte, sans une
+ligne d'interface. 3 supprime le dernier piège. L'interface de la phase 16 vient ensuite présenter ce que
+2 a découvert — elle en devient l'habillage, pas la fondation.
+
 ### Phase 16 — Firmware Okapia
 
 - [ ] `hal_circle` consolidé et utilisable hors émulateur
