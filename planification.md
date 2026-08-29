@@ -899,7 +899,7 @@ un échec précoce ne se distingue pas d'un blocage ; et `DEPTH` étant compilé
 indexé exige notre propre `CBcmFrameBuffer` plutôt que `CScreenDevice`.
 
 **La couche `stdio` est validée**, ce qui conditionnait la réutilisation d'`extfs_unix.cpp` et de
-`prefs_unix.cpp` (§8) :
+la lecture des préférences depuis la carte (§8) :
 
 ```
 stdio fopen/fgets: Okapia smoke test: this line was read from the SD card.
@@ -931,9 +931,10 @@ Ne pas repousser le matériel à la fin. Reprendre la phase 1 sur carte réelle,
 
 - [x] `uae_cpu_2021` + `src/*.cpp` compilés avec circle-stdlib
 - [x] `src/dummy/*` en place pour tout ce qui n'est pas encore écrit
-- [ ] `prefs_unix.cpp` adapté, configuration lue depuis la SD — **non fait** : c'est `prefs_dummy.cpp`
-      qui est lié, et `CKernel::SetDefaultPreferences()` fixe tout en dur. Rien n'est configurable
-      sans recompiler (cf. §7.12, le firmware Okapia)
+- [x] configuration lue depuis la SD — fait le 2026-08-29, mais par `src/circle/prefs_circle.cpp`
+      plutôt que par `prefs_unix.cpp` : ce dernier construit son chemin à partir de `$HOME` et de
+      `$XDG_CONFIG_HOME`, ce qui n'a pas de sens ici. Le **format** et l'analyseur restent ceux de
+      Basilisk, seul le chemin est à nous. Détail en §15bis, brique 1
 - [x] `main_circle.cpp` : allocation du bloc 257 Mo **en premier**, `MEMBaseDiff`, tick 60 Hz par IRQ
 
 Règle : aucun stub silencieux. Tout stub journalise son appel et échoue proprement s'il est indispensable.
@@ -1148,6 +1149,15 @@ lecture même quand la carte est manifestement lue, le contrôleur SD ne passant
 - [x] mouvement et boutons : `RegisterStatusHandler()` pour des déplacements bruts `dx/dy`. L'API
       « cooked » jetait chaque rapport faute de `Setup()`, et livre des coordonnées absolues
       qu'il ne faut pas passer en relatif
+- [x] table clavier **générée** depuis `BasiliskII/src/Unix/keycodes` (section `sdl cocoa`) par
+      `scripts/gen-keycodes.py`, et non plus écrite à la main : les scancodes SDL2 **sont** les usages
+      USB HID, donc cette section est déjà la table qu'il faut à un hôte USB. Fait le 2026-08-29 après
+      qu'une table manuelle eut envoyé les quatre flèches en *virtual key codes* au lieu de codes ADB
+      bruts — Haut partait en 0x7E, tombait à côté de la touche Power et ouvrait le dialogue d'extinction
+      à chaque appui. La table générée apporte aussi le pavé numérique, absent de la version manuelle
+- [x] écrasement depuis la carte par `keycodefile` (mot-clé d'upstream) : un `BasiliskII.keycodes` copié
+      d'un Basilisk de bureau se charge tel quel — 105 correspondances, vérifié. Deux lignes suffisent à
+      corriger deux touches, sans recompiler
 - [ ] raccourcis de débogage hors Mac — non faits
 
 **Succès** : Mac OS utilisable.
@@ -1165,15 +1175,222 @@ en défaut : la fluidité — la souris traîne et la vidéo semble coûteuse, c
 
 ### Phase 9 — Dossier partagé
 
-- [ ] `extfs_unix.cpp` adapté à FatFs
-- [ ] `.finf/` et `.rsrc/` fonctionnels, table des types
-- [ ] essai de bout en bout : archive déposée depuis un PC → visible dans le Finder → détendue → application
-      qui se lance
+Fait le 2026-08-29. La surprise est qu'il n'y avait presque rien à porter : `extfs_unix.cpp` compile tel
+quel contre newlib, et `extfs.cpp` n'utilise que `stat`, `access`, `opendir`/`readdir`, `open`/`read`/
+`write`/`lseek`, `mkdir`, `remove`, `rmdir`, `rename` et `utime` — tous présents, sauf le dernier.
+
+**Le vrai obstacle n'était pas FatFs, c'était MacOS.** ExtFS repose sur l'interface File System Manager
+1.2, **intégrée à Mac OS 7.6 et suivants, et disponible en extension système pour les versions
+antérieures** (`BasiliskII/TECH` §6.10). Sans elle, `extfs.cpp:491` écrit « No FSM present, disabling
+ExtFS » et il n'y a pas de volume partagé — ce que donne un System 7.1 nu, et c'est ce qui a masqué le
+résultat au premier essai, la carte démarrant alors sur le 7.1.
+
+À ne pas confondre avec le **partage de fichiers** : celui-là est AppleShare sur le réseau, il expose les
+dossiers du Mac à *d'autres Macs*, et n'apporte rien ici. Le test d'`extfs.cpp:487` étant un appel
+**Gestalt** (`gestaltHasFileSystemManager`, puis version ≥ 1.2), une extension le satisfait aussi bien
+qu'une intégration au Système.
+
+**Vérifié le 2026-08-29 sur System 7.1.2 français**, avec le System Enabler 040 et le File System Manager
+1.2 pris dans le SDK Apple (<https://www.macintoshrepository.org/2070-file-system-manager-1-2-sdk>) : le
+volume partagé se monte, l'avertissement « No FSM present » disparaît, et la détection annonce
+« System 7.1.2 (F1-7.1.2) — model 5 ». Donc **la limite n'est pas la version du Système mais la présence
+de l'extension** — c'est un problème d'installation, pas une impossibilité, et l'inverse aurait fait
+renoncer à tort sur tout ce qui précède 7.6.
+
+Sur la borne haute, deux sources qui ne s'accordent pas tout à fait : le `TECH` d'upstream écrit « built
+into MacOS 7.6 (and later) », l'usage courant place l'intégration dès 7.5. Mesuré ici : 7.6.1 fonctionne
+sans rien installer, 7.1.2 demande l'extension. Le README annonce 7.5 ; entre les deux rien n'est testé, et
+c'est sans conséquence puisque le symptôme est explicite dans le journal.
+
+**Un seul dossier, par construction.** `extfs.cpp` tient un unique `RootPath`, un unique `ROOT_ID` et un
+unique enregistrement de volume : plusieurs dossiers partagés demanderaient de réécrire le fichier, qui
+est dans `external/`. Des sous-dossiers dans le dossier partagé font le même service.
+
+- [x] `extfs_unix.cpp` réutilisé sans modification ; seul `utime()` manquait et passe maintenant par
+      `f_utime` (`FF_USE_CHMOD` est à 1 dans le `ffconf.h` de Circle)
+- [x] `.finf/` et `.rsrc/` créés à la demande, table des extensions fonctionnelle : un `.txt` déposé
+      depuis le Mac hôte arrive avec l'icône d'un document texte
+- [x] essai de bout en bout : fichier déposé dans `qemu/sd-contents/shared/` → visible dans le Finder avec
+      la bonne icône et la bonne place libre → le Finder y crée un dossier → le dossier et les deux
+      répertoires auxiliaires apparaissent sur la carte. Refait sur le 7.1.2 muni du FSM
+- [x] nom du volume paramétrable (`extfsname`) — en amont c'est une chaîne par plateforme, pas une
+      préférence : chaque portage réécrit `STR_EXTFS_VOLUME_NAME` dans sa propre table
+- [x] politique de vidage (`extfs_sync_circle.cpp`) : FatFs garde la queue d'une écriture en mémoire et
+      n'inscrit la nouvelle taille qu'à la fermeture. L'image disque n'a pas cette fenêtre — le Mac écrit
+      des secteurs entiers de 512 octets, que FatFs transmet directement — mais le dossier partagé écrit
+      des longueurs quelconques. Sans vidage, une coupure laisse une entrée de répertoire à zéro octet
+      pour un fichier dont les données sont déjà sur la carte : une perte qui ressemble à un succès
+
+**Retombée** : l'horloge de Circle est maintenant posée à l'heure de compilation au démarrage
+(`kernel.cpp`). Sans cela `get_fattime()` renvoie zéro et chaque fichier créé par le Mac porte la date
+`1980-00-00`, qui n'est même pas une date valide. Le journal série est daté par la même occasion.
+
+**Outillage** : le moniteur QEMU pilote la souris et le clavier du Mac (`mouse_move`, `mouse_button`,
+`sendkey`), ce qui permet de vérifier le Finder sans personne devant l'écran. Deux pièges : les commandes
+envoyées en rafale sur une seule connexion sont perdues — une par connexion, avec une pause — et deux
+`mouse_button` ne font pas un double-clic, l'aller-retour du moniteur étant plus lent que le délai du Mac.
+`Command-O` ouvre la sélection et remplace le double-clic.
 
 ### Phase 10 — Horloge, PRAM, arrêt propre
 
-- [ ] `TimerDateTime()` avec la chaîne NTP → RTC → SD, source journalisée
-- [x] **repli sur l'heure de compilation** : sans RTC ni NTP, `CTimer::GetTime()` compte depuis zéro, donc
+**État de l'horloge au 2026-08-29** — une seule chaîne, un seul point de décision :
+
+1. **La source** : `OKAPIA_BUILD_TIME`, posé par le Makefile (`date +%s`, donc un instant UTC) et figé
+   dans le noyau. C'est tout ce qu'il y a : un Pi n'a pas de RTC et NTP demande le réseau.
+2. **Le point de décision** : `CKernel::Initialize()` appelle `m_Timer.SetTime()` une fois, puis
+   `ApplyTimeZone()` après lecture des préférences. C'est là que viendront NTP, un RTC et la dernière
+   heure connue de la carte — rien d'autre n'aura à changer.
+3. **Les lecteurs** : le Mac par `TimerDateTime()` (`timer_circle.cpp`), FatFs par `get_fattime()`
+   (`ffsystem.cpp`). Tous deux lisent l'horloge de Circle, donc la barre de menus du Mac et les dates sur
+   la carte ne peuvent pas diverger.
+
+**Deux pièges levés en route.** Le premier : `TimerDateTime()` portait son propre repli sur
+`OKAPIA_BUILD_TIME`, hérité de l'époque où l'horloge de Circle restait à zéro. Deux mécanismes qui se
+recouvraient, et de quoi ne plus savoir lequel décidait — supprimé, la fonction ne fait plus que lire.
+
+Le second : **le Mac de cette époque n'a pas de fuseau horaire du tout**, son horloge *est* l'heure locale,
+alors que Circle rapporte UTC. Un Pi à Paris affichait donc deux heures de retard, ce qui ressemble à un
+noyau périmé et n'en est pas. D'où la préférence `timezone`, en minutes à l'est d'UTC. Vérifié : à `120`,
+la barre de menus du Mac affiche 14:28 quand l'hôte affiche 14:28.
+
+L'ordre compte : `SetTimeZone()` avant `SetTime()`, parce que `SetTime` range des secondes locales — poser
+le fuseau après déplacerait l'heure du journal sans toucher celle du Mac.
+
+**L'écriture de l'horloge par le Mac est perdue**, et c'est le comportement d'upstream sur toutes les
+plateformes : `emul_op.cpp:181` ignore les écritures dans les registres RTC, et la lecture suivante rend
+l'heure de l'hôte. Régler la date dans le tableau de bord ne tient pas.
+
+#### La chaîne de confiance qui reste à construire
+
+Aujourd'hui il n'y a **qu'une source, l'heure de compilation, et rien n'est persisté** : à chaque
+démarrage l'horloge repart de l'instant où `make` a tourné. Le Mac ne peut pas la corriger non plus
+(`emul_op.cpp:181` jette les écritures RTC). Ordre visé, du plus fiable au moins :
+
+**Brique 1 — le RTC d'abord.** Circle fournit déjà tout, dans `addon/rtc/` :
+
+- `CRealTimeClock` (`rtc.h`) est l'interface : `Get(CTime *)` et `Set(const CTime &)`, en UTC.
+- `CFirmwareRTC` (`firmwarertc.cpp`) est le **RTC intégré du Pi 5**, via les property tags du firmware.
+  Son `Initialize()` cherche `/soc/rpi_rtc` dans le device tree et rend `FALSE` ailleurs : il se détecte
+  seul, on n'a pas à savoir sur quelle carte on tourne. Il ne garde l'heure hors tension qu'avec une pile
+  sur le connecteur J5.
+- `CMCP7941X` (`mcp7941x.cpp`) couvre les modules I²C (`CMCP7941X(CI2CMaster *, 100000, 0x6F)`), donc les
+  Pi 3 et 4 avec un HAT à quelques euros.
+- **`Set()` existe des deux côtés**, et c'est ce qui rend le RTC utile plutôt que décoratif : dès qu'une
+  meilleure source apparaît (NTP), on la réécrit dedans.
+- Construction : `addon/rtc` a son propre Makefile et produit `librtc.a`. Même traitement que
+  `lib/sound/libsound.a`, déjà ajouté à `LIBS` — circle-stdlib ne les met pas dans la ligne de lien.
+- **Bloqué par la phase 2**, et sans échappatoire : les machines de QEMU s'arrêtent à `raspi4b`, toutes
+  en BCM283x/2711, aucune n'ayant d'horloge temps réel, et il n'existe pas de machine `raspi5` — donc pas
+  de RTC du Pi 5 à simuler non plus. Le chemin doit donc se rabattre sur la
+  brique 2 et le dire dans le journal, jamais échouer.
+
+**Brique 2 — à défaut, la dernière heure connue du volume. Faite le 2026-08-29**
+(`CKernel::RefineClock()`), la seule des trois qui marchait sans matériel ni réseau :
+
+- [x] La source est `drLsMod` du MDB, que `hfs_vstat` rend déjà sous le nom `mddate` : seul le champ
+      manquait dans `THfsVolumeInfo`, l'inventaire lisant déjà chaque image en lecture seule.
+- [x] **Vérifié** : `d_ltime` (`data.c:467`) n'est ici qu'un décalage de 2082844800, parce que
+      `HAVE_MKTIME` n'est jamais défini dans notre compilation et que `tzdiff` reste donc à 0
+      (`data.c:456`). Pas de surprise de fuseau à l'intérieur de libhfs.
+- [x] Règle : **retenue = max(le `mddate` le plus récent de la carte, `OKAPIA_BUILD_TIME`)**. On ne
+      recule jamais, et une carte qui a servi hier vaut mieux qu'un noyau compilé le mois dernier. C'est
+      un plancher, pas une correction.
+- [x] **Piège de fuseau, évité** : un Mac écrit `drLsMod` en heure **locale**, donc `mddate` est une
+      heure locale ramenée à l'époque 1970, tandis que `OKAPIA_BUILD_TIME` est un instant **UTC**. Les
+      comparer directement décale d'une ou deux heures. On ramène le second au repère local avant le
+      `max`, puis on pose le résultat avec `SetTime(t, TRUE)`.
+- [x] **Garde-fou** : `drLsMod` tient sur 32 bits depuis 1904 et déborde en février 2040. Une date
+      au-delà est un champ abîmé, pas une prophétie : elle est ignorée et journalisée.
+- [x] **Place dans la séquence** : inventaire → **horloge** → dossier partagé → réparation → `InitAll`.
+      L'affinage doit précéder toute écriture, sinon la réparation porte la mauvaise date — précisément
+      ce que la brique corrige. L'inventaire tourne donc désormais toujours, `hfsinventory` ne
+      commandant plus que son affichage.
+- [x] **Vérifié** en compilant avec `OKAPIA_BUILD_TIME=1735689600` (1ᵉʳ janvier 2025) : l'horloge part de
+      `Jan 1 02:00`, puis `Clock: Aug 29 12:17:55, from /boot71.img — later than the build time`. La
+      source est nommée dans le journal, jamais devinée.
+
+**Brique 3 — NTP, quand le réseau existera.** Envisageable, oui, et Circle l'a déjà :
+
+- `CNTPClient::GetTime(CIPAddress &)` rend les secondes depuis 1970 en UTC, 0 en cas d'échec
+  (`include/circle/net/ntpclient.h`) ; `CNTPDaemon(serveur, CNetSubSystem *)` resynchronise ensuite. Le
+  modèle est l'exemple `18-ntptime` : `SetTimeZone()` puis `new CNTPDaemon("pool.ntp.org", &m_Net)`.
+- **Le bon usage n'est pas d'afficher l'heure, c'est d'écrire le RTC** : une synchronisation, `Set()`
+  dans le RTC, et les démarrages suivants n'ont plus besoin du réseau. NTP devient alors un confort, pas
+  une dépendance — ce qui est la seule forme acceptable pour un appareil.
+- Le démon corrige l'horloge pendant que le Mac tourne ; le Mac ne relit son RTC que de loin en loin,
+  donc un saut finira par se voir. À surveiller plutôt qu'à craindre.
+
+#### Ce que l'horloge demande au réseau, et ce qu'elle ne doit pas lui demander
+
+C'est le point où la phase 10 touche la phase 13, et il vaut d'être posé maintenant pour ne pas se
+retrouver à décider dans l'urgence :
+
+- **NTP a besoin de la pile montée avant `Start680x0()`**, alors que la phase 13 ne prévoit le réseau que
+  *pour le Mac*, c'est-à-dire pendant qu'il tourne. Ce sont deux besoins différents du même sous-système :
+  l'un veut quelques secondes avant le démarrage, l'autre veut durer. `CNetSubSystem` peut servir les
+  deux, mais l'initialisation doit alors être avancée avant `InitAll()`.
+- **Le coût est un délai au démarrage** : DHCP, puis DNS, puis NTP. Sur un réseau absent ou lent, c'est du
+  temps où l'utilisateur regarde un écran vide. **À borner et à rendre facultatif** : un appareil qui
+  attend un réseau qui n'existe pas est pire qu'une horloge fausse. Une préférence `ntp` vide veut dire
+  « n'essaie même pas », et un délai maximum court (deux ou trois secondes) doit être respecté.
+- **L'ordre de la chaîne rend d'ailleurs l'attente inutile dans le cas courant** : avec un RTC alimenté,
+  l'heure est déjà juste au démarrage et NTP n'a qu'à confirmer — donc il peut très bien le faire
+  **après** que le Mac a démarré, en tâche de fond, et n'écrire que le RTC. C'est la conception à viser :
+  NTP ne devrait jamais être sur le chemin critique du démarrage.
+- **Le Pi 1/2/3 met son Ethernet sur l'USB**, qui alimente aussi le clavier et la souris (§Pitfalls). Une
+  synchronisation NTP au démarrage est trop brève pour gêner, mais un démon qui interroge en boucle ne
+  l'est pas : espacer largement, et mesurer avant de croire que c'est gratuit.
+- **Wi-Fi** : `addon/wlan` existe dans Circle, mais il demande le firmware Broadcom sur la carte et une
+  configuration (SSID, clé) qu'il faudra bien mettre quelque part — donc dans les préférences, avec la
+  question du stockage d'un secret en clair sur une carte FAT. À traiter en phase 13, pas ici.
+
+**Ordre d'implémentation** : 2 d'abord — faite. Puis 1 quand il y a une carte. Puis 3 après la phase 13,
+et hors du chemin critique. Préférences prévues : `rtc` (auto ou off), `ntp` (serveur, vide pour aucun),
+en plus de `timezone` qui existe.
+
+#### Ce qui reste dû à la sécurité des données
+
+- L'écriture du RTC par le Mac reste perdue (`emul_op.cpp:181`). Tant qu'il n'y a pas de RTC matériel,
+  l'implémenter n'aurait nulle part où écrire ; avec un RTC, « régler la date » dans le tableau de bord
+  devrait descendre jusqu'à `CRealTimeClock::Set()`. C'est la case « patch d'écriture d'horloge ».
+- Une horloge qui recule entre deux démarrages produit des volumes dont `drLsMod` précède `drCrDate`,
+  l'état exact que `fsck_hfs` appelle « MDB needs minor repair ». Toute source ajoutée doit donc passer
+  par le même plancher que la brique 2 : **on ne recule jamais**, quel que soit ce que dit la source.
+
+#### La PRAM
+
+**Faite le 2026-08-29** (`src/circle/xpram_circle.cpp`, remplaçant `xpram_dummy.cpp`). 256 octets qui
+tiennent ce que le Mac retient d'une session à l'autre : disque de démarrage, volume sonore, suivi de la
+souris, motif du bureau.
+
+La question ouverte est tranchée : le chemin relatif de `xpram_dummy` **atterrissait bien à la racine de
+la carte**, le répertoire courant de FatFs étant la racine du volume monté. Mais c'était un accident, pas
+une décision — le fichier est maintenant nommé `/BasiliskII_XPRAM` explicitement.
+
+Deux corrections de fond :
+
+- **Écriture dès que la PRAM change**, et non au seul arrêt propre comme en amont. Un fichier de 256
+  octets comparé une fois par seconde ne coûte rien, et perdre les réglages du Mac sur une coupure était
+  évitable. C'est la case « `xpram_dirty` et écriture différée » du plan, faite sans rustine sur
+  `external/`.
+- **Appelé depuis `VideoInterrupt()`**, pas depuis le tick. Ce n'est pas sa place par le sujet, mais
+  c'est le seul appel périodique qui s'exécute **dans le fil 68k** : le gestionnaire de tick tourne au
+  niveau IRQ, où bloquer sur la carte SD est interdit. `VideoInterrupt()` est appelé par
+  `emul_op.cpp:467`, donc dans le même contexte que `Sys_write`.
+- **Un fichier court est refusé** : cela veut dire que la dernière écriture n'a pas abouti. On repart
+  d'une PRAM vide, ce que fait un Mac dont la pile est morte, plutôt que de prendre un fichier partiel
+  pour des réglages.
+
+Anecdote instructive rencontrée en chemin : le `BasiliskII_XPRAM` trouvé sur la carte portait la date de
+**compilation du noyau qui l'avait écrit**, pas celle du jour — l'illustration la plus courte de pourquoi
+la chaîne d'horloge ci-dessus valait le détour.
+
+- [ ] la chaîne NTP → RTC → SD ; il n'en existe pour l'instant que le dernier maillon de secours
+- [x] source journalisée au démarrage : `Clock: Aug 29 14:29:40 (UTC+2:00), from the build time — no RTC
+      and no NTP yet`. Une horloge fausse doit se voir dans le journal, pas se deviner
+- [x] `timezone` en préférence (minutes à l'est d'UTC), appliqué avant `SetTime()`
+- [x] **repli sur l'heure de compilation**, posé maintenant dans l'horloge de Circle elle-même plutôt que
+      dans `TimerDateTime()` : sans RTC ni NTP, `CTimer::GetTime()` compte depuis zéro, donc
       on annonçait 1970 + quelques secondes et le Mac estampillait le volume en **1904**. Ce n'était pas
       cosmétique : `drLsMod` se retrouvait antérieur à `drCrDate`, un état impossible, et c'est ce que
       `fsck_hfs` appelle « MDB needs minor repair ». Mesuré avant : `drLsMod` 2082844811 contre
@@ -1453,40 +1670,77 @@ manque n'est pas la correction mais le **second volume amorçable**.
 
 ### Phase 15bis — Choisir son Système parmi les images de la carte
 
-Le besoin : plusieurs images sur la carte SD, et l'on choisit laquelle démarre. Trois briques, dont la
-première existe déjà à moitié et les deux autres se construisent l'une sur l'autre.
+Le besoin : plusieurs images sur la carte SD, et l'on choisit laquelle démarre. Trois briques. **Les deux
+premières sont faites** (2026-08-29) : la machine se configure depuis la carte et annonce ce qu'elle
+porte, sans une ligne d'interface. **La troisième aussi** : le `modelid` se déduit du Système installé.
+Reste l'habillage en phase 16.
 
-**1. Lire la configuration depuis la carte** — c'est la case non faite de la phase 3, et le préalable de
-tout le reste. Aujourd'hui `CKernel::SetDefaultPreferences()` fixe tout en dur : chemin du disque, RAM,
-`modelid`. Tant que cela n'est pas lu depuis la carte, aucun choix n'est possible sans recompiler.
-`prefs_unix.cpp` sait déjà lire et écrire ce format, et la carte porte déjà un `BasiliskII_Prefs` écrit
-par le noyau. C'est donc surtout du câblage : lier `prefs_unix.cpp` à la place de `prefs_dummy.cpp`, lui
-donner le chemin de la carte, et retirer les valeurs en dur au profit de défauts.
+**1. Lire la configuration depuis la carte** — c'était la case non faite de la phase 3, et le préalable de
+tout le reste. Fait le 2026-08-29 : `src/circle/prefs_circle.cpp` remplace `prefs_dummy.cpp`, qui cherchait
+son fichier relativement à un répertoire courant que le noyau ne pose jamais — il n'en trouvait donc
+aucun. Le format, les mots-clés et l'analyseur restent ceux de Basilisk (`LoadPrefsFromStream`,
+`SavePrefsToStream`) : un `BasiliskII_Prefs` écrit par un Basilisk de bureau se lit ici, et
+réciproquement.
 
-- [ ] `prefs_unix.cpp` lié, préférences lues et écrites sur la carte
-- [ ] `disk`, `ramsize`, `modelid`, `frameskip` viennent du fichier, les constantes deviennent des défauts
+Trois points valaient d'être notés :
+
+- Les défauts d'Okapia sont dans `AddPlatformPrefsDefaults()`, que `PrefsInit()` appelle **avant**
+  `LoadPrefs()` — la carte écrase donc les défauts sans une ligne de code pour l'organiser.
+- Sauf pour les items « multiples » (`disk`, `floppy`, `cdrom`), que l'analyseur **ajoute** au lieu de
+  remplacer : un défaut posé avant la lecture survivrait à côté de la valeur du fichier et le Mac verrait
+  les deux. Ceux-là sont posés après lecture, seulement s'ils manquent.
+- `ramsize` décide de l'allocation du bloc Mac, donc la carte doit être montée **avant** elle. C'est la
+  seule chose qui passe désormais devant l'invariant « le bloc de 257 Mo d'abord ». Mesuré : 935 Mo de
+  tas libre sur une carte 1 Go, exactement le chiffre relevé quand la mesure précédait le montage.
+
+- [x] préférences lues et écrites sur la carte, au format Basilisk (`/BasiliskII_Prefs`)
+- [x] `disk`, `rom`, `ramsize`, `modelid`, `cpu`, `fpu`, `frameskip`, `nosound` viennent du fichier ; les
+      constantes du noyau sont devenues des défauts
+- [x] fichier créé au premier démarrage avec des exemples en commentaire (`#` en première colonne)
+- [x] deux options propres à Okapia : `hfsrepair` et `hfsinventory`
+- [x] options documentées dans `README.md`, y compris celles de Basilisk **sans effet** sous Circle et
+      pourquoi
 
 **2. Décrire les images présentes** — sans quoi un choix se fait à l'aveugle sur des noms de fichiers.
-`libhfs` est déjà dans le noyau et sait tout ce qu'il faut : `hfs_mount` puis `hfs_vstat` donnent le nom
-du volume, sa taille, son occupation et le CNID du dossier Système béni. **Un `blessed` non nul dit que le
-volume est amorçable** — c'est le critère, et il est exact plutôt qu'heuristique.
+Fait le 2026-08-29, dans `hfs_volume_circle.cpp`. Monté en lecture seule, `libhfs` n'écrit rien du tout,
+pas même le scavenge (`volume.c:1059`) : l'inventaire décrit les volumes sans en toucher un.
 
-- [ ] balayer la carte, retenir les fichiers que `libhfs` ouvre comme volumes HFS
-- [ ] pour chacun : nom du volume, taille, place libre, amorçable ou non
-- [ ] journaliser cet inventaire au démarrage, avant toute interface — c'est déjà utile en soi
+- [x] balayer la carte, retenir les fichiers que `libhfs` ouvre comme volumes HFS
+- [x] pour chacun : nom du volume, taille, place libre, nombre de fichiers et de dossiers, amorçable ou
+      non (`blessed` non nul), propre ou monté
+- [x] journaliser cet inventaire au démarrage, avant toute interface
+- [x] repli : si aucun `disk` configuré n'existe sur la carte, démarrer sur le premier volume amorçable
+      de l'inventaire plutôt que de s'arrêter sur une disquette au point d'interrogation
 
 **3. Poser le `modelid` assorti au Système** — la leçon du 2026-08-29 : un System 7.1 muni de son enabler
 s'arrête sur un cadre vide si on lui annonce un Quadra 900. Le `modelid` suit le Système, pas la ROM, et
-deux Systèmes de familles différentes ne peuvent pas partager une configuration.
+deux Systèmes de familles différentes ne peuvent pas partager une configuration. Fait le 2026-08-29,
+`HfsSystemVersion()` dans `hfs_volume_circle.cpp`, appelé avant `InitAll()` puisque `rom_patches.cpp` lit
+`modelid` en rustinant la ROM.
 
-- [ ] lire la version du Système dans la ressource `vers` du fichier Système, via `libhfs` (le fork de
-      ressources est accessible, le format `vers` tient en quelques octets)
-- [ ] en déduire `5` avant 7.5, `14` à partir de Mac OS 8, et le journaliser
-- [ ] à défaut de détection fiable, le stocker par image dans les préférences plutôt que de deviner
+**Le fichier Système se trouve par type et créateur (`zsys` / `MACS`), jamais par son nom** : le nom est
+localisé, un Système français s'appelle `Système`. Le volume 7.6 de test l'a d'ailleurs gardé en anglais,
+donc chercher « System » aurait marché ici et cassé ailleurs — exactement le genre de réussite trompeuse
+qu'il faut éviter.
 
-**Ordre conseillé** : 1 puis 2 donne déjà une machine configurable qui annonce ce qu'elle porte, sans une
-ligne d'interface. 3 supprime le dernier piège. L'interface de la phase 16 vient ensuite présenter ce que
-2 a découvert — elle en devient l'habillage, pas la fondation.
+Relevé sur les deux images :
+
+```
+/machd76.image: "System" says System 7.6.1 (F1-7.6.1) — model 5
+/boot71.img:    "System" says System 7.1.0 (7.1) — model 5, overriding the preferences
+```
+
+- [x] version lue dans la ressource `vers` du fichier Système via `libhfs` (fork de ressources en lecture
+      seule : `hfs_setfork` tronque, mais `f_trunc` sort immédiatement sur un volume monté en lecture
+      seule, `file.c:16`)
+- [x] `5` avant 8.0, `14` à partir de Mac OS 8 — 7.5 et 7.6 tournent sur les deux et sont testés sur `5`,
+      donc la frontière est à 8.0 et nulle part ailleurs
+- [x] optionnel : `modelidauto` (défaut vrai) ; à faux, la valeur du fichier est prise telle quelle
+- [x] échec de détection journalisé, pas passé sous silence — la valeur du fichier sert alors de repli
+
+**Reste à faire** : l'interface de la phase 16 présente ce que 2 a découvert et laisse choisir — elle en
+est l'habillage, pas la fondation. Le choix se pose alors dans `disk` et se relit au démarrage suivant,
+sans autre mécanisme.
 
 ### Phase 16 — Firmware Okapia
 

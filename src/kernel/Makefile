@@ -14,8 +14,16 @@ CPU_SRCS    = $(wildcard $(MACEMU)/uae_cpu_2021/*.cpp) \
               $(MACEMU)/uae_cpu_2021/fpu/fpu_uae.cpp \
               $(MACEMU)/CrossPlatform/video_blit.cpp
 GEN_SRCS    = $(GEN)/cpudefs.cpp $(GEN)/cpustbl.cpp $(GEN)/cpufunctbl.cpp
-# audio_dummy.cpp is replaced by src/circle/audio_circle.cpp; the others stay.
-DUMMY_SRCS  = $(filter-out $(MACEMU)/dummy/audio_dummy.cpp,\
+# audio_dummy.cpp, prefs_dummy.cpp and user_strings_dummy.cpp are replaced by
+# src/circle/*_circle.cpp; the others stay. prefs_dummy looks for its file
+# relative to a current directory the kernel never sets, so it never found one
+# on the card, user_strings_dummy's platform table is empty — which is what
+# names the shared volume — and xpram_dummy names its file relatively, so where
+# the Mac's PRAM landed was an accident.
+DUMMY_SRCS  = $(filter-out $(MACEMU)/dummy/audio_dummy.cpp \
+                           $(MACEMU)/dummy/prefs_dummy.cpp \
+                           $(MACEMU)/dummy/user_strings_dummy.cpp \
+                           $(MACEMU)/dummy/xpram_dummy.cpp,\
                            $(wildcard $(MACEMU)/dummy/*.cpp))
 COMPAT_SRCS = $(wildcard $(OKAPIA)/compat/*.cpp)
 # The trace wrappers reference __real_* symbols the linker only creates when the
@@ -71,6 +79,12 @@ DEFINE += $(EMU_DEFINES)
 # not put in the default link line. It depends on libcircle, so it comes first.
 LIBS := $(CIRCLEHOME)/lib/sound/libsound.a $(CIRCLE_STDLIB_LIBS)
 
+# Two upstream hooks that are part of the product, not diagnostics, so they are
+# always on. Mangled names: extfs_write(int, void*, size_t) for the shared
+# folder's flush policy (extfs_sync_circle.cpp), and EmulOp(uint16,
+# M68kRegisters*) to notice the Mac writing its PRAM (xpram_hook_circle.cpp).
+LDFLAGS += --wrap=_Z11extfs_writeiPvm --wrap=_Z6EmulOptP13M68kRegisters
+
 # Diagnostics, off by default: build with OKAPIA_TRACE=1 to hook upstream
 # functions at link time rather than patching external/ (AGENTS.md). Circle
 # invokes ld directly, so these are bare --wrap, not -Wl,--wrap. The symbols are
@@ -87,6 +101,16 @@ endif
 EMU_FLAGS = $(EMU_DEFINES) -fexceptions -Wno-narrowing -Wno-write-strings
 
 VPATH = $(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(GEN)
+
+# The USB HID -> ADB key table, derived from Basilisk's own keycodes file rather
+# than typed out: SDL2 scancodes are HID usage IDs, so its "sdl cocoa" section
+# already is the table. Regenerated whenever that file or the generator changes.
+KEYCODES_H = $(GEN)/keycodes_default.h
+$(KEYCODES_H): $(MACEMU)/Unix/keycodes ../../scripts/gen-keycodes.py
+	@mkdir -p $(GEN)
+	@../../scripts/gen-keycodes.py $< $@
+
+emu/input_circle.o: $(KEYCODES_H)
 
 emu:
 	@mkdir -p emu

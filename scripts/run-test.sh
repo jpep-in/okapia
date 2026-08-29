@@ -45,9 +45,9 @@ trap cleanup EXIT
 
 if [ -n "$IMAGE" ]; then
     [ -f "$IMAGE" ] || { echo "No such image: $IMAGE" >&2; exit 1; }
-    # The kernel boots a fixed name (kernel.cpp, DISK_PATH), so the image under
-    # test takes that name on the throwaway card. Renaming here rather than in
-    # the kernel keeps the test from changing what it is testing.
+    # A card with no BasiliskII_Prefs falls back to /machd76.image, so the image
+    # under test takes that name on the throwaway card. Renaming here rather
+    # than writing preferences keeps the test from changing what it is testing.
     command -v mformat >/dev/null || { echo "mtools missing: brew install mtools" >&2; exit 1; }
     SIZE_MB=$(( ( $(stat -f%z "$IMAGE") / 1048576 ) + 32 ))
     POW=64; while [ "$POW" -lt "$SIZE_MB" ]; do POW=$(( POW * 2 )); done
@@ -93,6 +93,14 @@ else
     printf '\nwrites    : %s bytes changed on the card\n' "$CHANGED"
 fi
 
+# Which volume the Mac started from, straight from the kernel's own log.
+BOOT_VOLUME="$(sed -n 's/.*Boot volume: \///p' "$LOG" | tail -1 | tr -d ' ')"
+if [ -n "$BOOT_VOLUME" ]; then
+    printf 'volume    : %s (the one the Mac booted)\n' "$BOOT_VOLUME"
+else
+    printf 'volume    : not named in the log, falling back to the first *.image\n'
+fi
+
 # A small helper: report the volume state on the card as it stands.
 #   $1 = label
 # Sets VOL_FLAG and VOL_FSCK ("ok" / "bad" / "?").
@@ -102,8 +110,21 @@ inspect_card() {
     CARD_MOUNT="$(hdiutil attach -readonly -nobrowse "$CARD" 2>/dev/null | tail -1 | awk '{print $1}')" || CARD_MOUNT=""
     [ -n "$CARD_MOUNT" ] || { echo "could not read the card back" >&2; return 1; }
 
-    GUEST_IMAGE="$(find /Volumes/OKAPIA -maxdepth 1 -name '*.image' 2>/dev/null | head -1)" || GUEST_IMAGE=""
-    [ -n "$GUEST_IMAGE" ] || { cleanup; CARD_MOUNT=""; echo "no disk image on the card" >&2; return 1; }
+    # The volume the kernel actually started from, which it names in the log.
+    # Guessing from the card instead would inspect whichever image sorts first
+    # — and on a card with two Systems that is a volume the run may never have
+    # touched, so a green verdict would mean nothing.
+    GUEST_IMAGE=""
+    if [ -n "$BOOT_VOLUME" ] && [ -f "/Volumes/OKAPIA/${BOOT_VOLUME}" ]; then
+        GUEST_IMAGE="/Volumes/OKAPIA/${BOOT_VOLUME}"
+    else
+        # Also the path when the log named a volume the mounted card does not
+        # show under that name — 8.3 truncation, a case difference from mcopy.
+        # Guessing is worse than naming, but far better than giving up.
+        [ -z "$BOOT_VOLUME" ] || echo "warning: ${BOOT_VOLUME} not found on the card, guessing" >&2
+        GUEST_IMAGE="$(find /Volumes/OKAPIA -maxdepth 1 -name '*.image' 2>/dev/null | head -1)" || GUEST_IMAGE=""
+    fi
+    [ -f "$GUEST_IMAGE" ] || { cleanup; CARD_MOUNT=""; echo "no disk image on the card" >&2; return 1; }
 
     # MDB drAtrb, image offset 1034: bit 8 set (0100) means unmounted cleanly.
     VOL_FLAG="$( { dd if="$GUEST_IMAGE" bs=1 skip=1034 count=2 2>/dev/null || true; } | xxd -p)"

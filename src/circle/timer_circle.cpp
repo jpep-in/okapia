@@ -31,29 +31,22 @@ static const uint32 MAC_UNIX_EPOCH_DIFF = 2082844800U;
 /*
  *  Current date and time, in Mac seconds.
  *
- *  This is the single point where the guest learns what time it is. The plan's
- *  order of trust — NTP, then RTC, then the value kept on the card — is applied
- *  by the kernel before the Mac starts; by the time this is called, Circle's
- *  clock already holds the best answer available.
+ *  This reads the clock, it does not decide it. The kernel sets Circle's clock
+ *  once at startup and everything downstream — the Mac here, FatFs through
+ *  get_fattime() — reads that same one, so the Mac's menu bar and the dates on
+ *  the card can never disagree. The plan's order of trust (NTP, then an RTC,
+ *  then the last time known to the card) belongs at that single point too,
+ *  where today there is only the build time.
+ *
+ *  This is only the *read* half of the Mac's RTC. Writes — Date & Time in the
+ *  control panel — are dropped by emul_op.cpp:181 and the next read undoes
+ *  them, which is upstream's behaviour on every platform: the host owns the
+ *  clock.
  */
 
 uint32 TimerDateTime (void)
 {
-    unsigned nUnixSeconds = CTimer::Get ()->GetTime ();
-
-    // With no RTC and no NTP yet (phase 10), CTimer::GetTime() counts from zero
-    // at boot, so it reports 1970 plus a few seconds — which the Mac stamps
-    // into the volume as a 1904 date. That is not merely cosmetic: it leaves
-    // drLsMod earlier than drCrDate, an impossible state, and a volume whose
-    // MDB says it was last modified 114 years before it was created is exactly
-    // what fsck_hfs calls "MDB needs minor repair". Falling back to the build
-    // time keeps dates ordered and plausible until a real source exists.
-    if (nUnixSeconds < OKAPIA_BUILD_TIME)
-    {
-        nUnixSeconds += OKAPIA_BUILD_TIME;
-    }
-
-    return (uint32) nUnixSeconds + MAC_UNIX_EPOCH_DIFF;
+    return (uint32) CTimer::Get ()->GetTime () + MAC_UNIX_EPOCH_DIFF;
 }
 
 /*

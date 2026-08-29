@@ -65,7 +65,7 @@ durability measurement, and note that macOS's `fsck_hfs` speaks HFS standard poo
 volume it cannot then repair.
 
 Until then: **`run-live.sh` sessions must end with Finder → Shut Down.** Anything else costs the card, and
-`scripts/make-sd-image.sh 1024` is the recovery. Do not read a boot failure as a code regression before
+`scripts/make-sd-image.sh` is the recovery. Do not read a boot failure as a code regression before
 rebuilding the card and looking at the screen — that mistake has now cost this project two long
 investigations.
 
@@ -93,8 +93,22 @@ investigations.
   interrupted session does not lose writes in our layer — what it loses is whatever MacOS still held in
   its own RAM cache, which is the same exposure a real Mac has. Do not go looking for a bug in the file
   layer before re-checking that.
-- Still owed as features land: full card, a write error from the SD layer, removal mid-write, shutdown
-  during a write, a second volume, and the shared folder's own writes.
+- **The clock never goes backwards.** It starts at `max(build time, the most recent drLsMod on the card)`
+  (`CKernel::RefineClock()`). A clock that recedes between boots produces volumes whose `drLsMod` precedes
+  `drCrDate`, which is exactly what `fsck_hfs` calls "MDB needs minor repair" — so any source added later
+  (RTC, NTP) goes through the same floor. Beware the frames: `drLsMod` is **local** time and
+  `OKAPIA_BUILD_TIME` is **UTC**; comparing them raw is an hour or two out.
+- **The PRAM is written the moment it changes** (`xpram_circle.cpp`), from `VideoInterrupt()` — not from
+  the tick handler, which runs at IRQ level where blocking on the SD card is not allowed. That hook is the
+  only periodic call running in the 68k thread, the same context as `Sys_write`. Anything else that needs
+  to touch the card periodically belongs there too, not in the tick.
+- **The shared folder writes through** (`extfs_sync_circle.cpp`). FatFs keeps the tail of a write in the
+  file object and only records the new size at `f_sync`/`f_close`, so a pulled plug would leave a
+  directory entry saying zero bytes for a file whose clusters are already on the card — a loss that looks
+  like a success. The disk image has no such window: the Mac writes whole 512-byte sectors at sector
+  boundaries, which FatFs passes straight through.
+- Still owed as features land: full card, a write error from the SD layer, removal mid-write, and
+  shutdown during a write.
 
 ## Work locally
 
@@ -127,6 +141,45 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **`uae_cpu_2021`, not `uae_cpu`** — that's what macemu builds on AArch64.
 - **One MAC address**: `CNetDevice` has no promiscuous mode.
 - **QEMU lies**: `raspi3b` accepts 8 bpp + palette that the Pi 5 refuses. Validate on hardware.
+- **The shared folder needs the File System Manager 1.2**, which is **built into Mac OS 7.6 and later and
+  ships as a system extension for earlier Systems** (`BasiliskII/TECH` §6.10). Without it `extfs.cpp:491`
+  prints "No FSM present, disabling ExtFS" and there is no shared volume — which is what a bare System 7.1
+  does, and it makes the feature look broken. **The limit is the extension, not the System version**:
+  verified working on French System 7.1.2 with the FSM 1.2 extension from Apple's SDK
+  (macintoshrepository.org/2070-file-system-manager-1-2-sdk), because `extfs.cpp:487` tests it with
+  Gestalt and an extension answers as well as a built-in. The FSM is **not** File Sharing: that is
+  AppleShare over the network and does not provide it. ExtFS is also single-volume by construction — one
+  `RootPath`, one VCB — so several shared folders would mean rewriting a file in `external/`.
+- **The key table is generated, never typed.** `scripts/gen-keycodes.py` derives it from
+  `BasiliskII/src/Unix/keycodes`, section `sdl cocoa`, at build time — **SDL2 scancodes are USB HID usage
+  IDs**, so that section already is the table a USB host needs. The hand-written version it replaced had
+  all four arrows wrong: `ADBKeyDown()` takes *raw ADB* codes, which agree with the far more familiar Mac
+  virtual key codes for letters and digits and differ for the arrows, so Up went out as 0x7E (virtual;
+  ADB wants 0x3E), landed beside the Power key and opened the shutdown dialog on every press. It also
+  omitted the numeric keypad entirely. A card may override the table through `keycodefile`, in the same
+  format. Related trap: a lookup table whose initialiser is shorter than its declared size leaves the
+  tail zeroed, and **ADB 0x00 is the letter A**, so every unmapped key types "a".
+- **QEMU has no RTC to offer.** Its machines stop at `raspi4b`, all BCM283x/2711, and none of those SoCs
+  has a real-time clock; there is no `raspi5` machine, which is where the Pi's built-in RTC would be. So
+  the RTC branch of the clock chain cannot be exercised without hardware, and everything under QEMU falls
+  through to the build time and the card (plan §10).
+- **The QEMU monitor can drive the Mac's mouse and keyboard**, which is how the Finder gets tested with
+  nobody at the screen: `mouse_move dx dy`, `mouse_button 1|0`, `sendkey`. Four traps: commands sent as a
+  burst down one `nc -U` connection are dropped — send one per connection with a pause; two
+  `mouse_button` pairs do **not** make a double-click, because the monitor round trip is slower than the
+  Mac's double-click time, so select then `sendkey meta_l-o` (Command-O) to open; the Mac applies pointer
+  acceleration, so a delta of 40 moves about 29 pixels — aim by screenshot, not by arithmetic; and
+  System 7 menus are **not** sticky, so a menu needs press, move, release rather than click, click.
+- **A test that picks its subject by guessing can go green on the wrong volume.** `run-test.sh` used to
+  inspect the first `*.image` on the card; once a second System was staged, that was no longer the volume
+  the Mac had booted, and the verdict meant nothing. The kernel now logs `Boot volume: <path>` and the
+  test reads it from the log. Anything that judges "did this survive" must name what it judged.
+- **A script that replaces a file must build beside it and move it into place.** `make-sd-image.sh`
+  defaulted to a 64 MB card long after the disk images moved into `qemu/sd-contents/`, and it deleted the
+  old card before writing the new one — so an argument-less run destroyed a working 1 GB card and left a
+  truncated one carrying neither the ROM nor the System. The message was `Disk full` and nothing else.
+  It now sizes the card from what is staged, refuses an explicit size that cannot hold it **before**
+  touching anything, and stages the build in `sd.img.new`.
 - **Never run two emulators on the same card.** Two QEMUs writing `qemu/sd.img` destroys the volume, and
   afterwards it looks exactly like random corruption — which is most of what the boot "non-determinism"
   really was. `run-live.sh` now refuses to start when the image is already open; `run-test.sh` and
@@ -158,7 +211,8 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   `fsck_hfs` reports was caused by that one run, whereas on the master the damage accumulates and nothing
   is attributable. It ends in SIGKILL — the harshest case — and reports how many bytes the guest actually
   wrote, so a green verdict cannot come from a run that exercised nothing. A failing copy is kept for
-  inspection. Rebuild a card from `qemu/sd-contents/` with `scripts/make-sd-image.sh 1024`.
+  inspection. Rebuild a card from `qemu/sd-contents/` with `scripts/make-sd-image.sh`, which now sizes the card
+  from what is staged and builds it beside the old one, replacing it only once complete.
 - **A guest that reads its disk and still won't boot is a volume problem, not a driver problem.** The
   trace to run first is `OKAPIA_TRACE=1` (`src/kernel/Makefile`): successful reads with no short reads,
   followed by a catalogue scan and then a second driver init, means the file layer is fine.

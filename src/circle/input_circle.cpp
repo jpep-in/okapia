@@ -14,6 +14,10 @@
  */
 
 #include "sysdeps.h"
+
+#include <ctype.h>
+#include <stdio.h>
+#include <string.h>
 #include "okapia_circle.h"
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
@@ -32,41 +36,124 @@ static unsigned char       s_LastModifiers;
 static unsigned            s_LastMouseButtons;
 
 /*
- *  USB HID usage -> Mac ADB key code. Index is the HID usage ID.
- *  0xFF means "no equivalent"; those keys are ignored.
+ *  USB HID usage -> Mac ADB key code.
+ *
+ *  Not written by hand. SDL2 scancodes *are* USB HID usage IDs — SDL defines
+ *  its scancode set from the HID Keyboard/Keypad page — so the SDL2 section of
+ *  Basilisk's own keycodes file is already the table a USB host needs, and
+ *  scripts/gen-keycodes.py turns it into the array below at build time.
+ *
+ *  Deriving it is not pedantry. The hand-written version this replaces had the
+ *  four arrows wrong, because ADBKeyDown() wants *raw ADB* codes and the
+ *  familiar numbers are the Mac virtual key codes — which agree for letters and
+ *  digits and differ for the arrows. Up went out as 0x7E, landed beside the
+ *  Power key, and opened the shutdown dialog on every press. The generated
+ *  table also brings the numeric keypad, which the hand-written one omitted
+ *  entirely.
+ *
+ *  A card may override it: see KeycodesLoad().
  */
-static const unsigned char s_HIDToMac[128] =
+static unsigned char s_HIDToMac[256] =
+#include "keycodes_default.h"
+;
+
+/*
+ *  Replace the table from a keycodes file on the card.
+ *
+ *  Same format as Basilisk's: a driver name on its own line, then "scancode
+ *  keycode" pairs in decimal, # or ; for comments. The section is the one
+ *  headed "sdl cocoa" — Basilisk's name for the SDL2 table — or "okapia" for a
+ *  file written for this machine. Anything else in the file is skipped, so an
+ *  unmodified BasiliskII.keycodes works as it stands.
+ *
+ *  Partial overrides are allowed and useful: a file with two lines fixes two
+ *  keys and leaves the rest alone.
+ */
+
+bool KeycodesLoad (const char *pPath)
 {
-    /* 00-03 */ 0xFF, 0xFF, 0xFF, 0xFF,
-    /* 04-0D  a b c d e f g h i j */ 0x00, 0x0B, 0x08, 0x02, 0x0E, 0x03, 0x05, 0x04, 0x22, 0x26,
-    /* 0E-17  k l m n o p q r s t */ 0x28, 0x25, 0x2E, 0x2D, 0x1F, 0x23, 0x0C, 0x0F, 0x01, 0x11,
-    /* 18-1D  u v w x y z         */ 0x20, 0x09, 0x0D, 0x07, 0x10, 0x06,
-    /* 1E-27  1 2 3 4 5 6 7 8 9 0 */ 0x12, 0x13, 0x14, 0x15, 0x17, 0x16, 0x1A, 0x1C, 0x19, 0x1D,
-    /* 28 Return    */ 0x24,
-    /* 29 Escape    */ 0x35,
-    /* 2A Backspace */ 0x33,
-    /* 2B Tab       */ 0x30,
-    /* 2C Space     */ 0x31,
-    /* 2D -  2E =   */ 0x1B, 0x18,
-    /* 2F [  30 ]   */ 0x21, 0x1E,
-    /* 31 backslash */ 0x2A,
-    /* 32 (non-US)  */ 0x2A,
-    /* 33 ;  34 '   */ 0x29, 0x27,
-    /* 35 `         */ 0x32,
-    /* 36 ,  37 .  38 / */ 0x2B, 0x2F, 0x2C,
-    /* 39 CapsLock  */ 0x39,
-    /* 3A-45 F1-F12 */ 0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0x64, 0x65, 0x6D, 0x67, 0x6F,
-    /* 46-4F        */ 0xFF, 0xFF, 0xFF, 0x72, 0x73, 0x74, 0x75, 0x77, 0x79, 0x7C,
-    /* 50 Left 51 Down 52 Up */ 0x7B, 0x7D, 0x7E,
-    /* 53-7F */ 0xFF
-};
+    FILE *pFile = fopen (pPath, "r");
+    if (pFile == 0)
+    {
+        return false;
+    }
+
+    char Line[128];
+    bool bInSection = false;
+    bool bHeaderRun = false;        // reading a run of driver names, not pairs
+    unsigned nApplied = 0;
+
+    while (fgets (Line, sizeof Line, pFile) != 0)
+    {
+        char *p = strpbrk (Line, "#;\r\n");
+        if (p != 0)
+        {
+            *p = '\0';
+        }
+        while (*Line != '\0' && isspace ((unsigned char) Line[strlen (Line) - 1]))
+        {
+            Line[strlen (Line) - 1] = '\0';
+        }
+        char *pStart = Line;
+        while (isspace ((unsigned char) *pStart))
+        {
+            pStart++;
+        }
+        if (*pStart == '\0')
+        {
+            continue;
+        }
+
+        if (!isdigit ((unsigned char) *pStart))
+        {
+            // A driver name. Several may stack in front of one table, so a run
+            // of them selects the section together.
+            if (!bHeaderRun)
+            {
+                bInSection = false;
+                bHeaderRun = true;
+            }
+            if (strcmp (pStart, "sdl cocoa") == 0 || strcmp (pStart, "okapia") == 0)
+            {
+                bInSection = true;
+            }
+            continue;
+        }
+
+        bHeaderRun = false;
+        if (!bInSection)
+        {
+            continue;
+        }
+
+        int nScan = -1, nMac = -1;
+        if (sscanf (pStart, "%d %d", &nScan, &nMac) != 2)
+        {
+            continue;
+        }
+        if (nScan < 0 || nScan > 255 || nMac < 0 || nMac > 255)
+        {
+            continue;
+        }
+        s_HIDToMac[nScan] = (unsigned char) nMac;
+        nApplied++;
+    }
+    fclose (pFile);
+
+    if (nApplied == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "%s: no \"sdl cocoa\" or \"okapia\" section, keyboard unchanged",
+                                pPath);
+        return false;
+    }
+
+    CLogger::Get ()->Write (FROM, LogNotice, "%s: %u key mappings applied", pPath, nApplied);
+    return true;
+}
 
 static void PostKey (unsigned char nHID, bool bDown)
 {
-    if (nHID >= sizeof s_HIDToMac)
-    {
-        return;
-    }
     unsigned char nMac = s_HIDToMac[nHID];
     if (nMac == 0xFF)
     {
