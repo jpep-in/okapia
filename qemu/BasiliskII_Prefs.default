@@ -1,0 +1,58 @@
+# Okapia preferences — the defaults scripts/make-sd-image.sh puts on a test card.
+#
+# Basilisk II format: one "keyword value" per line, and a line whose first
+# character is # or ; is a comment. There are no trailing comments — everything
+# after the keyword is the value — so explanations go on lines of their own.
+#
+# This file is copied into qemu/sd-contents/ on the first card build and is
+# yours to edit from then on: later builds leave it alone. Delete it and the
+# next build puts this back. README.md documents every keyword, including the
+# ones Basilisk understands and Okapia does not.
+
+# The boot volume. Repeat the keyword for a second one; the Mac starts from the
+# first that is bootable. A * prefix mounts it read-only.
+disk /machd76.image
+
+# The Macintosh ROM image.
+rom /okapia.rom
+
+# 256 MB, this project's ceiling.
+ramsize 268435456
+
+# Read from the System on the boot volume. 5 = Mac IIci for System 7.0 to 7.1,
+# 14 = Quadra 900 for Mac OS 8.x. Set modelidauto false to use the value below
+# as it stands.
+modelid 5
+modelidauto true
+
+cpu 4
+fpu true
+
+# Minutes east of UTC: 60 for CET, 120 for CEST, -300 for EST. The clock starts
+# at the time the kernel was built, in UTC, and a Mac's clock is local time.
+timezone 0
+
+# 0 = Dynamic. 1 = every frame, 2 = 30 Hz, 6 = 10 Hz.
+frameskip 0
+
+# QEMU's raspi3b models no audio output at all, and a device the Mac cannot hear
+# is worse than silence: it waits for a completion that never comes. Turn this
+# off on real hardware.
+nosound true
+
+# The shared folder: a directory on the card, shown to the Mac as a volume, and
+# what it is called on the desktop (27 characters at most). System 7.5 and later
+# need nothing extra; 7.0 and 7.1 need the File System Manager 1.2 extension.
+# Leave extfs empty for none at all.
+extfs /shared
+extfsname Okapia
+
+# Repair a volume an interrupted session left marked in use, and list the
+# volumes found on the card at startup. See README.md.
+hfsrepair true
+hfsinventory true
+
+# No floppy drives. The empty value is deliberate: with no floppy line at all,
+# SonyInit falls back to Linux's /dev/fd0 and /dev/fd1, and the Mac then fails
+# to mount two drives that do not exist.
+floppy 
