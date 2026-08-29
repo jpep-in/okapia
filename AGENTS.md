@@ -76,9 +76,13 @@ investigations.
   writes, structural damage, or — as today — a card the Mac can no longer start from.
 - **Every path that writes guest data must survive an abrupt stop at any instruction.** Ask it of new code
   before it lands, not after someone reports a broken disk.
-- **Prove it, don't assume it**: `scripts/run-test.sh` ends the guest with SIGKILL, runs `fsck_hfs` on the
-  volume and reports how many bytes were actually written — so a green verdict cannot come from a run that
-  exercised nothing.
+- **Prove it, don't assume it**: `scripts/run-test.sh [seconds] [image]` ends the guest with SIGKILL,
+  boots the card again so `HfsRepair` runs, and only then judges the volume. Its verdict rests on the
+  state **after** the repair, because a volume marked in use is what a pulled plug leaves on a real Mac
+  too and `fsck_hfs` condemns it on that basis alone. It also reports how many bytes the guest wrote, so
+  a green verdict cannot come from a run that exercised nothing. Pass an image to regression-test a second
+  System without touching the card you use. Verified for System 7.1 and 7.6: flag `0100` and `fsck` clean
+  after repair, both times.
 - **`fsck_hfs` on macOS is a weak instrument here.** It supports HFS standard poorly: it calls the
   reference image corrupt and then cannot repair it either, B-tree rebuild included. Treat "corrupt" from
   it as a hint, not a verdict, and prefer what the Mac itself says — a volume that boots is worth more

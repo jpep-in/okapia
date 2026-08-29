@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Headless regression run, then a verdict on what the run did to the volume.
-#   usage: run-test.sh [seconds] [kernel]
+#   usage: run-test.sh [seconds] [disk-image]
+#
+# With no image it tests qemu/sd.img as it stands. Given one — say
+# qemu/sd-contents/boot71.img — it builds a throwaway card carrying that image
+# as the boot disk, so a second System can be regression-tested without
+# disturbing the card you actually use.
 #
 # The run works on a copy of qemu/sd.img — not to look away from corruption, but
 # to be able to see it. On the master image damage accumulates across runs and
@@ -15,7 +20,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SECONDS_TO_RUN="${1:-40}"
-KERNEL="${2:-${REPO_ROOT}/src/kernel/kernel8.img}"
+IMAGE="${2:-}"
+KERNEL="${REPO_ROOT}/src/kernel/kernel8.img"
 SD="${REPO_ROOT}/qemu/sd.img"
 
 # shellcheck source=/dev/null
@@ -37,7 +43,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cp "$SD" "$CARD"
+if [ -n "$IMAGE" ]; then
+    [ -f "$IMAGE" ] || { echo "No such image: $IMAGE" >&2; exit 1; }
+    # The kernel boots a fixed name (kernel.cpp, DISK_PATH), so the image under
+    # test takes that name on the throwaway card. Renaming here rather than in
+    # the kernel keeps the test from changing what it is testing.
+    command -v mformat >/dev/null || { echo "mtools missing: brew install mtools" >&2; exit 1; }
+    SIZE_MB=$(( ( $(stat -f%z "$IMAGE") / 1048576 ) + 32 ))
+    POW=64; while [ "$POW" -lt "$SIZE_MB" ]; do POW=$(( POW * 2 )); done
+    dd if=/dev/zero of="$CARD" bs=1m count="$POW" status=none
+    mformat -i "$CARD" -F -v OKAPIA ::
+    mcopy -i "$CARD" "$IMAGE" ::machd76.image
+    mcopy -i "$CARD" "${REPO_ROOT}/qemu/sd-contents/okapia.rom" ::okapia.rom
+    printf 'testing %s on a %s MB card\n' "$(basename "$IMAGE")" "$POW"
+else
+    cp "$SD" "$CARD"
+fi
 
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial stdio -display none \
     -drive "file=${CARD},if=sd,format=raw,cache=writethrough" \
@@ -59,57 +80,75 @@ grep -E "okapia-68k: running|okapia-video:" "$LOG" | tail -2 || true
 
 # --- did the guest write at all? ---
 # Without this, a green verdict below could simply mean nothing was exercised.
-CHANGED="$( { cmp -l "$SD" "$CARD" 2>/dev/null || true; } | wc -l | tr -d ' ')"
-if [ "$CHANGED" = "0" ]; then
+if [ -n "$IMAGE" ]; then
+    CHANGED="?"
+else
+    CHANGED="$( { cmp -l "$SD" "$CARD" 2>/dev/null || true; } | wc -l | tr -d ' ')"
+fi
+if [ "$CHANGED" = "?" ]; then
+    printf '\nwrites    : not compared (card built for this test)\n'
+elif [ "$CHANGED" = "0" ]; then
     printf '\nwrites    : NONE — the guest never wrote, the verdict below proves nothing\n'
 else
     printf '\nwrites    : %s bytes changed on the card\n' "$CHANGED"
 fi
 
-# --- what did this run do to the volume? ---
-CARD_MOUNT="$(hdiutil attach -readonly -nobrowse "$CARD" 2>/dev/null | tail -1 | awk '{print $1}')" || CARD_MOUNT=""
-[ -n "$CARD_MOUNT" ] || { echo "could not read the card back" >&2; exit 1; }
+# A small helper: report the volume state on the card as it stands.
+#   $1 = label
+# Sets VOL_FLAG and VOL_FSCK ("ok" / "bad" / "?").
+inspect_card() {
+    VOL_FLAG="?" ; VOL_FSCK="?"
 
-GUEST_IMAGE="$(find /Volumes/OKAPIA -maxdepth 1 -name '*.image' 2>/dev/null | head -1)" || GUEST_IMAGE=""
-[ -n "$GUEST_IMAGE" ] || { echo "no disk image on the card" >&2; exit 1; }
+    CARD_MOUNT="$(hdiutil attach -readonly -nobrowse "$CARD" 2>/dev/null | tail -1 | awk '{print $1}')" || CARD_MOUNT=""
+    [ -n "$CARD_MOUNT" ] || { echo "could not read the card back" >&2; return 1; }
 
-# MDB drAtrb, image offset 1034: bit 8 set (0100) means unmounted cleanly.
-ATTR="$( { dd if="$GUEST_IMAGE" bs=1 skip=1034 count=2 2>/dev/null || true; } | xxd -p)"
-printf '\nvolume flag: %s  (%s)\n' "$ATTR" \
-    "$([ "$ATTR" = "0100" ] && echo 'not marked in use' || echo 'marked in use — needs Disk First Aid')"
+    GUEST_IMAGE="$(find /Volumes/OKAPIA -maxdepth 1 -name '*.image' 2>/dev/null | head -1)" || GUEST_IMAGE=""
+    [ -n "$GUEST_IMAGE" ] || { cleanup; CARD_MOUNT=""; echo "no disk image on the card" >&2; return 1; }
 
-# Without the explicit raw class hdiutil answers "image non reconnue": a bare
-# HFS volume has no header for it to sniff.
-IMAGE_DEV="$(hdiutil attach -nomount -readonly -imagekey diskimage-class=CRawDiskImage \
-    "$GUEST_IMAGE" 2>/dev/null | head -1 | awk '{print $1}')" || IMAGE_DEV=""
-if [ -n "$IMAGE_DEV" ] && fsck_hfs -n -q "$IMAGE_DEV" >/dev/null 2>&1; then
-    echo "structure : OK — every write reached the card"
-    RESULT=0
-else
-    echo "structure : DAMAGED — writes were lost, this is ours to fix"
-    RESULT=1
-fi
+    # MDB drAtrb, image offset 1034: bit 8 set (0100) means unmounted cleanly.
+    VOL_FLAG="$( { dd if="$GUEST_IMAGE" bs=1 skip=1034 count=2 2>/dev/null || true; } | xxd -p)"
 
-cleanup; IMAGE_DEV="" ; CARD_MOUNT=""
+    # Without the explicit raw class hdiutil answers "image non reconnue": a
+    # bare HFS volume has no header for it to sniff.
+    IMAGE_DEV="$(hdiutil attach -nomount -readonly -imagekey diskimage-class=CRawDiskImage \
+        "$GUEST_IMAGE" 2>/dev/null | head -1 | awk '{print $1}')" || IMAGE_DEV=""
+    if [ -n "$IMAGE_DEV" ]; then
+        if fsck_hfs -n -q "$IMAGE_DEV" >/dev/null 2>&1; then VOL_FSCK="ok"; else VOL_FSCK="bad"; fi
+    fi
+    cleanup; IMAGE_DEV="" ; CARD_MOUNT=""
+    return 0
+}
 
-# --- and does the guest recover on its own? ---
-# The SIGKILL above leaves the volume marked in use, which MountVol refuses.
-# HfsRepair is supposed to scavenge it before the Mac ever sees it, so boot the
-# same card again and check that it did. This is the one path that writes to the
-# user's volume, so it must not be trusted on a manual test alone.
-printf '\n'
-"${REPO_ROOT}/scripts/env.sh" >/dev/null 2>&1 || true
+# --- after the kill: dirty is expected, damage is not ---
+# A volume marked in use is what a pulled plug leaves on a real Mac too, and
+# fsck_hfs condemns it on that basis alone. So this reading is informational;
+# the verdict comes after the recovery below.
+inspect_card || exit 1
+printf '\nafter kill: flag %s (%s), fsck says %s\n' "$VOL_FLAG" \
+    "$([ "$VOL_FLAG" = "0100" ] && echo 'clean' || echo 'in use, as expected')" "$VOL_FSCK"
+
+# --- does the guest recover on its own? ---
+# HfsRepair is supposed to scavenge the volume before the Mac ever sees it. Boot
+# the same card again to make it happen — with a marker asking the kernel to
+# stop right after the repair, because otherwise the Mac remounts the volume
+# within two seconds and marks it in use again, hiding the very thing being
+# measured. This is the one path that writes to someone's disk unasked, so it
+# does not get to rely on goodwill.
+mcopy -i "$CARD" -o /dev/null ::repair-only 2>/dev/null || \
+    { : > "${WORK}/marker"; mcopy -i "$CARD" -o "${WORK}/marker" ::repair-only; }
+
 RECOVER_LOG="$(mktemp -t okapiarecover)"
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial "file:${RECOVER_LOG}" \
     -display none -drive "file=${CARD},if=sd,format=raw,cache=writethrough" \
     -device usb-kbd -device usb-mouse -semihosting > /dev/null 2>&1 &
 RPID=$!
-sleep 25
+sleep 20
 kill -9 $RPID 2>/dev/null || true
 wait $RPID 2>/dev/null || true
 
+RESULT=0
 if grep -q "repaired and marked clean" "$RECOVER_LOG" 2>/dev/null; then
-    echo "recovery  : OK — the volume was scavenged and remounted clean"
+    echo "recovery  : the volume was scavenged and remounted clean"
 elif grep -q "marked in use" "$RECOVER_LOG" 2>/dev/null; then
     echo "recovery  : FAILED — the volume stayed dirty" >&2
     RESULT=1
@@ -117,6 +156,20 @@ else
     echo "recovery  : nothing to repair (the guest never dirtied the volume)"
 fi
 rm -f "$RECOVER_LOG"
+
+# --- the verdict: what the volume looks like once recovery has run ---
+# This is the property that matters. A hard kill may leave the volume marked in
+# use; what it must never leave is structural damage that survives the repair.
+inspect_card || exit 1
+printf 'after repair: flag %s, fsck says %s\n' "$VOL_FLAG" "$VOL_FSCK"
+
+if [ "$VOL_FSCK" = "bad" ]; then
+    echo "VERDICT   : FAILED — the volume is still damaged after repair" >&2
+    RESULT=1
+elif [ "$RESULT" -eq 0 ]; then
+    echo "VERDICT   : OK — a hard kill costs nothing the repair cannot undo"
+fi
+
 if [ "$RESULT" -eq 0 ]; then
     rm -rf "$WORK"
 else

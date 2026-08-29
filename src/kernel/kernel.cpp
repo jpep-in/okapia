@@ -136,7 +136,12 @@ void CKernel::SetDefaultPreferences (void)
     PrefsAddString ("disk", DISK_PATH);
 
     // 14 = Quadra 900. Required for Mac OS 8.x; see plan §7.11.
-    PrefsReplaceInt32 ("modelid", 14);
+    // 5 = Mac IIci, which System 7.x before 7.5 requires: an enabler checks the
+    // machine it runs on, and announcing a Quadra 900 (14) stops System 7.1 on
+    // an empty Welcome box. 14 is what Mac OS 8.x wants, so this follows the
+    // System actually installed — a choice the firmware will make per image
+    // once it can pick one (plan, phase 16).
+    PrefsReplaceInt32 ("modelid", 5);
     PrefsReplaceInt32 ("cpu", 4);           // 68040
     PrefsReplaceBool ("fpu", true);         // a 68040 always has one
 #ifdef CIRCLE_QEMU
@@ -247,6 +252,19 @@ bool CKernel::StartMacintosh (void)
             if (!bClean)
             {
                 HfsRepair (DISK_PATH);
+            }
+
+            // A card carrying this marker asks for the repair and nothing else.
+            // It exists so a test can judge the volume in the state the repair
+            // leaves it: booting the Mac would remount it and mark it in use
+            // again within a couple of seconds, which is the honest behaviour
+            // but hides what we want to measure. scripts/run-test.sh uses it.
+            FILE *pMarker = fopen ("/repair-only", "r");
+            if (pMarker != 0)
+            {
+                fclose (pMarker);
+                m_Logger.Write (FROM, LogNotice, "Repair-only card: stopping here");
+                return false;
             }
         }
     }
