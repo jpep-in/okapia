@@ -569,6 +569,14 @@ Basilisk n'expose que deux valeurs, et le critère est **la version de Mac OS vi
 | `5` | Mac IIci | System 7.x, **obligatoire avant 7.5** |
 | **`14`** | Quadra 900 | **Mac OS 8.x — retenu**, puisque la cible est 8.1 |
 
+**Vérifié le 2026-08-29**, et la conséquence n'avait pas été tirée. Avec `modelid 14`, un System 7.1
+muni de son *System Enabler 040* s'arrête sur un cadre « Welcome to Macintosh » vide : l'enabler contrôle
+l'identifiant machine, et on lui annonce un Quadra 900 qu'il ne couvre pas. Avec `modelid 5`, le même
+volume démarre jusqu'au Finder. Le 7.6 démarre indifféremment avec l'une ou l'autre valeur.
+
+Donc : **un volume de secours doit être en System 7.5 ou plus récent**, sinon il exige un `modelid`
+incompatible avec la cible 8.1. Une image 7.1 ne peut pas cohabiter, quelle que soit sa qualité.
+
 D'autres valeurs fonctionnent parfois mais ne sont pas supportées : un `29` (Quadra 800) ne rend le
 *System Profiler* correct sous 8.1 qu'avec la ROM Quadra 800 assortie, toute autre combinaison le cassant.
 Hors des deux valeurs sûres, il faut une cohérence ROM ↔ `modelid`, payée en fragilité.
@@ -1450,6 +1458,12 @@ manque n'est pas la correction mais le **second volume amorçable**.
 - [ ] écrans : moteur et profil, ROM, disques, écran, réseau, audio
 - [ ] écriture dans le fichier de préférences, qui reste la source de vérité
 - [ ] ouverture par touche maintenue au démarrage, et automatiquement si la configuration manque
+
+- [ ] **dialogue de réparation du volume** : aujourd'hui `HfsRepair` scavenge en silence au démarrage.
+      C'est ce qu'il faut pour un appareil, mais l'utilisateur doit pouvoir le voir et le refuser —
+      « le volume n'a pas été démonté proprement, réparer ? ». C'est la première vraie raison d'être de
+      cette interface, et le seul endroit du système qui écrit dans le volume de l'utilisateur sans qu'il
+      l'ait demandé
 
 ### Phase 17 — Provisionnement
 

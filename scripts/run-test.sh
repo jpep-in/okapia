@@ -91,6 +91,32 @@ else
 fi
 
 cleanup; IMAGE_DEV="" ; CARD_MOUNT=""
+
+# --- and does the guest recover on its own? ---
+# The SIGKILL above leaves the volume marked in use, which MountVol refuses.
+# HfsRepair is supposed to scavenge it before the Mac ever sees it, so boot the
+# same card again and check that it did. This is the one path that writes to the
+# user's volume, so it must not be trusted on a manual test alone.
+printf '\n'
+"${REPO_ROOT}/scripts/env.sh" >/dev/null 2>&1 || true
+RECOVER_LOG="$(mktemp -t okapiarecover)"
+qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial "file:${RECOVER_LOG}" \
+    -display none -drive "file=${CARD},if=sd,format=raw,cache=writethrough" \
+    -device usb-kbd -device usb-mouse -semihosting > /dev/null 2>&1 &
+RPID=$!
+sleep 25
+kill -9 $RPID 2>/dev/null || true
+wait $RPID 2>/dev/null || true
+
+if grep -q "repaired and marked clean" "$RECOVER_LOG" 2>/dev/null; then
+    echo "recovery  : OK — the volume was scavenged and remounted clean"
+elif grep -q "marked in use" "$RECOVER_LOG" 2>/dev/null; then
+    echo "recovery  : FAILED — the volume stayed dirty" >&2
+    RESULT=1
+else
+    echo "recovery  : nothing to repair (the guest never dirtied the volume)"
+fi
+rm -f "$RECOVER_LOG"
 if [ "$RESULT" -eq 0 ]; then
     rm -rf "$WORK"
 else
