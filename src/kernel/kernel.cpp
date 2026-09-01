@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "kernel.h"
+#include "okapia_firmware.h"
 #include <circle_glue.h>
 #include <circle/memory.h>
 #include <stdio.h>
@@ -659,6 +660,25 @@ bool CKernel::StartMacintosh (void)
 
 TShutdownMode CKernel::Run (void)
 {
+    // The firmware has its say before the emulator exists. Everything it needs
+    // is already in place: the card is mounted, the preferences are read, the
+    // Mac's memory is allocated and USB is up — Initialize() sees to all four,
+    // and InputInit() only takes the keyboard for the Macintosh later on.
+    switch (FirmwareRun ())
+    {
+    case FirmwareHalt:
+        m_Logger.Write (FROM, LogNotice, "Powered off from the firmware");
+        return ShutdownHalt;
+
+    case FirmwareReboot:
+        m_Logger.Write (FROM, LogNotice, "Restarting Okapia at the firmware's request");
+        return ShutdownReboot;
+
+    case FirmwareBoot:
+    default:
+        break;
+    }
+
     if (!StartMacintosh ())
     {
         m_Logger.Write (FROM, LogError, "The Macintosh did not start");

@@ -38,6 +38,19 @@ endif
 # Upstream Unix files reused unchanged.
 REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 
+# The boot firmware: portable drawing code plus the one file that knows about
+# Circle. Its sources are generated from assets/, like the key table.
+FIRMWARE      = ../../src/firmware
+FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) $(FIRMWARE)/circle/okapia_firmware.cpp
+FONTDIR       = ../../assets/fonts
+ICONDIR       = ../../assets/icons
+BDF           = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf \
+                $(FONTDIR)/helvR12-75.bdf $(FONTDIR)/helvB12-75.bdf \
+                $(FONTDIR)/helvR14-75.bdf $(FONTDIR)/helvB14-75.bdf \
+                $(FONTDIR)/helvR24-75.bdf $(FONTDIR)/helvB24-75.bdf \
+                $(FONTDIR)/helvR14-100.bdf $(FONTDIR)/helvB14-100.bdf \
+                $(FONTDIR)/helvR24-100.bdf $(FONTDIR)/helvB24-100.bdf
+
 # libhfs (Robert Leslie, GPLv2-or-later) reads and repairs HFS volumes. It is
 # what lets Okapia scavenge a volume left dirty by an interrupted session,
 # which is otherwise refused by MountVol. Its C files include no system headers
@@ -47,11 +60,12 @@ HFS         = ../../external/hfsutils/libhfs
 HFS_SRCS    = $(wildcard $(HFS)/*.c)
 
 EMU_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) \
-           $(COMPAT_SRCS) $(PLATFORM_SRCS) $(REUSED_SRCS)
+           $(COMPAT_SRCS) $(PLATFORM_SRCS) $(REUSED_SRCS) $(FIRMWARE_SRCS)
 
 HFS_OBJS = $(addprefix emu/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
 EMU_OBJS = $(addprefix emu/,$(notdir $(EMU_SRCS:.cpp=.o))) \
+           emu/okapia_font_data.o emu/okapia_icons_data.o \
            $(addprefix emu/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
 
 # Our entry point is okapia_main.cpp, not main.cpp: VPATH also finds the core's
@@ -66,6 +80,7 @@ include $(CIRCLEHOME)/Rules.mk
 OKAPIA_BUILD_TIME := $(shell date +%s)
 EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
 EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) -I$(HFS) \
+               -I$(FIRMWARE) -I$(FIRMWARE)/circle \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform
 
@@ -100,7 +115,7 @@ endif
 # -fno-exceptions, and later flags win.
 EMU_FLAGS = $(EMU_DEFINES) -fexceptions -Wno-narrowing -Wno-write-strings
 
-VPATH = $(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(GEN)
+VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(GEN)
 
 # The USB HID -> ADB key table, derived from Basilisk's own keycodes file rather
 # than typed out: SDL2 scancodes are HID usage IDs, so its "sdl cocoa" section
@@ -111,6 +126,28 @@ $(KEYCODES_H): $(MACEMU)/Unix/keycodes ../../scripts/gen-keycodes.py
 	@../../scripts/gen-keycodes.py $< $@
 
 emu/input_circle.o: $(KEYCODES_H)
+
+# The faces and the system-folder icons, converted at build time from assets/.
+# Explicit rules rather than the pattern above: a pattern cannot match a file
+# that does not exist yet, and on a fresh clone these do not.
+FONT_SRC = $(GEN)/okapia_font_data.cpp
+ICON_SRC = $(GEN)/okapia_icons_data.cpp
+
+$(FONT_SRC): ../../scripts/gen-font.py $(BDF)
+	@mkdir -p $(GEN)
+	@../../scripts/gen-font.py $@ $(BDF)
+
+$(ICON_SRC): ../../scripts/gen-icons.py $(ICONDIR)/system-icons.c
+	@mkdir -p $(GEN)
+	@../../scripts/gen-icons.py $@ $(ICONDIR)/system-icons.c
+
+emu/okapia_font_data.o: $(FONT_SRC) | emu
+	@printf '  CPP   generated/%s\n' "$(notdir $<)"
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -c -o $@ $<
+
+emu/okapia_icons_data.o: $(ICON_SRC) | emu
+	@printf '  CPP   generated/%s\n' "$(notdir $<)"
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -c -o $@ $<
 
 emu:
 	@mkdir -p emu

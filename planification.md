@@ -2321,6 +2321,61 @@ Trois choses apprises en écrivant, qui valent d'être notées ailleurs que dans
   aurait aussi ouvert un piège discret : `"\xE9"` suivi d'une lettre qui se trouve être un chiffre
   hexadécimal avale cette lettre.
 
+**Ordre d'exécution de ce qui reste.** Le socle est là — surface, primitives, fonte, thème, composants,
+spécimen — et rien de tout cela n'a encore été branché sur la machine. L'ordre ci-dessous place le risque
+en premier et le contenu en dernier, chaque étape se vérifiant seule.
+
+**16a — Le firmware s'ouvre, et rend la main.** L'insérer dans `CKernel::Run()` avant `StartMacintosh()` :
+à ce point la carte est montée, les préférences lues, la RAM Mac allouée et l'USB initialisé — c'est
+`Initialize()` qui s'en charge, `InputInit()` ne venant que plus tard. Réclamer le framebuffer, peindre le
+fond gris deux secondes, le relâcher, laisser le Mac démarrer.
+
+  **C'est l'étape risquée, d'où sa place.** `VideoInit()` construit son propre `CBcmFrameBuffer` ; deux
+  instances successives par le même canal mailbox n'ont jamais été essayées ici. Trois issues possibles —
+  la seconde allocation réussit et tout va bien, elle échoue et il faut partager une seule instance, ou
+  elle réussit en laissant la première fuir. À trancher par l'essai avant d'écrire une ligne de plus, sous
+  QEMU puis sur matériel. Vérifié quand l'écran reste gris deux secondes puis affiche le Mac, et que
+  `scripts/run-test.sh` reste vert.
+
+  **Fait le 2026-09-01.** L'essai a répondu net : réclamer, relâcher et réclamer à nouveau fonctionne —
+  même adresse, même taille, tampon vivant à chaque fois, et `VideoInit()` crée le sien ensuite sans se
+  plaindre. Sous QEMU seulement ; le mailbox appartient au firmware du Pi et non à nous, donc à reconfirmer
+  sur matériel. Mesuré au démarrage : à t=3 s l'écran est uniformément `#BCBCBC`, à t=48 s le Finder est là
+  avec ses volumes, et `run-test.sh` rend son verdict habituel — 57 octets écrits, drapeau `0100` et `fsck`
+  propre après réparation. Le noyau passe de 1,8 à 2,1 Mo, sous le plafond de 4.
+
+**16b — Le clavier et la souris, avant le Mac.** Le firmware pose ses propres gestionnaires HID bruts. Le
+relais est gratuit : `RegisterKeyStatusHandlerRaw` n'en garde qu'un, et `InputInit()` reprend la main
+ensuite sans qu'on ait rien à défaire. `Option` seule ouvre le sélecteur, Cmd-Option-P-R oublie la PRAM.
+Vérifié en journalisant les touches reçues pendant la fenêtre.
+
+**16c — La boucle d'écran.** Un écran est un tableau statique de composants et une boucle d'événements —
+le `ModalDialog` du Dialog Manager. Focus et son parcours (Tab, Maj-Tab, flèches en liste, Espace, Retour,
+Échap), `WidgetHit` enfin appelé, état enfoncé pendant le clic. Vérifiable sur l'hôte en injectant des
+événements de synthèse : c'est le premier morceau du firmware qui se teste sans écran.
+
+**16d — Le modèle de boîtes.** Lignes et colonnes, mesure du texte, et **troncature d'une chaîne à son
+contrôle** — la limite connue, relevée par le mesureur. Le spécimen redevient une page, ses ordonnées
+n'étant plus posées à la main. Les contrôles gagnent « aucun texte hors de son contrôle ».
+
+**16e — Les composants qui manquent.** Cadre d'alerte, étiquette avec repli à la ligne, liste qui défile
+pour de vrai, champ éditable avec curseur et retour arrière. Chacun entre dans l'écran de spécimen le jour
+où il existe, sinon personne ne le regarde.
+
+**16f — Les traductions.** Une table de chaînes, anglais et français, depuis `boot-menu/strings.tsv` ;
+langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
+mise en page ne s'est pas calée sur la longueur des libellés français.
+
+**16g — Le sélecteur.** Le premier vrai écran. `HfsInventory()` et `HfsSystemVersion()` alimentent les
+lignes — la phase 15bis les a déjà livrés —, colonne radio pour le défaut, cases lecture seule et montage,
+et écriture dans `BasiliskII_Prefs` par `SavePrefs()`.
+
+**16h — Réglages, informations, arrêt, oubli de la PRAM.** Le reste des écrans, une fois la mécanique
+éprouvée par le sélecteur.
+
+**16i — Le dialogue de réparation.** En dernier parce qu'il écrit dans le volume de l'utilisateur, et qu'il
+mérite que tout le reste soit sûr avant lui.
+
 - [ ] **dialogue de réparation du volume** : aujourd'hui `HfsRepair` scavenge en silence au démarrage.
       C'est ce qu'il faut pour un appareil, mais l'utilisateur doit pouvoir le voir et le refuser —
       « le volume n'a pas été démonté proprement, réparer ? ». C'est la première vraie raison d'être de
