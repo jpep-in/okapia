@@ -26,7 +26,7 @@ La machine cible est un **Quadra 950 virtuel** :
 | Réseau | Ethernet, le Mac étant un nœud à part entière du réseau local |
 | Audio | HDMI |
 | Démarrage | mise sous tension → carillon → Happy Mac → Mac OS, sans rien d'autre à l'écran |
-| Configuration | **firmware Okapia** au look System 7, appelable au démarrage — pas seulement un fichier texte |
+| Configuration | **firmware Okapia** au look Apple plausible, appelable au démarrage — pas seulement un fichier texte |
 | Performance | nettement supérieure à un Quadra réel, **sans JIT** |
 
 Cible matérielle : **Raspberry Pi 4** pour l'usage, **Pi 3** pour le développement (c'est le modèle que QEMU
@@ -488,11 +488,32 @@ source a servi — une machine qui repart en 1904 doit dire pourquoi. Réenregis
 
 Deux nuances :
 
-- **le RTC n'existe que sur Pi 5** (connecteur pile dédié) ; sur Pi 3 et 4 l'ordre effectif est NTP puis SD ;
-- **Basilisk ignore les écritures dans l'horloge matérielle** : dans `emul_op.cpp`, la branche « écriture »
-  des registres RTC n'est pas implémentée. Régler l'heure dans le Mac tient pour la session mais ne survit
-  pas au redémarrage. **Patch prévu** : capter cette écriture, la convertir, la persister — quelques lignes,
-  bon candidat à une remontée amont.
+- **le RTC n'existe que sur Pi 5** (connecteur pile dédié) ; sur Pi 3 et 4 l'ordre effectif est NTP puis SD.
+  Circle fournit les deux récepteurs dans `addon/rtc/` : `CFirmwareRTC::Set(const CTime &UTCTime)`, qui passe
+  par les tags mailbox `PROPTAG_SET_RTC_REG` — donc le RTC du Pi 5 — et `CMCP7941X` pour un module I²C, seule
+  façon d'en avoir un sur Pi 3 et 4 ;
+- **Basilisk ignore les écritures dans l'horloge matérielle** : dans `emul_op.cpp:182`, la branche « écriture »
+  des registres RTC se contente de journaliser. Régler l'heure dans le Mac tient pour la session mais ne survit
+  pas au redémarrage.
+
+**L'écriture se capte sans toucher à `external/`**, et le crochet existe déjà. Le trap `ClkNoMem` ($A053) est
+patché en `M68K_EMUL_OP_CLKNOMEM` sur notre ROM — `rom_patches.cpp:1188`, branche « ROM23/26/27/32 », ROM32
+étant la Quadra 32-bit clean — donc l'écriture passe par `EmulOp()`, que `xpram_hook_circle.cpp` enveloppe
+déjà avec `--wrap=_Z6EmulOptP13M68kRegisters`. Les octets de l'horloge arrivent dans `d1` et `d2`. Trois
+précautions :
+
+- **capturer `d1`/`d2` à l'entrée du wrapper** : celui-ci appelle `__real_` avant de tester, or `EmulOp` finit
+  la branche par `r->d[1] = r->d[2]` et écrase donc l'opération ;
+- **reconstituer les quatre octets** avant d'appliquer : le Mac écrit les registres 0 à 3 un par un ;
+- **cette valeur prime sur le plancher `drLsMod`** de `CKernel::RefineClock()`. Sans cela, un utilisateur qui
+  recule volontairement son horloge se la voit remonter au démarrage suivant — le plancher protège contre une
+  horloge qui recule toute seule, pas contre une décision explicite.
+
+**Conséquence pour le firmware** (§7.12) : le réglage de l'heure appartient au tableau de bord Date et heure
+du Mac, pas à une interface de démarrage. C'est period-correct, et cela supprime le double réglage et son
+problème de synchronisation. `timezone` cesse alors d'être un réglage utilisateur pour devenir une conversion
+interne — le Mac écrit de l'heure locale, on la relit dans le même repère, le décalage s'annule. Le fuseau ne
+redevient nécessaire que le jour du NTP, et reste éditable dans le fichier de préférences.
 
 Côté Mac, le client NTP intégré n'apparaît qu'avec **Mac OS 8.5** ; sur System 7.x → 8.1 il faut un
 utilitaire tiers (Vremya, Network Time, Mac-NTP), que le dossier partagé rend facile à installer. Dans tous
@@ -592,50 +613,379 @@ qu'un plantage.
 
 Les Mac 68k n'ont jamais eu d'Open Firmware : il est arrivé avec les Power Mac. Ce que la machine offrait,
 c'était des combinaisons de touches au démarrage et des tableaux de bord. **Okapia comble ce vide avec ce
-qui aurait pu exister** : un utilitaire de configuration à l'esthétique System 7, en noir et blanc, piloté
-au clavier et à la souris, qui s'ouvre **avant** que le moindre code Basilisk ne s'exécute.
+qui aurait pu exister** : un utilitaire de configuration à l'esthétique Apple — plausible, sans être celle
+d'un Système en particulier —, en noir et blanc, piloté au clavier et à la souris, et qui s'ouvre **avant**
+que le moindre code Basilisk ne s'exécute.
 
 Ce qu'il remplace : la configuration par fichier texte. Le fichier de préférences reste la source de
 vérité — le firmware ne fait que l'éditer, ce qui garde les deux voies cohérentes.
 
-**Ce qu'il permet** : choisir le moteur et le profil de machine, la ROM, le ou les disques, la résolution et
-la profondeur de départ, le réseau, l'audio ; provisionner un système (§7.14) ; et afficher les
-diagnostics quand quelque chose manque.
+**Le critère d'admission.** Un réglage mérite sa place ici s'il réunit quatre conditions : l'invité ne sait
+pas le faire lui-même, le besoin apparaît **après** la fabrication de la carte, le code Okapia le consomme
+vraiment, et — le point décisif — il **débloque une machine qui refuse de démarrer**. Partout ailleurs
+l'alternative est d'éteindre, de sortir la carte SD, de la monter sur un autre ordinateur et de recommencer ;
+c'est ce coût-là que le firmware existe pour supprimer, et c'est lui qui arbitre. Profondeur d'écran, volume
+sonore et disposition clavier échouent au premier test : le Mac a des tableaux de bord pour ça.
 
-**Déclenchement** : une touche maintenue au démarrage — dans l'esprit des combinaisons Mac — et
-automatiquement lorsque la configuration est absente ou invalide. Jamais autrement : une machine
-correctement configurée démarre droit sur Mac OS.
+**Ce qu'il permet** : choisir parmi les systèmes détectés sur les disques. Pour chaque système, Okapia
+détermine automatiquement le modèle de Macintosh à annoncer ; il ne présente jamais de « profil » à
+l'utilisateur, et il n'y a **qu'une ROM** (§7.11), donc rien à choisir de ce côté. Une colonne de boutons
+radio désigne l'unique système par défaut ; ce choix
+place son entrée `disk` avant les autres dans `BasiliskII_Prefs`, indépendamment du système sélectionné
+pour ce démarrage. **L'état actuel du code n'est pas un filtre pour l'interface cible** : une valeur utile
+aujourd'hui en dur reste prévue comme préférence, avec son implémentation inscrite dans la phase
+correspondante.
 
-**Faisabilité** : Circle fournit `C2DGraphics`, des polices bitmap et l'USB HID ; le firmware s'appuie sur
-le même `hal_circle` que l'émulateur (§3.5), ce qui est précisément la raison d'être de cette couche. Un
-petit jeu de widgets 1 bit — barre de menus, fenêtre, bouton, case à cocher, liste — suffit, de l'ordre de
-quelques centaines de lignes.
+Sur chaque ligne, deux cases qui n'existent aujourd'hui que dans le fichier :
 
-**Vigilance** : **Chicago est une police Apple sous copyright**. Ne pas l'embarquer. Soit une police bitmap
-libre d'aspect voisin, soit une police 8×16 dessinée pour le projet — auquel cas elle devient un actif du
-projet, sous GPLv3 comme le reste.
+- **lecture seule**, c'est-à-dire le préfixe `*` que `disk.cpp:161` comprend déjà. C'est le geste de sûreté
+  du projet — un volume de secours qu'aucun arrêt brutal ne peut salir — et il coûte un caractère ;
+- **monter ou non**. Une image présente sur la carte mais absente des préférences n'est montée que par le
+  repli de `kernel.cpp:455`, quand rien d'autre n'existe : ajouter un disque de données, ou écarter un
+  volume suspect, impose donc aujourd'hui de sortir la carte.
+
+La ligne affiche aussi l'**état du volume**, propre ou laissé en cours d'utilisation, ce que `HfsInspect()`
+sait déjà dire. C'est ce qui prépare le dialogue de réparation.
+
+**Un bouton de réglages** porte le glyphe du panneau Preferences repris de la maquette. C'est un relevé, donc
+une exception assumée à la règle « le chrome ne cite aucun système » — décidée après l'avoir vu à l'écran, et
+notée ici pour que la règle et le code ne se contredisent pas en silence. Les deux autres glyphes du chrome,
+l'arrêt et la puce mémoire, sont dessinés pour le projet. Le bouton édite uniquement `BasiliskII_Prefs` :
+`ramsize`, `frameskip`, `extfs`, `extfsname`, le son et la langue de l'interface. Deux d'entre eux ne sont
+pas ce qu'ils paraissent :
+
+- **le son n'est pas un booléen.** `audio_circle.cpp:70` construit en dur un `CPWMSoundBaseDevice`,
+  c'est-à-dire la prise jack — que le Pi 5 n'a pas, et qui est la mauvaise sortie sur un téléviseur. Circle
+  offre aussi `CHDMISoundBaseDevice`, `CI2SSoundBaseDevice` et `CUSBSoundBaseDevice`, donc le réglage utile
+  est **coupé / HDMI / jack / USB**. À trancher en phase 14 sur matériel, mais réservé dès maintenant. Et
+  `nosound` reste par ailleurs une **soupape** : revendiquer un périphérique que l'invité ne peut pas
+  entendre l'a déjà gelé une fois, et pouvoir le couper ici répare ce cas sans démontage ;
+- **`extfsname` est le seul champ de saisie libre** du firmware — curseur, retour arrière, 27 caractères au
+  plus parce que le nom finit dans une chaîne Pascal du *volume record*. Il le mérite : c'est un volume que
+  l'utilisateur voit sur son bureau, donc son nom lui appartient. Aucun redémarrage n'est requis, le menu
+  tournant avant Basilisk. À côté, une **ligne de diagnostic** plutôt qu'un silence : le firmware connaît la
+  version du Système de chaque volume, il peut donc dire « Système 7.1 : nécessite l'extension File System
+  Manager 1.2 » au lieu de laisser l'absence du volume partagé passer pour une panne.
+
+**Trois boutons qui ne sont pas des réglages** et qui portent une bonne part de la valeur de l'écran :
+
+- **Éteindre.** Toute la doctrine du projet est de ne jamais tirer la prise, et la seule sortie du menu sans
+  démarrer le Mac est aujourd'hui la coupure de courant.
+- **Oublier la PRAM**, et la combinaison historique avec elle. `main.cpp:106` réinitialise le XPRAM dès que
+  la signature « NuMc » manque : supprimer `/BasiliskII_XPRAM` (`xpram_circle.cpp:31`) *est* le zap, sans
+  jamais toucher aux données. Cmd-Option-P-R pendant la fenêtre de démarrage est **une exception documentée**
+  à la règle qui envoie au Mac les autres combinaisons avec Option — un vrai Macintosh fait ce zap dans sa
+  ROM, avant que l'ADB émulé ne soit alimenté, donc laisser passer la combinaison ne marcherait pas. Rejouer
+  le carillon une seconde fois le jour où §7.13 l'aura, comme le faisait la machine.
+- **Informations.** ROM trouvée et modèle retenu, taille et espace libre de la carte, volumes et leur état,
+  volume de démarrage, date de compilation, modèle de Pi, et **le mode que le firmware a réellement accordé**.
+  Tout cela n'existe aujourd'hui que sur l'UART — un fil que personne n'a quand la carte est dans le Pi sous
+  un téléviseur. C'est exactement le problème du fichier de préférences : de l'information prisonnière d'un
+  accès physique. Le `modelid` et son échec de détection éventuel vont là, pas dans les réglages.
+
+**Le dialogue de réparation** est la première vraie raison d'être de cet écran : aujourd'hui `HfsRepair`
+scavenge en silence au démarrage, et c'est le seul endroit du système qui écrit dans le volume de
+l'utilisateur sans qu'il l'ait demandé. Il doit pouvoir le voir et le refuser — mais aussi l'accepter une
+fois pour toutes, ce qui fait trois états et non deux : réparer sans rien demander, demander, ne jamais
+réparer. Trois contraintes le cadrent :
+
+- **ne pas changer le type de `hfsrepair`**, déclaré `TYPE_BOOLEAN` (`prefs_circle.cpp:57`). Le parseur lit
+  selon le type déclaré : le passer en entier ferait lire `0` sur toutes les cartes existantes, sans un mot.
+  Le troisième état passe par un second booléen, `hfsrepairask` ;
+- **le dialogue expire**, décompte à l'appui. Un appareil sans personne au clavier transformerait sinon un
+  volume réparable en blocage — l'inverse exact de ce que ce firmware existe pour faire ;
+- **l'expiration répare**. Autrement `scripts/run-test.sh` s'arrête sur le dialogue, lui qui redémarre la
+  carte précisément pour que `HfsRepair` tourne avant de juger le volume.
+
+Reste une tension à trancher au moment de l'écrire, pas à masquer : la phase 18 veut une mise sous tension
+qui n'affiche rien. Le défaut proposé est « demander », parce qu'un volume à réparer n'est pas le chemin
+normal et que l'interruption est donc rare ; `hfsrepairask false` rend l'appareil silencieux.
+
+**Ce qui n'apparaît jamais**, sous peine de faire mentir l'interface : `screen`, `displaycolordepth`, `title`,
+`hotkey`, `scale_*`, `sdlrender`, `nogui`, `jit*`, `scsi*`, `ether*`, `seriala`/`serialb`, `dsp`, `mixer`,
+`ignoresegv`, `xpram`, `idlewait`, `bootdrive`/`bootdriver`, `yearofs`/`dayofs`, `keyboardtype`, `floppy`,
+`cpu`, `fpu`, `hfsinventory`. Le README les classe déjà comme sans effet ici, comme invariants (§2) ou comme
+verbosité de journal.
+
+Certaines modifications peuvent exiger un redémarrage complet d'Okapia. L'interface les marque d'un `*`
+et remplace alors « Enregistrer » par « Enregistrer et redémarrer » ; ce coût d'application ne justifie
+jamais de supprimer la préférence. Dans l'ordre d'initialisation actuel, `ramsize` est le premier cas : la
+mémoire Mac est allouée avant l'USB qui rend le menu utilisable. Ce n'est pas déclaré immuable — une future
+préallocation sûre pourrait retirer cette contrainte. `nosound` apparaît dès la conception même si son
+effet matériel complet appartient encore à la phase 14.
+
+**Pas de réglage de résolution.** `CBcmFrameBuffer(0, 0, 32)` demande au firmware les dimensions du display
+sélectionné par `PROPTAG_GET_DISPLAY_DIMENSIONS` : pour HDMI, le firmware a déjà choisi le mode à partir de
+l'écran et de sa configuration ; pour l'écran DSI officiel, il connaît de même le panneau qu'il pilote.
+Okapia ne négocie donc pas lui-même HDMI ou MIPI DSI, il consomme le mode retenu. Il filtre ensuite sa table
+de modes Macintosh pour ne garder que ceux qui tiennent dans cette sortie ; le tableau de bord Moniteurs et
+la PRAM du Mac possèdent le mode logique actif — §7.8 compte déjà la profondeur d'écran parmi ce que la PRAM
+conserve, donc il n'y a pas non plus de « mode par défaut » à régler ici.
+
+Deux précisions qui closent la question. **QEMU ne prouve rien sur le mode** : son « équivalent moniteur »
+est une propriété de device, que `scripts/screenshot.sh:28` fixe avec `-global bcm2835-fb.xres=/yres=`. Il
+valide le chemin mailbox, pas la négociation, puisqu'il n'y a ni EDID ni écran. Et **un forçage manuel serait
+asymétrique** : sur Pi 3 et 4, `CBcmFrameBuffer` accepte une taille explicite et il marcherait ; sur Pi 5 la
+résolution ne se règle ni depuis l'application ni depuis `config.txt`, et il ne ferait rien. Un réglage qui
+fonctionne chez un utilisateur sur deux est pire que pas de réglage. Un forçage ne rejoindra donc que les
+diagnostics, et seulement si un essai matériel prouve un cas de détection défaillante. Si plusieurs sorties
+sont présentes, le choix utile éventuel serait **la sortie** (HDMI0, HDMI1 ou DSI), pas sa résolution ;
+ne l'ajouter qu'après
+essai matériel. Le réseau reste aussi hors de l'interface : un simple activé/désactivé n'apporte rien ; la
+phase 13 le réévaluera si un vrai choix de mode ou d'interface apparaît. Le même firmware provisionne un
+système (§7.14) et affiche les diagnostics quand quelque chose manque.
+
+**Déclenchement** : dès que le clavier est utilisable, Okapia affiche environ deux secondes un fond gris
+uni, comme le faisait un Macintosh à écran couleur avant son Happy Mac. `Option` seule ouvre le sélecteur ;
+sans elle, le système par défaut démarre. Le sélecteur
+s'ouvre aussi automatiquement lorsque la configuration est absente ou invalide, ou qu'aucun système
+n'est amorçable. Les autres combinaisons comprenant `Option` restent destinées au Macintosh émulé.
+
+**Faisabilité : `C2DGraphics`, pas LVGL.** Le cœur de Circle porte déjà l'essentiel, sans le moindre addon :
+`lib/2dgraphics.o` est dans `libcircle.a` et `C2DGraphics` offre une surface double-tamponnée avec VSync,
+`DrawRect`, `DrawRectOutline`, `DrawLine`, `DrawImage`, `DrawImageTransparent`, `DrawPixel`, `DrawText`,
+`GetBuffer` et `UpdateDisplay` — son `SetPixel` sait même écrire en 1 bpp, et `CCharGenerator::GetPixelLine()`
+rend les bits d'une rangée de glyphe, ce qui est le point d'accroche du blitter proportionnel.
+
+Mais il faut mesurer l'écart avec ce qu'on remplace : **`C2DGraphics` est un peintre de framebuffer, QuickDraw
+était un modèle graphique.** Il n'a ni `GrafPort`, ni régions, ni motifs 8×8, ni modes de transfert, ni
+`FrameRoundRect`, ni mesure de texte. Les régions ne nous manqueront pas — §7.12 interdit déjà la
+superposition, et c'était la partie la plus difficile de QuickDraw. Les motifs non plus, pour une raison
+qui vaut d'être dite (voir plus bas). Restent **trois** manques, quelques dizaines de lignes chacun :
+l'inversion pour la vidéo inverse — par `GetBuffer()`, faute de mode `patXor` —, le roundrect parce que le
+bouton Apple en est un depuis 1984, et la mesure de texte parce que la proportionnelle l'exige.
+
+**Donc on bâtit à côté de `C2DGraphics`, pas dessus.** Nos primitives prennent une *surface* — pointeur,
+largeur, hauteur, pas, profondeur — et non un `C2DGraphics`. Sur le Pi cette surface vient de `GetBuffer()` ;
+**sur l'hôte c'est un tampon ordinaire**, et chaque composant dans chaque état se rend alors en fichier, se
+regarde et se compare d'une version à l'autre. L'AGENTS.md demande des tests sur l'hôte quand c'est possible :
+ici ça l'est, et c'est ce qui fait passer « thème reproductible » d'une intention à une propriété vérifiée.
+`C2DGraphics` garde ce qu'il fait bien — cycle de vie du tampon, double tampon, VSync, `UpdateDisplay` — et
+`TFont`/`CCharGenerator` fournissent les glyphes.
+
+Le compte honnête de ce que LVGL aurait coûté, puisque c'était la voie prévue :
+
+- `CLVGL` fait `assert (m_pDisplay->GetDepth () == LV_COLOR_DEPTH)` et le `lv_conf.h` de `external/` fixe
+  `LV_COLOR_DEPTH 16` quand notre sortie est en 32 : il aurait fallu notre propre configuration et notre
+  propre compilation des 459 `.c` de LVGL, 24 Mo de sources ;
+- `CLVGL` ne câble que la souris et l'écran tactile — **aucun périphérique clavier**, donc `lv_indev` KEYPAD
+  et groupes de focus à écrire de toute façon ;
+- il utilise la souris *cooked* alors que `input_circle.cpp` a pris la voie *raw* pour l'émulateur, d'où une
+  bascule à gérer au passage de l'un à l'autre ;
+- son thème monochrome vise l'e-papier : notre chrome — filets d'un pixel, ombre à décalage net, boutons
+  radio en pixel art — aurait été redessiné entièrement.
+
+L'argument qui restait à LVGL était la phase 17 : arborescence, barre de progression, saisie. Une barre de
+progression et un arbre posés sur la liste que nous aurons déjà écrite ne justifient pas cette dépendance ;
+la question se rouvrira le jour de la phase 17, pas avant.
+
+**Le 1 bit est une discipline de palette, pas un format de pixel** — et cette discipline s'arrête où le
+matériel de 1984 s'arrêtait. **Le noir et le blanc portent la structure** : traits, texte, vidéo inverse.
+C'est là qu'est la signature Apple, et elle survit à l'agrandissement puisque ce sont des lignes et non de
+la texture. **Partout où l'époque tramait, un gris plein** — le fond, la glissière d'ascenseur, les états
+désactivés. Non par fidélité au System 7 — il tramait, voir plus bas — mais par nécessité d'échelle : notre
+agrandissement entier transforme un damier d'un pixel en carrés de 3×3 qui grouillent, et beaucoup de
+téléviseurs le font en plus scintiller dans leur rééchelonnement.
+
+**L'histoire, et où Okapia se place dedans.** La trame n'a pas disparu avec la couleur : vérifié par capture
+sur un Quadra 650 démarrant System 7.1 sous Basilisk avec la ROM Quadra, et sous SheepShaver en Mac OS 8.5 —
+damier dans les deux cas, jusqu'à la boîte « Bienvenue ». La raison est mécanique : ce fond est un
+remplissage de **motif** QuickDraw (`PAT`), peint en avant-plan et arrière-plan, donc en noir et blanc quelle
+que soit la profondeur de l'écran. Rien n'a jamais « choisi » la trame sur les Mac couleur ; QuickDraw ne
+savait pas y substituer un niveau de gris.
+
+C'est la génération suivante qui a tranché : le **Startup Manager** des Power Mac, iMac et iBook — celui qui
+s'ouvre en tenant Option, et dont Okapia est très exactement le pendant 68k — pose un aplat. Sa teinte,
+gris bleuté de mémoire, n'est pas vérifiée et rien ici n'en dépend : ce qui compte est l'aplat.
+
+**Okapia se place entre les deux, et c'est cohérent avec ce qu'il est.** Ce firmware est un anachronisme
+assumé — l'idée qu'Apple a eue plus tard, ramenée sur une machine 68k. Que son fond appartienne à l'époque
+du sélecteur plutôt qu'à celle du Système qu'il lance n'est donc pas une infidélité, c'est la même
+anachronie que tout le reste. On prend l'aplat de la génération suivante, à la **luminosité du damier de la
+précédente**.
+
+Sur la valeur, et c'est là que se joue l'entre-deux : un damier noir et blanc se moyenne dans la **lumière
+linéaire**, donc son équivalent perçu n'est pas `#808080` mais environ **`#BCBCBC`** — 0,5 linéaire vaut 188
+en sRGB. C'est pourquoi le bureau System 7 paraît clair, et c'est la valeur de départ. Neutre et non bleutée :
+on aligne la clarté sur le damier, pas la teinte sur le Startup Manager.
+
+Ce que l'aplat n'achète pas, pour que personne ne s'y trompe : l'écran de l'invité passe par le même
+agrandissement entier, donc **son** damier grouillera pareillement sur un 1080p, pendant tout le démarrage
+et tant que le bureau reste visible. On ne l'épargne pas à l'utilisateur ; on choisit pour la seule surface
+qu'on possède, celle où il lit du texte et fait un choix.
+
+Écartée délibérément : garder le damier quand le facteur d'échelle vaut 1 et l'aplat au-delà. Cela rendrait
+le thème dépendant de la sortie, c'est-à-dire l'exact contraire de la propriété qu'on vient d'établir.
+
+On dessine donc à la profondeur de la sortie, en noir, blanc et gris pleins : ni conversion, ni palette, ni
+question de support I1.
+
+**Et il n'y a pas de toile logique du tout.** C'était le plan — dessiner en 640×480 puis agrandir d'un
+facteur entier — et c'était une erreur, corrigée le 2026-09-01. Agrandir transforme chaque pixel en bloc
+N×N : le texte, les courbes et les filets pareillement, et l'escalier d'un arrondi n'est alors pas un défaut
+de tracé mais un pixel de 640×480 vu de près. Antialiaser la toile avant de l'agrandir n'y change rien non
+plus, cela ne produit que des blocs gris.
+
+**L'interface est donc tracée à la résolution de l'écran**, avec les métriques du thème multipliées par un
+facteur qui peut être fractionnaire — 36/16 sur un 1920×1080, mesuré. Un rayon de 6 devient un rayon de 13
+avec treize pixels d'arc, réellement lisse ; la fonte est prise sur l'échelle à la taille voulue au lieu
+d'être grossie ; et le dialogue occupe l'écran au lieu de flotter dans un îlot de 1280×960. **C'est
+l'architecture qui le permet** : les métriques vivant dans le thème, un facteur d'échelle n'a qu'un seul
+endroit où s'appliquer, `ThemeMake()`.
+
+Une seule chose reste agrandie, et il faut le savoir : **les icônes**. Ce sont des bitmaps sans version plus
+grande, donc elles prennent un facteur entier là où tout le reste prend le vrai. À grande échelle elles
+détonnent contre un texte net — c'est le prochain actif à produire, pas un défaut de la mécanique.
+
+**Le thème est une uchronie, pas une reproduction.** Ce menu s'ouvre devant des Systèmes qui vont de 6 à 9.
+Copier le chrome de l'un d'eux le daterait contre son propre contenu et le ferait paraître faux devant les
+autres. **On ne mesure donc aucun système** ; on dessine une ligne Apple *plausible* — reconnaissable sans
+être située.
+
+Ce qui porte « Apple » sans dater, et c'est peu de choses :
+
+- **le noir et le blanc**, qui font déjà tout le travail historique à eux seuls ;
+- **le rectangle arrondi**, forme du bouton Apple sans interruption de 1984 à aujourd'hui. Le rayon est une
+  métrique du thème, choisie, pas une valeur relevée sur une capture ;
+- **le double cerclé du bouton par défaut**, celui qu'active Retour. Continu lui aussi — liseré épais hier,
+  bouton accentué aujourd'hui. On garde le liseré : c'est la touche uchronique, et il sert deux fois, le
+  focus clavier reprenant la même idée ;
+- **la grammaire du dialogue** : marges larges, titre centré, une action claire en bas à droite. Inchangée
+  depuis quarante ans ;
+- **le plat**, et c'est l'argument le plus fort. Le relief est ce qui date le plus vite — les biseaux
+  Platinum sont la signature de 1997 — alors que l'absence de relief était la contrainte de 1984 et se
+  trouve être la mode d'aujourd'hui. **Le plat est l'intersection exacte des deux bouts de l'histoire.**
+
+Ce qui date, donc à éviter : biseaux et dégradés Platinum, barres de titre rayées, gel Aqua, ombres floues.
+Une ombre portée à décalage net reste neutre, et bon marché.
+
+Vocabulaire retenu : traits d'un pixel sur des champs blancs généreux ; sélection en aplat noir et texte
+blanc ; case carrée, bouton radio rond ; ascenseur plat **sans flèches**, parce que les flèches situent en
+1990 ; une seule fonte proportionnelle, deux tailles, du gras pour les titres et le bouton par défaut,
+jamais d'italique dans le chrome.
+
+**Ce sont les icônes qui portent l'époque, pas le chrome.** Les dossiers Système 6, Système 7 et Mac OS 8/9
+de la maquette sont datés exprès, chacun désignant son volume ; le cadre qui les entoure ne l'est pas. C'est
+cette répartition qui rend le menu crédible devant n'importe lequel d'entre eux. La maquette de `boot-menu/`
+va déjà dans ce sens et sert de point de départ, sous réserve des corrections plus haut — plus une : ses
+en-têtes de colonne tramés deviennent un aplat gris clair.
+
+Conséquence sur la méthode, et elle est importante : sans référence à copier, **l'écran de spécimen n'est
+plus un confort mais le seul arbitre**. Il n'y a rien contre quoi vérifier sinon l'œil, donc il faut pouvoir
+regarder toutes les pièces ensemble, et les regarder tôt.
+
+**L'architecture de l'interface : une seule couture.** Les composants s'écrivent **avant** les écrans, et
+la raison n'est pas l'économie de code. Un thème n'existe que s'il y a exactement un endroit par lequel tous
+les pixels passent ; un seul bouton dessiné ailleurs et la promesse tombe. La contrepartie est ce qui rend
+l'investissement rentable : **corriger l'aspect d'un composant le corrige partout où il sert**, du sélecteur
+de démarrage au dialogue de réparation et jusqu'à l'arborescence de la phase 17, sans avoir à se souvenir de
+la liste des endroits.
+
+Le piège, et c'est celui qu'Apple a mis dix ans à corriger : **les métriques appartiennent au thème autant
+que les pixels.** Si le composant décide qu'un bouton fait vingt pixels de haut avec huit de marge, le thème
+n'est plus remplaçable — ni plus généreux, ni plus compact — et la première traduction casse la mise en page.
+Hauteur de bouton, marges, largeur d'ascenseur, retrait du liseré de focus, interligne : le composant demande,
+il ne suppose pas. C'est `GetThemeMetric` à côté de `DrawThemeButton`, et c'est à prendre tel quel.
+
+Quatre couches, et la règle de chaque frontière :
+
+1. **Surface** — mémoire, dimensions, pas, profondeur. Rien d'autre.
+2. **Primitives** — rectangle, cadre, ligne, inversion, roundrect, blit de glyphe avec styles
+   synthétiques, mesure de chaîne. *Elles seules touchent la mémoire de la surface.*
+3. **Thème** — une structure constante de fonctions et de métriques : `DrawButton`, `DrawCheckbox`,
+   `DrawRadio`, `DrawScrollbarPart`, `DrawDialogFrame`, `DrawListRow`, `DrawFocusRing`, et à côté
+   `ButtonHeight()`, `ScrollbarWidth()`, `Margin()`, `LineHeight()`. *Le thème seul appelle les primitives ;
+   il ignore l'état de l'application et les événements.*
+4. **Composants et écrans** — un composant est une petite donnée, pas un enregistrement à vingt champs ; un
+   écran est un tableau statique de composants et une boucle d'événements. *Un composant ne dessine jamais,
+   il appelle le thème.*
+
+C'est la leçon du Dialog Manager et du `LDEF`, débarrassée de ce qui n'était qu'un artefact des ressources
+de code 68k — plus de répartition sur un entier de message, plus de chargement à la demande, une structure
+de pointeurs de fonctions suffit. Quatre écarts assumés avec l'époque, tous rentables :
+
+- **la mise en page se calcule.** Le `DITL` portait des rectangles absolus, et c'est précisément pourquoi la
+  localisation cassait les dialogues Mac. Avec deux langues et une fonte dont on ne fixe pas les métriques,
+  un modèle de boîtes en lignes et colonnes avec mesure du texte supprime la classe entière du problème ;
+- **dessin immédiat, arbre unique.** Tout redessiner à cette échelle est gratuit : ni régions sales, ni
+  invalidation. L'époque ne pouvait pas se le permettre ;
+- **le focus clavier fait correctement** — Tab et Shift-Tab, flèches dans les listes, Espace et Retour pour
+  activer, Échap pour annuler, liseré visible. System 7 le faisait mal ; pour une interface d'avant-démarrage,
+  où la souris peut n'être pas branchée, c'est décisif ;
+- **une liste à rappel de ligne**, et non trois listes. Les systèmes, les réglages et l'arborescence de la
+  phase 17 sont le même composant avec trois fonctions de dessin de ligne.
+
+Le jeu minimal déduit des écrans connus : cadre de dialogue et cadre d'alerte, étiquette avec repli à la
+ligne, bouton et bouton par défaut, bouton à icône, case à cocher, bouton radio, liste à rappel de ligne,
+ascenseur, menu local, champ de saisie, barre de progression, liseré de focus. Onze pièces, dont la moitié
+tient en vingt lignes. **Ordre d'écriture** : surface et primitives, un thème, les composants, puis un
+**écran de spécimen** qui montre chaque composant dans chaque état — c'est lui qui rend la promesse
+vérifiable, à l'écran comme en fichier sur l'hôte. Le sélecteur de démarrage vient en dernier, monté sur des
+pièces déjà vues à l'œuvre.
+
+Le firmware s'appuie sur le même `hal_circle` que l'émulateur (§3.5). L'interface reste un dialogue fixe
+centré : aucune barre de titre, fenêtre déplaçable, superposition, animation ou gestionnaire de fenêtres.
+La référence de conception est dans `boot-menu/`, avec deux réserves à corriger avant de s'en servir comme
+spécification — elle montre une colonne « ROM détectée » par ligne, ce qui promet un support multi-ROM qui
+n'existe pas (Okapia a une ROM et deux `modelid` sûrs, §7.10-7.11 : la colonne doit porter le modèle déduit
+et la ROM va aux informations, une fois), et elle est rendue avec une police vectorielle antialiasée, donc
+elle montre la mise en page et non le résultat. Son espacement est à revalider avec la vraie fonte, les
+lignes à deux niveaux étant le point de rupture. Ses icônes de dossier sont des relevés d'artwork Apple :
+leur distribution reste une décision distincte du GPLv3 du dépôt.
+
+**Typographie.** **Chicago est une police Apple sous copyright** : ne pas l'embarquer, la règle ne bouge pas.
+Mais elle ne bloque plus rien, parce que `libcircle.a` livre déjà sept fontes bitmap, `Font6x7` à `Font12x22`.
+Cinq couvrent ISO-8859-1 jusqu'à 0xFF — `Font8x8`, `8x10`, `8x12`, `8x14`, `8x16` — donc les accents français,
+capitales comprises ; `Font6x7` s'arrête à 0x80 et `Font12x22` à 0x7E, ce qui les élimine. `lib/font8x14.cpp`
+est la console `lat1-14` du paquet `kbd` de Linux, sous **GPLv2+**, compatible avec le GPLv3 du projet.
+
+Elles ne suffisent pourtant pas pour la cible, et il faut dire pourquoi : elles sont **toutes à chasse fixe
+de 8 px**, et ce sont des découpes d'un même dessin — le `C` de `Font8x16` est celui de `Font8x14` avec une
+rangée de plus. Or un dialogue Macintosh était proportionnel, Chicago pour les titres et Geneva pour les
+listes. C'est la chasse fixe, bien plus que la taille des pixels, qui fait lire « terminal » au lieu de
+« Macintosh ».
+
+**Fait le 2026-09-01 : les Helvetica bitmap X11 sont dans `assets/fonts/`.** Geneva était en substance une
+Helvetica ajustée à une petite grille de pixels, donc c'est ce qui s'en approche le plus parmi ce qui est
+redistribuable. La licence a été lue dans le fichier : Adobe Systems 1984-1989/1994 et Digital Equipment
+1988/1994, « permission to use, copy, modify, distribute and sell … without fee » avec clause de
+non-endossement — compatible GPLv3, la réserve est levée.
+
+Le format BDF est du texte, donc **aucun rasteriseur ni dépendance de compilation** : `scripts/gen-font.py`
+le lit lui-même, comme `gen-keycodes.py` lit les codes clavier. `scripts/fetch-fonts.sh` récupère et
+`scripts/trim-bdf.py` élague aux caractères affichables — 380 Ko versionnés au lieu d'un mégaoctet et demi
+de cyrillique et de mathématiques. Conséquences :
+
+- l'avance vient du `DWIDTH` et l'approche de la boîte du glyphe, donc **l'espacement est celui du
+  dessinateur** et non le nôtre ;
+- le **gras est une vraie graisse**, plus un étalement d'un pixel. Le gras synthétique reste dans les
+  primitives comme repli, et il a coûté un bug qui vaut d'être retenu : il élargissait le glyphe sans
+  élargir l'avance, donc chaque lettre grasse mordait la suivante — et `GfxTextWidth` ajoutait bien le
+  pixel au total mais pas à chaque avance, si bien que même la mesure mentait ;
+- **`œ`, `Œ`, `…`, `’`, les tirets et les guillemets sont dans la fonte**, au-delà de Latin-1 : les
+  traductions n'ont plus rien à normaliser, et `GfxText` décode l'UTF-8 pour y accéder ;
+- **plusieurs tailles sont compilées**, en échelle : cellules de 12, 14, 16, 20, 27 et 35 pixels, deux
+  graisses chacune. C'est ce qui rend possible le point suivant.
 
 **Le firmware possède le `modelid`.** C'est sa place naturelle : le champ `productKind` est patché au
 chargement de la ROM (§7.11), donc avant que Basilisk ne démarre — impossible à changer une fois Mac OS
-lancé. L'utilisateur n'a pas à savoir que « Mac OS 8 exige la valeur 14 » : le firmware offre un choix
-**« OS invité : System 7 / Mac OS 8 »** par image disque, et traduit.
+lancé. L'utilisateur choisit seulement un système détecté ; la ligne affiche pour information le modèle
+qu'Okapia a retenu automatiquement.
 
 Portée réelle du problème, à ne pas surestimer : **`14` convient de System 7.5 à Mac OS 8.1**, soit
 l'essentiel de la cible. Seuls les System antérieurs à 7.5 imposent `5`. Un défaut à `14` est donc juste
 presque toujours.
 
-**Détection automatique — plus tard, et seulement si elle devient bon marché.** Déduire l'OS invité en
-lisant l'image disque est possible, à deux niveaux de coût très différents :
+**Détection automatique : faite, et les deux niveaux.** Ce paragraphe annonçait un travail à repousser ;
+la phase 15bis l'a livré, donc l'interface n'a plus rien à déduire elle-même :
 
-- **le nom du volume est facile** : il est en clair dans le *Master Directory Block*, à l'offset 1024 d'une
-  partition HFS. Une cinquantaine de lignes, et le sélecteur de démarrage affiche « Macintosh HD » au lieu
-  de « disk0.img » ;
-- **la version du Système est lourde** : il faut parcourir l'arbre B du catalogue HFS jusqu'au fichier
-  `System` du dossier Système béni, ouvrir son fork de ressources et décoder la ressource `'vers'`.
-  Plusieurs centaines de lignes pour trancher un cas de bord.
+- **le nom du volume** vient de `hfs_vstat()` par `HfsDescribe()`/`HfsInventory()`, avec la taille, l'espace
+  libre, le CNID du dossier béni et l'état propre/sale (`hfs_volume_circle.h`) ;
+- **la version du Système** aussi : `HfsSystemVersion()` (`hfs_volume_circle.cpp:441`) parcourt le catalogue
+  jusqu'au fichier `System` du dossier béni, ouvre son fork de ressources et décode la ressource `'vers'`,
+  en lecture seule.
 
-À faire dans cet ordre, jamais l'inverse : le nom de volume a une valeur d'usage immédiate, la détection
-de version n'en a qu'une d'élégance.
+La phase 16 est donc l'habillage de ce que la phase 15bis a découvert, pas sa fondation.
 
 **Calendrier** : après M6. Ce n'est pas un préalable au boot de Mac OS, et le construire trop tôt
 retarderait le cœur. Mais la structure doit l'admettre dès maintenant, d'où `hal_circle`.
@@ -667,7 +1017,9 @@ douce et plus grave de l'arpège majeur. Conséquences pratiques :
 - les sons Mac sont en **8 bits non signés, mono, 22 254,54 Hz** : rééchantillonnage vers la sortie HDMI ;
 - l'audio doit donc être initialisé **très tôt**, avant l'émulateur — ce qui remonte la phase audio dans
   l'ordre logique, au moins pour un chemin minimal ;
-- rien n'est embarqué dans le dépôt : le son vient de **la ROM de l'utilisateur**. Pas de carillon sans ROM.
+- rien n'est embarqué dans le dépôt : le son vient de **la ROM de l'utilisateur**. Pas de carillon sans ROM ;
+- une fois qu'il existe, le firmware le **rejoue une seconde fois** quand la PRAM est oubliée (§7.12) : c'est
+  ainsi qu'un Macintosh accusait réception de Cmd-Option-P-R, et c'est le seul retour que l'utilisateur ait.
 
 **Happy Mac et Sad Mac** : mêmes icônes, même origine, même méthode d'extraction. Le Sad Mac est en outre un
 vrai système de diagnostic — l'icône était accompagnée d'un code hexadécimal. Okapia reprend le procédé
@@ -1134,6 +1486,8 @@ lecture même quand la carte est manifestement lue, le contrôleur SD ne passant
       trois fausses
 - [x] compositeur : `Screen_blitter_init()`, `ExpandMap[]`, doublement entier, centrage
 - [x] `switch_to_current_mode()`, `set_palette()`, `set_gamma()`
+- [x] résolution de sortie détectée par `CBcmFrameBuffer(0, 0, 32)` auprès du firmware, puis table des
+      modes Macintosh filtrée selon les dimensions réellement obtenues ; aucun réglage utilisateur
 - [x] compteur d'images et coût de composition mesurés. Relevé sous QEMU `raspi3b`, 640×480 8 bits :
       composition 1530 µs, **8,5 % du temps mural** à 55 images/s, invité à 20 542 k opcodes/s
 - [x] cadence pilotée par la préférence `frameskip` d'amont, plus par une constante. Le défaut d'amont
@@ -1401,7 +1755,14 @@ la chaîne d'horloge ci-dessus valait le détour.
       près de quand il a servi, ce qui est une bien meilleure borne que l'heure de compilation et suit
       l'usage réel de la machine
 - [ ] patch `xpram_dirty` et écriture différée
-- [ ] patch d'écriture d'horloge
+- [ ] **écriture d'horloge, par le crochet qui existe déjà et non par un patch**. Le trap `ClkNoMem`
+      ($A053) est patché en `M68K_EMUL_OP_CLKNOMEM` sur notre ROM (`rom_patches.cpp:1188`, branche
+      « ROM23/26/27/32 »), donc l'écriture passe par `EmulOp()`, que `xpram_hook_circle.cpp` enveloppe
+      déjà. Capturer `d1`/`d2` **à l'entrée** du wrapper — `EmulOp` finit par `r->d[1] = r->d[2]` —,
+      reconstituer les quatre octets écrits un par un, puis poser l'heure dans `CFirmwareRTC` s'il
+      répond, sinon `CMCP7941X`, sinon un fichier sur la carte. Cette valeur explicite prime sur le
+      plancher `drLsMod` de `RefineClock()`, sinon reculer l'horloge volontairement ne survit pas au
+      démarrage suivant. C'est ce qui rend inutile tout panneau date/heure dans le firmware (§7.12)
 - [x] arrêt propre sur « Shut Down » : `QuitEmulator()` appelle `m68k_emulop_return()`, la boucle 68k rend
       la main, `ExitAll()` ferme l'image, le noyau s'arrête et QEMU quitte via le semihosting
 - [x] essai de coupure brutale : `scripts/run-test.sh` termine par `SIGKILL` puis vérifie au `fsck_hfs`,
@@ -1463,6 +1824,8 @@ sortie 60 Hz avant d'envisager quoi que ce soit d'autre.
 ### Phase 13 — Réseau
 
 - [ ] `ether_circle.cpp` avec partage de la MAC du Pi
+- [ ] respecter `nonet` au démarrage ; ne créer un contrôle firmware que si un vrai choix de mode ou
+      d'interface apparaît, pas pour un simple activé/désactivé
 - [ ] NTP au démarrage puis passage de la main au Mac
 - [ ] essais : DHCP côté Mac, TCP/IP, transfert de fichiers, navigateur d'époque
 
@@ -1480,6 +1843,7 @@ sortie 60 Hz avant d'envisager quoi que ce soit d'autre.
       rallume pour exercer la plomberie. La vérification à l'oreille demande du matériel réel (phase 2)
 - [ ] sortie HDMI plutôt que PWM (le jack n'existe pas sur Pi 5), contrôleur de volume et de coupure
       réellement appliqués — pour l'instant le Mac les demande, on les mémorise sans les appliquer
+- [ ] brancher le contrôle `nosound` du firmware sur cette initialisation, avant `InitAll()`
 - [ ] essais : sons système, lecture AIFF, jeux
 
 ### Ce que la coupure brutale abîme réellement — mesuré
@@ -1745,17 +2109,225 @@ sans autre mécanisme.
 ### Phase 16 — Firmware Okapia
 
 - [ ] `hal_circle` consolidé et utilisable hors émulateur
-- [ ] jeu de widgets 1 bit d'aspect System 7 (barre de menus, fenêtre, bouton, case à cocher, liste)
-- [ ] police bitmap libre ou dessinée pour le projet — **jamais Chicago**
-- [ ] écrans : moteur et profil, ROM, disques, écran, réseau, audio
-- [ ] écriture dans le fichier de préférences, qui reste la source de vérité
-- [ ] ouverture par touche maintenue au démarrage, et automatiquement si la configuration manque
+- [x] pas LVGL. Le tampon est réclamé par `CBcmFrameBuffer (0, 0, 32)` comme le fait le compositeur ;
+      `C2DGraphics` reste à prendre le jour où l'interface bougera et voudra un double tampon, un écran
+      fixe n'en ayant pas besoin. Noir, blanc et **gris pleins** à la profondeur de sortie
+- [x] **primitives sur une surface** — pointeur, dimensions, pas — dans `src/firmware/okapia_gfx.*`,
+      sans un seul type Circle. Toile logique en 8 bits sur une palette de quatre entrées : 300 Ko au lieu
+      de 1,2 Mo, et l'expansion vers la sortie se fait une fois, par table (`okapia_present.cpp`)
+- [x] inversion vidéo, roundrect et mesure de texte : les trois manques face à QuickDraw, écrits. Une
+      seule table d'entames sert le rempli et le contour, sinon un bouton dépasse de son propre trait ;
+      les pixels sont testés en leur centre, ce qui sépare un coin rond d'un coin encoché
+- [x] **pas de motif tramé** : rien n'en a eu besoin, et la primitive n'existe donc pas
+- [x] **thème = structure constante de fonctions *et de métriques*** (`okapia_theme.*`) ; aucun composant
+      ne connaît une hauteur de bouton, il la demande
+- [ ] **thème uchronique, aucun système mesuré** : le menu s'ouvre devant System 6 à Mac OS 9, donc le
+      chrome ne se date pas. Plat — ni biseaux Platinum, ni gel Aqua —, rectangles arrondis, double cerclé
+      du bouton par défaut réutilisé pour le focus, ascenseur sans flèches. Les icônes portent l'époque,
+      pas le cadre
+- [x] composants avant écrans (`okapia_widgets.*`) : cadre de dialogue, étiquette, bouton et bouton par
+      défaut, bouton à icône, case, radio, liste, ascenseur, menu local, champ de saisie, barre de
+      progression, liseré de focus, séparateur
+- [ ] restent le cadre d'alerte et le repli à la ligne des étiquettes, que le dialogue de réparation
+      demandera le premier
+- [x] **écran de spécimen** : chaque composant dans chaque état, sous QEMU (`scripts/specimen.sh`) et en
+      fichier sur l'hôte (`tests/host`). Comme rien n'est copié d'un système existant, il est le seul
+      arbitre du thème — d'où sa place avant le sélecteur, pas après
+- [x] largeur des boutons calculée depuis leur propre libellé et le rembourrage du thème
+- [ ] modèle de boîtes complet en lignes et colonnes ; le spécimen pose encore ses ordonnées à la main
+- [ ] focus clavier complet — Tab et Shift-Tab, flèches en liste, Espace et Retour, Échap
+- [x] toile logique 640×480 agrandie d'un facteur entier et centrée, même méthode que
+      `video_circle.cpp:254-262` ; vérifié à ×1 sur 640×480 et à ×2 sur 1280×960
+- [x] blitter de glyphes à largeur variable, plus gras et italique synthétisés à la QuickDraw
+- [x] `scripts/gen-font.py` convertit les fontes de Circle au format du projet, qui porte déjà une avance
+      par glyphe — la colonne qu'une proportionnelle remplira sans toucher au C++
+- [ ] proportionnelle bitmap X11, **jamais Chicago** ; `Font8x16`/`Font8x12` tiennent la place en attendant
+- [x] `œ`, `Œ`, `…` et `’` absents d'ISO-8859-1 : les sources restent en UTF-8 et `GfxText` décode, en
+      repliant ces signes sur leurs ancêtres ASCII. Cela évite aussi le piège du littéral `"\xE9"`, qui
+      avale la lettre suivante quand elle est un chiffre hexadécimal
+- [ ] liste des systèmes avec détection automatique du modèle compatible, et état propre/sale par volume
+- [ ] icônes de dossier monochromes tracées depuis les références System 6, System 7 et Mac OS 8/9
+- [ ] colonne radio « par défaut », indépendante de la sélection courante, qui place son `disk` en premier
+- [ ] cases « lecture seule » (préfixe `*`, `disk.cpp:161`) et « monter » par ligne
+- [ ] réglages derrière un bouton à glyphe : RAM, rafraîchissement, partage, nom du volume partagé,
+      audio et langue — **pas de date ni de fuseau**, l'horloge se règle dans Mac OS (§7.7)
+- [ ] audio en quatre états — coupé / HDMI / jack / USB — et non un booléen (`audio_circle.cpp:70`)
+- [ ] boutons Éteindre et Oublier la PRAM, plus Cmd-Option-P-R pendant la fenêtre de démarrage
+- [ ] volet d'informations : ROM et modèle retenus, carte, volumes, volume de démarrage, `modelid` et son
+      éventuel échec de détection, date de compilation, modèle de Pi, mode réellement accordé
+- [ ] marque `*` et action « Enregistrer et redémarrer » pour toute préférence non applicable à chaud
+- [ ] aucune résolution dans les réglages : sortie détectée, mode logique possédé par Moniteurs et la PRAM
+- [ ] aucun réseau tant qu'il n'existe pas un choix utile au-delà d'activé/désactivé
+- [ ] ne pas masquer une préférence cible parce que sa valeur est encore en dur ; planifier son branchement
+- [ ] anglais et français par une table de chaînes du projet ; langue persistée dans les préférences
+- [ ] écriture dans le seul `BasiliskII_Prefs`, qui reste la source de vérité
+- [ ] fond gris uni (~`#BCBCBC`) pendant environ deux secondes ; `Option` seule ouvre le sélecteur
+- [ ] ouverture automatique si la configuration manque ou si aucun système n'est amorçable
+
+**Ce que la phase 16 hérite, après nettoyage** — `src/firmware/` : surface et primitives antialiasées,
+fonte et son échelle de tailles, icônes peintes, thème avec ses métriques, composants avec leur test de
+clic, et l'écran de spécimen. 2 174 lignes, plus le noyau de démonstration et deux contrôles sur l'hôte.
+Les fontes sont dans `assets/fonts/` et les dossiers Système dans `assets/icons/` : une entrée de
+compilation ne vit pas dans un dossier de référence, ce que l'AGENTS.md dit déjà de `reference/`. La
+maquette reste dans `boot-menu/` comme archive.
+
+Trois choses ont été retirées après revue : la planche de variantes, dont les choix sont faits et qui
+maintenait un second exemplaire du dessin de chaque pièce — elle était en outre **liée dans le noyau du
+Pi**, un `$(wildcard)` sur le répertoire du firmware suffisant à embarquer un outil d'atelier dans
+l'appareil ; les métriques d'ombre, mortes depuis que l'ombre du dialogue a sauté ; et les styles
+synthétiques, la graisse étalée et l'italique cisaillée n'ayant plus lieu d'être face à une vraie graisse
+dessinée — et à un vrai oblique (`helvO`) si l'italique revient.
+
+**Le spécimen tient sur deux pages, parce qu'un écran ne suffit pas.** À 640×480, avec un cadre, une marge
+et un rythme corrects, un dialogue ne porte pas quarante composants — et raboter le contenu jusqu'à ce qu'il
+rentre revient à mesurer l'entassement plutôt que le thème. Quatre tours ont été perdus à rogner une liste,
+des lignes de texte, une étiquette, en cassant autre chose à chaque fois. **Un spécimen est un document, et
+un document se pagine** : les contrôles d'un côté, les états et la typographie de l'autre. Le noyau alterne
+les deux, `scripts/specimen.sh 2` vise la seconde, et les contrôles tournent sur les deux.
+
+Deux mesures utiles au passage : un redessin plein écran antialiasé coûte près d'une seconde sous QEMU — sans
+importance pour un menu qui dessine une fois, mais assez pour faire dériver une cadence à la seconde. Et
+l'espacement entre composants n'avait rien à se reprocher ; je l'avais élargi en même temps que je corrigeais
+la marge du cadre, deux changements mêlés dont un seul était demandé.
+
+**Un contrôle qui porte un anneau a besoin de la place de son anneau.** Le bouton par défaut était ancré sur
+le bord du contenu, et son liseré débordait donc d'exactement sa portée dans la marge que le rectangle de
+contenu venait d'établir. `ThemeReach()` répond « combien ce contrôle dessinera hors de lui-même dans cet
+état », et une mise en page le demande au lieu de le supposer — ces largeurs appartiennent au thème.
+
+Et la mise en page du spécimen coulait encore d'ordonnées absolues : corriger l'origine de la marge a donc
+réparé le haut et la gauche en laissant la moitié basse déborder. Elle s'écoule maintenant depuis le
+rectangle de contenu, pied ancré en bas, largeurs en fractions et non en constantes de maquette. **Une mise
+en page qui ne tient que pour un jeu de métriques n'est pas une mise en page.** Le contrôle
+`CheckSpecimen()` balaie la bande entre le cadre et le contenu et échoue au moindre pixel qui s'y trouve —
+c'est ce qui aurait attrapé le débordement le jour même.
+
+**La marge se mesure depuis le filet intérieur, pas depuis l'arête du dialogue.** Elle était appliquée
+depuis le bord extérieur, si bien que le cadre lui prenait sa propre épaisseur et que le contenu tenait
+moitié moins loin que la métrique ne l'annonçait — d'où une impression d'entassement qui n'était pas un
+défaut de valeur mais d'origine. `ThemeContent()` rend le rectangle où un écran peut poser ses éléments, et
+tous passent par lui pour que « marge » veuille dire une seule chose. Même famille : **la coche se centre
+sur sa propre étendue** et non sur la boîte où ses deux traits ont été calculés, une coche étant bien plus
+haute d'un côté que de l'autre.
+
+Le juste équilibre entre l'air et l'occupation utile ne se jugera pas sur cet écran : le spécimen entasse
+quarante composants pour les montrer tous, là où un vrai dialogue en portera huit. Les premières fenêtres
+de la phase 16 sont l'arbitre, et la valeur à régler est `nMargin` — un seul nombre, dans le thème.
+
+**Le plancher en dur est le piège des métriques sous un autre jour.** Trois défauts trouvés en regardant le
+640×480, tous de la même famille : l'icône de réglages posait ses curseurs à une taille minimale de sept
+pixels, ce qui est juste à soixante et se chevauche à quatorze — c'est-à-dire précisément la taille que
+donne une sortie 640×480 ; l'encoche de la marque d'arrêt valait une fraction du trait qui, arrondie vers le
+bas, tombait exactement sur la demi-largeur de la barre, si bien que la barre se soudait à l'anneau ; et les
+deux filets du cadre avaient la même épaisseur, ce qui se lit comme une erreur plutôt que comme un cadre.
+La règle qui en sort : **une fraction de la pièce, jamais un plancher** — et quand un dégagement doit exister,
+il s'écrit comme une clairance minimale d'un pixel, pas comme une fraction dont on espère qu'elle arrondira
+bien.
+
+**« Pas propre, mal aligné » était mesurable, et personne ne le mesurait.** D'où `tests/host/check_geometry`,
+qui dessine chaque pièce seule sur un fond blanc, relève la boîte d'encre et **échoue si les quatre côtés ne
+s'accordent pas** — à cinq échelles, parce qu'une règle vraie à 1:1 et fausse à 2,25 n'est pas une règle. Il
+tourne dans `make -C tests/host`, à côté du rendu.
+
+Il a trouvé du premier coup ce que l'œil signalait sans pouvoir le nommer :
+
+- **le centre était pris sur la demi-extension déjà rétrécie** par l'épaisseur du trait, dans le champ de
+  distance. Toute forme à contour se trouvait donc décalée d'une demi-épaisseur vers la gauche et vers le
+  haut : l'anneau dégageait son bouton d'un pixel de plus à gauche qu'à droite ;
+- **la racine carrée maison était fausse.** Trois itérations de Newton parties du carré rendaient 6,6 pour 6,
+  donc chaque contour sortait un pixel trop étroit, symétriquement — ce qui se lit comme « pas assez écarté »
+  et non comme un bug. Remplacée par `__builtin_sqrtf`, qui est l'instruction FSQRT sur AArch64 et ne
+  demande aucune bibliothèque ;
+- **la bande de l'anneau était calculée une demi-épaisseur trop loin** : la forme étant déjà rétrécie, sa
+  frontière *est* la ligne médiane du trait, donc la bande vaut `|d| <= t/2` et non `|d + t/2| - t/2` ;
+- **le texte se centrait sur la cellule**, qui porte une descente dont « Focus » ne se sert pas. Il se centre
+  désormais sur la hauteur de capitale, mesurée sur le H à la génération de la fonte.
+
+Après quoi : zéro écart, aux cinq échelles. Reste une limite connue et inscrite comme telle — **rien ne
+tronque encore une chaîne à son contrôle**, donc une traduction plus longue que son bouton déborde au lieu
+d'être coupée. C'est le travail du modèle de boîtes.
+
+**Deux défauts de rendu qui valaient d'être compris** — trouvés à l'œil, pas par un test :
+
+- **les accents des capitales étaient coupés.** Helvetica déclare `FONT_ASCENT 11` à douze pixels et dessine
+  pourtant le É sur douze rangées au-dessus de la ligne de base. Dimensionner la cellule sur la déclaration
+  perdait la rangée du haut de tous les accents majuscules, deux rangées en 24 px. La cellule se calcule
+  maintenant **sur les glyphes**, pas sur ce que la police prétend ;
+- **le 1:1 était flou et les anneaux se brouillaient**, pour une seule et même raison : un contour d'un pixel
+  était centré *sur* le bord du rectangle, donc moitié dedans moitié dehors, donc deux colonnes à 50 % de
+  gris au lieu d'une colonne noire. Invisible à l'échelle 2, criant à l'échelle 1. Un contour se pose
+  désormais **à l'intérieur** de son rectangle.
+
+**Et un piège de compilation qui est déjà dans ce fichier, retombé dans un Makefile neuf.** Les règles
+privées de `src/firmware/circle/` n'avaient pas de suivi de dépendances d'en-têtes : ajouter un champ à
+`TThemeMetrics` a recompilé le seul `okapia_theme.o` et laissé les autres objets avec l'ancienne disposition
+de structure. Le lien a réussi, et le noyau a sauté **dans la table des fontes** — exception d'instruction,
+PC au-delà de `_etext`, là où Circle met `PXN=1`. Le symptôme ne ressemble en rien à la cause. Les deux
+Makefile portent maintenant `-MMD -MP` et rappellent pourquoi.
+
+**Le tracé est vectoriel, sans processeur graphique.** Les formes arrondies ne sont plus des tables
+d'entames mais **un champ de distance signée** : une seule formule donne la distance d'un point à un
+rectangle arrondi, et cette distance donne la couverture du pixel qui chevauche le bord — donc
+l'antialiasing. C'est ce qui retire l'escalier d'une courbe, ce qu'aucun agrandissement ne pouvait faire.
+Circle porte bien un OpenGL ES dans `addon/vc4`, mais c'est le blob VideoCore IV — Pi 1 à 3 seulement, une
+dépendance énorme, et aucune aide pour le texte. Le vectoriel utile ici est le calcul, pas le matériel.
+
+Les icônes du chrome suivent : **peintes depuis le rectangle qu'on leur donne** et non stockées, donc nettes
+à n'importe quelle échelle. Effet de bord bienvenu, le chrome ne cite alors plus aucun système, ce que
+§7.12 demandait — seuls les dossiers Système restent des relevés, et c'est justement là que l'époque doit
+se voir.
+
+**État au 2026-09-01 — la typographie et l'indépendance à la résolution.** Les Helvetica bitmap X11 sont
+vendorisées et lues par `gen-font.py`, six tailles en deux graisses ; l'interface se trace à la résolution de
+l'écran, échelle 36/16 mesurée sur un 1920×1080. Vérifié aussi : la capture QEMU en 640×480 reste identique
+au rendu sur l'hôte, octet pour octet, malgré la bascule de la surface en 32 bits.
+
+**Le piège des métriques s'est refermé quatre fois**, et c'est la leçon la plus utile de l'étape : la coche
+et le triangle des menus locaux étaient à coordonnées fixes et flottaient dans une case deux fois plus
+grande à l'échelle 2 ; le pouce d'ascenseur avait un minimum de 16 pixels ; l'anneau de focus prenait le
+rayon du bouton partout, donc il ne suivait ni une déroulante ni une case ; et l'épaisseur des traits était
+un `1` en dur, si bien qu'à l'échelle 2 un contour de bouton restait un cheveu à l'intérieur d'un anneau de
+quatre pixels. **Une valeur en dur là où une métrique était due**, chaque fois. §7.12 l'annonçait, et le
+savoir n'a pas suffi : c'est l'écran de spécimen qui l'a rendu visible, à chaque fois. D'où la métrique
+`nStroke`, qui porte désormais l'épaisseur de tout le chrome.
+
+Deux corrections d'aspect qui viennent d'un œil et non d'un raisonnement : la case cochée portait une coche
+crochue, qui est la marque d'un formulaire administratif — un Macintosh y mettait **une croix** ; et le
+bouton radio n'avait pas assez de blanc entre l'anneau et le point, ce qui le faisait lire comme une tache.
+
+**État au 2026-08-31 — le système de composants tient debout et se regarde.** `src/firmware/` contient la
+surface et les primitives, la fonte générée, le thème, les composants et l'écran de spécimen ; aucun type
+Circle n'y apparaît. Le noyau de spécimen (`src/firmware/circle/`) lie Circle et ce code, rien d'autre : ni
+cœur Basilisk, ni carte, ni émulateur. Il pèse 459 Ko, se construit en quelques secondes et ne peut donc
+rien abîmer.
+
+Le résultat qui compte le plus n'est pas l'image : `scripts/specimen.sh` compare la capture QEMU au rendu
+produit sur l'hôte par `tests/host`, et les deux sont **identiques octet pour octet** sur 921 600 octets.
+Le rendu sur l'hôte est donc un substitut fidèle, et itérer sur le dessin ne demande plus ni noyau ni
+émulateur — ce qui était l'argument pour faire prendre une surface aux primitives plutôt qu'un
+`C2DGraphics`, et il se vérifie.
+
+Trois choses apprises en écrivant, qui valent d'être notées ailleurs que dans le code :
+
+- **l'inversion vidéo a un domaine, et c'est le rectangle.** Inverser par-dessus un bouton arrondi retourne
+  ses quatre coins et les fait ressortir en encoches blanches. Un bouton enfoncé se peint donc, tandis
+  qu'une ligne de liste s'inverse — et l'inverser *après* son contenu est ce qui permet à une seule liste
+  de servir les systèmes, les réglages et l'arborescence de la phase 17 : ce que la ligne contient est
+  sélectionné par la même règle, quoi que ce soit ;
+- **un cercle se dessine en testant les pixels par leur centre.** La première version testait le coin et
+  produisait des angles encochés à petit rayon, ce qui se voit immédiatement sur un bouton de 22 pixels ;
+- **le décodage UTF-8 appartient à la primitive de texte.** Les sources restent en UTF-8, lisibles par les
+  éditeurs et les diffs, et la fonte reste en ISO-8859-1. Écrire des littéraux Latin-1 aurait marché et
+  aurait aussi ouvert un piège discret : `"\xE9"` suivi d'une lettre qui se trouve être un chiffre
+  hexadécimal avale cette lettre.
 
 - [ ] **dialogue de réparation du volume** : aujourd'hui `HfsRepair` scavenge en silence au démarrage.
       C'est ce qu'il faut pour un appareil, mais l'utilisateur doit pouvoir le voir et le refuser —
       « le volume n'a pas été démonté proprement, réparer ? ». C'est la première vraie raison d'être de
       cette interface, et le seul endroit du système qui écrit dans le volume de l'utilisateur sans qu'il
-      l'ait demandé
+      l'ait demandé. Trois états et non deux : réparer sans demander, demander, ne jamais réparer —
+      par un second booléen `hfsrepairask`, sans changer le type de `hfsrepair` (`prefs_circle.cpp:57`),
+      avec un décompte qui répare à l'expiration, faute de quoi `scripts/run-test.sh` s'arrête dessus
 
 ### Phase 17 — Provisionnement
 

@@ -222,6 +222,11 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   unit are wrapped.
 - **The QEMU window costs about a third of guest speed** (97% of the Mac's 60 Hz nominal headless, 61%
   with a window), so run automated regression checks headless and keep the window for watching.
+- **A private compile rule without `-MMD -MP` links objects built against two different structs.** Adding a
+  field to a theme struct rebuilt one object and left the others on the old layout; the link succeeded and
+  the kernel jumped into the font tables — instruction abort with the PC past `_etext`, where Circle sets
+  `PXN=1`. The symptom looks nothing like the cause. `src/firmware/circle/Makefile` and `tests/host/Makefile`
+  carry the flags and say why; any new rule owes the same.
 - **Objects in `src/kernel/emu/` do not depend on the Makefile**, so changing a `-D`, a flag or a
   `#define` in `external/` rebuilds nothing: `make` links stale objects and you test a kernel that no
   longer matches the sources. This silently cost 4.8x guest speed — objects compiled while Basilisk's
@@ -303,4 +308,6 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 ./scripts/build-qemu.sh     # AArch64 kernel for QEMU raspi3b
 ./scripts/run-qemu.sh       # serial on stdout, GDB on :1234
 ./scripts/build-pi.sh 4     # kernel for Pi 3, 4 or 5
+./scripts/specimen.sh [2]   # firmware theme specimen under QEMU, page 1 or 2, no SD card
+make -C tests/host          # the same specimen rendered here, plus the geometry checks
 ```
