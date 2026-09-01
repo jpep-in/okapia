@@ -29,6 +29,13 @@ kernel*.img
 tests/*/obj/
 tests/link-probe/undefined.txt
 
+# Firmware specimen build output
+src/firmware/circle/obj/
+src/firmware/circle/kernel8.*
+tests/host/render_specimen
+tests/host/check_geometry
+tests/host/*.ppm
+
 # Kernel build intermediates
 src/kernel/emu/
 src/kernel/*.o
