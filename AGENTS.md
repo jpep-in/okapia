@@ -276,6 +276,11 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   output at all: the Mac played its alert, waited for a completion that never came, and froze — and the
   hard stop that followed cost a card. A device that will not start must leave the platform hook exactly
   as the `src/dummy/` version leaves it, and the decision belongs at init, not in a hook the 68k calls.
+- **`RegisterKeyStatusHandlerRaw (0)` does not detach a keyboard, it changes its mode.** A null raw handler
+  makes `ReportHandler` fall through to the cooked path (`usbkeyboard.cpp:200`) and hand the reports to
+  `CKeyboardBehaviour`. Doing that to "give the keyboard back" after the firmware's window stopped the
+  kernel dead — no further log at all, and the Macintosh never started. There is nothing to give back:
+  Circle keeps one raw handler, so `InputInit()` replacing it in `StartMacintosh()` *is* the handover.
 - **Circle's cooked mouse silently drops every report** until `Setup()` gives it screen dimensions, so a
   working keyboard alongside a dead mouse says nothing about USB, ADB or interrupts. Okapia wants raw
   deltas anyway: `RegisterStatusHandler()` hands over `dx/dy` for `ADBMouseMoved()`, whereas the cooked

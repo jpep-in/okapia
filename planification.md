@@ -2349,6 +2349,27 @@ relais est gratuit : `RegisterKeyStatusHandlerRaw` n'en garde qu'un, et `InputIn
 ensuite sans qu'on ait rien à défaire. `Option` seule ouvre le sélecteur, Cmd-Option-P-R oublie la PRAM.
 Vérifié en journalisant les touches reçues pendant la fenêtre.
 
+  **Fait le 2026-09-01.** Le clavier répond pendant la fenêtre sans qu'on ait rien à interroger — les
+  rapports arrivent par URB — et le relais est bien gratuit. Deux choses apprises :
+
+  - **rendre le clavier par `RegisterKeyStatusHandlerRaw (0)` bloque le démarrage.** Ce n'est pas un
+    détachement mais un changement de mode : le rapport retombe alors dans le mode cuit
+    (`usbkeyboard.cpp:200`) et part vers `CKeyboardBehaviour`. Le noyau s'arrêtait net après le firmware,
+    sans une ligne de journal. Il n'y a rien à rendre : `InputInit()` remplace le gestionnaire, c'est tout
+    le relais ;
+  - **tout se verrouille sur la durée de la fenêtre**, modificateurs compris. Un rapport arrive à chaque
+    changement, relâchement inclus, donc les quatre touches de Cmd-Option-P-R ne sont presque jamais
+    présentes dans le même : la première version exigeait cette coïncidence et manquait la combinaison
+    qu'elle guettait. Verrouiller correspond d'ailleurs à ce que faisait un Macintosh, qui échantillonnait
+    l'état du clavier pendant la fenêtre.
+
+  Mesuré : `Option` seule est reconnue et le Mac démarre ; Cmd-Option-P-R efface `/BasiliskII_XPRAM` et le
+  Mac démarre puis propose de reconstruire son bureau, ce qui est la conséquence normale d'une PRAM oubliée
+  et la meilleure preuve que le zap a porté ; sans touche, aucun message ; `run-test.sh` reste vert.
+
+  La souris attendra **16c** : sans écran où cliquer elle ne se teste pas, et le curseur appartient à la
+  boucle qui s'en sert.
+
 **16c — La boucle d'écran.** Un écran est un tableau statique de composants et une boucle d'événements —
 le `ModalDialog` du Dialog Manager. Focus et son parcours (Tab, Maj-Tab, flèches en liste, Espace, Retour,
 Échap), `WidgetHit` enfin appelé, état enfoncé pendant le clic. Vérifiable sur l'hôte en injectant des
