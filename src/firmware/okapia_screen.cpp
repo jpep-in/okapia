@@ -13,35 +13,6 @@ static TScreenReply Reply (TScreenResult Result, int nIndex)
     return r;
 }
 
-// A list owns the rows that lie within it. Geometry and not a field, because
-// the rows are inside the frame on screen too: a rule that can be seen is a
-// rule that cannot drift out of step with what is drawn.
-static bool RowBelongsTo (const TWidget *pRow, const TWidget *pFrame)
-{
-    return pRow->Type == WidgetListRow
-        && pRow->Rect.nX >= pFrame->Rect.nX
-        && pRow->Rect.nY >= pFrame->Rect.nY
-        && pRow->Rect.nX + (int) pRow->Rect.nWidth
-               <= pFrame->Rect.nX + (int) pFrame->Rect.nWidth
-        && pRow->Rect.nY + (int) pRow->Rect.nHeight
-               <= pFrame->Rect.nY + (int) pFrame->Rect.nHeight;
-}
-
-// The list a row is in, or -1. Rows are hit before their frame, so a click has
-// to find its way back up.
-static int ListOwning (const TScreen *pScreen, int nRow)
-{
-    for (unsigned i = 0; i < pScreen->nCount; i++)
-    {
-        if (pScreen->pWidgets[i].Type == WidgetListFrame
-            && RowBelongsTo (&pScreen->pWidgets[nRow], &pScreen->pWidgets[i]))
-        {
-            return (int) i;
-        }
-    }
-    return -1;
-}
-
 // nStep is +1 or -1; wraps, and gives up rather than spinning if nothing at all
 // can hold the focus.
 static int NextFocus (const TScreen *pScreen, int nFrom, int nStep)
@@ -99,10 +70,11 @@ static void SetFocus (TScreen *pScreen, int nIndex)
     pScreen->nFocus = nIndex;
 }
 
-void ScreenInit (TScreen *pScreen, TWidget *pWidgets, unsigned nCount)
+void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsigned nCount)
 {
     pScreen->pWidgets = pWidgets;
     pScreen->nCount   = nCount;
+    pScreen->pTheme   = pTheme;
     pScreen->nFocus   = -1;
     pScreen->nPressed = -1;
     pScreen->nX       = 0;
@@ -125,23 +97,6 @@ void ScreenInit (TScreen *pScreen, TWidget *pWidgets, unsigned nCount)
         }
     }
     SetFocus (pScreen, NextFocus (pScreen, -1, +1));
-}
-
-int ScreenSelectedRow (const TScreen *pScreen, int nList)
-{
-    if (nList < 0)
-    {
-        return -1;
-    }
-    for (unsigned i = 0; i < pScreen->nCount; i++)
-    {
-        if ((pScreen->pWidgets[i].nState & StateSelected)
-            && RowBelongsTo (&pScreen->pWidgets[i], &pScreen->pWidgets[nList]))
-        {
-            return (int) i;
-        }
-    }
-    return -1;
 }
 
 void ScreenOperate (TScreen *pScreen, int nIndex)
@@ -172,21 +127,6 @@ void ScreenOperate (TScreen *pScreen, int nIndex)
         p->nState |= StateChecked;
         break;
 
-    case WidgetListRow:
-        {
-            const int nList = ListOwning (pScreen, nIndex);
-            for (unsigned i = 0; i < pScreen->nCount; i++)
-            {
-                if (nList < 0
-                    || RowBelongsTo (&pScreen->pWidgets[i], &pScreen->pWidgets[nList]))
-                {
-                    pScreen->pWidgets[i].nState &= ~(unsigned) StateSelected;
-                }
-            }
-            p->nState |= StateSelected;
-        }
-        break;
-
     default:
         // A button, a pop-up, a field: operating it is the caller's business,
         // and it hears about it through ScreenActivated.
@@ -194,58 +134,80 @@ void ScreenOperate (TScreen *pScreen, int nIndex)
     }
 }
 
-// Moves the selection within a list by nStep rows, in array order. Disabled
-// rows are stepped over rather than landed on.
-static bool MoveSelection (TScreen *pScreen, int nList, int nStep)
+// Moves a list's choice by nStep items, stepping over the disabled ones and
+// stopping at the ends. No wrapping: a list that jumps from the last volume
+// back to the first reads as a glitch, and the Mac's own lists stopped too.
+static bool ListMove (TScreen *pScreen, int nList, int nStep)
 {
-    int nFirst = -1, nLast = -1;
-    for (unsigned i = 0; i < pScreen->nCount; i++)
-    {
-        if (RowBelongsTo (&pScreen->pWidgets[i], &pScreen->pWidgets[nList])
-            && !(pScreen->pWidgets[i].nState & StateDisabled))
-        {
-            if (nFirst < 0)
-            {
-                nFirst = (int) i;
-            }
-            nLast = (int) i;
-        }
-    }
-    if (nFirst < 0)
+    TWidget *p = &pScreen->pWidgets[nList];
+    if (p->nItems == 0)
     {
         return false;                   // an empty list: the card may have none
     }
 
-    const int nCurrent = ScreenSelectedRow (pScreen, nList);
-    int nWanted;
-    if (nCurrent < 0)
+    int nWanted = p->nChoice;
+    if (nWanted < 0)
     {
-        nWanted = nStep > 0 ? nFirst : nLast;
+        nWanted = nStep > 0 ? -1 : (int) p->nItems;
     }
-    else
+    for (;;)
     {
-        // No wrapping. A list that jumps from the last volume back to the first
-        // reads as a glitch, and the Mac's own lists stopped at the end too.
-        nWanted = nCurrent;
-        for (int n = 0; n < (int) pScreen->nCount; n++)
+        nWanted += nStep > 0 ? 1 : -1;
+        if (nWanted < 0 || nWanted >= (int) p->nItems)
         {
-            nWanted += nStep;
-            if (nWanted < nFirst || nWanted > nLast)
+            return false;
+        }
+        if (!(p->pItems[nWanted].nState & StateDisabled))
+        {
+            break;
+        }
+    }
+    // A page's worth at a time is the same walk repeated, so that it lands on
+    // something choosable rather than on whatever happens to be a page away.
+    int nLeft = (nStep > 0 ? nStep : -nStep) - 1;
+    while (nLeft-- > 0)
+    {
+        int nTry = nWanted;
+        for (;;)
+        {
+            nTry += nStep > 0 ? 1 : -1;
+            if (nTry < 0 || nTry >= (int) p->nItems)
             {
-                return false;
+                nTry = -1;
+                break;
             }
-            if (RowBelongsTo (&pScreen->pWidgets[nWanted], &pScreen->pWidgets[nList])
-                && !(pScreen->pWidgets[nWanted].nState & StateDisabled))
+            if (!(p->pItems[nTry].nState & StateDisabled))
             {
                 break;
             }
         }
+        if (nTry < 0)
+        {
+            break;
+        }
+        nWanted = nTry;
     }
-    if (nWanted == nCurrent)
+
+    if (nWanted == p->nChoice)
     {
         return false;
     }
-    ScreenOperate (pScreen, nWanted);
+    p->nChoice = nWanted;
+    WidgetListReveal (p, pScreen->pTheme);
+    return true;
+}
+
+static bool ListChoose (TScreen *pScreen, int nList, int nItem)
+{
+    TWidget *p = &pScreen->pWidgets[nList];
+    if (nItem < 0 || nItem >= (int) p->nItems
+        || (p->pItems[nItem].nState & StateDisabled)
+        || p->nChoice == nItem)
+    {
+        return false;
+    }
+    p->nChoice = nItem;
+    WidgetListReveal (p, pScreen->pTheme);
     return true;
 }
 
@@ -265,8 +227,49 @@ static void SetPressed (TScreen *pScreen, int nIndex, bool bPressed)
     }
 }
 
+// Everything a field answers to. Kept apart because a focused field takes keys
+// that mean something else anywhere on the screen — Left and Right move a caret
+// there and nothing at all elsewhere — and burying that in one switch is how a
+// screen ends up doing two things for one key.
+static TScreenReply HandleField (TScreen *pScreen, TWidget *p, const TEvent *pEvent)
+{
+    switch (pEvent->nKey)
+    {
+    case OkKeyBackspace:  WidgetFieldBackspace (p); return Reply (ScreenChanged, -1);
+    case OkKeyDelete:     WidgetFieldDelete (p);    return Reply (ScreenChanged, -1);
+    case OkKeyLeft:       WidgetFieldCaret (p, -1); return Reply (ScreenChanged, -1);
+    case OkKeyRight:      WidgetFieldCaret (p, +1); return Reply (ScreenChanged, -1);
+    case OkKeyHome:       WidgetFieldHome (p);      return Reply (ScreenChanged, -1);
+    case OkKeyEnd:        WidgetFieldEnd (p);       return Reply (ScreenChanged, -1);
+    default:
+        break;
+    }
+    // Anything that produced a character. Tab and Return produce none, so they
+    // fall through to the screen and keep meaning what they mean everywhere.
+    if (pEvent->nChar != 0 && !(pEvent->nModifiers & (ModCommand | ModControl)))
+    {
+        WidgetFieldInsert (p, pEvent->nChar);
+        return Reply (ScreenChanged, -1);
+    }
+    return Reply (ScreenIdle, -1);
+}
+
 static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
 {
+    const int nFocused = pScreen->nFocus;
+    TWidget *p = nFocused >= 0 ? &pScreen->pWidgets[nFocused] : 0;
+
+    // A field that can be edited answers first, and only says nothing when the
+    // key was not one of its own.
+    if (p != 0 && p->Type == WidgetField && p->pEdit != 0)
+    {
+        const TScreenReply Field = HandleField (pScreen, p, pEvent);
+        if (Field.Result != ScreenIdle)
+        {
+            return Field;
+        }
+    }
+
     switch (pEvent->nKey)
     {
     case OkKeyTab:
@@ -283,16 +286,29 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
 
     case OkKeyUp:
     case OkKeyDown:
-        // Arrows belong to the list. Anywhere else they do nothing, on purpose:
-        // making them a second focus ring means a screen behaves differently
-        // depending on where the focus already is, which is the kind of rule
-        // nobody can hold in their head.
-        if (pScreen->nFocus >= 0
-            && pScreen->pWidgets[pScreen->nFocus].Type == WidgetListFrame)
+    case OkKeyPageUp:
+    case OkKeyPageDown:
+    case OkKeyHome:
+    case OkKeyEnd:
+        // Arrows belong to the list, and to a field's caret. Nowhere else do
+        // they do anything, on purpose: making them a second focus ring means a
+        // screen behaves differently depending on where the focus already is,
+        // which is the kind of rule nobody can hold in their head.
+        if (nFocused >= 0 && p->Type == WidgetList)
         {
-            const int nStep = pEvent->nKey == OkKeyDown ? +1 : -1;
-            return Reply (MoveSelection (pScreen, pScreen->nFocus, nStep)
-                              ? ScreenChanged : ScreenIdle, -1);
+            const int nPage = (int) WidgetListVisible (p, pScreen->pTheme);
+            int nStep;
+            switch (pEvent->nKey)
+            {
+            case OkKeyUp:       nStep = -1; break;
+            case OkKeyDown:     nStep = +1; break;
+            case OkKeyPageUp:   nStep = -(nPage > 1 ? nPage - 1 : 1); break;
+            case OkKeyPageDown: nStep = +(nPage > 1 ? nPage - 1 : 1); break;
+            default:            nStep = pEvent->nKey == OkKeyHome
+                                      ? -(int) p->nItems : +(int) p->nItems; break;
+            }
+            return Reply (ListMove (pScreen, nFocused, nStep) ? ScreenChanged : ScreenIdle,
+                          -1);
         }
         return Reply (ScreenIdle, -1);
 
@@ -370,14 +386,18 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
             }
             // A row gives the focus to its list, not to itself: the focus rests
             // on things the keyboard can then move around in.
-            int nFocus = nHit;
-            if (pScreen->pWidgets[nHit].Type == WidgetListRow)
+            if (WidgetFocusable (&pScreen->pWidgets[nHit]))
             {
-                nFocus = ListOwning (pScreen, nHit);
+                SetFocus (pScreen, nHit);
             }
-            if (nFocus >= 0 && WidgetFocusable (&pScreen->pWidgets[nFocus]))
+            // A click inside a list picks the row it landed on, there and then:
+            // a list that only answers on release cannot be dragged through,
+            // which is how one has always been read.
+            if (pScreen->pWidgets[nHit].Type == WidgetList)
             {
-                SetFocus (pScreen, nFocus);
+                ListChoose (pScreen, nHit,
+                            WidgetListItemAt (&pScreen->pWidgets[nHit], pScreen->pTheme,
+                                              pEvent->nX, pEvent->nY));
             }
             pScreen->nPressed = nHit;
             SetPressed (pScreen, nHit, true);

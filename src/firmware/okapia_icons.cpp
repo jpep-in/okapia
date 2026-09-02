@@ -136,3 +136,49 @@ void OkapiaPaintPower (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
     Capsule (pSurface, cx - t / 2, rRect.nY, (unsigned) t,
              (unsigned) (cy - rRect.nY), Ink);
 }
+
+// An isoceles triangle, apex at the top, filled row by row. The outline is one
+// of these with a smaller one taken back out: three thick strokes meeting at
+// three corners is a great deal of arithmetic to get an even weight, and a
+// difference of two fills has an even weight by construction.
+static void Triangle (TSurface *pSurface, int nApexX, int nApexY, int nBaseY,
+                      int nHalfBase, TOkapiaColor Color)
+{
+    const int nHeight = nBaseY - nApexY;
+    if (nHeight <= 0)
+    {
+        return;
+    }
+    for (int y = 0; y <= nHeight; y++)
+    {
+        const int nHalf = nHalfBase * y / nHeight;
+        GfxHLine (pSurface, nApexX - nHalf, nApexY + y, (unsigned) (2 * nHalf + 1), Color);
+    }
+}
+
+void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
+                         TOkapiaColor Back)
+{
+    const int N = (int) rRect.nWidth;
+    const int t = N / 9 < 2 ? 2 : N / 9;
+
+    const int cx = rRect.nX + (int) rRect.nWidth / 2;
+    const int y0 = rRect.nY + t / 2;
+    const int y1 = rRect.nY + (int) rRect.nHeight - 1 - t / 2;
+    const int hb = (int) rRect.nWidth / 2 - t / 2;
+
+    Triangle (pSurface, cx, y0, y1, hb, Ink);
+    // The apex moves down by more than the stroke: a corner as sharp as this
+    // one is thicker along its bisector than across the side, and insetting
+    // every edge by t leaves a blunt, heavy point.
+    Triangle (pSurface, cx, y0 + 2 * t, y1 - t, hb - 2 * t, Back);
+
+    // The exclamation, in the same weight as the outline. Its dot sits a full
+    // gap below the bar, or the two read as one stroke.
+    const int nBarTop = y0 + 4 * t;
+    const int nDot    = y1 - 2 * t;
+    const int nGap    = t < 2 ? 2 : t;
+    GfxFill (pSurface, Rect (cx - t / 2, nBarTop, (unsigned) t,
+                             (unsigned) (nDot - nGap - nBarTop)), Ink);
+    GfxFill (pSurface, Rect (cx - t / 2, nDot, (unsigned) t, (unsigned) t), Ink);
+}

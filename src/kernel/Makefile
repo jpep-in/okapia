@@ -145,11 +145,11 @@ $(ICON_SRC): ../../scripts/gen-icons.py $(ICONDIR)/system-icons.c
 
 emu/okapia_font_data.o: $(FONT_SRC) | emu
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
-	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -c -o $@ $<
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
 emu/okapia_icons_data.o: $(ICON_SRC) | emu
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
-	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -c -o $@ $<
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
 emu:
 	@mkdir -p emu
@@ -157,19 +157,25 @@ emu:
 # libhfs is plain C. It wants its own include path and none of the C++ flags.
 emu/hfs_%.o: $(HFS)/%.c | emu
 	@printf '  CC    libhfs/%s\n' "$(notdir $<)"
-	@$(CC) $(CFLAGS) -I$(HFS) -Wno-unused-result -c -o $@ $<
+	@$(CC) $(CFLAGS) -I$(HFS) -MMD -MP -Wno-unused-result -c -o $@ $<
 
 emu/%.o: %.cpp | emu
 	@printf '  CC    %s\n' "$(notdir $<)"
-	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -c -o $@ $<
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
 emu/cpuemu%.o: $(GEN)/cpuemu.cpp | emu
 	@printf '  CC    cpuemu part %s\n' "$*"
-	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -DPART_$* -c -o $@ $<
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -DPART_$* -MMD -MP -c -o $@ $<
 
 okapia-clean:
 	rm -rf emu
 
 .PHONY: okapia-clean
 
+# Circle works out DEPS and then never includes it, and its own compile rule
+# carries no -MMD at all — so an object built by it tracks no header. That is
+# not a small thing: it is how a change to a struct in one header leaves the
+# other objects on the old layout, and the link succeeds. Ours generate their
+# own, and this is where they are read back.
 -include $(DEPS)
+-include $(wildcard emu/*.d)

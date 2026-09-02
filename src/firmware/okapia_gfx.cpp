@@ -540,6 +540,12 @@ void GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
     TextRun (pSurface, pFont, nX, nY, (const unsigned char *) pText, 0, Color);
 }
 
+unsigned GfxTextWidthUpTo (const TOkapiaFont *pFont, const char *pText, unsigned nBytes)
+{
+    const unsigned char *p = (const unsigned char *) pText;
+    return GfxTextWidthRun (p, p + nBytes, pFont);
+}
+
 void GfxImage (TSurface *pSurface, const TGlyphImage *pImage, int nX, int nY,
                TOkapiaColor Color, unsigned nScale)
 {
@@ -811,4 +817,88 @@ void GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale)
         }
     }
     s_bCursorShown = true;
+}
+
+/*
+ *  Text over several lines
+ *
+ *  Measuring and drawing walk the same loop, with the surface left out of one
+ *  of them: two loops that must agree about where a line breaks is two loops
+ *  that will one day disagree, and the symptom is an alert whose last line is
+ *  drawn outside the box that was reserved for it.
+ */
+static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rBox,
+                          const char *pText, TOkapiaColor Color, unsigned nLineHeight)
+{
+    if (pText == 0 || rBox.nWidth == 0)
+    {
+        return 0;
+    }
+
+    const unsigned char *pLine  = (const unsigned char *) pText;
+    const unsigned char *p      = pLine;
+    const unsigned char *pBreak = 0;            // after the last space seen
+    unsigned nWidth = 0;
+    unsigned nLines = 0;
+    int      nY     = rBox.nY;
+
+    for (;;)
+    {
+        const unsigned char *pBefore = p;
+        const int nCode = NextChar (&p);
+        if (nCode < 0)
+        {
+            break;
+        }
+        const int nIndex = GlyphIndex (pFont, nCode);
+        const unsigned nAdvance = nIndex < 0 ? 0 : pFont->pWidth[nIndex];
+
+        if (nCode == ' ')
+        {
+            pBreak = p;
+            nWidth += nAdvance;
+            continue;
+        }
+
+        if (nWidth + nAdvance > rBox.nWidth && pBefore != pLine)
+        {
+            // Back to the last space if there was one on this line; otherwise
+            // break where it stands, which is a word too long for the box.
+            const unsigned char *pEnd = pBreak != 0 ? pBreak : pBefore;
+            if (pSurface != 0)
+            {
+                TextRun (pSurface, pFont, rBox.nX, nY, pLine, pEnd, Color);
+            }
+            nLines++;
+            nY += (int) nLineHeight;
+            pLine  = pEnd;
+            p      = pEnd;
+            pBreak = 0;
+            nWidth = 0;
+            continue;
+        }
+        nWidth += nAdvance;
+    }
+
+    if (p != pLine)
+    {
+        if (pSurface != 0)
+        {
+            TextRun (pSurface, pFont, rBox.nX, nY, pLine, p, Color);
+        }
+        nLines++;
+    }
+    return nLines * nLineHeight;
+}
+
+unsigned GfxTextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rBox,
+                      const char *pText, TOkapiaColor Color, unsigned nLineHeight)
+{
+    return TextWrap (pSurface, pFont, rBox, pText, Color, nLineHeight);
+}
+
+unsigned GfxTextWrapHeight (const TOkapiaFont *pFont, unsigned nWidth, const char *pText,
+                            unsigned nLineHeight)
+{
+    return TextWrap (0, pFont, Rect (0, 0, nWidth, 0), pText, ColorBlack, nLineHeight);
 }

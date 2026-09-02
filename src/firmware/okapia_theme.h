@@ -84,10 +84,24 @@ struct TTheme
 
     void (*DrawDesktop)      (TSurface *, const TTheme *);
     void (*DrawDialog)       (TSurface *, const TRect &, const TTheme *);
+    // An alert is a dialogue that interrupts. It says so with weight rather
+    // than with a second visual language: the same two rules, the outer one
+    // heavier, which is what "this one is not ordinary" has to mean when the
+    // palette is two colours.
+    void (*DrawAlert)        (TSurface *, const TRect &, const TTheme *);
     void (*DrawTitle)        (TSurface *, const TRect &, const char *, const TTheme *);
     void (*DrawLabel)        (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
+    // A sentence, broken between words. Not a label: a label that will not fit
+    // is cut, and a sentence that is cut has lost the thing it had to say.
+    void (*DrawParagraph)    (TSurface *, const TRect &, const char *, unsigned,
+                              const TTheme *);
     void (*DrawButton)       (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
     void (*DrawIconButton)   (TSurface *, const TRect &, TIconPainter, unsigned,
+                              const TTheme *);
+    // The same mark with nothing under it. An alert's caution sign is not a
+    // button and must not look like one: drawn as a disabled icon button it
+    // came out grey and inside a frame, offering to be clicked.
+    void (*DrawIcon)         (TSurface *, const TRect &, TIconPainter, unsigned,
                               const TTheme *);
     void (*DrawCheckbox)     (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
     void (*DrawRadio)        (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
@@ -98,9 +112,19 @@ struct TTheme
     // the one place video inversion is right: a row is a rectangle, and a
     // rounded button is not.
     void (*DrawSelection)    (TSurface *, const TRect &, const TTheme *);
-    void (*DrawScrollbar)    (TSurface *, const TRect &, unsigned, unsigned, const TTheme *);
+    // Three numbers and not two: where the view starts, how much of the whole
+    // it shows, and how much there is. A thumb sized from a step count says
+    // nothing about how much is out of sight, which is the one thing a scroller
+    // is looked at for.
+    void (*DrawScrollbar)    (TSurface *, const TRect &, unsigned nTop, unsigned nVisible,
+                              unsigned nTotal, const TTheme *);
     void (*DrawPopup)        (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
-    void (*DrawField)        (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
+    // The caret's byte offset rides along, because only the theme knows where
+    // the text was drawn — and a caret placed at the end of the whole string,
+    // which is what it used to be, is wrong the moment anybody types in the
+    // middle of a name.
+    void (*DrawField)        (TSurface *, const TRect &, const char *, unsigned,
+                              unsigned nCaret, const TTheme *);
     void (*DrawProgress)     (TSurface *, const TRect &, unsigned, const TTheme *);
     void (*DrawSeparator)    (TSurface *, const TRect &, const TTheme *);
     // The radius comes from the caller so that the ring follows the shape it

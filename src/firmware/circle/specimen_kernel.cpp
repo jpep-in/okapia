@@ -64,8 +64,7 @@ static const char *WidgetName (const TWidget *pWidget)
     case WidgetIconButton:  return "bouton icône";
     case WidgetCheckbox:    return "case";
     case WidgetRadio:       return "radio";
-    case WidgetListFrame:   return "liste";
-    case WidgetListRow:     return "ligne";
+    case WidgetList:        return "liste";
     case WidgetPopup:       return "déroulante";
     case WidgetField:       return "champ";
     default:                return "composant";
@@ -132,7 +131,7 @@ TShutdownMode CSpecimenKernel::Run (void)
     // Two statements and not one: the order in which C++ evaluates arguments is
     // its own business, so pWidgets has to be filled before it is passed.
     unsigned nCount = SpecimenWidgets (&pWidgets);
-    ScreenInit (&Screen, pWidgets, nCount);
+    ScreenInit (&Screen, &Theme, pWidgets, nCount);
     SpecimenRepaint (&Surface);
 
     // The pointer appears when the mouse first moves, and not before. A menu
@@ -187,7 +186,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                     nPage = (nPage + (Event.nKey == OkKeyRight ? 1 : nPages - 1)) % nPages;
                     SpecimenDraw (&Surface, nPage);
                     nCount = SpecimenWidgets (&pWidgets);
-                    ScreenInit (&Screen, pWidgets, nCount);
+                    ScreenInit (&Screen, &Theme, pWidgets, nCount);
                     m_Logger.Write (FROM, LogNotice, "Page %u", nPage);
                     bRepaint = true;
                 }

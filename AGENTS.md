@@ -228,11 +228,17 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   unit are wrapped.
 - **The QEMU window costs about a third of guest speed** (97% of the Mac's 60 Hz nominal headless, 61%
   with a window), so run automated regression checks headless and keep the window for watching.
-- **A private compile rule without `-MMD -MP` links objects built against two different structs.** Adding a
-  field to a theme struct rebuilt one object and left the others on the old layout; the link succeeded and
-  the kernel jumped into the font tables — instruction abort with the PC past `_etext`, where Circle sets
-  `PXN=1`. The symptom looks nothing like the cause. `src/firmware/circle/Makefile` and `tests/host/Makefile`
-  carry the flags and say why; any new rule owes the same.
+- **Circle tracks no headers at all, and every rule in this repo must do it itself.** `Rules.mk:271` works
+  out `DEPS` and then never includes it, and its own `%.o: %.cpp` carries no `-MMD`. So an object built by
+  Circle's rule, or by a private rule that forgot the flags, is rebuilt when its `.cpp` changes and never
+  when a header does — the link then joins objects built against two different layouts of the same struct
+  and succeeds. It has cost this project twice: a field added to a theme struct sent the kernel into the
+  font tables (instruction abort, PC past `_etext`, where `PXN=1`), and a field added to `TEvent` left the
+  input bridge reading `nKey` at the wrong offset, so the down arrow arrived as Escape. Neither symptom
+  points anywhere near the cause. Every Makefile here now compiles with `-MMD -MP` and reads the `.d` files
+  back — `src/kernel`, `src/firmware/circle` (which builds even its own sources through `obj/` for this
+  reason) and `tests/host`. **A rule without them is a bug, not a style.** And after adding the flags to a
+  rule, `make okapia-clean` once: an object built before them still carries no dependencies.
 - **Objects in `src/kernel/emu/` do not depend on the Makefile**, so changing a `-D`, a flag or a
   `#define` in `external/` rebuilds nothing: `make` links stale objects and you test a kernel that no
   longer matches the sources. This silently cost 4.8x guest speed — objects compiled while Basilisk's

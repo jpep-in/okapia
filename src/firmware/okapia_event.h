@@ -26,6 +26,8 @@ enum TKey
 {
     OkKeyNone = 0,
     OkKeyTab,
+    OkKeyBackspace,
+    OkKeyDelete,
     OkKeySpace,
     OkKeyReturn,                          // Return and Enter alike
     OkKeyEscape,
@@ -60,6 +62,11 @@ struct TEvent
 {
     TEventType Type;
     unsigned   nKey;                    // TKey, for EventKeyDown
+    // The character it produced, as a code point, or 0 when it produced none.
+    // It comes from the keyboard layout the machine is configured with, so a
+    // French keyboard types what is written on it — which is the whole reason
+    // this is not derived from the usage identifier here.
+    unsigned   nChar;
     unsigned   nModifiers;              // TModifier bits, on every event
     int        nX;                      // pointer, for the mouse events
     int        nY;

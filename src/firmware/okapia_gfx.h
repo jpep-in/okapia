@@ -92,6 +92,10 @@ void GfxInvert (TSurface *pSurface, const TRect &rRect);
 // oblique (helvO) if one is ever wanted. Faking either now would be worse than
 // the thing it imitates, and the theme picks the face anyway.
 unsigned GfxTextWidth (const TOkapiaFont *pFont, const char *pText);
+
+// The width of the first nBytes of it. A caret is an offset into the bytes, and
+// this is what turns that offset into a place on the screen.
+unsigned GfxTextWidthUpTo (const TOkapiaFont *pFont, const char *pText, unsigned nBytes);
 void     GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
                   const char *pText, TOkapiaColor Color);
 
@@ -120,6 +124,22 @@ unsigned GfxTextBox (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &
 // Whether it would be drawn whole. A layout asks this when it wants to widen a
 // control rather than let its label be cut.
 bool GfxTextFits (const TOkapiaFont *pFont, const TRect &rBox, const char *pText);
+
+// The same text broken between words over as many lines as it takes. This is
+// what an alert is made of: a sentence is not a label, it cannot be truncated
+// without losing the thing it had to say, and it is the one place the interface
+// must give the words the room they need instead of the reverse.
+//
+// A word wider than the box is broken where it runs out rather than left to
+// spill — a volume named without a space in it is not a reason to draw outside
+// a control.
+unsigned GfxTextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rBox,
+                      const char *pText, TOkapiaColor Color, unsigned nLineHeight);
+
+// What that would take, without drawing it: a layout has to reserve the room
+// before it knows what goes in it.
+unsigned GfxTextWrapHeight (const TOkapiaFont *pFont, unsigned nWidth, const char *pText,
+                            unsigned nLineHeight);
 
 // A small monochrome image: one row per entry, bit (1 << (nWidth-1-x)) set
 // means ink. Icons in the chrome are drawn this way rather than blitted from a

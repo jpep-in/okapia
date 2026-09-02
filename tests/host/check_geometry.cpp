@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "okapia_gfx.h"
 #include "okapia_theme.h"
@@ -144,7 +145,7 @@ static void CheckScale (unsigned nScale16)
 
     const TRect Field = Rect (120, 60, 140, T.M.nFieldHeight);
     s = Blank ();
-    T.DrawField (&s, Field, "Okapia", StateFocused, &T);
+    T.DrawField (&s, Field, "Okapia", StateFocused, 6, &T);
     CheckRing (&s, "champ de saisie — focus", Field, nFocus);
 
     // The tick box and the radio sit inside a taller row, so the ring is
@@ -286,8 +287,9 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
             if (   A.Type == WidgetLabel     || B.Type == WidgetLabel
                 || A.Type == WidgetTitle     || B.Type == WidgetTitle
                 || A.Type == WidgetSeparator || B.Type == WidgetSeparator
-                || A.Type == WidgetListFrame || B.Type == WidgetListFrame
-                || A.Type == WidgetListRow   || B.Type == WidgetListRow
+                || A.Type == WidgetParagraph || B.Type == WidgetParagraph
+                || A.Type == WidgetAlert     || B.Type == WidgetAlert
+                || A.Type == WidgetIcon      || B.Type == WidgetIcon
                 || A.Type == WidgetScrollbar || B.Type == WidgetScrollbar)
             {
                 continue;
@@ -348,6 +350,17 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
  *  until two controls stand side by side, and then it looks like a spacing
  *  mistake rather than a label running out of its box.
  */
+// Ink beyond a control, on either side, once what its state legitimately draws
+// outside itself is allowed for.
+static void Outside (const TSurface *pSurface, const TRect &rControl, unsigned nReach)
+{
+    const TBox b = InkBox (pSurface, Rect (0, 0, W, H));
+    const int nRight = b.nRight - (rControl.nX + (int) rControl.nWidth - 1) - (int) nReach;
+    const int nLeft  = rControl.nX - b.nLeft - (int) nReach;
+    Expect ("dépassement à droite", nRight > 0 ? nRight : 0, 0);
+    Expect ("dépassement à gauche", nLeft  > 0 ? nLeft  : 0, 0);
+}
+
 static void CheckTruncation (unsigned nScale16)
 {
     static const char *const Long =
@@ -370,31 +383,50 @@ static void CheckTruncation (unsigned nScale16)
         { "bouton par défaut", T.DrawButton, StateDefault },
         { "case",       T.DrawCheckbox, StateNormal  },
         { "radio",      T.DrawRadio,    StateNormal  },
-        { "déroulante", T.DrawPopup,    StateNormal  },
-        { "champ",      T.DrawField,    StateFocused }
+        { "déroulante", T.DrawPopup,    StateNormal  }
     };
 
     printf ("\n=== troncature à l'échelle %u/16 — aucun texte hors de son contrôle ===\n",
             nScale16);
 
+    // Narrow on purpose: wide enough to be a control, far too narrow for the
+    // label it is given.
+    const TRect Control = Rect (60, 60, 140 * nScale16 / 16, T.M.nButtonHeight);
+
     for (unsigned i = 0; i < sizeof Cases / sizeof Cases[0]; i++)
     {
         TSurface s = Blank ();
-        // Narrow on purpose: wide enough to be a control, far too narrow for
-        // the label it is given.
-        const TRect Control = Rect (60, 60, 140 * nScale16 / 16, T.M.nButtonHeight);
         Cases[i].Draw (&s, Control, Long, Cases[i].nState, &T);
-
-        const int nReach = (int) ThemeReach (&T, Cases[i].nState);
-        const TBox b = InkBox (&s, Rect (0, 0, W, H));
-
         printf ("  %s\n", Cases[i].pWhat);
-        Expect ("dépassement à droite",
-                b.nRight - (Control.nX + (int) Control.nWidth - 1) - nReach <= 0
-                    ? 0 : b.nRight - (Control.nX + (int) Control.nWidth - 1) - nReach, 0);
-        Expect ("dépassement à gauche",
-                Control.nX - b.nLeft - nReach <= 0
-                    ? 0 : Control.nX - b.nLeft - nReach, 0);
+        Outside (&s, Control, ThemeReach (&T, Cases[i].nState));
+    }
+
+    // The field carries its caret's offset, so it does not share the others'
+    // signature and gets its own turn. The caret is put at the very end, which
+    // is the position that used to place it beyond a cut label.
+    {
+        TSurface s = Blank ();
+        T.DrawField (&s, Control, Long, StateFocused, (unsigned) strlen (Long), &T);
+        printf ("  champ, curseur à la fin\n");
+        Outside (&s, Control, ThemeReach (&T, StateFocused));
+    }
+
+    // A paragraph does not truncate — it wraps — so what it owes is the other
+    // half of the same promise: every line inside the box that was reserved for
+    // it. Measuring and drawing walk one loop for exactly this reason.
+    {
+        TSurface s = Blank ();
+        const unsigned nWidth = 220 * nScale16 / 16;
+        const unsigned nHigh  = GfxTextWrapHeight (T.pBodyFont, nWidth, Long,
+                                                   T.M.nLineHeight);
+        const TRect Box = Rect (60, 40, nWidth, nHigh);
+        T.DrawParagraph (&s, Box, Long, StateNormal, &T);
+        printf ("  paragraphe (%u lignes)\n", nHigh / T.M.nLineHeight);
+        Outside (&s, Box, 0);
+        const TBox b = InkBox (&s, Rect (0, 0, W, H));
+        Expect ("dépassement en bas",
+                b.nBottom - (Box.nY + (int) Box.nHeight - 1) <= 0
+                    ? 0 : b.nBottom - (Box.nY + (int) Box.nHeight - 1), 0);
     }
 }
 

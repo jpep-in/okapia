@@ -2449,6 +2449,36 @@ contrôle ».
 pour de vrai, champ éditable avec curseur et retour arrière. Chacun entre dans l'écran de spécimen le jour
 où il existe, sinon personne ne le regarde.
 
+  **Fait le 2026-09-02.** Les quatre composants, chacun dans le spécimen le jour où il existe.
+
+  - **Le paragraphe.** `GfxTextWrap` coupe entre les mots. Mesurer et tracer parcourent **la même boucle**,
+    la surface en moins pour l'une des deux : deux boucles qui doivent tomber d'accord sur l'endroit d'une
+    coupure sont deux boucles qui finiront par diverger, et le symptôme serait une alerte dont la dernière
+    ligne sort de la boîte réservée pour elle. Un mot plus large que la boîte est coupé là où il déborde —
+    un volume nommé sans espace n'est pas une raison de dessiner dehors.
+  - **L'alerte.** Le même cadre, le filet extérieur doublé. Ce qui interrompt est plus lourd, et c'est tout :
+    avec deux couleurs, le poids est le seul registre disponible pour dire « celle-ci n'est pas ordinaire ».
+    Le triangle et le point d'exclamation sont **calculés** comme les autres marques du chrome — un contour
+    obtenu par différence de deux triangles pleins, ce qui lui donne une épaisseur régulière par
+    construction là où trois traits épais qui se rejoignent demanderaient beaucoup d'arithmétique.
+  - **La liste qui défile.** Les lignes **cessent d'être des composants** : une liste qui défile ne peut pas
+    être un tableau de lignes, puisque chaque défilement voudrait dire les reconstruire et que l'écran
+    au-dessus devrait savoir quand. Le List Manager gardait ses cellules pour la même raison. La liste porte
+    donc ses articles, la première ligne visible et l'article choisi ; elle dessine son propre ascenseur
+    quand il en faut un, dont le curseur occupe **la part de la piste que la vue occupe du tout** — un
+    curseur dimensionné sur un nombre de crans ne dit rien de ce qui reste hors de vue, qui est la seule
+    chose qu'un ascenseur soit lu pour.
+  - **Le champ éditable.** Un champ qui a des octets à lui est modifiable, un champ qui n'en a pas est en
+    lecture seule — comme tout le reste. Le curseur est un décalage en octets et les flèches enjambent le
+    caractère entier : un curseur garé au milieu d'un « é » le couperait en deux à la frappe suivante, et
+    ce qui en sortirait ne serait plus du texte. Plein, il refuse au lieu de tronquer.
+
+  **Et le piège de dépendances a mordu une seconde fois, autrement.** `Rules.mk:271` calcule `DEPS` et ne
+  l'inclut jamais, et la règle `%.o: %.cpp` de Circle n'a pas de `-MMD` : un objet compilé par elle ne suit
+  aucun en-tête. Ajouter `nChar` à `TEvent` a donc laissé le pont d'entrée lire `nKey` au mauvais décalage,
+  et la flèche Bas est arrivée en Échap. Les trois Makefile compilent maintenant avec `-MMD -MP` et
+  relisent les `.d` ; celui du spécimen passe même ses propres sources par `obj/` pour cela.
+
 **16f — Les traductions.** Une table de chaînes, anglais et français, depuis `boot-menu/strings.tsv` ;
 langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
 mise en page ne s'est pas calée sur la longueur des libellés français.

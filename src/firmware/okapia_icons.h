@@ -28,6 +28,12 @@ void OkapiaPaintSettings (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor)
 void OkapiaPaintPram (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 void OkapiaPaintPower (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 
+// The mark an alert wears. A triangle and an exclamation, which is what has
+// said "read this before you answer" since long before the Macintosh — and the
+// one icon of the chrome that has to be legible at a glance, since an alert is
+// read in the second before someone clicks past it.
+void OkapiaPaintCaution (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+
 // Content icons: the era belongs to these, not to the chrome around them.
 extern const TGlyphImage OkapiaIconSystem6;
 extern const TGlyphImage OkapiaIconSystem7;

@@ -67,6 +67,19 @@ static void DrawDialog (TSurface *pSurface, const TRect &rRect, const TTheme *pT
               pTheme->M.nDialogInner);
 }
 
+// The same frame with the outer rule doubled. An alert has to read as more
+// urgent than a dialogue without becoming a different thing: what interrupts is
+// heavier, and that is the whole of it.
+static void DrawAlert (TSurface *pSurface, const TRect &rRect, const TTheme *pTheme)
+{
+    const unsigned nBorder = 2 * pTheme->M.nDialogBorder;
+    const int nInset = (int) (nBorder + pTheme->M.nDialogGap);
+    GfxFill (pSurface, rRect, ColorWhite);
+    GfxFrame (pSurface, rRect, ColorBlack, nBorder);
+    GfxFrame (pSurface, RectInset (rRect, nInset, nInset), ColorBlack,
+              pTheme->M.nDialogInner);
+}
+
 static void DrawTitle (TSurface *pSurface, const TRect &rRect, const char *pText,
                        const TTheme *pTheme)
 {
@@ -80,6 +93,14 @@ static void DrawLabel (TSurface *pSurface, const TRect &rRect, const char *pText
     const TOkapiaFont *pFace = (nState & StateStrong) ? pTheme->pBodyBoldFont
                                                       : pTheme->pBodyFont;
     GfxTextBox (pSurface, pFace, rRect, pText, Ink (nState), TextAlignLeft);
+}
+
+static void DrawParagraph (TSurface *pSurface, const TRect &rRect, const char *pText,
+                           unsigned nState, const TTheme *pTheme)
+{
+    const TOkapiaFont *pFace = (nState & StateStrong) ? pTheme->pBodyBoldFont
+                                                      : pTheme->pBodyFont;
+    GfxTextWrap (pSurface, pFace, rRect, pText, Ink (nState), pTheme->M.nLineHeight);
 }
 
 // Grey and one pixel: the focus has to be findable, not shouted. In black it
@@ -143,6 +164,16 @@ static void DrawIconButton (TSurface *pSurface, const TRect &rRect, TIconPainter
     if (nState & StateFocused)
     {
         DrawFocusRing (pSurface, rRect, nRadius, pTheme);
+    }
+}
+
+static void DrawIcon (TSurface *pSurface, const TRect &rRect, TIconPainter Paint,
+                      unsigned nState, const TTheme *pTheme)
+{
+    (void) pTheme;
+    if (Paint != 0)
+    {
+        Paint (pSurface, rRect, Ink (nState), ColorWhite);
     }
 }
 
@@ -266,19 +297,23 @@ static void DrawSelection (TSurface *pSurface, const TRect &rRect, const TTheme 
 
 // No arrow boxes at either end: they are what would place this in 1990, and
 // nothing needs them once the keyboard drives the list.
-static void DrawScrollbar (TSurface *pSurface, const TRect &rRect, unsigned nValue,
-                           unsigned nSpan, const TTheme *pTheme)
+static void DrawScrollbar (TSurface *pSurface, const TRect &rRect, unsigned nTop,
+                           unsigned nVisible, unsigned nTotal, const TTheme *pTheme)
 {
     GfxFill (pSurface, rRect, ColorLtGray);
     GfxFrame (pSurface, rRect, ColorBlack, pTheme->M.nStroke);
 
-    if (nSpan == 0 || nValue > nSpan)
+    if (nTotal == 0 || nVisible == 0 || nVisible >= nTotal)
     {
-        return;
+        return;                         // everything is in view: no thumb to draw
     }
     const unsigned nTrack = rRect.nHeight - 2;
     const unsigned nMin = rRect.nWidth * 2;      // never a sliver: two squares
-    unsigned nThumb = nTrack / (nSpan + 1);
+
+    // As much of the track as the view is of the whole. That is what tells the
+    // reader how much is out of sight, and it is the only thing a scroller has
+    // ever been read for at a glance.
+    unsigned nThumb = nTrack * nVisible / nTotal;
     if (nThumb < nMin)
     {
         nThumb = nMin;
@@ -288,9 +323,10 @@ static void DrawScrollbar (TSurface *pSurface, const TRect &rRect, unsigned nVal
         nThumb = nTrack;
     }
     const unsigned nTravel = nTrack - nThumb;
-    const unsigned nTop = nSpan != 0 ? nTravel * nValue / nSpan : 0;
+    const unsigned nSteps  = nTotal - nVisible;
+    const unsigned nAt = nTop > nSteps ? nTravel : nTravel * nTop / nSteps;
 
-    const TRect Thumb = Rect (rRect.nX + 1, rRect.nY + 1 + (int) nTop,
+    const TRect Thumb = Rect (rRect.nX + 1, rRect.nY + 1 + (int) nAt,
                               rRect.nWidth - 2, nThumb);
     GfxFill (pSurface, Thumb, ColorWhite);
     GfxFrame (pSurface, Thumb, ColorBlack, pTheme->M.nStroke);
@@ -333,7 +369,7 @@ static void DrawPopup (TSurface *pSurface, const TRect &rRect, const char *pText
 }
 
 static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText,
-                       unsigned nState, const TTheme *pTheme)
+                       unsigned nState, unsigned nCaret, const TTheme *pTheme)
 {
     GfxFill (pSurface, rRect, ColorWhite);
     GfxFrame (pSurface, rRect, Ink (nState), pTheme->M.nStroke);
@@ -347,9 +383,15 @@ static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText
 
     if (nState & StateFocused)
     {
-        // On the width actually drawn, so the caret follows a cut label instead
-        // of standing where the whole one would have ended.
-        GfxFill (pSurface, Rect (Text.nX + (int) nWidth, nY, pTheme->M.nStroke,
+        // At the insertion point, and never past the text actually drawn: a cut
+        // label ends in an ellipsis, and a caret standing beyond it would be
+        // pointing at something nobody can see.
+        unsigned nAt = GfxTextWidthUpTo (pTheme->pBodyFont, pText, nCaret);
+        if (nAt > nWidth)
+        {
+            nAt = nWidth;
+        }
+        GfxFill (pSurface, Rect (Text.nX + (int) nAt, nY, pTheme->M.nStroke,
                                  pTheme->pBodyFont->nHeight), ColorBlack);
         DrawFocusRing (pSurface, rRect, 0, pTheme);
     }
@@ -420,10 +462,13 @@ const TTheme OkapiaThemeBase =
 
     DrawDesktop,
     DrawDialog,
+    DrawAlert,
     DrawTitle,
     DrawLabel,
+    DrawParagraph,
     DrawButton,
     DrawIconButton,
+    DrawIcon,
     DrawCheckbox,
     DrawRadio,
     DrawListFrame,

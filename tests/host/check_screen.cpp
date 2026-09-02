@@ -17,6 +17,8 @@
 
 #include <stdio.h>
 
+#include <string.h>
+
 #include "okapia_screen.h"
 
 static unsigned s_nFailures;
@@ -41,24 +43,36 @@ static void Expect (bool bOK, const char *pWhat)
 //   5 radio, group 0
 //   6 radio, group 0
 //   7 radio, group 1
-//   8 list frame
-//   9,10,11 its rows
+//   8 a list of seven items, three of them visible
+//   9 an editable field
 enum { WLabel, WStart, WSettings, WOff, WCheck, WRadioA, WRadioB, WOther, WList,
-       WRow0, WRow1, WRow2, WCount };
+       WField, WCount };
+
+static TTheme s_Theme;
+
+// Seven, so that three visible rows leave four out of sight: a list that fits
+// entirely proves nothing about the one the chooser will show.
+static const TListItem s_Items[] =
+{
+    { "Système 7.1.2",   0, StateNormal   },
+    { "Mac OS 8.1",      0, StateNormal   },
+    { "Système 6.0.8",   0, StateNormal   },
+    { "Mac OS 9.1",      0, StateNormal   },
+    { "Sauvegarde",      0, StateNormal   },
+    { "Données",         0, StateDisabled },
+    { "Travaux",         0, StateNormal   }
+};
+static const unsigned ITEMS = sizeof s_Items / sizeof s_Items[0];
+static const unsigned VISIBLE = 3;
+
+static char s_Edit[16];
 
 static void Build (TWidget *pW)
 {
+    ThemeMake (16, &s_Theme);
     for (unsigned i = 0; i < WCount; i++)
     {
-        pW[i].Type   = WidgetLabel;
-        pW[i].Rect   = Rect (0, 0, 0, 0);
-        pW[i].pText  = 0;
-        pW[i].nState = StateNormal;
-        pW[i].nValue = 0;
-        pW[i].nSpan  = 0;
-        pW[i].pIcon  = 0;
-        pW[i].Paint  = 0;
-        pW[i].nGroup = 0;
+        WidgetClear (&pW[i]);
     }
     pW[WLabel]   .Rect = Rect (10,  10, 200, 16);
 
@@ -87,24 +101,37 @@ static void Build (TWidget *pW)
     pW[WOther]   .nState = StateChecked;
     pW[WOther]   .nGroup = 1;
 
-    pW[WList]    .Type = WidgetListFrame;
-    pW[WList]    .Rect = Rect (10, 120, 320, 60);
-    for (unsigned i = 0; i < 3; i++)
-    {
-        pW[WRow0 + i].Type = WidgetListRow;
-        pW[WRow0 + i].Rect = Rect (11, 121 + (int) (i * 19), 318, 19);
-    }
+    pW[WList]    .Type = WidgetList;
+    pW[WList]    .Rect = Rect (10, 120, 320,
+                               VISIBLE * s_Theme.M.nRowHeight + 2);
+    pW[WList]    .pItems  = s_Items;
+    pW[WList]    .nItems  = ITEMS;
+    pW[WList]    .nChoice = -1;
+
+    strcpy (s_Edit, "Okapia");
+    pW[WField]   .Type      = WidgetField;
+    pW[WField]   .Rect      = Rect (10, 260, 200, s_Theme.M.nFieldHeight);
+    pW[WField]   .pText     = s_Edit;
+    pW[WField]   .pEdit     = s_Edit;
+    pW[WField]   .nEditSize = sizeof s_Edit;
+    pW[WField]   .nCaret    = 6;
 }
 
 static TEvent Key (unsigned nKey, unsigned nModifiers)
 {
-    TEvent e = { EventKeyDown, nKey, nModifiers, 0, 0 };
+    TEvent e = { EventKeyDown, nKey, 0, nModifiers, 0, 0 };
+    return e;
+}
+
+static TEvent Char (unsigned nCode)
+{
+    TEvent e = { EventKeyDown, OkKeyNone, nCode, 0, 0, 0 };
     return e;
 }
 
 static TEvent Mouse (TEventType Type, int nX, int nY)
 {
-    TEvent e = { Type, OkKeyNone, 0, nX, nY };
+    TEvent e = { Type, OkKeyNone, 0, 0, nX, nY };
     return e;
 }
 
@@ -151,7 +178,7 @@ static void CheckTraversal (void)
     TWidget W[WCount];
     TScreen S;
     Build (W);
-    ScreenInit (&S, W, WCount);
+    ScreenInit (&S, &s_Theme, W, WCount);
 
     printf ("Parcours du focus\n");
     Expect (FocusIs (&S, WStart), "le focus part sur le premier contrôle, pas sur l'étiquette");
@@ -172,18 +199,29 @@ static void CheckTraversal (void)
         TScreen T;
         Build (V);
         V[WCheck].nState |= StateFocused;
-        ScreenInit (&T, V, WCount);
+        ScreenInit (&T, &s_Theme, V, WCount);
         Expect (T.nFocus == WCheck, "un écran qui déclare son focus est suivi");
         Send (&T, Key (OkKeyTab, 0));
         Expect (FocusIs (&T, WRadioA), "et Tab repart de là");
     }
 
-    // All the way round: the wrap is where an off-by-one hides.
-    for (unsigned i = 0; i < 6; i++)
+    // All the way round: the wrap is where an off-by-one hides. Counted from
+    // the array rather than written down, so that adding a control to the
+    // screen above does not quietly turn this into a test of something else.
+    unsigned nFocusable = 0;
+    for (unsigned i = 0; i < WCount; i++)
+    {
+        if (WidgetFocusable (&W[i]))
+        {
+            nFocusable++;
+        }
+    }
+    const int nWas = S.nFocus;
+    for (unsigned i = 0; i < nFocusable; i++)
     {
         Send (&S, Key (OkKeyTab, 0));
     }
-    Expect (FocusIs (&S, WStart), "Tab fait le tour et revient au premier");
+    Expect (FocusIs (&S, nWas), "Tab fait le tour et revient au même");
 }
 
 static void CheckOperating (void)
@@ -191,7 +229,7 @@ static void CheckOperating (void)
     TWidget W[WCount];
     TScreen S;
     Build (W);
-    ScreenInit (&S, W, WCount);
+    ScreenInit (&S, &s_Theme, W, WCount);
 
     printf ("Actionner au clavier\n");
 
@@ -231,13 +269,12 @@ static void CheckList (void)
     TWidget W[WCount];
     TScreen S;
     Build (W);
-    ScreenInit (&S, W, WCount);
+    ScreenInit (&S, &s_Theme, W, WCount);
 
-    printf ("Les flèches dans la liste\n");
+    printf ("La liste, et son défilement\n");
 
     Send (&S, Key (OkKeyDown, 0));
-    Expect (ScreenSelectedRow (&S, WList) < 0,
-            "une flèche hors d'une liste ne fait rien");
+    Expect (W[WList].nChoice < 0, "une flèche hors d'une liste ne fait rien");
 
     // Bounded, so that a loop that can no longer reach the list fails here
     // instead of hanging the build.
@@ -245,32 +282,92 @@ static void CheckList (void)
     {
         Send (&S, Key (OkKeyTab, 0));
     }
-    Expect (FocusIs (&S, WList), "le focus se pose sur la liste, pas sur ses lignes");
+    Expect (FocusIs (&S, WList), "le focus se pose sur la liste");
+    Expect (WidgetListVisible (&W[WList], &s_Theme) == VISIBLE,
+            "trois lignes visibles sur sept");
 
     Send (&S, Key (OkKeyDown, 0));
-    Expect (ScreenSelectedRow (&S, WList) == WRow0, "Bas choisit la première ligne");
+    Expect (W[WList].nChoice == 0, "Bas choisit la première ligne");
     Send (&S, Key (OkKeyDown, 0));
-    Expect (ScreenSelectedRow (&S, WList) == WRow1, "Bas descend");
+    Send (&S, Key (OkKeyDown, 0));
+    Expect (W[WList].nChoice == 2 && W[WList].nTop == 0,
+            "descendre dans ce qui est visible ne fait pas défiler");
 
     Send (&S, Key (OkKeyDown, 0));
+    Expect (W[WList].nChoice == 3 && W[WList].nTop == 1,
+            "passer la dernière ligne visible fait défiler d'une ligne");
+
+    Send (&S, Key (OkKeyDown, 0));
+    Send (&S, Key (OkKeyDown, 0));
+    Expect (W[WList].nChoice == 6, "une ligne inactive est enjambée");
+
     TScreenReply r = Send (&S, Key (OkKeyDown, 0));
-    Expect (ScreenSelectedRow (&S, WList) == WRow2 && r.Result == ScreenIdle,
+    Expect (W[WList].nChoice == 6 && r.Result == ScreenIdle,
             "la liste s'arrête en bas au lieu de reboucler");
+    Expect (W[WList].nTop == ITEMS - VISIBLE, "et le défilement s'arrête avec elle");
 
-    Send (&S, Key (OkKeyUp, 0));
-    Expect (ScreenSelectedRow (&S, WList) == WRow1, "Haut remonte");
+    Send (&S, Key (OkKeyHome, 0));
+    Expect (W[WList].nChoice == 0 && W[WList].nTop == 0, "Début revient au sommet");
 
-    // One selection, and only one: two highlighted rows is the failure this
-    // catches, and it looks like a redraw artefact rather than a state bug.
-    unsigned nSelected = 0;
-    for (unsigned i = 0; i < WCount; i++)
+    Send (&S, Key (OkKeyPageDown, 0));
+    Expect (W[WList].nChoice == 2, "Page suivante avance d'une page moins une ligne");
+
+    Send (&S, Key (OkKeyEnd, 0));
+    Expect (W[WList].nChoice == 6 && W[WList].nTop == ITEMS - VISIBLE,
+            "Fin va à la dernière et l'amène en vue");
+}
+
+static void CheckField (void)
+{
+    TWidget W[WCount];
+    TScreen S;
+    Build (W);
+    ScreenInit (&S, &s_Theme, W, WCount);
+
+    printf ("Le champ éditable\n");
+
+    for (unsigned i = 0; i < WCount && S.nFocus != WField; i++)
     {
-        if (W[i].nState & StateSelected)
-        {
-            nSelected++;
-        }
+        Send (&S, Key (OkKeyTab, 0));
     }
-    Expect (nSelected == 1, "une seule ligne sélectionnée à la fois");
+    Expect (FocusIs (&S, WField), "le focus atteint le champ");
+
+    Send (&S, Char ('!'));
+    Expect (strcmp (s_Edit, "Okapia!") == 0 && W[WField].nCaret == 7,
+            "une frappe s'insère au curseur");
+
+    Send (&S, Key (OkKeyBackspace, 0));
+    Expect (strcmp (s_Edit, "Okapia") == 0, "retour arrière efface");
+
+    Send (&S, Key (OkKeyLeft, 0));
+    Send (&S, Key (OkKeyLeft, 0));
+    Send (&S, Char ('X'));
+    Expect (strcmp (s_Edit, "OkapXia") == 0, "on tape au milieu, pas à la fin");
+
+    Send (&S, Key (OkKeyDelete, 0));
+    Expect (strcmp (s_Edit, "OkapXa") == 0, "Suppr efface devant");
+
+    Send (&S, Key (OkKeyHome, 0));
+    Send (&S, Char (0xE9));                             // é
+    Expect (strcmp (s_Edit, "\xC3\xA9OkapXa") == 0,
+            "un caractère accentué s'écrit en deux octets");
+    Send (&S, Key (OkKeyRight, 0));
+    Expect (W[WField].nCaret == 3, "et la flèche l'enjambe d'un seul coup");
+    Send (&S, Key (OkKeyLeft, 0));
+    Send (&S, Key (OkKeyBackspace, 0));
+    Expect (strcmp (s_Edit, "OkapXa") == 0, "et le retour arrière l'efface entier");
+
+    // Fills the buffer and then some: refusing is right, half a character is not.
+    Send (&S, Key (OkKeyEnd, 0));
+    for (unsigned i = 0; i < 40; i++)
+    {
+        Send (&S, Char ('a'));
+    }
+    Expect (strlen (s_Edit) == sizeof s_Edit - 1, "le champ plein refuse au lieu de déborder");
+
+    // Tab still means Tab: a field takes the keys that are its own and no others.
+    Send (&S, Key (OkKeyTab, 0));
+    Expect (S.nFocus != WField, "Tab quitte le champ au lieu d'y être écrit");
 }
 
 static void CheckMouse (void)
@@ -278,7 +375,7 @@ static void CheckMouse (void)
     TWidget W[WCount];
     TScreen S;
     Build (W);
-    ScreenInit (&S, W, WCount);
+    ScreenInit (&S, &s_Theme, W, WCount);
 
     printf ("La souris\n");
 
@@ -302,10 +399,11 @@ static void CheckMouse (void)
     r = Send (&S, Mouse (EventMouseDown, 300, 50));     // le bouton inactif
     Expect (r.Result == ScreenIdle && !Pressed (&S, WOff), "un contrôle inactif ne prend rien");
 
-    Send (&S, Mouse (EventMouseDown, 100, 145));        // la deuxième ligne
-    Send (&S, Mouse (EventMouseUp,   100, 145));
-    Expect (ScreenSelectedRow (&S, WList) == WRow1, "cliquer une ligne la sélectionne");
-    Expect (FocusIs (&S, WList), "et donne le focus à la liste, pas à la ligne");
+    const int nRow = (int) s_Theme.M.nRowHeight;
+    Send (&S, Mouse (EventMouseDown, 100, 121 + nRow + nRow / 2));      // la troisième
+    Send (&S, Mouse (EventMouseUp,   100, 121 + nRow + nRow / 2));
+    Expect (W[WList].nChoice == 1, "cliquer une ligne la sélectionne");
+    Expect (FocusIs (&S, WList), "et donne le focus à la liste");
 
     r = Send (&S, Mouse (EventMouseDown, 5, 5));        // le fond
     Expect (r.Result == ScreenIdle && FocusIs (&S, WList),
@@ -317,6 +415,7 @@ int main (void)
     CheckTraversal ();
     CheckOperating ();
     CheckList ();
+    CheckField ();
     CheckMouse ();
 
     printf ("\n%u écart(s)\n", s_nFailures);

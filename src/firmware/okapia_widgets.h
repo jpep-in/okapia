@@ -19,18 +19,31 @@
 enum TWidgetType
 {
     WidgetLabel,
+    WidgetParagraph,                    // a sentence, broken between words
     WidgetTitle,
+    WidgetAlert,                        // the frame of one, drawn behind its contents
     WidgetButton,
     WidgetIconButton,
+    WidgetIcon,                         // a painted mark on its own
     WidgetCheckbox,
     WidgetRadio,
-    WidgetListFrame,
-    WidgetListRow,
+    WidgetList,
     WidgetScrollbar,
     WidgetPopup,
     WidgetField,
     WidgetProgress,
     WidgetSeparator
+};
+
+// What a list holds. Rows are not components of their own: a list that scrolls
+// cannot be an array of row components, because every scroll would mean
+// rebuilding them and the screen above would have to be told when. The Mac's
+// List Manager kept its cells for the same reason.
+struct TListItem
+{
+    const char        *pText;
+    const TGlyphImage *pIcon;
+    unsigned           nState;          // StateDisabled, and later a chosen mark
 };
 
 struct TWidget
@@ -49,13 +62,24 @@ struct TWidget
     // ended up sharing a selection, which is the bug this field exists to make
     // impossible rather than the feature it looks like.
     unsigned            nGroup;
+
+    // A list's contents.
+    const TListItem    *pItems;
+    unsigned            nItems;
+    unsigned            nTop;           // first row shown
+    int                 nChoice;        // item picked, or -1
+
+    // A field's own storage. A field without it is read-only, which is what
+    // every other control is.
+    char               *pEdit;
+    unsigned            nEditSize;      // bytes available, terminator included
+    unsigned            nCaret;         // the insertion point, as a byte offset
 };
 
-// Whether the focus can rest on it: something the user operates, and enabled.
-// A list frame answers yes and its rows answer no — the list takes the focus as
-// one thing and the arrow keys move the selection inside it, which is how a
-// list has always behaved and what stops Tab walking through forty volumes.
-bool WidgetFocusable (const TWidget *pWidget);
+// Fills one in with nothing set. Every screen builds its components through
+// this: a field left uninitialised in a struct this wide is a pointer nobody
+// wrote, and it would be read the first time somebody scrolled.
+void WidgetClear (TWidget *pWidget);
 
 void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidget);
 void WidgetDrawAll (TSurface *pSurface, const TTheme *pTheme, const TWidget *pList,
@@ -65,9 +89,42 @@ void WidgetDrawAll (TSurface *pSurface, const TTheme *pTheme, const TWidget *pLi
 // the purely decorative types never answer.
 int WidgetHit (const TWidget *pList, unsigned nCount, int nX, int nY);
 
+// Whether the focus can rest on it: something the user operates, and enabled.
+bool WidgetFocusable (const TWidget *pWidget);
+
 // Width a button needs for its label, from the theme's own padding — so that a
 // screen can lay itself out from its text instead of carrying fixed rectangles,
 // which is exactly what used to break translated dialogues.
 unsigned WidgetButtonWidth (const TTheme *pTheme, const char *pText, unsigned nState);
+
+/*
+ *  Lists
+ *
+ *  The geometry of the rows belongs here, because nothing else can work it out:
+ *  the rows are not components, so there is no rectangle to hit-test against.
+ */
+unsigned WidgetListVisible (const TWidget *pWidget, const TTheme *pTheme);
+int      WidgetListItemAt (const TWidget *pWidget, const TTheme *pTheme, int nX, int nY);
+
+// The scroller inside the frame, or an empty rectangle when everything fits.
+TRect    WidgetListScroller (const TWidget *pWidget, const TTheme *pTheme);
+
+// Brings the chosen item into view, scrolling by as little as it takes. A list
+// that jumps to put the selection in the middle loses the reader's place.
+void     WidgetListReveal (TWidget *pWidget, const TTheme *pTheme);
+
+/*
+ *  Editable fields
+ *
+ *  A field owns its bytes and its insertion point; the screen owns when they
+ *  change. Everything here is a no-op on a field with no storage, so a
+ *  read-only one cannot be edited by a screen that forgot to check.
+ */
+void WidgetFieldInsert (TWidget *pWidget, unsigned nCode);
+void WidgetFieldBackspace (TWidget *pWidget);
+void WidgetFieldDelete (TWidget *pWidget);
+void WidgetFieldCaret (TWidget *pWidget, int nStep);    // -1 left, +1 right
+void WidgetFieldHome (TWidget *pWidget);
+void WidgetFieldEnd (TWidget *pWidget);
 
 #endif

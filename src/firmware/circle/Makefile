@@ -16,7 +16,11 @@ BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR1
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp)
 FIRMWARE_OBJS = $(addprefix obj/,$(notdir $(FIRMWARE_SRCS:.cpp=.o)))
 
-OBJS = specimen_main.o specimen_kernel.o okapia_input.o $(FIRMWARE_OBJS) \
+# Everything through obj/, including the sources next to this Makefile. Left to
+# Circle's own rule they carry no -MMD, so they track no header — and a struct
+# that gained a field left one object on the old layout while the link
+# succeeded. The symptom was an arrow key arriving as Escape.
+OBJS = obj/specimen_main.o obj/specimen_kernel.o obj/okapia_input.o $(FIRMWARE_OBJS) \
        obj/okapia_font_data.o obj/okapia_icons_data.o
 
 include $(CIRCLEHOME)/Rules.mk
@@ -50,6 +54,14 @@ obj/%.o: $(FIRMWARE)/%.cpp | obj
 	@printf '  CPP   firmware/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 
+obj/%.o: $(FIRMWARE)/circle/%.cpp | obj
+	@printf '  CPP   firmware/circle/%s\n' "$(notdir $<)"
+	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+
+obj/%.o: %.cpp | obj
+	@printf '  CPP   %s\n' "$(notdir $<)"
+	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+
 obj/okapia_font_data.o: $(FONT_SRC) | obj
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
@@ -60,11 +72,11 @@ obj/okapia_icons_data.o: $(ICON_SRC) | obj
 
 -include $(wildcard obj/*.d)
 
-specimen_kernel.o specimen_main.o: $(FONT_SRC) $(ICON_SRC)
+obj/specimen_kernel.o obj/specimen_main.o: $(FONT_SRC) $(ICON_SRC)
 
 # Circle's Rules.mk already owns "clean" with a single colon, so ours is its
 # own target rather than an addition to it.
 specimen-clean:
-	@rm -rf obj kernel*.img kernel*.elf kernel*.lst kernel*.map
+	@rm -rf obj *.o *.d kernel*.img kernel*.elf kernel*.lst kernel*.map
 
 .PHONY: specimen-clean

@@ -38,15 +38,11 @@ static TWidget *Add (TWidgetType Type, const TRect &rRect, const char *pText, un
         return &s_Widgets[MAX_WIDGETS - 1];         // never silently past the end
     }
     TWidget *p = &s_Widgets[s_nWidgets++];
+    WidgetClear (p);
     p->Type   = Type;
     p->Rect   = rRect;
     p->pText  = pText;
     p->nState = nState;
-    p->nValue = 0;
-    p->nSpan  = 0;
-    p->pIcon  = 0;
-    p->Paint  = 0;
-    p->nGroup = 0;
     return p;
 }
 
@@ -140,11 +136,30 @@ static void SectionList (TLayout *pLayout)
     const unsigned nRow   = pTheme->M.nRowHeight;
     const unsigned nReach = ThemeReach (pTheme, StateFocused);
 
+    // More systems than the list can show, so that the scroller is doing
+    // something rather than standing there for the look of it. Two of them are
+    // out of reach, which a chooser will have as soon as a volume has no
+    // System on it.
+    static const TListItem Items[] =
+    {
+        { "Système 7.1.2 — Macintosh IIci",  &OkapiaIconSystem7, StateNormal   },
+        // Longer than the row, on purpose: a volume is named by whoever
+        // formatted it, and the cut has to be on the page and not only in a
+        // test. Every screen of this firmware will meet one of these.
+        { "Mac OS 8.1 français — Quadra 900 avec disque de démarrage",
+                                             &OkapiaIconMacOS8,  StateNormal   },
+        { "Système 6.0.8 — Macintosh IIci",  &OkapiaIconSystem6, StateNormal   },
+        { "Mac OS 9.1 — Power Macintosh",    &OkapiaIconMacOS9,  StateNormal   },
+        { "Sauvegarde (lecture seule)",      &OkapiaIconSystem7, StateNormal   },
+        { "Données — aucun système",         0,                  StateDisabled },
+        { "Travaux — aucun système",         0,                  StateDisabled }
+    };
+
     // The band is as tall as the taller of the two things standing in it. The
     // column's height is asked of the theme rather than measured off a
     // screenshot: four controls, each reserving what a ring draws above and
     // below it, and three gaps between them.
-    const unsigned nList   = 3 * nRow + 2;
+    const unsigned nList   = 4 * nRow + 2;
     const unsigned nColumn = 2 * pTheme->M.nButtonHeight + 2 * pTheme->M.nFieldHeight
                            + 8 * nReach + 3 * pTheme->M.nRowGap;
 
@@ -155,37 +170,14 @@ static void SectionList (TLayout *pLayout)
     // Fractions of what is there, never design constants: the content narrowed
     // when the margin was fixed, and a constant 366 would have pushed the
     // right-hand column straight into the frame.
-    const TRect List = Rect (Row.Free.nX, Row.Free.nY,
-                             Row.Free.nWidth * 56 / 100, nList);
-    RowNext (&Row, List.nWidth, StateNormal);
-    Add (WidgetListFrame, List, 0, StateNormal);
+    const TRect Frame = Rect (Row.Free.nX, Row.Free.nY,
+                              Row.Free.nWidth * 56 / 100, nList);
+    RowNext (&Row, Frame.nWidth, StateFocused);
 
-    static const char *const Rows[] =
-    {
-        "Système 7.1.2 — Macintosh IIci",
-        // Longer than the row, on purpose: a volume is named by whoever
-        // formatted it, and the cut has to be on the page and not only in a
-        // test. Every screen of this firmware will meet one of these.
-        "Mac OS 8.1 français — Quadra 900 avec disque de démarrage",
-        "Système 6.0.8 — Macintosh IIci"
-    };
-    static const TGlyphImage *const Icons[] =
-    {
-        &OkapiaIconSystem7, &OkapiaIconMacOS8, &OkapiaIconSystem6
-    };
-    for (unsigned i = 0; i < 3; i++)
-    {
-        Add (WidgetListRow,
-             Rect (List.nX + 1, List.nY + 1 + (int) (i * nRow), List.nWidth - 2, nRow),
-             Rows[i], i == 1 ? StateSelected : StateNormal)->pIcon = Icons[i];
-    }
-
-    TWidget *pBar = Add (WidgetScrollbar,
-                         Rect (Row.Free.nX, List.nY, pTheme->M.nScrollbarWidth, nList),
-                         0, StateNormal);
-    RowAbut (&Row, pTheme->M.nScrollbarWidth);
-    pBar->nValue = 1;
-    pBar->nSpan  = 3;
+    TWidget *pList = Add (WidgetList, Frame, 0, StateNormal);
+    pList->pItems  = Items;
+    pList->nItems  = sizeof Items / sizeof Items[0];
+    pList->nChoice = 1;
 
     // The right-hand column is a layout of its own inside what the row has
     // left. Nesting is the whole reason the model is a rectangle being spent
@@ -197,13 +189,74 @@ static void SectionList (TLayout *pLayout)
          "Dynamique", StateNormal);
     LayoutRowGap (&Column);
     Add (WidgetPopup, LayoutRow (&Column, pTheme->M.nButtonHeight, StateFocused),
-         "HDMI", StateFocused);
+         "HDMI", StateNormal);
+    LayoutRowGap (&Column);
+
+    // A field with storage of its own is an editable one; a field without is
+    // read-only, which is what every other control here is. Twenty-seven bytes
+    // because a volume's name ends up in a Pascal string in the volume record.
+    static char s_Shared[28] = "Okapia";
+    TWidget *pEdit = Add (WidgetField,
+                          LayoutRow (&Column, pTheme->M.nFieldHeight, StateFocused),
+                          s_Shared, StateFocused);
+    pEdit->pEdit     = s_Shared;
+    pEdit->nEditSize = sizeof s_Shared;
+    pEdit->nCaret    = 6;
+
     LayoutRowGap (&Column);
     Add (WidgetField, LayoutRow (&Column, pTheme->M.nFieldHeight, StateFocused),
-         "Okapia", StateNormal);
-    LayoutRowGap (&Column);
-    Add (WidgetField, LayoutRow (&Column, pTheme->M.nFieldHeight, StateFocused),
-         "Macintosh HD — disque de démarrage", StateFocused);
+         "Macintosh HD — disque de démarrage", StateNormal);
+}
+
+// What an alert looks like, drawn where it will be read: inside the page rather
+// than as a page of its own, because the question is whether it reads as more
+// urgent than what surrounds it, and that cannot be judged alone.
+static void SectionAlert (TLayout *pLayout)
+{
+    const TTheme *pTheme = pLayout->pTheme;
+    Heading (pLayout, "Alerte");
+
+    static const char *const Message =
+        "Le volume « Macintosh HD » n’a pas été démonté proprement. "
+        "Okapia peut le réparer avant de démarrer, ce qui prend quelques secondes "
+        "et ne touche pas à vos fichiers.";
+
+    const unsigned nIcon = 3 * pTheme->M.nLineHeight;
+    const unsigned nText = GfxTextWrapHeight (pTheme->pBodyFont,
+                                              pLayout->Free.nWidth - 2 * pTheme->M.nMargin
+                                                  - nIcon - pTheme->M.nGap * 2,
+                                              Message, pTheme->M.nLineHeight);
+    const unsigned nBody = nText > nIcon ? nText : nIcon;
+    const unsigned nFrame = nBody + pTheme->M.nSectionGap + pTheme->M.nButtonHeight
+                          + 2 * pTheme->M.nMargin + 2 * ThemeReach (pTheme, StateDefault);
+
+    const TRect Frame = LayoutTop (pLayout, nFrame);
+    Add (WidgetAlert, Frame, 0, StateNormal);
+
+    TLayout Inside;
+    LayoutBegin (&Inside, pTheme, RectInset (Frame, (int) pTheme->M.nMargin,
+                                             (int) pTheme->M.nMargin));
+
+    TRow Body;
+    RowBegin (&Body, pTheme, LayoutTop (&Inside, nBody));
+    Add (WidgetIcon, Rect (Body.Free.nX, Body.Free.nY, nIcon, nIcon), 0,
+         StateNormal)->Paint = OkapiaPaintCaution;
+    RowNext (&Body, nIcon, StateNormal);
+    RowSkip (&Body, pTheme->M.nGap);
+    Add (WidgetParagraph, RowRest (&Body, StateNormal), Message, StateNormal);
+
+    LayoutSectionGap (&Inside);
+
+    TRow Buttons;
+    RowBegin (&Buttons, pTheme, LayoutRow (&Inside, pTheme->M.nButtonHeight, StateDefault));
+    Add (WidgetButton,
+         RowLast (&Buttons, WidgetButtonWidth (pTheme, "Réparer", StateDefault),
+                  StateDefault),
+         "Réparer", StateDefault);
+    Add (WidgetButton,
+         RowLast (&Buttons, WidgetButtonWidth (pTheme, "Démarrer sans réparer", StateNormal),
+                  StateNormal),
+         "Démarrer sans réparer", StateNormal);
 }
 
 static void SectionProgress (TLayout *pLayout)
@@ -261,7 +314,7 @@ typedef void TSection (TLayout *pLayout);
 
 static TSection *const s_Sections[] =
 {
-    SectionButtons, SectionChoices, SectionList,
+    SectionButtons, SectionChoices, SectionList, SectionAlert,
     SectionProgress, SectionTypography, SectionStates
 };
 static const unsigned SECTIONS = sizeof s_Sections / sizeof s_Sections[0];
