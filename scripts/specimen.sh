@@ -12,6 +12,10 @@
 #   usage: specimen.sh [2] [width height]      capture, headless
 #          specimen.sh live [width height]     a window, driven by hand
 #
+# The window opens at 1280x960 — twice the design's 640x480, so the theme lands
+# on a whole scale of 2. OUTPUT_W/OUTPUT_H override it; keep them multiples of
+# 640x480 or the interface is drawn at a fractional scale.
+#
 # "live" is the one to reach for when the question is how the interface feels
 # rather than what it measures: Tab and Maj-Tab walk the focus, Espace operates
 # what holds it, Retour the default button, the arrows move the list, and
@@ -45,6 +49,21 @@ fi
 # Driven by hand: a window, the serial on the terminal, and no clock deciding
 # anything. It ends when the window is closed.
 if [ "$LIVE" = "1" ]; then
+    # The frame buffer is the window: QEMU's cocoa backend sizes its window in
+    # points, one per guest pixel, and does not resize it afterwards. Left at
+    # the 640x480 the headless capture uses, that is a postage stamp on a modern
+    # screen — and the window opens before the guest has said anything, so what
+    # is on it is whatever fits. run-live.sh settled this for the emulator long
+    # ago and the reasoning is the same here: 1280x960 is a comfortable window
+    # AND exactly twice 640x480, so the theme lands on a whole scale factor of 2
+    # instead of a fractional one that makes the curves shimmer.
+    #
+    # Do not reach for zoom-to-fit instead: it opens small and defers to manual
+    # resizing, which brings the fractional scale straight back.
+    if [ ${#GEOMETRY[@]} -eq 0 ]; then
+        GEOMETRY=(-global "bcm2835-fb.xres=${OUTPUT_W:-1280}" \
+                  -global "bcm2835-fb.yres=${OUTPUT_H:-960}")
+    fi
     echo "Tab / Maj-Tab : le focus · Espace : actionner · Retour : bouton par défaut"
     echo "Flèches : la liste · Gauche/Droite : la page · souris : cliquez"
     exec qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial stdio \
