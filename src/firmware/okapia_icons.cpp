@@ -166,83 +166,81 @@ void OkapiaPaintPower (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
              (unsigned) (cy - rRect.nY), Ink);
 }
 
-// An isoceles triangle, apex at the top, filled row by row. The outline is one
-// of these with a smaller one taken back out: three thick strokes meeting at
-// three corners is a great deal of arithmetic to get an even weight, and a
-// difference of two fills has an even weight by construction.
-static void Triangle (TSurface *pSurface, int nApexX, int nApexY, int nBaseY,
-                      int nHalfBase, TOkapiaColor Color)
-{
-    const int nHeight = nBaseY - nApexY;
-    if (nHeight <= 0)
-    {
-        return;
-    }
-    for (int y = 0; y <= nHeight; y++)
-    {
-        const int nHalf = nHalfBase * y / nHeight;
-        GfxHLine (pSurface, nApexX - nHalf, nApexY + y, (unsigned) (2 * nHalf + 1), Color);
-    }
-}
-
+/*
+ *  The caution mark
+ *
+ *  A thin triangle with rounded corners and an exclamation that fills it: the
+ *  panel System 6 and 7 both showed, which is worth following because it is
+ *  what the mark has always looked like on this machine and because it reads at
+ *  a glance — a heavy outline with a small mark inside reads as a shape, not as
+ *  a warning.
+ *
+ *  The mark is set in the typeface rather than built from a bar and a dot. A
+ *  drawn one has to be re-tuned at every size and never quite matches the voice
+ *  of the words beside it; the face already has the character, and the ladder
+ *  has it at several sizes so nothing is magnified.
+ */
 void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
                          TOkapiaColor Back)
 {
+    (void) Back;
     const int N = (int) rRect.nWidth;
-    // Lighter than the chrome's other marks. A caution triangle is read as a
-    // shape with something inside it, and at the weight the power ring wears it
-    // closes up into a black lozenge with a notch.
-    const int t = N / 14 < 2 ? 2 : N / 14;
+    // Thin, and barely rounded. The panel this follows is drawn with a hairline
+    // and a corner you notice only when you look for it; a heavy outline with a
+    // generous radius reads as a shape rather than as a warning.
+    const int t = N / 18 < 2 ? 2 : N / 18;
+    const int r = N / 12 < 2 ? 2 : N / 12;
 
-    const int cx = rRect.nX + (int) rRect.nWidth / 2;
-    const int y0 = rRect.nY + t / 2;
-    const int y1 = rRect.nY + (int) rRect.nHeight - 1 - t / 2;
-    const int hb = (int) rRect.nWidth / 2 - t / 2;
-    const int H  = y1 - y0;
-    if (H <= 0 || hb <= 0)
-    {
-        return;
-    }
-
-    Triangle (pSurface, cx, y0, y1, hb, Ink);
-
-    // The inner triangle is the outer one offset inward by t *perpendicular to
-    // each side*, which is not the same as inset by t on each axis. A corner as
-    // sharp as this apex is far thicker along its bisector than across a side —
-    // shifting it by a couple of strokes and taking the same off the width, as
-    // this did, leaves a blunt point and an outline half again too heavy.
-    const float d = __builtin_sqrtf ((float) (H * H + hb * hb));
-    const int nApex = (int) ((float) t * d / (float) hb + 0.5f);
-    const int nHalf = (int) ((float) hb * (float) (H - t) / (float) H
-                             - (float) t * d / (float) H + 0.5f);
-    if (nHalf <= 0 || y1 - t <= y0 + nApex)
-    {
-        return;
-    }
-    Triangle (pSurface, cx, y0 + nApex, y1 - t, nHalf, Back);
+    GfxTriangleFrame (pSurface, rRect, (unsigned) r, Ink, (unsigned) t);
 
     /*
-     *  The exclamation is the typeface's own
+     *  The mark is fitted to the shape, not to a percentage of it
      *
-     *  Drawn rather than constructed, because a bar and a square dot are a
-     *  passable imitation of a mark the face already has, and the imitation has
-     *  to be re-tuned at every size while the glyph is simply set. It also
-     *  keeps the icon in the same voice as everything else on the screen.
+     *  A triangle narrows towards its apex, so how tall a mark it can hold
+     *  depends on how wide that mark is — and a fraction of the height that
+     *  reads well at one size runs the stem into the sloping side at another.
+     *  It did: at the size an alert actually uses, the bar met the left edge
+     *  and the two merged, which looks exactly like half the mark being eaten.
      *
-     *  The face is picked from the ladder for the room there is, so the mark is
-     *  drawn at a size that exists rather than magnified — and, like the pixel
-     *  icons, it stops growing once the largest rung is reached.
+     *  So the largest face that fits is asked for, largest first, and fitting
+     *  means both ends: clear of the base rule below, and inside the taper
+     *  above.
      */
-    const int yA = y0 + nApex;                  // the interior's own apex
-    const int yB = y1 - t;                      // and its base
-    // The lower part of the wedge, where it is wide enough to set anything.
-    const TRect Box = Rect (cx - nHalf, yA + (yB - yA) / 4,
-                            (unsigned) (2 * nHalf),
-                            (unsigned) ((yB - yA) - (yB - yA) / 4));
-    if (Box.nHeight == 0)
+    const int nBase  = rRect.nY + (int) rRect.nHeight;
+    const int nBottom = nBase - 2 * t - 1;      // clear of the base rule
+
+    const TOkapiaFont *pFace = 0;
+    int nTop = 0;
+    for (int i = (int) OkapiaFaceCount - 1; i >= 0; i--)
     {
-        return;
+        const TOkapiaFont *p = OkapiaFaces[i].pBold;
+        const int nCap = (int) p->nCapHeight;
+        const int y = nBottom - nCap;
+        if (y <= rRect.nY)
+        {
+            continue;                   // taller than the triangle
+        }
+        // The interior's half-width where the mark's head would sit: the outer
+        // taper, less the stroke measured *across* rather than along, since a
+        // side this steep is wider in x than it is thick — for a triangle as
+        // tall as it is wide that is nine eighths of the stroke — and one pixel
+        // of air. Subtracting a whole clearance on each side as well is what
+        // made the fit so cautious it fell two rungs down the ladder.
+        const int nHalf = (int) rRect.nWidth * (y - rRect.nY) / (2 * (int) rRect.nHeight)
+                        - t * 9 / 8 - 1;
+        if (2 * nHalf >= (int) GfxTextWidth (p, "!"))
+        {
+            pFace = p;
+            nTop  = y;
+            break;
+        }
     }
-    const TOkapiaFontSet *pFace = FontNearest (Box.nHeight);
-    GfxTextBox (pSurface, pFace->pBold, Box, "!", Ink, TextAlignCenter);
+    if (pFace == 0)
+    {
+        return;                         // too small to hold a mark at all
+    }
+
+    const TRect Box = Rect (rRect.nX, nTop, rRect.nWidth,
+                            (unsigned) (nBottom - nTop));
+    GfxTextBox (pSurface, pFace, Box, "!", Ink, TextAlignCenter);
 }

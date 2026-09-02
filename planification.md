@@ -2600,6 +2600,25 @@ mise en page ne s'est pas calée sur la longueur des libellés français.
   sera une déroulante dans les réglages, mais c'est le seul moyen de voir à la main ce que la mesure
   vérifie déjà.
 
+  **La marque d'alerte, reprise sur le panneau System 6/7.** Trait fin, **angles arrondis**, et un point
+  d'exclamation qui remplit vraiment le triangle — un contour épais avec une petite marque dedans se lit
+  comme une forme, pas comme un avertissement. Le triangle est tracé par champ de distance
+  (`GfxTriangleFrame`), comme les autres formes arrondies : l'arrondi vient d'un rayon soustrait à la
+  distance, et l'intérieur du contour d'un décalage **perpendiculaire à chaque côté** obtenu par une
+  homothétie de centre l'**incentre** — depuis le centre de gravité, les trois côtés rentreraient de trois
+  quantités différentes.
+
+  Le point d'exclamation est le glyphe de la fonte, et la fonte est **choisie d'après la place réelle**,
+  pas d'après un pourcentage de la hauteur : un triangle se rétrécit vers son sommet, donc la hauteur de
+  marque qu'il peut loger dépend de sa largeur. Réglé à une fraction, le fût touchait le côté gauche à la
+  taille qu'une alerte utilise vraiment — et deux traits qui se rejoignent, cela se lit exactement comme
+  une moitié de marque mangée. L'échelle est donc parcourue de la plus grande à la plus petite et la
+  première qui tient des deux bouts est retenue.
+
+  Limite connue : l'échelle de fontes plafonne à une capitale de 25 pixels, donc au-delà d'un triangle
+  d'environ 70 pixels la marque cesse de grandir. L'icône de l'alerte fait deux interlignes, ce qui la
+  garde en deçà à toutes les échelles utilisées — et c'est aussi la proportion du panneau d'époque.
+
 **16g — Le sélecteur.** Le premier vrai écran. `HfsInventory()` et `HfsSystemVersion()` alimentent les
 lignes — la phase 15bis les a déjà livrés —, colonne radio pour le défaut, cases lecture seule et montage,
 et écriture dans `BasiliskII_Prefs` par `SavePrefs()`.

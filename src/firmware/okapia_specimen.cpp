@@ -275,7 +275,11 @@ static void SectionAlert (TLayout *pLayout)
 
     const char *const Message = Str (StrRepairBody);
 
-    const unsigned nIcon = 3 * pTheme->M.nLineHeight;
+    // Two lines tall, which is about what the panel this follows used and, not
+    // by accident, about as large as the mark inside it can be set: the ladder
+    // of faces tops out at a capital of twenty-five pixels, so a triangle much
+    // bigger than this one gets an exclamation lost inside it.
+    const unsigned nIcon = 2 * pTheme->M.nLineHeight;
     const unsigned nText = GfxTextWrapHeight (pTheme->pBodyFont,
                                               pLayout->Free.nWidth - 2 * pTheme->M.nMargin
                                                   - nIcon - pTheme->M.nGap * 2,

@@ -89,6 +89,14 @@ void GfxVLine (TSurface *pSurface, int nX, int nY, unsigned nLength, TOkapiaColo
 void GfxRoundFill (TSurface *pSurface, const TRect &rRect, unsigned nRadius, TOkapiaColor Color);
 void GfxRoundFrame (TSurface *pSurface, const TRect &rRect, unsigned nRadius,
                     TOkapiaColor Color, unsigned nThickness);
+// An isoceles triangle inscribed in the rectangle, apex at the top, with its
+// three corners rounded. Computed from a distance field like the other rounded
+// shapes, so the corners are as smooth at any scale as at 1:1 — and rounding a
+// filled triangle by hand, scanline by scanline, is arithmetic nobody should
+// have to read.
+void GfxTriangleFrame (TSurface *pSurface, const TRect &rRect, unsigned nRadius,
+                       TOkapiaColor Color, unsigned nThickness);
+
 void GfxCircleFill (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color);
 void GfxCircleFrame (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color,
                      unsigned nThickness);

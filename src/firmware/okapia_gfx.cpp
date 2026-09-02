@@ -371,6 +371,139 @@ void GfxRoundFrame (TSurface *pSurface, const TRect &rRect, unsigned nRadius,
     RoundShape (pSurface, rRect, (float) nRadius, Color, (float) nThickness);
 }
 
+/*
+ *  Triangles
+ *
+ *  Signed distance to a triangle, negative inside: the nearest point on each
+ *  edge clamped to the segment, and the winding to decide the sign. It is the
+ *  formulation everybody uses because it is exact everywhere, corners included,
+ *  which is the whole reason the corners can then be rounded by subtracting a
+ *  radius instead of being drawn.
+ */
+static float TriangleDistance (float px, float py,
+                               float ax, float ay, float bx, float by,
+                               float cx, float cy)
+{
+    const float e0x = bx - ax, e0y = by - ay;
+    const float e1x = cx - bx, e1y = cy - by;
+    const float e2x = ax - cx, e2y = ay - cy;
+    const float v0x = px - ax, v0y = py - ay;
+    const float v1x = px - bx, v1y = py - by;
+    const float v2x = px - cx, v2y = py - cy;
+
+    float t0 = (v0x * e0x + v0y * e0y) / (e0x * e0x + e0y * e0y);
+    float t1 = (v1x * e1x + v1y * e1y) / (e1x * e1x + e1y * e1y);
+    float t2 = (v2x * e2x + v2y * e2y) / (e2x * e2x + e2y * e2y);
+    t0 = t0 < 0.0f ? 0.0f : (t0 > 1.0f ? 1.0f : t0);
+    t1 = t1 < 0.0f ? 0.0f : (t1 > 1.0f ? 1.0f : t1);
+    t2 = t2 < 0.0f ? 0.0f : (t2 > 1.0f ? 1.0f : t2);
+
+    const float p0x = v0x - e0x * t0, p0y = v0y - e0y * t0;
+    const float p1x = v1x - e1x * t1, p1y = v1y - e1y * t1;
+    const float p2x = v2x - e2x * t2, p2y = v2y - e2y * t2;
+
+    const float s = e0x * e2y - e0y * e2x < 0.0f ? -1.0f : 1.0f;
+
+    float dx = p0x * p0x + p0y * p0y;
+    float dy = s * (v0x * e0y - v0y * e0x);
+    const float d1x = p1x * p1x + p1y * p1y;
+    const float d1y = s * (v1x * e1y - v1y * e1x);
+    const float d2x = p2x * p2x + p2y * p2y;
+    const float d2y = s * (v2x * e2y - v2y * e2x);
+    if (d1x < dx) dx = d1x;
+    if (d1y < dy) dy = d1y;
+    if (d2x < dx) dx = d2x;
+    if (d2y < dy) dy = d2y;
+
+    return dy < 0.0f ? __builtin_sqrtf (dx) : -__builtin_sqrtf (dx);
+}
+
+void GfxTriangleFrame (TSurface *pSurface, const TRect &rRect, unsigned nRadius,
+                       TOkapiaColor Color, unsigned nThickness)
+{
+    if (rRect.nWidth < 3 || rRect.nHeight < 3)
+    {
+        return;
+    }
+    const unsigned nColor = Value (Color);
+    const float t = (float) nThickness;
+
+    // The triangle the outline's *outer* edge follows, and then the one whose
+    // distance field is measured: inset by the corner radius, since a rounded
+    // corner is that shape's distance field taken out to the radius again.
+    const float ax = (float) rRect.nX + (float) rRect.nWidth * 0.5f;
+    const float ay = (float) rRect.nY;
+    const float bx = (float) rRect.nX + (float) rRect.nWidth;
+    const float by = (float) rRect.nY + (float) rRect.nHeight;
+    const float cx0 = (float) rRect.nX;
+    const float cy0 = by;
+
+    // Insetting a triangle by r means moving every edge inward by r, which is
+    // a scale about the incentre by (rho - r) / rho. Moving the vertices toward
+    // the centroid instead is the obvious version and insets the three edges by
+    // three different amounts, so the corners come out unequal.
+    const float la = __builtin_sqrtf ((bx - cx0) * (bx - cx0) + (by - cy0) * (by - cy0));
+    const float lb = __builtin_sqrtf ((cx0 - ax) * (cx0 - ax) + (cy0 - ay) * (cy0 - ay));
+    const float lc = __builtin_sqrtf ((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
+    const float per = la + lb + lc;
+    if (per <= 0.0f)
+    {
+        return;
+    }
+    const float ix = (la * ax + lb * bx + lc * cx0) / per;
+    const float iy = (la * ay + lb * by + lc * cy0) / per;
+    const float area = 0.5f * __builtin_fabsf ((bx - ax) * (cy0 - ay) - (cx0 - ax) * (by - ay));
+    const float rho = area / (per * 0.5f);
+
+    float r = (float) nRadius;
+    if (r > rho - 1.0f)
+    {
+        r = rho - 1.0f;
+    }
+    if (r < 0.0f)
+    {
+        r = 0.0f;
+    }
+    const float k = rho > 0.0f ? (rho - r) / rho : 0.0f;
+    const float Ax = ix + (ax - ix) * k,   Ay = iy + (ay - iy) * k;
+    const float Bx = ix + (bx - ix) * k,   By = iy + (by - iy) * k;
+    const float Cx = ix + (cx0 - ix) * k,  Cy = iy + (cy0 - iy) * k;
+
+    // The band, or the fill. As with the rounded box, the outline lies inside
+    // the shape: its outer edge falls on the triangle rather than straddling it.
+    const float band = t * 0.5f;
+    const float edge = r - band;
+    const float step = 1.0f / (float) AA_SAMPLES;
+    const float weight = 1.0f / (float) (AA_SAMPLES * AA_SAMPLES);
+
+    for (unsigned row = 0; row < rRect.nHeight; row++)
+    {
+        const int nY = rRect.nY + (int) row;
+        for (unsigned col = 0; col < rRect.nWidth; col++)
+        {
+            const int nX = rRect.nX + (int) col;
+            float fCoverage = 0.0f;
+            for (unsigned sy = 0; sy < AA_SAMPLES; sy++)
+            {
+                for (unsigned sx = 0; sx < AA_SAMPLES; sx++)
+                {
+                    const float fx = (float) nX + ((float) sx + 0.5f) * step;
+                    const float fy = (float) nY + ((float) sy + 0.5f) * step;
+                    const float d = TriangleDistance (fx, fy, Ax, Ay, Bx, By, Cx, Cy);
+                    const bool bIn = nThickness == 0
+                                         ? d - r <= 0.0f
+                                         : (d - edge < 0.0f ? edge - d : d - edge) <= band;
+                    if (bIn)
+                    {
+                        fCoverage += weight;
+                    }
+                }
+            }
+            Blend (pSurface, nX, nY, nColor, fCoverage);
+        }
+    }
+}
+
 void GfxCircleFill (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color)
 {
     const unsigned n = rRect.nWidth < rRect.nHeight ? rRect.nWidth : rRect.nHeight;
