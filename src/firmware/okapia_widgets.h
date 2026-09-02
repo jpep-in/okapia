@@ -28,6 +28,9 @@ enum TWidgetType
     WidgetCheckbox,
     WidgetRadio,
     WidgetList,
+    // The same thing, tighter, and never in a screen's array: a menu is a list
+    // that appears over everything and goes away again.
+    WidgetMenu,
     WidgetScrollbar,
     WidgetPopup,
     WidgetField,

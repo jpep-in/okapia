@@ -764,11 +764,23 @@ bool GfxTextFits (const TOkapiaFont *pFont, const TRect &rBox, const char *pText
 static const unsigned CURSOR_W = 12;
 static const unsigned CURSOR_H = 16;
 
-static const unsigned short s_CursorRows[CURSOR_H] =
+static const unsigned short s_ArrowRows[CURSOR_H] =
 {
     0x800, 0xC00, 0xE00, 0xF00, 0xF80, 0xFC0, 0xFE0, 0xFF0,
     0xFF8, 0xFC0, 0xEC0, 0xC60, 0x860, 0x030, 0x030, 0x000
 };
+
+// The beam: a stem with a serif at each end, so that it stays findable against
+// a line of text — which is the whole reason it has them.
+// The serifs run either side of the stem without a break in them: written as
+// two short marks with a gap, the beam came out lopsided and looked broken.
+static const unsigned short s_BeamRows[CURSOR_H] =
+{
+    0x000, 0x3E0, 0x080, 0x080, 0x080, 0x080, 0x080, 0x080,
+    0x080, 0x080, 0x080, 0x080, 0x080, 0x080, 0x3E0, 0x000
+};
+
+static const unsigned short *s_pCursorRows = s_ArrowRows;
 
 static bool CursorInk (int nX, int nY)
 {
@@ -776,7 +788,7 @@ static bool CursorInk (int nX, int nY)
     {
         return false;
     }
-    return (s_CursorRows[nY] & (1 << (CURSOR_W - 1 - nX))) != 0;
+    return (s_pCursorRows[nY] & (1 << (CURSOR_W - 1 - nX))) != 0;
 }
 
 // The largest whole scale the interface ever asks of an icon. The save-under is
@@ -818,9 +830,20 @@ TRect GfxCursorHide (TSurface *pSurface)
     return s_UnderRect;
 }
 
-TRect GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale)
+TRect GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale,
+                     TGfxCursor Shape)
 {
     const TRect Was = GfxCursorHide (pSurface);
+
+    // The point each shape actually points with: the arrow's tip is its corner,
+    // the beam's is the middle of its stem. Drawing both from the same corner
+    // puts the beam's click half a character to the right of where it looked.
+    s_pCursorRows = Shape == GfxCursorBeam ? s_BeamRows : s_ArrowRows;
+    if (Shape == GfxCursorBeam)
+    {
+        nX -= (int) (4 * nScale);
+        nY -= (int) (8 * nScale);
+    }
 
     if (nScale < 1)
     {
@@ -935,7 +958,9 @@ static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TR
             const unsigned char *pEnd = pBreak != 0 ? pBreak : pBefore;
             if (pSurface != 0)
             {
-                TextRun (pSurface, pFont, rBox.nX, nY, pLine, pEnd, Color);
+                TextRun (pSurface, pFont, rBox.nX,
+                         nY + GfxTextTop (pFont, Rect (0, 0, 0, nLineHeight)),
+                         pLine, pEnd, Color);
             }
             nLines++;
             nY += (int) nLineHeight;
@@ -952,7 +977,9 @@ static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TR
     {
         if (pSurface != 0)
         {
-            TextRun (pSurface, pFont, rBox.nX, nY, pLine, p, Color);
+            TextRun (pSurface, pFont, rBox.nX,
+                     nY + GfxTextTop (pFont, Rect (0, 0, 0, nLineHeight)),
+                     pLine, p, Color);
         }
         nLines++;
     }
@@ -962,7 +989,18 @@ static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TR
 unsigned GfxTextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rBox,
                       const char *pText, TOkapiaColor Color, unsigned nLineHeight)
 {
-    return TextWrap (pSurface, pFont, rBox, pText, Color, nLineHeight);
+    // Measured first, then set in the middle of the box. A paragraph drawn from
+    // the top of a band that is taller than it — an alert's, where the caution
+    // mark sets the height — hangs from the ceiling with all the air below it,
+    // which reads as a mistake rather than as a message.
+    const unsigned nHigh = TextWrap (0, pFont, rBox, pText, Color, nLineHeight);
+    TRect Box = rBox;
+    if (nHigh < rBox.nHeight)
+    {
+        Box.nY += (int) (rBox.nHeight - nHigh) / 2;
+    }
+    Box.nHeight = nHigh;
+    return TextWrap (pSurface, pFont, Box, pText, Color, nLineHeight);
 }
 
 unsigned GfxTextWrapHeight (const TOkapiaFont *pFont, unsigned nWidth, const char *pText,

@@ -19,6 +19,12 @@
 
 #define FROM "specimen"
 
+// The loop's own beat, and the caret's. Ten milliseconds is short enough that a
+// keystroke is never left waiting to be noticed; half a second is what a
+// Macintosh shipped with and what its Control Panel let you change.
+static const unsigned SLICE_MS = 10;
+static const unsigned CARET_MS = 500;
+
 CSpecimenKernel::CSpecimenKernel (void)
 :   m_Timer (&m_Interrupt),
     m_Logger (m_Options.GetLogLevel (), &m_Timer),
@@ -248,19 +254,44 @@ TShutdownMode CSpecimenKernel::Run (void)
         if (bMoved)
         {
             FwInputPointer (&nX, &nY);
+            // The shape follows what is under it, which only the screen knows.
+            const TGfxCursor Shape =
+                ScreenCursorAt (&Screen, nX, nY) == CursorBeam ? GfxCursorBeam
+                                                               : GfxCursorArrow;
             Damage = RectUnion (Damage,
-                                GfxCursorShow (&Surface, nX, nY, Theme.nIconScale));
+                                GfxCursorShow (&Surface, nX, nY, Theme.nIconScale, Shape));
         }
+        // The caret, on the half-second a Macintosh shipped with. It is the one
+        // thing on this screen that happens without anybody doing anything.
+        if (nTick % (CARET_MS / SLICE_MS) == 0 && ScreenBlinkCaret (&Screen))
+        {
+            TRect Blinked;
+            Damage = RectUnion (Damage, GfxCursorHide (&Surface));
+            if (ScreenPaintDirty (&Surface, &Screen, &Blinked))
+            {
+                Damage = RectUnion (Damage, Blinked);
+            }
+            if (bPointer)
+            {
+                const TGfxCursor Shape =
+                    ScreenCursorAt (&Screen, nX, nY) == CursorBeam ? GfxCursorBeam
+                                                                   : GfxCursorArrow;
+                Damage = RectUnion (Damage, GfxCursorShow (&Surface, nX, nY,
+                                                           Theme.nIconScale, Shape));
+            }
+        }
+
         if (Damage.nWidth != 0)
         {
             GfxBlit (&Screen0, &Surface, Damage);
         }
 
-        if (nTick % 100 == 0)
-        {
-            m_ActLED.Blink (1);
-        }
-        CTimer::Get ()->MsDelay (10);
+        // No CActLED::Blink here. It is not a hint to the LED but a pair of
+        // blocking delays — two hundred milliseconds on, five hundred off — so
+        // once a second the loop simply stopped, and with it the pointer and
+        // every keystroke. It read exactly like an emulator running out of
+        // time, and it was one line of decoration.
+        CTimer::Get ()->MsDelay (SLICE_MS);
     }
 
     return ShutdownHalt;

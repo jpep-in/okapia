@@ -186,9 +186,19 @@ void GfxImage (TSurface *pSurface, const TGlyphImage *pImage, int nX, int nY,
  *  shown cursor leaves the old pixels in the save-under, and the next move
  *  stamps them back onto the screen.
  */
+// The two shapes a pointer takes here. The beam over text is as old as the
+// Macintosh and says, without a word, that the click will land between letters
+// rather than on the thing as a whole.
+enum TGfxCursor
+{
+    GfxCursorArrow,
+    GfxCursorBeam
+};
+
 // Both answer the rectangle they touched, so a caller keeping a shadow surface
 // knows what to copy forward without working the pointer's size out itself.
-TRect GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale);
+TRect GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale,
+                     TGfxCursor Shape);
 TRect GfxCursorHide (TSurface *pSurface);
 
 // The one place that knows what a role is worth, in 0x00RRGGBB.

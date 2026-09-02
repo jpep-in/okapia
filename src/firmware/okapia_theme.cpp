@@ -362,7 +362,7 @@ static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText
     const unsigned nWidth = GfxTextBox (pSurface, pTheme->pBodyFont, Text, pText,
                                         Ink (nState), TextAlignLeft);
 
-    if (nState & StateFocused)
+    if ((nState & StateFocused) && (nState & StateCaret))
     {
         // At the insertion point, and never past the text actually drawn: a cut
         // label ends in an ellipsis, and a caret standing beyond it would be
@@ -374,6 +374,12 @@ static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText
         }
         GfxFill (pSurface, Rect (Text.nX + (int) nAt, nY, pTheme->M.nStroke,
                                  pTheme->pBodyFont->nHeight), ColorBlack);
+    }
+    // The ring is not the caret: it says where the keyboard is pointing and
+    // must not wink out with it, or a blinking field looks like it keeps
+    // losing the focus.
+    if (nState & StateFocused)
+    {
         DrawFocusRing (pSurface, rRect, 0, pTheme);
     }
 }
@@ -417,6 +423,7 @@ static const TThemeMetrics s_Base =
     8,      // nSectionGap
     16,     // nLineHeight
     34,     // nRowHeight — tall enough for a system folder icon
+    22,     // nMenuRow — words only, so a good deal tighter
     22,     // nButtonHeight
     14,     // nButtonPadX
     6,      // nButtonRadius
@@ -583,6 +590,7 @@ void ThemeMake (unsigned nScale16, TTheme *pOut)
     M.nSectionGap     = Scaled (B.nSectionGap,     nScale16, 6);
     M.nLineHeight     = Scaled (B.nLineHeight,     nScale16, 4);
     M.nRowHeight      = Scaled (B.nRowHeight,      nScale16, 8);
+    M.nMenuRow        = Scaled (B.nMenuRow,        nScale16, 6);
     M.nButtonHeight   = Scaled (B.nButtonHeight,   nScale16, 8);
     M.nButtonPadX     = Scaled (B.nButtonPadX,     nScale16, 4);
     M.nButtonRadius   = Scaled (B.nButtonRadius,   nScale16, 2);
@@ -625,5 +633,11 @@ void ThemeMake (unsigned nScale16, TTheme *pOut)
     if (M.nLineHeight < nLine + 2)
     {
         M.nLineHeight = nLine + 2;
+    }
+    // After the line height's own floor, not before it: a menu item measured
+    // against a value that is about to change is measured against nothing.
+    if (M.nMenuRow < M.nLineHeight + 4)
+    {
+        M.nMenuRow = M.nLineHeight + 4;
     }
 }

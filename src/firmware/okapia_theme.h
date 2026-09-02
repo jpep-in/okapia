@@ -41,7 +41,10 @@ enum TPartState
     StateFocused  = 1u << 3,
     StateChecked  = 1u << 4,
     StateSelected = 1u << 5,            // a row picked out in a list
-    StateStrong   = 1u << 6             // a label that carries weight, e.g. a heading
+    StateStrong   = 1u << 6,            // a label that carries weight, e.g. a heading
+    // The caret is showing right now. It blinks, so a focused field is not
+    // enough to say whether the mark is on the screen at this instant.
+    StateCaret    = 1u << 7
 };
 
 struct TThemeMetrics
@@ -53,6 +56,9 @@ struct TThemeMetrics
     unsigned nSectionGap;               // between groups
     unsigned nLineHeight;
     unsigned nRowHeight;                // one row of a list
+    // One item of a menu. Shorter than a list's row, which is tall enough for a
+    // folder icon: a menu carries words, and a list's rhythm makes it loose.
+    unsigned nMenuRow;
     unsigned nButtonHeight;
     unsigned nButtonPadX;               // ink to button edge, horizontally
     unsigned nButtonRadius;

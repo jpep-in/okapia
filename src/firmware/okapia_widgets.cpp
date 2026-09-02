@@ -37,9 +37,16 @@ static TRect ListInner (const TWidget *pWidget)
     return RectInset (pWidget->Rect, 1, 1);
 }
 
+// A menu's rows are tighter than a list's: a list row is tall enough for a
+// folder icon, and a menu carries words.
+static unsigned RowHeight (const TWidget *pWidget, const TTheme *pTheme)
+{
+    return pWidget->Type == WidgetMenu ? pTheme->M.nMenuRow : pTheme->M.nRowHeight;
+}
+
 unsigned WidgetListVisible (const TWidget *pWidget, const TTheme *pTheme)
 {
-    const unsigned nRow = pTheme->M.nRowHeight;
+    const unsigned nRow = RowHeight (pWidget, pTheme);
     return nRow == 0 ? 0 : ListInner (pWidget).nHeight / nRow;
 }
 
@@ -74,7 +81,7 @@ int WidgetListItemAt (const TWidget *pWidget, const TTheme *pTheme, int nX, int 
     {
         return -1;
     }
-    const unsigned nRow = pTheme->M.nRowHeight;
+    const unsigned nRow = RowHeight (pWidget, pTheme);
     const unsigned nIndex = pWidget->nTop + (unsigned) (nY - Rows.nY) / nRow;
     return nIndex < pWidget->nItems ? (int) nIndex : -1;
 }
@@ -108,7 +115,7 @@ static void DrawList (TSurface *pSurface, const TTheme *pTheme, const TWidget *p
     pTheme->DrawListFrame (pSurface, pWidget->Rect, pTheme);
 
     const TRect    Rows     = ListRows (pWidget, pTheme);
-    const unsigned nRow     = pTheme->M.nRowHeight;
+    const unsigned nRow     = RowHeight (pWidget, pTheme);
     const unsigned nVisible = WidgetListVisible (pWidget, pTheme);
 
     for (unsigned i = 0; i < nVisible; i++)
@@ -207,6 +214,7 @@ void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidge
         break;
 
     case WidgetList:
+    case WidgetMenu:
         DrawList (pSurface, pTheme, pWidget);
         break;
 

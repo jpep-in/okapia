@@ -2542,6 +2542,20 @@ où il existe, sinon personne ne le regarde.
     épaisseurs sont une constante du système, pas un réglage. Ce qui distingue une alerte, c'est sa marque
     et ce qu'elle dit ; un cadre presque pareil se lit comme une erreur, pas comme une emphase.
 
+  **Troisième passage à la main.** Le blocage périodique n'était pas la mise en page : `CActLED::Blink()`
+  n'est pas un signal au voyant mais **deux attentes bloquantes**, 200 ms allumé et 500 ms éteint
+  (`actled.cpp:95`). Un appel par seconde dans la boucle l'arrêtait sept dixièmes de chaque seconde — ce
+  qui se lit exactement comme un émulateur à bout de souffle, et c'était une ligne de décoration. Inscrit
+  dans AGENTS.md.
+
+  Avec elle : le paragraphe est **centré verticalement** dans sa bande, faute de quoi il pendait du
+  plafond de l'alerte, dont la hauteur est fixée par la marque et non par le texte ; un **article de menu**
+  a sa propre métrique, plus serrée que la ligne d'une liste qui doit loger une icône de dossier ; le
+  **curseur de saisie clignote** à la demi-seconde, l'anneau de focus restant allumé — un anneau qui
+  clignoterait donnerait l'impression que le champ perd le focus ; et le **pointeur devient une barre en I**
+  au-dessus d'un champ modifiable, avec son propre point de visée, l'écran étant seul à savoir ce qu'il y
+  a dessous.
+
 **16f — Les traductions.** Une table de chaînes, anglais et français, depuis `boot-menu/strings.tsv` ;
 langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
 mise en page ne s'est pas calée sur la longueur des libellés français.

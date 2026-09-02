@@ -313,6 +313,11 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   `CKeyboardBehaviour`. Doing that to "give the keyboard back" after the firmware's window stopped the
   kernel dead — no further log at all, and the Macintosh never started. There is nothing to give back:
   Circle keeps one raw handler, so `InputInit()` replacing it in `StartMacintosh()` *is* the handover.
+- **`CActLED::Blink()` is not a hint, it is a pair of blocking delays.** `actled.cpp:95` turns the LED on,
+  waits 200 ms, turns it off and waits 500 ms — synchronously. One call per second in the firmware's event
+  loop stopped it dead for seven tenths of every second, so the pointer stuttered and keystrokes arrived
+  late. It reads exactly like an emulator running out of time and it is one line of decoration. Fine in a
+  constructor, never in a loop.
 - **Circle's cooked mouse silently drops every report** until `Setup()` gives it screen dimensions, so a
   working keyboard alongside a dead mouse says nothing about USB, ADB or interrupts. Okapia wants raw
   deltas anyway: `RegisterStatusHandler()` hands over `dx/dy` for `ADBMouseMoved()`, whereas the cooked

@@ -60,6 +60,10 @@ struct TScreen
      *  the check that no two controls overlap is what makes redrawing one of
      *  them on its own safe.
      */
+    // The caret blinks, as it always has: a mark that never moves is hard to
+    // find in a line of text, and a Macintosh gave the rate its own setting.
+    bool          bCaret;
+
     unsigned      nDirty[12];
     unsigned      nDirtyCount;
     bool          bDirtyAll;            // the caller must redraw everything
@@ -100,6 +104,21 @@ bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen, TRect *pDamage);
 // Whether a pop-up's menu is open. The loop asks in order to know that closing
 // it will need the screen underneath drawn again.
 bool ScreenMenuOpen (const TScreen *pScreen);
+
+// Turns the caret on or off. The loop calls it on the beat it likes — half a
+// second is what a Macintosh shipped with — and it answers whether anything
+// changed, which is nothing at all unless a field holds the focus.
+bool ScreenBlinkCaret (TScreen *pScreen);
+
+// The pointer's shape for what lies under it. A text field asks for the beam,
+// as it has since 1984, and the answer belongs here because only the screen
+// knows what its controls are.
+enum TCursorShape
+{
+    CursorArrow,
+    CursorBeam
+};
+TCursorShape ScreenCursorAt (const TScreen *pScreen, int nX, int nY);
 
 // One event in, one answer out. Never draws: the caller repaints when the
 // answer says something changed, which is also what keeps a moving pointer from

@@ -84,14 +84,17 @@ static void SetFocus (TScreen *pScreen, int nIndex)
     {
         if (pScreen->pWidgets[i].nState & StateFocused)
         {
-            pScreen->pWidgets[i].nState &= ~(unsigned) StateFocused;
+            pScreen->pWidgets[i].nState &= ~(unsigned) (StateFocused | StateCaret);
             ScreenTouch (pScreen, (int) i);
         }
     }
     if (nIndex >= 0)
     {
-        pScreen->pWidgets[nIndex].nState |= StateFocused;
+        // Lit as it arrives: a caret that waits for the next beat leaves the
+        // field looking inert for up to half a second after it is clicked.
+        pScreen->pWidgets[nIndex].nState |= StateFocused | StateCaret;
         ScreenTouch (pScreen, nIndex);
+        pScreen->bCaret = true;
     }
     pScreen->nFocus = nIndex;
 }
@@ -141,6 +144,7 @@ void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsi
     pScreen->nPressed = -1;
     pScreen->nX       = 0;
     pScreen->nY       = 0;
+    pScreen->bCaret      = true;
     pScreen->nMenu       = -1;
     WidgetClear (&pScreen->Menu);
     pScreen->Bounds      = Rect (0, 0, 0, 0);
@@ -163,10 +167,52 @@ void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsi
         if ((pWidgets[i].nState & StateFocused) && WidgetFocusable (&pWidgets[i]))
         {
             pScreen->nFocus = (int) i;
+            pWidgets[i].nState |= StateCaret;
             return;
         }
     }
     SetFocus (pScreen, NextFocus (pScreen, -1, +1));
+}
+
+bool ScreenBlinkCaret (TScreen *pScreen)
+{
+    if (pScreen->nFocus < 0 || pScreen->nMenu >= 0)
+    {
+        return false;
+    }
+    TWidget *p = &pScreen->pWidgets[pScreen->nFocus];
+    if (p->Type != WidgetField || p->pEdit == 0)
+    {
+        return false;                   // nothing that carries a caret
+    }
+    pScreen->bCaret = !pScreen->bCaret;
+    if (pScreen->bCaret)
+    {
+        p->nState |= StateCaret;
+    }
+    else
+    {
+        p->nState &= ~(unsigned) StateCaret;
+    }
+    ScreenTouch (pScreen, pScreen->nFocus);
+    return true;
+}
+
+TCursorShape ScreenCursorAt (const TScreen *pScreen, int nX, int nY)
+{
+    // A menu is in front, and nothing under it is being pointed at.
+    if (pScreen->nMenu >= 0)
+    {
+        return RectContains (pScreen->Menu.Rect, nX, nY) ? CursorArrow : CursorArrow;
+    }
+    const int nHit = WidgetHit (pScreen->pWidgets, pScreen->nCount, nX, nY);
+    if (nHit >= 0
+        && pScreen->pWidgets[nHit].Type == WidgetField
+        && pScreen->pWidgets[nHit].pEdit != 0)
+    {
+        return CursorBeam;
+    }
+    return CursorArrow;
 }
 
 void ScreenOperate (TScreen *pScreen, int nIndex)
@@ -411,7 +457,7 @@ static void MenuOpen (TScreen *pScreen, int nPopup)
     {
         return;
     }
-    const unsigned nRow = pScreen->pTheme->M.nRowHeight;
+    const unsigned nRow = pScreen->pTheme->M.nMenuRow;
     const unsigned nHeight = p->nItems * nRow + 2;
     const int nChosen = p->nChoice < 0 ? 0 : p->nChoice;
 
@@ -426,7 +472,7 @@ static void MenuOpen (TScreen *pScreen, int nPopup)
     }
 
     WidgetClear (&pScreen->Menu);
-    pScreen->Menu.Type    = WidgetList;
+    pScreen->Menu.Type    = WidgetMenu;
     pScreen->Menu.Rect    = Rect (p->Rect.nX, nY, p->Rect.nWidth, nHeight);
     pScreen->Menu.pItems  = p->pItems;
     pScreen->Menu.nItems  = p->nItems;
