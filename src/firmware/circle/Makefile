@@ -21,7 +21,7 @@ FIRMWARE_OBJS = $(addprefix obj/,$(notdir $(FIRMWARE_SRCS:.cpp=.o)))
 # that gained a field left one object on the old layout while the link
 # succeeded. The symptom was an arrow key arriving as Escape.
 OBJS = obj/specimen_main.o obj/specimen_kernel.o obj/okapia_input.o $(FIRMWARE_OBJS) \
-       obj/okapia_font_data.o obj/okapia_icons_data.o
+       obj/okapia_font_data.o obj/okapia_icons_data.o obj/okapia_strings_data.o
 
 include $(CIRCLEHOME)/Rules.mk
 
@@ -41,6 +41,12 @@ ICONDIR  = ../../../assets/icons
 $(ICON_SRC): ../../../scripts/gen-icons.py $(ICONDIR)/system-icons.c
 	@mkdir -p $(GEN)
 	@../../../scripts/gen-icons.py $@ $(ICONDIR)/system-icons.c
+
+STR_SRC = $(GEN)/okapia_strings_data.cpp
+STR_IDS = $(GEN)/okapia_strings_ids.h
+$(STR_SRC) $(STR_IDS): ../../../scripts/gen-strings.py ../../../assets/strings.tsv
+	@mkdir -p $(GEN)
+	@../../../scripts/gen-strings.py $(STR_SRC) $(STR_IDS) ../../../assets/strings.tsv
 
 obj:
 	@mkdir -p obj
@@ -70,9 +76,13 @@ obj/okapia_icons_data.o: $(ICON_SRC) | obj
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 
+obj/okapia_strings_data.o: $(STR_SRC) $(STR_IDS) | obj
+	@printf '  CPP   generated/%s\n' "$(notdir $<)"
+	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+
 -include $(wildcard obj/*.d)
 
-obj/specimen_kernel.o obj/specimen_main.o: $(FONT_SRC) $(ICON_SRC)
+obj/specimen_kernel.o obj/specimen_main.o: $(FONT_SRC) $(ICON_SRC) $(STR_IDS)
 
 # Circle's Rules.mk already owns "clean" with a single colon, so ours is its
 # own target rather than an addition to it.

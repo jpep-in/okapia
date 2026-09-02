@@ -67,7 +67,7 @@ if [ "$LIVE" = "1" ]; then
                   -global "bcm2835-fb.yres=${OUTPUT_H:-960}")
     fi
     echo "Tab / Maj-Tab : le focus · Espace : actionner · Retour : bouton par défaut"
-    echo "Flèches : la liste · Gauche/Droite : la page · souris : cliquez"
+    echo "Flèches : la liste · Gauche/Droite : la page · L : la langue · souris : cliquez"
     exec qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial stdio \
         -display cocoa -semihosting -device usb-kbd -device usb-mouse \
         "${GEOMETRY[@]}"

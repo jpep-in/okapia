@@ -2581,6 +2581,25 @@ où il existe, sinon personne ne le regarde.
 langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
 mise en page ne s'est pas calée sur la longueur des libellés français.
 
+  **Fait le 2026-09-02.** `assets/strings.tsv` porte chaque libellé dans chaque langue, et
+  `scripts/gen-strings.py` en tire **et** les tables **et** l'énumération `TStringId` — la même habitude
+  que la table clavier et les fontes. Une clé renommée ou retirée casse donc la compilation au lieu de
+  laisser une étiquette vide sur un écran que personne n'a ouvert ce jour-là. Les tables des deux langues
+  sont compilées ensemble : deux kilo-octets, et plus aucune question sur le moment de charger quoi.
+
+  **Et c'est là que se joue la raison de le faire avant le sélecteur** : `check_geometry` mesure désormais
+  chaque page, à chaque taille, **dans chaque langue**. Une mise en page calée sur une langue puis traduite
+  est une mise en page qui se disloque, et le français est plus long que l'anglais presque partout. Douze
+  mesures de débordement au lieu de six, toutes vertes — les boutons se dimensionnant depuis leur propre
+  libellé, « Démarrer » et « Start » ne demandent pas la même largeur et la page se recompose.
+
+  L'anglais est le défaut : c'est la langue du code, et celle dans laquelle les mises en page sont lues en
+  premier. La carte tranche par la préférence `language`, un code à deux lettres ; un code inconnu répond
+  la première langue plutôt que d'échouer, pour qu'une carte écrite par une version ultérieure démarre
+  quand même. Dans le spécimen, `L` fait le tour des langues — ce n'est pas un contrôle du produit, le vrai
+  sera une déroulante dans les réglages, mais c'est le seul moyen de voir à la main ce que la mesure
+  vérifie déjà.
+
 **16g — Le sélecteur.** Le premier vrai écran. `HfsInventory()` et `HfsSystemVersion()` alimentent les
 lignes — la phase 15bis les a déjà livrés —, colonne radio pour le défaut, cases lecture seule et montage,
 et écriture dans `BasiliskII_Prefs` par `SavePrefs()`.

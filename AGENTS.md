@@ -150,6 +150,14 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   Gestalt and an extension answers as well as a built-in. The FSM is **not** File Sharing: that is
   AppleShare over the network and does not provide it. ExtFS is also single-volume by construction — one
   `RootPath`, one VCB — so several shared folders would mean rewriting a file in `external/`.
+- **The interface's text is generated, never typed twice.** `assets/strings.tsv` holds every label in
+  every language, and `scripts/gen-strings.py` turns it into both the tables and the `TStringId`
+  enumeration — so a key renamed or removed stops the build instead of leaving an empty label on a screen
+  nobody opened that day. `tests/host/check_geometry.cpp` then measures every page **in every language**,
+  which is the whole reason the translations came before the chooser: a layout laid out against one
+  language and translated afterwards is a layout that comes apart, and French runs longer than English
+  almost everywhere. The firmware's language is the `language` preference, a two-letter code; an unknown
+  one falls back to the first rather than failing, so a card written by a later version still boots.
 - **The key table is generated, never typed.** `scripts/gen-keycodes.py` derives it from
   `BasiliskII/src/Unix/keycodes`, section `sdl cocoa`, at build time — **SDL2 scancodes are USB HID usage
   IDs**, so that section already is the table a USB host needs. The hand-written version it replaced had

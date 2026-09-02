@@ -14,6 +14,7 @@
  */
 
 #include "okapia_specimen.h"
+#include "okapia_strings.h"
 #include "okapia_layout.h"
 #include "okapia_widgets.h"
 
@@ -86,15 +87,15 @@ static void Heading (TLayout *pLayout, const char *pText)
 static void SectionButtons (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
-    Heading (pLayout, "Boutons");
+    Heading (pLayout, Str (StrSpecButtons));
 
     TRow Row;
     RowBegin (&Row, pTheme, LayoutRow (pLayout, pTheme->M.nButtonHeight, StateDefault));
-    AddButton (&Row, "Normal",  StateNormal);
-    AddButton (&Row, "Défaut",  StateDefault);
-    AddButton (&Row, "Focus",   StateFocused);
-    AddButton (&Row, "Enfoncé", StatePressed);
-    AddButton (&Row, "Inactif", StateDisabled);
+    AddButton (&Row, Str (StrSpecNormal),   StateNormal);
+    AddButton (&Row, Str (StrSpecDefault),  StateDefault);
+    AddButton (&Row, Str (StrSpecFocus),    StateFocused);
+    AddButton (&Row, Str (StrSpecPressed),  StatePressed);
+    AddButton (&Row, Str (StrSpecDisabled), StateDisabled);
     AddIconButton (&Row, OkapiaPaintSettings, StateNormal);
     AddIconButton (&Row, OkapiaPaintPram,     StatePressed);
     AddIconButton (&Row, OkapiaPaintPower,    StateDisabled);
@@ -103,14 +104,20 @@ static void SectionButtons (TLayout *pLayout)
 static void SectionChoices (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
-    Heading (pLayout, "Cases et boutons radio");
+    Heading (pLayout, Str (StrSpecChoices));
 
-    static const char *const Checks[] = { "Décochée", "Cochée", "Focus", "Inactive" };
+    const char *const Checks[] =
+    {
+        Str (StrSpecUnchecked), Str (StrSpecChecked), Str (StrSpecFocus), Str (StrSpecInactive)
+    };
     static const unsigned CheckStates[] =
     {
         StateNormal, StateChecked, StateChecked | StateFocused, StateDisabled | StateChecked
     };
-    static const char *const Radios[] = { "Par défaut", "Autre", "Focus", "Inactif" };
+    const char *const Radios[] =
+    {
+        Str (StrSpecDefault), Str (StrSpecOther), Str (StrSpecFocus), Str (StrSpecDisabled)
+    };
     static const unsigned RadioStates[] =
     {
         StateChecked, StateNormal, StateFocused, StateDisabled
@@ -135,7 +142,7 @@ static void SectionChoices (TLayout *pLayout)
 static void SectionList (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
-    Heading (pLayout, "Liste, ascenseur, saisie");
+    Heading (pLayout, Str (StrSpecList));
 
     const unsigned nRow   = pTheme->M.nRowHeight;
     const unsigned nReach = ThemeReach (pTheme, StateFocused);
@@ -144,20 +151,34 @@ static void SectionList (TLayout *pLayout)
     // something rather than standing there for the look of it. Two of them are
     // out of reach, which a chooser will have as soon as a volume has no
     // System on it.
-    static const TListItem Items[] =
+    // Static, and filled here rather than initialised: the list keeps a pointer
+    // to these for as long as it is on the screen, so a local array would be
+    // gone by the time anything drew it. The text pointers themselves are safe
+    // — Str() answers into a table that is compiled in and outlives everything.
+    static TListItem Items[7];
+    static const TGlyphImage *const Art[7] =
     {
-        { "Système 7.1.2 — Macintosh IIci",  &OkapiaIconSystem7, StateNormal   },
+        &OkapiaIconSystem7, &OkapiaIconMacOS8, &OkapiaIconSystem6,
+        &OkapiaIconMacOS9,  &OkapiaIconSystem7, 0, 0
+    };
+    static const char *const Names[7] =
+    {
+        "Système 7.1.2 — Macintosh IIci",
         // Longer than the row, on purpose: a volume is named by whoever
         // formatted it, and the cut has to be on the page and not only in a
         // test. Every screen of this firmware will meet one of these.
-        { "Mac OS 8.1 français — Quadra 900 avec disque de démarrage",
-                                             &OkapiaIconMacOS8,  StateNormal   },
-        { "Système 6.0.8 — Macintosh IIci",  &OkapiaIconSystem6, StateNormal   },
-        { "Mac OS 9.1 — Power Macintosh",    &OkapiaIconMacOS9,  StateNormal   },
-        { "Sauvegarde (lecture seule)",      &OkapiaIconSystem7, StateNormal   },
-        { "Données — aucun système",         0,                  StateDisabled },
-        { "Travaux — aucun système",         0,                  StateDisabled }
+        "Mac OS 8.1 français — Quadra 900 avec disque de démarrage",
+        "Système 6.0.8 — Macintosh IIci",
+        "Mac OS 9.1 — Power Macintosh",
+        0, 0, 0
     };
+    for (unsigned i = 0; i < 7; i++)
+    {
+        Items[i].pText  = Names[i] != 0 ? Names[i]
+                                        : Str (i == 4 ? StrRescueDisk : StrNoSystem);
+        Items[i].pIcon  = Art[i];
+        Items[i].nState = i >= 5 ? StateDisabled : StateNormal;
+    }
 
     // The band is as tall as the taller of the two things standing in it. The
     // column's height is asked of the theme rather than measured off a
@@ -191,21 +212,26 @@ static void SectionList (TLayout *pLayout)
 
     // Real choices, so the menu has something to show. A pop-up carrying a
     // fixed string is a button wearing a triangle.
-    static const TListItem Rates[] =
+    static TListItem Rates[5];
+    static const char *const RateNames[5] =
     {
-        { "Dynamique",     0, StateNormal },
-        { "60 images/s",   0, StateNormal },
-        { "30 images/s",   0, StateNormal },
-        { "15 images/s",   0, StateNormal },
-        { "10 images/s",   0, StateNormal }
+        0, "60 Hz", "30 Hz", "15 Hz", "10 Hz"
     };
-    static const TListItem Outputs[] =
+    for (unsigned i = 0; i < 5; i++)
     {
-        { "Coupé",  0, StateNormal   },
-        { "HDMI",   0, StateNormal   },
-        { "Jack",   0, StateNormal   },
-        { "USB",    0, StateDisabled }
-    };
+        Rates[i].pText  = RateNames[i] != 0 ? RateNames[i] : Str (StrDynamic);
+        Rates[i].pIcon  = 0;
+        Rates[i].nState = StateNormal;
+    }
+
+    static TListItem Outputs[4];
+    static const char *const OutputNames[4] = { 0, "HDMI", "Jack", "USB" };
+    for (unsigned i = 0; i < 4; i++)
+    {
+        Outputs[i].pText  = OutputNames[i] != 0 ? OutputNames[i] : Str (StrSoundOff);
+        Outputs[i].pIcon  = 0;
+        Outputs[i].nState = i == 3 ? StateDisabled : StateNormal;
+    }
 
     TWidget *pRate = Add (WidgetPopup,
                           LayoutRow (&Column, pTheme->M.nButtonHeight, StateFocused),
@@ -245,12 +271,9 @@ static void SectionList (TLayout *pLayout)
 static void SectionAlert (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
-    Heading (pLayout, "Alerte");
+    Heading (pLayout, Str (StrSpecAlert));
 
-    static const char *const Message =
-        "Le volume « Macintosh HD » n’a pas été démonté proprement. "
-        "Okapia peut le réparer avant de démarrer, ce qui prend quelques secondes "
-        "et ne touche pas à vos fichiers.";
+    const char *const Message = Str (StrRepairBody);
 
     const unsigned nIcon = 3 * pTheme->M.nLineHeight;
     const unsigned nText = GfxTextWrapHeight (pTheme->pBodyFont,
@@ -281,19 +304,19 @@ static void SectionAlert (TLayout *pLayout)
     TRow Buttons;
     RowBegin (&Buttons, pTheme, LayoutRow (&Inside, pTheme->M.nButtonHeight, StateDefault));
     Add (WidgetButton,
-         RowLast (&Buttons, WidgetButtonWidth (pTheme, "Réparer", StateDefault),
+         RowLast (&Buttons, WidgetButtonWidth (pTheme, Str (StrRepairNow), StateDefault),
                   StateDefault | StateFocused),
-         "Réparer", StateDefault);
+         Str (StrRepairNow), StateDefault);
     Add (WidgetButton,
-         RowLast (&Buttons, WidgetButtonWidth (pTheme, "Démarrer sans réparer", StateNormal),
+         RowLast (&Buttons, WidgetButtonWidth (pTheme, Str (StrRepairSkip), StateNormal),
                   StateFocused),
-         "Démarrer sans réparer", StateNormal);
+         Str (StrRepairSkip), StateNormal);
 }
 
 static void SectionProgress (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
-    Heading (pLayout, "Progression");
+    Heading (pLayout, Str (StrSpecProgress));
 
     static const unsigned Steps[] = { 0, 250, 620, 1000 };
     for (unsigned i = 0; i < 4; i++)
@@ -310,7 +333,7 @@ static void SectionProgress (TLayout *pLayout)
 static void SectionTypography (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
-    Heading (pLayout, "Typographie");
+    Heading (pLayout, Str (StrSpecTypography));
 
     static const char *const Lines[] =
     {
@@ -330,15 +353,15 @@ static void SectionTypography (TLayout *pLayout)
 static void SectionStates (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
-    Heading (pLayout, "Un même libellé, tous ses états");
+    Heading (pLayout, Str (StrSpecStates));
 
     TRow Row;
     RowBegin (&Row, pTheme, LayoutRow (pLayout, pTheme->M.nButtonHeight, StateDefault));
-    AddButton (&Row, "Réglages", StateNormal);
-    AddButton (&Row, "Réglages", StateDefault);
-    AddButton (&Row, "Réglages", StateFocused);
-    AddButton (&Row, "Réglages", StatePressed);
-    AddButton (&Row, "Réglages", StateDisabled);
+    AddButton (&Row, Str (StrSettings), StateNormal);
+    AddButton (&Row, Str (StrSettings), StateDefault);
+    AddButton (&Row, Str (StrSettings), StateFocused);
+    AddButton (&Row, Str (StrSettings), StatePressed);
+    AddButton (&Row, Str (StrSettings), StateDisabled);
 }
 
 typedef void TSection (TLayout *pLayout);
@@ -389,7 +412,7 @@ static void PageFrame (TLayout *pLayout, const TTheme *pTheme, const TRect &rCon
     LayoutBegin (pLayout, pTheme, rContent);
 
     Add (WidgetTitle, LayoutTop (pLayout, pTheme->pTitleFont->nHeight),
-         "Échantillon — le système de composants", StateNormal);
+         Str (StrSpecTitle), StateNormal);
     LayoutRowGap (pLayout);
     Add (WidgetSeparator, LayoutTop (pLayout, 1), 0, StateNormal);
     LayoutSectionGap (pLayout);
@@ -406,9 +429,9 @@ static void PageFrame (TLayout *pLayout, const TTheme *pTheme, const TRect &rCon
     AddIconButton (&Foot, OkapiaPaintPram,     StateNormal);
     AddIconButton (&Foot, OkapiaPaintPower,    StateNormal);
 
-    const unsigned nStart = WidgetButtonWidth (pTheme, "Démarrer", StateDefault);
+    const unsigned nStart = WidgetButtonWidth (pTheme, Str (StrStart), StateDefault);
     Add (WidgetButton, RowLast (&Foot, nStart, StateDefault | StateFocused),
-         "Démarrer", StateDefault);
+         Str (StrStart), StateDefault);
 
     // Which page of how many, in the space the footer has left over. It is only
     // ever seen when the components need more than one, which is the honest

@@ -12,6 +12,8 @@ CATALOG='
 bmc64|https://github.com/randyrossi/bmc64.git||Full emulator on bare-metal Circle. The closest architectural model: emulation loop, timing, audio, framebuffer, USB, SD config.
 M5Tab-Macintosh|https://github.com/amcchord/M5Tab-Macintosh.git||Basilisk II on ESP32-P4. Dirty-tile video and SD flush strategy. READ ONLY: no declared licence, do not copy code.
 macemu-jit|https://github.com/rcarmo/macemu-jit.git||68k->AArch64 JIT backend, and a test corpus usable without the JIT.
+snow|https://github.com/twvd/snow.git||Macintosh II emulator and possible System 6 engine; compare its machine model and platform boundary with Mini vMac.
+minivmac|https://github.com/minivmac/minivmac.git|extras|Compact Macintosh emulator and candidate System 6 engine; study its generated core and platform interface for a Circle port. Cloned without extras/ (ROMs and Apple disk images).
 amiberry|https://github.com/BlitterStudio/amiberry.git||Upstream of the ARM/ARM64 JIT backend that macemu-jit imported.
 infinite-mac|https://github.com/mihaip/infinite-mac.git|Images|Disk-image provisioning and system-version catalogue. Cloned without Images/ (hundreds of MB).
 BlueSCSI-v2|https://github.com/BlueSCSI/BlueSCSI-v2.git||SCSI device emulation from disk images on an RP2040. The durability model Okapia targets, and a Macintosh image sanity check worth copying. GPLv3, same as us.

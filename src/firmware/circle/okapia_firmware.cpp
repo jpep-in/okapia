@@ -14,7 +14,14 @@
 
 #include <wrap_fatfs.h>
 
+// Basilisk II's headers, and sysdeps.h first as everywhere in that tree. The
+// firmware reads exactly one preference and would rather not drag the emulator
+// in for it, but declaring PrefsFindString by hand is how a signature drifts.
+#include "sysdeps.h"
+#include "prefs.h"
+
 #include "okapia_gfx.h"
+#include "okapia_strings.h"
 #include "okapia_input.h"
 #include "okapia_theme.h"
 
@@ -61,6 +68,11 @@ TFirmwareResult FirmwareRun (void)
         return FirmwareBoot;
     }
 
+    // The language before anything is drawn, since every label goes through it.
+    // An unknown code answers the first language rather than failing: a card
+    // written by a later version has to boot on an older firmware.
+    StringsSetLanguage (StringsFromCode (PrefsFindString ("language")));
+
     TTheme Theme;
     const unsigned nScale16 = ThemeScaleFor (nWidth, nHeight);
     ThemeMake (nScale16, &Theme);
@@ -88,8 +100,10 @@ TFirmwareResult FirmwareRun (void)
     const bool bKeyboard = FwInputWatch ();
     FwInputBounds (nWidth, nHeight);
 
-    CLogger::Get ()->Write (FROM, LogNotice, "Output %ux%u, theme scale %u/16, %s, holding %u ms",
+    CLogger::Get ()->Write (FROM, LogNotice,
+                            "Output %ux%u, theme scale %u/16, language %s, %s, holding %u ms",
                             nWidth, nHeight, nScale16,
+                            StringsCode (StringsLanguage ()),
                             bKeyboard ? "keyboard attached" : "no keyboard", WINDOW_MS);
 
     for (unsigned nWaited = 0; nWaited < WINDOW_MS; nWaited += SLICE_MS)

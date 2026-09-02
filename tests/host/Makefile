@@ -18,7 +18,9 @@ BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR1
 
 FONT_SRC = $(GEN)/okapia_font_data.cpp
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
-LIBSRCS  = $(wildcard $(FIRMWARE)/*.cpp) $(FONT_SRC) $(ICON_SRC)
+STR_SRC  = $(GEN)/okapia_strings_data.cpp
+STR_IDS  = $(GEN)/okapia_strings_ids.h
+LIBSRCS  = $(wildcard $(FIRMWARE)/*.cpp) $(FONT_SRC) $(ICON_SRC) $(STR_SRC)
 LIBOBJS  = $(notdir $(LIBSRCS:.cpp=.o))
 
 CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -I$(FIRMWARE) -I$(GEN) -std=c++14
@@ -36,9 +38,13 @@ $(ICON_SRC): $(ROOT)/scripts/gen-icons.py $(ROOT)/assets/icons/system-icons.c
 	$(ROOT)/scripts/gen-icons.py $@ \
 	    $(ROOT)/assets/icons/system-icons.c
 
+$(STR_SRC) $(STR_IDS): $(ROOT)/scripts/gen-strings.py $(ROOT)/assets/strings.tsv
+	@mkdir -p $(GEN)
+	$(ROOT)/scripts/gen-strings.py $(STR_SRC) $(STR_IDS) $(ROOT)/assets/strings.tsv
+
 # -MMD -MP, and the .d files pulled back in below: without them a change to a
 # header rebuilds nothing and the link mixes two layouts of the same struct.
-%.o: %.cpp $(FONT_SRC) $(ICON_SRC)
+%.o: %.cpp $(FONT_SRC) $(ICON_SRC) $(STR_SRC) $(STR_IDS)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
 
 # The generated sources get rules of their own rather than leaning on VPATH: a
@@ -49,6 +55,9 @@ okapia_font_data.o: $(FONT_SRC)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
 
 okapia_icons_data.o: $(ICON_SRC)
+	$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
+
+okapia_strings_data.o: $(STR_SRC) $(STR_IDS)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
 
 -include $(wildcard *.d)

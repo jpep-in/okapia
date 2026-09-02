@@ -54,6 +54,7 @@ prefs_desc platform_prefs_items[] = {
 	{"extfsname", TYPE_STRING, false, "name of the shared folder's volume on the Mac desktop"},
 	{"hfsrepair", TYPE_BOOLEAN, false, "scavenge a volume left in use by an interrupted session"},
 	{"hfsinventory", TYPE_BOOLEAN, false, "list the HFS volumes found on the card at startup"},
+	{"language", TYPE_STRING, false, "the boot firmware's language: a two-letter code, en or fr"},
 	// Declared, not endorsed: rsrc_patches.cpp acts on it, but the patched idle
 	// loop has never been measured here. Declaring it keeps the parser from
 	// rejecting a prefs file brought over from a desktop Basilisk II.

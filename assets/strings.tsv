@@ -1,0 +1,56 @@
+# The firmware's text, in every language it speaks.
+#
+# Typed once, here, and turned into tables by scripts/gen-strings.py — the same
+# habit as the key table and the fonts. The identifiers come from these keys, so
+# a key renamed or removed breaks the build instead of leaving an empty label on
+# the screen.
+#
+# Columns are tab-separated: key, then one column per language. The heading row
+# names them, and its names become LangEN, LangFR and so on.
+#
+# English first because the code is English and because a label written in the
+# language the layout was tuned to is the one that never overflows. French is
+# the longer of the two almost everywhere, which is exactly why both are
+# measured (tests/host/check_geometry.cpp).
+key	en	fr
+choose_system	Choose a system	Choisissez un système
+start	Start	Démarrer
+settings	Settings	Réglages
+back	Back	Retour
+save	Save	Enregistrer
+save_restart	Save and restart	Enregistrer et redémarrer
+restart_required	Okapia restart required after changing this	Redémarrage d’Okapia requis après modification
+restarting	Restarting Okapia…	Redémarrage d’Okapia…
+shut_down	Shut down	Éteindre
+forget_pram	Forget the parameter RAM	Oublier la PRAM
+rescue_disk	Rescue disk	Disque de secours
+read_only	Read-only	Lecture seule
+no_system	No system	Aucun système
+volume_name	Volume name	Nom du volume
+shared_folder	Shared folder	Dossier partagé
+screen_refresh	Screen refresh	Rafraîchissement
+dynamic	Dynamic	Dynamique
+sound	Sound	Son
+sound_off	Off	Coupé
+language	Language	Langue
+repair_title	Repair the volume?	Réparer le volume ?
+repair_body	This volume was not unmounted properly. Okapia can repair it before starting, which takes a few seconds and does not touch your files.	Ce volume n’a pas été démonté proprement. Okapia peut le réparer avant de démarrer, ce qui prend quelques secondes et ne touche pas à vos fichiers.
+repair_now	Repair	Réparer
+repair_skip	Start without repairing	Démarrer sans réparer
+spec_title	Specimen — the component system	Échantillon — le système de composants
+spec_buttons	Buttons	Boutons
+spec_choices	Tick boxes and radio buttons	Cases et boutons radio
+spec_list	List, scroller, field	Liste, ascenseur, saisie
+spec_alert	Alert	Alerte
+spec_progress	Progress	Progression
+spec_typography	Typography	Typographie
+spec_states	One label, all its states	Un même libellé, tous ses états
+spec_normal	Normal	Normal
+spec_default	Default	Défaut
+spec_focus	Focus	Focus
+spec_pressed	Pressed	Enfoncé
+spec_disabled	Disabled	Inactif
+spec_unchecked	Unticked	Décochée
+spec_checked	Ticked	Cochée
+spec_inactive	Inactive	Inactive
+spec_other	Other	Autre

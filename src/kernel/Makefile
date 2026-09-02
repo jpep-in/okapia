@@ -67,7 +67,7 @@ EMU_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) \
 HFS_OBJS = $(addprefix emu/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
 EMU_OBJS = $(addprefix emu/,$(notdir $(EMU_SRCS:.cpp=.o))) \
-           emu/okapia_font_data.o emu/okapia_icons_data.o \
+           emu/okapia_font_data.o emu/okapia_icons_data.o emu/okapia_strings_data.o \
            $(addprefix emu/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
 
 # Our entry point is okapia_main.cpp, not main.cpp: VPATH also finds the core's
@@ -143,11 +143,23 @@ $(ICON_SRC): ../../scripts/gen-icons.py $(ICONDIR)/system-icons.c
 	@mkdir -p $(GEN)
 	@../../scripts/gen-icons.py $@ $(ICONDIR)/system-icons.c
 
+# The interface's text, typed once in a file anyone can diff. The identifiers
+# come out of the same rows, so a key renamed there stops the build here.
+STR_SRC = $(GEN)/okapia_strings_data.cpp
+STR_IDS = $(GEN)/okapia_strings_ids.h
+$(STR_SRC) $(STR_IDS): ../../scripts/gen-strings.py ../../assets/strings.tsv
+	@mkdir -p $(GEN)
+	@../../scripts/gen-strings.py $(STR_SRC) $(STR_IDS) ../../assets/strings.tsv
+
 emu/okapia_font_data.o: $(FONT_SRC) | emu
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
 emu/okapia_icons_data.o: $(ICON_SRC) | emu
+	@printf '  CPP   generated/%s\n' "$(notdir $<)"
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
+
+emu/okapia_strings_data.o: $(STR_SRC) $(STR_IDS) | emu
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 

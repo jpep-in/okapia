@@ -14,6 +14,7 @@
 #include "okapia_input.h"
 #include "okapia_screen.h"
 #include "okapia_specimen.h"
+#include "okapia_strings.h"
 #include "okapia_theme.h"
 #include "okapia_widgets.h"
 
@@ -166,8 +167,10 @@ TShutdownMode CSpecimenKernel::Run (void)
     int  nX = 0, nY = 0;
     bool bPointer = false;
 
-    m_Logger.Write (FROM, LogNotice, "Page %u sur %u ; Tab, Espace, Retour, flèches, "
-                                     "Gauche/Droite pour changer de page", nPage, nPages);
+    m_Logger.Write (FROM, LogNotice,
+                    "Page %u sur %u [%s] ; Tab, Espace, Retour, flèches, "
+                    "Gauche/Droite pour la page, L pour la langue",
+                    nPage, nPages, StringsCode (StringsLanguage ()));
 
     for (unsigned nTick = 0; ; nTick++)
     {
@@ -211,6 +214,25 @@ TShutdownMode CSpecimenKernel::Run (void)
                 // What the screen did not want falls through to here. The page
                 // is the specimen's own affair and not a component's, so it is
                 // handled where it belongs rather than inside the loop.
+                // L walks the languages. Not a product control — the real one
+                // is a pop-up in the settings — but the only way to see, by
+                // hand, what the measurements already check: that a page holds
+                // in the longer language as well as the one it was drawn in.
+                if (Event.Type == EventKeyDown
+                    && (Event.nChar == 'l' || Event.nChar == 'L'))
+                {
+                    StringsSetLanguage ((TLanguage) ((StringsLanguage () + 1)
+                                                     % LanguageCount));
+                    SpecimenDraw (&Surface, nPage);
+                    nCount = SpecimenWidgets (&pWidgets);
+                    ScreenInit (&Screen, &Theme, pWidgets, nCount);
+                    Screen.Background = ColorWhite;
+                    Screen.Bounds     = Rect (0, 0, nWidth, nHeight);
+                    m_Logger.Write (FROM, LogNotice, "Langue %s",
+                                    StringsCode (StringsLanguage ()));
+                    bRepaint = true;
+                    break;
+                }
                 if (Event.Type == EventKeyDown
                     && (Event.nKey == OkKeyLeft || Event.nKey == OkKeyRight))
                 {

@@ -22,6 +22,7 @@
 #include "okapia_gfx.h"
 #include "okapia_theme.h"
 #include "okapia_screen.h"
+#include "okapia_strings.h"
 #include "okapia_specimen.h"
 #include "okapia_widgets.h"
 
@@ -337,8 +338,8 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
         s_nFailures++;
     }
 
-    printf ("\n=== spécimen %ux%u page %u — rien ne doit entrer dans la marge ===\n",
-            nW, nH, nPage);
+    printf ("\n=== spécimen %ux%u page %u [%s] — rien ne doit entrer dans la marge ===\n",
+            nW, nH, nPage, StringsCode (StringsLanguage ()));
     printf ("  marge %u px ; intrusion la plus proche : g %d  d %d  h %d  b %d\n",
             T.M.nMargin,
             nWorstLeft == 1000 ? -1 : nWorstLeft, nWorstRight == 1000 ? -1 : nWorstRight,
@@ -454,9 +455,15 @@ int main (void)
         CheckTruncation (Scales[i]);
     }
 
-    // Every page at both sizes, and the count is asked for rather than assumed:
-    // it is what the flow decided, so a section that grows moves a page and the
-    // check follows it without being edited.
+    // Every page, at both sizes, **in every language**. That last one is the
+    // whole reason the translations came before the chooser: a layout laid out
+    // against one language and translated afterwards is a layout that comes
+    // apart, and French runs longer than English almost everywhere. The page
+    // count is asked for rather than assumed — it is what the flow decided, so
+    // a section that grows moves a page and this follows it unedited.
+    for (unsigned nLang = 0; nLang < LanguageCount; nLang++)
+    {
+    StringsSetLanguage ((TLanguage) nLang);
     for (unsigned nScale = 1; nScale <= 2; nScale++)
     {
         const unsigned nW = 640 * nScale;
@@ -475,6 +482,8 @@ int main (void)
             CheckSpecimen (nScale, nPage);
         }
     }
+    }
+    StringsSetLanguage ((TLanguage) 0);
 
     printf ("\n%u écart(s)\n", s_nFailures);
     return s_nFailures == 0 ? 0 : 1;
