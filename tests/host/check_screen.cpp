@@ -474,6 +474,38 @@ static void CheckMenu (void)
             "Tab ne traverse pas un menu ouvert");
     Send (&S, Mouse (EventMouseDown, 400, 60));
     Expect (!ScreenMenuOpen (&S), "un clic à côté le referme");
+
+    /*
+     *  Ouvert au clic, il reste ouvert
+     *
+     *  Sans cela le relâchement qui termine le clic d'ouverture choisit aussitôt
+     *  ce qui se trouve sous le pointeur — le menu apparaît et disparaît, et la
+     *  seule façon de s'en servir est de garder le bouton enfoncé.
+     */
+    const int nX = W[WPopup].Rect.nX + 10;
+    const int nY = W[WPopup].Rect.nY + 2;
+    Send (&S, Mouse (EventMouseDown, nX, nY));
+    Expect (ScreenMenuOpen (&S), "cliquer la déroulante ouvre le menu");
+    TScreenReply r2 = Send (&S, Mouse (EventMouseUp, nX, nY));
+    Expect (ScreenMenuOpen (&S) && r2.Result != ScreenActivated,
+            "relâcher sans avoir bougé le laisse ouvert");
+
+    // Et il se referme au clic suivant, sur un article.
+    const int nItemY = S.Menu.Rect.nY + (int) s_Theme.M.nMenuRow * 3 / 2;
+    Send (&S, Mouse (EventMouseMove, nX, nItemY));
+    Send (&S, Mouse (EventMouseDown, nX, nItemY));
+    r2 = Send (&S, Mouse (EventMouseUp, nX, nItemY));
+    Expect (r2.Result == ScreenActivated && !ScreenMenuOpen (&S),
+            "le clic suivant choisit et referme");
+    Expect (W[WPopup].nChoice == 1, "et c'est bien l'article visé");
+
+    // Tirer à travers depuis l'ouverture choisit toujours, comme autrefois.
+    Send (&S, Mouse (EventMouseDown, nX, nY));
+    const int nFirstY = S.Menu.Rect.nY + (int) s_Theme.M.nMenuRow / 2;
+    Send (&S, Mouse (EventMouseMove, nX, nFirstY));
+    r2 = Send (&S, Mouse (EventMouseUp, nX, nFirstY));
+    Expect (r2.Result == ScreenActivated && W[WPopup].nChoice == 0,
+            "tirer à travers et relâcher choisit encore");
 }
 
 static void CheckMouse (void)

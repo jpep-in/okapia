@@ -2534,7 +2534,10 @@ où il existe, sinon personne ne le regarde.
     un champ y pose aussi le curseur, la mesure du texte et l'encart du thème venant d'un seul endroit ;
   - **la déroulante n'avait qu'une apparence.** Elle ouvre un vrai menu, posé de façon que le choix courant
     tombe sur le contrôle — ce qui est déjà sous la main ne demande aucun mouvement — et il est modal : rien
-    dessous ne répond tant qu'il est ouvert. Un menu est **une liste**, donc c'en est une, et elle ne vit
+    dessous ne répond tant qu'il est ouvert. **Ouvert au clic, il reste ouvert** : le relâchement qui
+    termine le clic d'ouverture ne choisit pas, sans quoi le menu apparaît et disparaît et la seule façon
+    de s'en servir est de garder le bouton enfoncé. Tirer à travers depuis l'ouverture choisit toujours,
+    l'un et l'autre se distinguant à ce que le pointeur ait bougé ou non. Un menu est **une liste**, donc c'en est une, et elle ne vit
     pas dans le tableau de l'écran : rien ne se met en page autour de ce qui n'est là qu'une fraction du
     temps. En se refermant il redemande tout l'écran, étant la seule chose ici qui en recouvre ;
   - **le cadre d'alerte** reprend exactement les deux épaisseurs du dialogue. Deux tentatives pour le

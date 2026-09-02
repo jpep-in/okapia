@@ -42,6 +42,15 @@ struct TScreen
      */
     int           nMenu;                // the pop-up it belongs to, or -1
     TWidget       Menu;                 // the list it shows while it is open
+    // Where the pointer stood when it opened, and whether the click that opened
+    // it has been let go yet. A menu opened by a click has to stay open: the
+    // release ending that click must not choose, or it flashes and is gone and
+    // the only way to use it is to keep the button down. Dragging into it and
+    // releasing still chooses, which is the other way a pop-up has always been
+    // used, and both are told apart by whether the pointer moved.
+    int           nMenuOpenX;
+    int           nMenuOpenY;
+    bool          bMenuHeld;
 
     // Dragging a list's scroller, and where inside its thumb it was taken hold
     // of. Grabbing a thumb by its middle whatever part of it was clicked makes
@@ -100,6 +109,12 @@ void ScreenTouch (TScreen *pScreen, int nIndex);
 // pDamage is filled with the rectangle that was touched, so a caller drawing
 // into a shadow surface knows exactly what to copy to the screen.
 bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen, TRect *pDamage);
+
+// Draws the open menu, if there is one, over whatever is already there. The
+// incremental paint does this itself; a caller that redrew the whole screen
+// owes the call, since a menu is the one thing here that stands in front and
+// the screen it stands in front of has just been painted over it.
+void ScreenPaintMenu (TSurface *pSurface, TScreen *pScreen, TRect *pDamage);
 
 // Whether a pop-up's menu is open. The loop asks in order to know that closing
 // it will need the screen underneath drawn again.

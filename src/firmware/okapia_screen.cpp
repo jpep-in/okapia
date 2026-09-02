@@ -99,6 +99,16 @@ static void SetFocus (TScreen *pScreen, int nIndex)
     pScreen->nFocus = nIndex;
 }
 
+void ScreenPaintMenu (TSurface *pSurface, TScreen *pScreen, TRect *pDamage)
+{
+    if (pScreen->nMenu < 0)
+    {
+        return;
+    }
+    WidgetDraw (pSurface, pScreen->pTheme, &pScreen->Menu);
+    *pDamage = RectUnion (*pDamage, pScreen->Menu.Rect);
+}
+
 bool ScreenMenuOpen (const TScreen *pScreen)
 {
     return pScreen->nMenu >= 0;
@@ -126,12 +136,7 @@ bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen, TRect *pDamage)
         *pDamage = RectUnion (*pDamage, Around);
     }
     pScreen->nDirtyCount = 0;
-    // Last, and over everything: a menu is in front by definition.
-    if (pScreen->nMenu >= 0)
-    {
-        WidgetDraw (pSurface, pScreen->pTheme, &pScreen->Menu);
-        *pDamage = RectUnion (*pDamage, pScreen->Menu.Rect);
-    }
+    ScreenPaintMenu (pSurface, pScreen, pDamage);   // in front, by definition
     return true;
 }
 
@@ -146,6 +151,9 @@ void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsi
     pScreen->nY       = 0;
     pScreen->bCaret      = true;
     pScreen->nMenu       = -1;
+    pScreen->nMenuOpenX  = 0;
+    pScreen->nMenuOpenY  = 0;
+    pScreen->bMenuHeld   = false;
     WidgetClear (&pScreen->Menu);
     pScreen->Bounds      = Rect (0, 0, 0, 0);
     pScreen->nDragList   = -1;
@@ -478,6 +486,9 @@ static void MenuOpen (TScreen *pScreen, int nPopup)
     pScreen->Menu.nItems  = p->nItems;
     pScreen->Menu.nChoice = nChosen;
     pScreen->nMenu = nPopup;
+    pScreen->nMenuOpenX = pScreen->nX;
+    pScreen->nMenuOpenY = pScreen->nY;
+    pScreen->bMenuHeld  = true;
 }
 
 static void MenuClose (TScreen *pScreen)
@@ -548,10 +559,27 @@ static TScreenReply HandleMenu (TScreen *pScreen, const TEvent *pEvent)
                 MenuClose (pScreen);
                 return Reply (ScreenChanged, -1);
             }
+            // A release outside while the opening click is still being let go
+            // is not a dismissal: the hand simply came off the pop-up.
+            pScreen->bMenuHeld = false;
             return Reply (ScreenIdle, -1);
         }
         if (pEvent->Type == EventMouseUp)
         {
+            // The release that ends the opening click leaves the menu standing,
+            // unless the hand actually travelled — which is the difference
+            // between clicking a pop-up open and pulling down through it.
+            if (pScreen->bMenuHeld)
+            {
+                pScreen->bMenuHeld = false;
+                const int dx = pEvent->nX - pScreen->nMenuOpenX;
+                const int dy = pEvent->nY - pScreen->nMenuOpenY;
+                const int nSlop = (int) pScreen->pTheme->M.nGap;
+                if ((dx < 0 ? -dx : dx) <= nSlop && (dy < 0 ? -dy : dy) <= nSlop)
+                {
+                    return Reply (ScreenIdle, -1);
+                }
+            }
             const int nAt = WidgetListItemAt (&pScreen->Menu, pScreen->pTheme,
                                               pEvent->nX, pEvent->nY);
             if (nAt < 0 || (pScreen->Menu.pItems[nAt].nState & StateDisabled))

@@ -159,6 +159,11 @@ TShutdownMode CSpecimenKernel::Run (void)
     Screen.Bounds     = Rect (0, 0, nWidth, nHeight);
     SpecimenRepaint (&Surface);
     GfxBlit (&Screen0, &Surface, Screen.Bounds);
+    // The screen has just been drawn whole, so tell it so: left believing
+    // everything is still dirty, the first click would take the whole-screen
+    // path again — and a menu opened by that click would be painted over by it.
+    TRect Ignored;
+    ScreenPaintDirty (&Surface, &Screen, &Ignored);
 
     // The pointer appears when the mouse first moves, and not before. A menu
     // nobody has touched has nothing to point with, and it keeps this screen
@@ -269,6 +274,7 @@ TShutdownMode CSpecimenKernel::Run (void)
             {
                 SpecimenRepaint (&Surface);
                 Painted = Screen.Bounds;
+                ScreenPaintMenu (&Surface, &Screen, &Painted);
             }
             Damage = RectUnion (Damage, Painted);
             bMoved = bPointer;
