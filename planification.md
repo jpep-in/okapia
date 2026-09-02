@@ -2410,8 +2410,40 @@ le `ModalDialog` du Dialog Manager. Focus et son parcours (Tab, Maj-Tab, flèche
   d'explication.
 
 **16d — Le modèle de boîtes.** Lignes et colonnes, mesure du texte, et **troncature d'une chaîne à son
-contrôle** — la limite connue, relevée par le mesureur. Le spécimen redevient une page, ses ordonnées
-n'étant plus posées à la main. Les contrôles gagnent « aucun texte hors de son contrôle ».
+contrôle** — la limite connue, relevée par le mesureur. Les ordonnées du spécimen ne sont plus posées à la
+main, et sa pagination cesse d'être une décision. Les contrôles gagnent « aucun texte hors de son
+contrôle ».
+
+  **Fait le 2026-09-02.** `okapia_layout.{h,cpp}` : un rectangle qu'on dépense. Une bande est prise sur
+  un bord, ce qui reste est ce qu'il reste à placer. Pas une coordonnée dans `okapia_specimen.cpp`, et le
+  bas du dialogue est réclamé **avant** que le milieu soit rempli — c'est précisément ce qui manquait aux
+  deux tours de « le contenu est dans la bordure », qui n'ont jamais touché que la droite et le bas parce
+  que la mise en page descendait du haut et que rien ne remontait de l'autre côté.
+
+  La troncature vit dans `GfxTextBox`, par où passe **chaque** libellé du chrome : la règle « aucun texte
+  hors de son contrôle » est donc vraie par construction et non parce que chaque partie y pense. Ce qui ne
+  tient pas est coupé et terminé par des points de suspension, comme `TruncString` — un libellé coupé en
+  plein milieu d'une lettre se lit comme un défaut de tracé, celui qui finit par trois points dit qu'il y
+  a une suite. Un libellé coupé est tracé à gauche quel que soit l'alignement demandé : le centrer laisse
+  un blanc à gauche et l'ellipse loin du bord droit, ce qui se lit comme une erreur deux fois.
+
+  La passe l'a payé tout de suite : la case et le radio passaient **la largeur entière** du contrôle pour
+  leur étiquette, qui dépassait donc de la taille de la boîte plus l'espace — 19 px, invisibles jusqu'à ce
+  que deux cases voisines se touchent. `check_geometry` a maintenant une mesure pour ça, et elle a été
+  vérifiée en réintroduisant le défaut.
+
+  Deux règles du modèle valent d'être retenues : **une ligne réserve de chaque côté d'un contrôle ce que
+  son état dessine hors de lui**, sinon une déroulante focalisée en fin de ligne met son anneau dans la
+  marge ; et **`RowRest` ne rend pas tout ce qui reste**, il en retire d'abord ce que le contrôle porte —
+  la version évidente est exactement le bug précédent.
+
+  **Le spécimen ne redevient pas une page, et c'est mesuré, pas subi.** Les sections sont enchaînées et
+  une page finit où la place finit ; une section qui déborde est **reportée entière**, jamais rabotée — le
+  rabotage était la faute des quatre tours de bousculade, et c'est la page qui était en cause, pas le
+  contenu. Le compte est donc demandé (`SpecimenPageCount`) et non déclaré : il vaut 2 à 640x480, et il ne
+  change pas avec l'écran puisque tout le dessin suit l'échelle — un écran plus grand achète une interface
+  plus grande, pas davantage d'interface. La troncature se démontre là où elle arrivera vraiment, sur un
+  nom de volume et non dans une section pour elle seule.
 
 **16e — Les composants qui manquent.** Cadre d'alerte, étiquette avec repli à la ligne, liste qui défile
 pour de vrai, champ éditable avec curseur et retour arrière. Chacun entre dans l'écran de spécimen le jour

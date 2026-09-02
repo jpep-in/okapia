@@ -67,9 +67,8 @@ void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidge
                                      (unsigned) (pWidget->Rect.nX + (int) pWidget->Rect.nWidth
                                                  - (int) pTheme->M.nGap - nInk),
                                      pWidget->Rect.nHeight);
-            const int nY = Text.nY + ((int) Text.nHeight - (int) pTheme->pBodyFont->nHeight) / 2;
-            GfxText (pSurface, pTheme->pBodyFont, Text.nX, nY, pWidget->pText,
-                     ColorBlack);
+            GfxTextBox (pSurface, pTheme->pBodyFont, Text, pWidget->pText,
+                        ColorBlack, TextAlignLeft);
         }
         if (pWidget->nState & StateSelected)
         {

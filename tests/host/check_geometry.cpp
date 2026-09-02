@@ -335,18 +335,98 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
     free (p);
 }
 
+/*
+ *  No text outside its control
+ *
+ *  Every label goes through GfxTextBox, which cuts what will not fit — so this
+ *  is a check that the seam is really the only way in. Each part is drawn with
+ *  a label far longer than its control and measured: any ink beyond the control
+ *  plus what its state legitimately draws outside it is a part that found its
+ *  own way to the surface.
+ *
+ *  It is worth its own pass because the failure is invisible on a screenshot
+ *  until two controls stand side by side, and then it looks like a spacing
+ *  mistake rather than a label running out of its box.
+ */
+static void CheckTruncation (unsigned nScale16)
+{
+    static const char *const Long =
+        "Macintosh HD — Système 7.1.2 français, disque de démarrage, très long";
+
+    TTheme T;
+    ThemeMake (nScale16, &T);
+
+    struct TCase
+    {
+        const char *pWhat;
+        void      (*Draw) (TSurface *, const TRect &, const char *, unsigned,
+                           const TTheme *);
+        unsigned    nState;
+    };
+    const TCase Cases[] =
+    {
+        { "étiquette",  T.DrawLabel,    StateNormal  },
+        { "bouton",     T.DrawButton,   StateNormal  },
+        { "bouton par défaut", T.DrawButton, StateDefault },
+        { "case",       T.DrawCheckbox, StateNormal  },
+        { "radio",      T.DrawRadio,    StateNormal  },
+        { "déroulante", T.DrawPopup,    StateNormal  },
+        { "champ",      T.DrawField,    StateFocused }
+    };
+
+    printf ("\n=== troncature à l'échelle %u/16 — aucun texte hors de son contrôle ===\n",
+            nScale16);
+
+    for (unsigned i = 0; i < sizeof Cases / sizeof Cases[0]; i++)
+    {
+        TSurface s = Blank ();
+        // Narrow on purpose: wide enough to be a control, far too narrow for
+        // the label it is given.
+        const TRect Control = Rect (60, 60, 140 * nScale16 / 16, T.M.nButtonHeight);
+        Cases[i].Draw (&s, Control, Long, Cases[i].nState, &T);
+
+        const int nReach = (int) ThemeReach (&T, Cases[i].nState);
+        const TBox b = InkBox (&s, Rect (0, 0, W, H));
+
+        printf ("  %s\n", Cases[i].pWhat);
+        Expect ("dépassement à droite",
+                b.nRight - (Control.nX + (int) Control.nWidth - 1) - nReach <= 0
+                    ? 0 : b.nRight - (Control.nX + (int) Control.nWidth - 1) - nReach, 0);
+        Expect ("dépassement à gauche",
+                Control.nX - b.nLeft - nReach <= 0
+                    ? 0 : Control.nX - b.nLeft - nReach, 0);
+    }
+}
+
 int main (void)
 {
     static const unsigned Scales[] = { 16, 24, 32, 36, 48 };
     for (unsigned i = 0; i < sizeof Scales / sizeof Scales[0]; i++)
     {
         CheckScale (Scales[i]);
+        CheckTruncation (Scales[i]);
     }
 
-    for (unsigned nPage = 0; nPage < SPECIMEN_PAGES; nPage++)
+    // Every page at both sizes, and the count is asked for rather than assumed:
+    // it is what the flow decided, so a section that grows moves a page and the
+    // check follows it without being edited.
+    for (unsigned nScale = 1; nScale <= 2; nScale++)
     {
-        CheckSpecimen (1, nPage);
-        CheckSpecimen (2, nPage);
+        const unsigned nW = 640 * nScale;
+        const unsigned nH = 480 * nScale;
+        unsigned *p = (unsigned *) calloc ((size_t) nW * nH, sizeof (unsigned));
+        if (p == 0)
+        {
+            continue;
+        }
+        TSurface s = { (unsigned char *) p, nW, nH, nW * (unsigned) sizeof (unsigned) };
+        const unsigned nPages = SpecimenPageCount (&s);
+        free (p);
+
+        for (unsigned nPage = 0; nPage < nPages; nPage++)
+        {
+            CheckSpecimen (nScale, nPage);
+        }
     }
 
     printf ("\n%u écart(s)\n", s_nFailures);

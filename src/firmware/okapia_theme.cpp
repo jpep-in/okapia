@@ -70,7 +70,7 @@ static void DrawDialog (TSurface *pSurface, const TRect &rRect, const TTheme *pT
 static void DrawTitle (TSurface *pSurface, const TRect &rRect, const char *pText,
                        const TTheme *pTheme)
 {
-    GfxTextCentered (pSurface, pTheme->pTitleBoldFont, rRect, pText, ColorBlack);
+    GfxTextBox (pSurface, pTheme->pTitleBoldFont, rRect, pText, ColorBlack, TextAlignCenter);
 }
 
 static void DrawLabel (TSurface *pSurface, const TRect &rRect, const char *pText,
@@ -79,8 +79,7 @@ static void DrawLabel (TSurface *pSurface, const TRect &rRect, const char *pText
     // A real bold face, not a smeared one: the weight is the designer's.
     const TOkapiaFont *pFace = (nState & StateStrong) ? pTheme->pBodyBoldFont
                                                       : pTheme->pBodyFont;
-    GfxText (pSurface, pFace, rRect.nX, GfxTextTop (pFace, rRect), pText,
-             Ink (nState));
+    GfxTextBox (pSurface, pFace, rRect, pText, Ink (nState), TextAlignLeft);
 }
 
 // Grey and one pixel: the focus has to be findable, not shouted. In black it
@@ -103,9 +102,13 @@ static void DrawButton (TSurface *pSurface, const TRect &rRect, const char *pTex
     // rule for selection belongs to rectangles, and a button is not one.
     GfxRoundFill (pSurface, rRect, nRadius, bPressed ? ColorBlack : ColorWhite);
     GfxRoundFrame (pSurface, rRect, nRadius, Ink (nState), pTheme->M.nStroke);
-    GfxTextCentered (pSurface,
-                     (nState & StateDefault) ? pTheme->pBodyBoldFont : pTheme->pBodyFont,
-                     rRect, pText, bPressed ? ColorWhite : Ink (nState));
+    // Inset by the padding the button was measured with, so that a label too
+    // long for its button is cut inside the padding rather than against the
+    // outline — which is what a translated dialogue does to a fixed width.
+    GfxTextBox (pSurface,
+                (nState & StateDefault) ? pTheme->pBodyBoldFont : pTheme->pBodyFont,
+                RectInset (rRect, (int) pTheme->M.nButtonPadX, 0),
+                pText, bPressed ? ColorWhite : Ink (nState), TextAlignCenter);
 
     if (nState & StateDefault)
     {
@@ -180,6 +183,16 @@ static void Tick (TSurface *pSurface, const TRect &rBox, TOkapiaColor Color)
     }
 }
 
+// What is left of a control once its box or its circle has been taken out. The
+// obvious version passes the control's whole width for the label and lets it run
+// that much past the right edge — invisible until two of them stand side by side.
+static TRect LabelBox (const TRect &rRect, unsigned nSize, const TTheme *pTheme)
+{
+    const int nInk = (int) nSize + (int) pTheme->M.nGap;
+    return Rect (rRect.nX + nInk, rRect.nY,
+                 (unsigned) ((int) rRect.nWidth - nInk), rRect.nHeight);
+}
+
 static void DrawCheckbox (TSurface *pSurface, const TRect &rRect, const char *pText,
                           unsigned nState, const TTheme *pTheme)
 {
@@ -198,9 +211,8 @@ static void DrawCheckbox (TSurface *pSurface, const TRect &rRect, const char *pT
         GfxInvert (pSurface, RectInset (Box, 1, 1));
     }
 
-    const TRect Text = Rect (rRect.nX + (int) nSize + (int) pTheme->M.nGap, rRect.nY,
-                             rRect.nWidth, rRect.nHeight);
-    DrawLabel (pSurface, Text, pText, nState & ~StateSelected, pTheme);
+    DrawLabel (pSurface, LabelBox (rRect, nSize, pTheme), pText,
+               nState & ~StateSelected, pTheme);
 
     if (nState & StateFocused)
     {
@@ -227,9 +239,8 @@ static void DrawRadio (TSurface *pSurface, const TRect &rRect, const char *pText
 
     if (pText != 0)
     {
-        const TRect Text = Rect (rRect.nX + (int) nSize + (int) pTheme->M.nGap, rRect.nY,
-                                 rRect.nWidth, rRect.nHeight);
-        DrawLabel (pSurface, Text, pText, nState & ~StateSelected, pTheme);
+        DrawLabel (pSurface, LabelBox (rRect, nSize, pTheme), pText,
+                   nState & ~StateSelected, pTheme);
     }
     if (nState & StateFocused)
     {
@@ -294,8 +305,14 @@ static void DrawPopup (TSurface *pSurface, const TRect &rRect, const char *pText
     GfxRoundFill (pSurface, rRect, nRadius, ColorWhite);
     GfxRoundFrame (pSurface, rRect, nRadius, Ink (nState), pTheme->M.nStroke);
 
-    GfxText (pSurface, pTheme->pBodyFont, rRect.nX + (int) pTheme->M.nGap,
-             GfxTextTop (pTheme->pBodyFont, rRect), pText, Ink (nState));
+    // The triangle's room is taken out before the label, not left to chance:
+    // a long choice used to run straight under the arrow.
+    const int nArrow = (int) rRect.nHeight / 3 + (int) pTheme->M.nGap;
+    const TRect Text = Rect (rRect.nX + (int) pTheme->M.nGap, rRect.nY,
+                             (unsigned) ((int) rRect.nWidth - 2 * (int) pTheme->M.nGap
+                                         - nArrow),
+                             rRect.nHeight);
+    GfxTextBox (pSurface, pTheme->pBodyFont, Text, pText, Ink (nState), TextAlignLeft);
 
     // A solid triangle pointing down: the shape that has said "there is a list
     // behind this" in every decade. Sized from the control, not from a
@@ -321,14 +338,18 @@ static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText
     GfxFill (pSurface, rRect, ColorWhite);
     GfxFrame (pSurface, rRect, Ink (nState), pTheme->M.nStroke);
 
-    const int nX = rRect.nX + (int) pTheme->M.nGap / 2;
+    const int nPad = (int) pTheme->M.nGap / 2;
+    const TRect Text = Rect (rRect.nX + nPad, rRect.nY,
+                             (unsigned) ((int) rRect.nWidth - 2 * nPad), rRect.nHeight);
     const int nY = GfxTextTop (pTheme->pBodyFont, rRect);
-    GfxText (pSurface, pTheme->pBodyFont, nX, nY, pText, Ink (nState));
+    const unsigned nWidth = GfxTextBox (pSurface, pTheme->pBodyFont, Text, pText,
+                                        Ink (nState), TextAlignLeft);
 
     if (nState & StateFocused)
     {
-        const unsigned nWidth = GfxTextWidth (pTheme->pBodyFont, pText);
-        GfxFill (pSurface, Rect (nX + (int) nWidth, nY, pTheme->M.nStroke,
+        // On the width actually drawn, so the caret follows a cut label instead
+        // of standing where the whole one would have ended.
+        GfxFill (pSurface, Rect (Text.nX + (int) nWidth, nY, pTheme->M.nStroke,
                                  pTheme->pBodyFont->nHeight), ColorBlack);
         DrawFocusRing (pSurface, rRect, 0, pTheme);
     }

@@ -123,6 +123,7 @@ TShutdownMode CSpecimenKernel::Run (void)
     FwInputBegin (nWidth, nHeight);
 
     unsigned nPage = 0;
+    const unsigned nPages = SpecimenPageCount (&Surface);
     TWidget *pWidgets = 0;
     TScreen  Screen;
 
@@ -140,8 +141,8 @@ TShutdownMode CSpecimenKernel::Run (void)
     int  nX = 0, nY = 0;
     bool bPointer = false;
 
-    m_Logger.Write (FROM, LogNotice, "Page %u ; Tab, Espace, Retour, flèches, "
-                                     "Gauche/Droite pour changer de page", nPage);
+    m_Logger.Write (FROM, LogNotice, "Page %u sur %u ; Tab, Espace, Retour, flèches, "
+                                     "Gauche/Droite pour changer de page", nPage, nPages);
 
     for (unsigned nTick = 0; ; nTick++)
     {
@@ -182,8 +183,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                 if (Event.Type == EventKeyDown
                     && (Event.nKey == OkKeyLeft || Event.nKey == OkKeyRight))
                 {
-                    nPage = (nPage + (Event.nKey == OkKeyRight ? 1 : SPECIMEN_PAGES - 1))
-                          % SPECIMEN_PAGES;
+                    nPage = (nPage + (Event.nKey == OkKeyRight ? 1 : nPages - 1)) % nPages;
                     SpecimenDraw (&Surface, nPage);
                     nCount = SpecimenWidgets (&pWidgets);
                     ScreenInit (&Screen, pWidgets, nCount);

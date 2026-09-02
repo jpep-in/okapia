@@ -442,6 +442,26 @@ static int NextChar (const unsigned char **pp)
     return nCode == 0x00A0 ? ' ' : (int) nCode;
 }
 
+static unsigned GfxTextWidthRun (const unsigned char *p, const unsigned char *pEnd,
+                                 const TOkapiaFont *pFont)
+{
+    unsigned nWidth = 0;
+    while (pEnd == 0 || p < pEnd)
+    {
+        const int nCode = NextChar (&p);
+        if (nCode < 0)
+        {
+            break;
+        }
+        const int nIndex = GlyphIndex (pFont, nCode);
+        if (nIndex >= 0)
+        {
+            nWidth += pFont->pWidth[nIndex];
+        }
+    }
+    return nWidth;
+}
+
 unsigned GfxTextWidth (const TOkapiaFont *pFont, const char *pText)
 {
     unsigned nWidth = 0;
@@ -459,15 +479,22 @@ unsigned GfxTextWidth (const TOkapiaFont *pFont, const char *pText)
     return nWidth;
 }
 
-void GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
-              const char *pText, TOkapiaColor Color)
+// Draws from p up to but not including pEnd, or to the terminator when pEnd is
+// zero. The bound is what lets a box draw a prefix without copying it anywhere:
+// a firmware that allocates nothing has no scratch string to truncate into.
+static void TextRun (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
+                     const unsigned char *p, const unsigned char *pEnd, TOkapiaColor Color)
 {
     const unsigned nStride = pFont->nBytesPerRow;
     const unsigned nBits   = nStride * 8;
-    const unsigned char *p = (const unsigned char *) pText;
 
-    for (int nCode = NextChar (&p); nCode >= 0; nCode = NextChar (&p))
+    while (pEnd == 0 || p < pEnd)
     {
+        const int nCode = NextChar (&p);
+        if (nCode < 0)
+        {
+            break;
+        }
         const int nIndex = GlyphIndex (pFont, nCode);
         if (nIndex < 0)
         {
@@ -505,6 +532,12 @@ void GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
         }
         nX += (int) pFont->pWidth[nIndex];
     }
+}
+
+void GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
+              const char *pText, TOkapiaColor Color)
+{
+    TextRun (pSurface, pFont, nX, nY, (const unsigned char *) pText, 0, Color);
 }
 
 void GfxImage (TSurface *pSurface, const TGlyphImage *pImage, int nX, int nY,
@@ -553,12 +586,98 @@ int GfxTextTop (const TOkapiaFont *pFont, const TRect &rRect)
     return nBaseline - (int) pFont->nAscent;
 }
 
-void GfxTextCentered (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rRect,
-                      const char *pText, TOkapiaColor Color)
+/*
+ *  Text in a box
+ *
+ *  Every label in the chrome goes through here, which is what makes "no text
+ *  leaves its control" true by construction rather than by everyone
+ *  remembering. What will not fit is cut and finished with an ellipsis, the way
+ *  TruncString did — a label clipped mid-letter reads as a drawing fault, where
+ *  one that ends in three dots says plainly that there is more.
+ */
+
+// U+2026. The faces carry it; a face that did not would silently truncate
+// without saying so, which is why the width is measured rather than assumed.
+static const char ELLIPSIS[] = "\xE2\x80\xA6";
+
+// The last byte position at which the text can be cut so that what precedes it,
+// plus the ellipsis, still fits nMax. Answers 0 when not even that fits.
+static const unsigned char *TextCut (const TOkapiaFont *pFont, const unsigned char *pText,
+                                     unsigned nMax)
 {
+    const unsigned nDots = GfxTextWidth (pFont, ELLIPSIS);
+    if (nDots > nMax)
+    {
+        return 0;
+    }
+    const unsigned nRoom = nMax - nDots;
+
+    const unsigned char *p = pText;
+    const unsigned char *pGood = pText;
+    unsigned nWidth = 0;
+    for (;;)
+    {
+        const int nCode = NextChar (&p);
+        if (nCode < 0)
+        {
+            return p;                   // the whole string fits inside nRoom
+        }
+        const int nIndex = GlyphIndex (pFont, nCode);
+        if (nIndex >= 0)
+        {
+            nWidth += pFont->pWidth[nIndex];
+        }
+        if (nWidth > nRoom)
+        {
+            return pGood;
+        }
+        pGood = p;
+    }
+}
+
+unsigned GfxTextBox (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rBox,
+                     const char *pText, TOkapiaColor Color, TTextAlign Align)
+{
+    if (pText == 0)
+    {
+        return 0;
+    }
+    const int nY = GfxTextTop (pFont, rBox);
     const unsigned nWidth = GfxTextWidth (pFont, pText);
-    const int nX = rRect.nX + ((int) rRect.nWidth - (int) nWidth) / 2;
-    GfxText (pSurface, pFont, nX, GfxTextTop (pFont, rRect), pText, Color);
+
+    if (nWidth <= rBox.nWidth)
+    {
+        int nX = rBox.nX;
+        if (Align == TextAlignCenter)
+        {
+            nX += ((int) rBox.nWidth - (int) nWidth) / 2;
+        }
+        else if (Align == TextAlignRight)
+        {
+            nX += (int) rBox.nWidth - (int) nWidth;
+        }
+        TextRun (pSurface, pFont, nX, nY, (const unsigned char *) pText, 0, Color);
+        return nWidth;
+    }
+
+    const unsigned char *pCut = TextCut (pFont, (const unsigned char *) pText, rBox.nWidth);
+    if (pCut == 0)
+    {
+        return 0;                       // narrower than an ellipsis: draw nothing
+    }
+    // Left-aligned whatever was asked for: a truncated label centred in its box
+    // leaves a gap on the left and its ellipsis short of the right edge, which
+    // reads as a mistake twice over.
+    TextRun (pSurface, pFont, rBox.nX, nY, (const unsigned char *) pText, pCut, Color);
+    const unsigned nDrawn = GfxTextWidthRun ((const unsigned char *) pText, pCut, pFont);
+    TextRun (pSurface, pFont, rBox.nX + (int) nDrawn, nY,
+             (const unsigned char *) ELLIPSIS, 0, Color);
+    return nDrawn + GfxTextWidth (pFont, ELLIPSIS);
+}
+
+bool GfxTextFits (const TOkapiaFont *pFont, const TRect &rBox, const char *pText)
+{
+    return pText == 0 || GfxTextWidth (pFont, pText) <= rBox.nWidth;
 }
 
 /*

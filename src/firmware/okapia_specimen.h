@@ -21,13 +21,16 @@
 static const unsigned SPECIMEN_WIDTH  = 640;
 static const unsigned SPECIMEN_HEIGHT = 480;
 
-// Two pages, because one will not hold. At 640x480, with a frame, a margin and
-// a rhythm that all read correctly, a dialogue does not have room for forty
-// components — and shaving the contents until they fit is measuring the
-// crowding rather than the theme. A specimen is a document; documents paginate.
-static const unsigned SPECIMEN_PAGES = 2;
+// How many pages the components need on a surface this size — not a constant,
+// because it is not a decision. At 640x480, with a frame, a margin and a rhythm
+// that all read correctly, a dialogue does not hold forty components; on a
+// roomier display it may. A section that does not fit is moved whole to the
+// next page rather than shaved, shaving being what four rounds of crowding
+// were. A specimen is a document, and documents paginate.
+unsigned SpecimenPageCount (TSurface *pSurface);
 
-// Draws into a surface of any size; the scale follows from it.
+// Draws into a surface of any size; the scale follows from it. A page beyond
+// the last is the first.
 void SpecimenDraw (TSurface *pSurface, unsigned nPage);
 
 // The dialogue the last call drew, so a test can check that nothing strayed

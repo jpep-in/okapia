@@ -99,10 +99,27 @@ void     GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
 // vertically centred label goes through this, so "centred" means one thing.
 int GfxTextTop (const TOkapiaFont *pFont, const TRect &rRect);
 
-// Draws pText centred in rRect, on the font's baseline. Returns nothing: a
-// caller that needs the extent asks GfxTextWidth, which costs the same.
-void GfxTextCentered (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rRect,
-                      const char *pText, TOkapiaColor Color);
+enum TTextAlign
+{
+    TextAlignLeft,
+    TextAlignCenter,
+    TextAlignRight
+};
+
+// Draws pText inside rBox, optically centred vertically, and cut with an
+// ellipsis when it will not fit. Every label in the chrome goes through here,
+// which is what makes "no text leaves its control" true by construction rather
+// than by each part remembering to check. Answers the width actually drawn.
+//
+// A cut label is drawn from the left whatever alignment was asked for: centring
+// one leaves a gap on the left and its ellipsis short of the right edge, which
+// reads as a mistake twice over.
+unsigned GfxTextBox (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rBox,
+                     const char *pText, TOkapiaColor Color, TTextAlign Align);
+
+// Whether it would be drawn whole. A layout asks this when it wants to widen a
+// control rather than let its label be cut.
+bool GfxTextFits (const TOkapiaFont *pFont, const TRect &rBox, const char *pText);
 
 // A small monochrome image: one row per entry, bit (1 << (nWidth-1-x)) set
 // means ink. Icons in the chrome are drawn this way rather than blitted from a
