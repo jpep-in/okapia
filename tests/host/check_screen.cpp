@@ -126,6 +126,7 @@ static void Build (TWidget *pW)
     pW[WField]   .pEdit     = s_Edit;
     pW[WField]   .nEditSize = sizeof s_Edit;
     pW[WField]   .nCaret    = 6;
+    pW[WField]   .nAnchor   = 6;
 
     pW[WPopup]   .Type    = WidgetPopup;
     pW[WPopup]   .Rect    = Rect (10, 300, 200, s_Theme.M.nButtonHeight);
@@ -427,6 +428,73 @@ static void CheckField (void)
     Expect (S.nFocus != WField, "Tab quitte le champ au lieu d'y être écrit");
 }
 
+// Command and a letter, and the mark they work on.
+static TEvent Command (unsigned nChar)
+{
+    TEvent e = { EventKeyDown, OkKeyNone, nChar, ModCommand, 0, 0 };
+    return e;
+}
+
+static void CheckSelection (void)
+{
+    TWidget W[WCount];
+    TScreen S;
+    Build (W);
+    ScreenInit (&S, &s_Theme, W, WCount);
+
+    printf ("Sélection et presse-papiers\n");
+
+    for (unsigned i = 0; i < WCount && S.nFocus != WField; i++)
+    {
+        Send (&S, Key (OkKeyTab, 0));
+    }
+    Expect (!WidgetFieldHasSelection (&W[WField]), "rien n'est sélectionné au départ");
+
+    Send (&S, Key (OkKeyLeft, ModShift));
+    Send (&S, Key (OkKeyLeft, ModShift));
+    Expect (WidgetFieldHasSelection (&W[WField]) && W[WField].nCaret == 4
+            && W[WField].nAnchor == 6, "Maj-flèche étend la sélection");
+
+    Send (&S, Key (OkKeyLeft, 0));
+    Expect (!WidgetFieldHasSelection (&W[WField]) && W[WField].nCaret == 4,
+            "une flèche seule la replie sur le bord visé");
+
+    Send (&S, Command ('a'));
+    Expect (W[WField].nAnchor == 0 && W[WField].nCaret == 6, "Commande-A prend tout");
+
+    Send (&S, Command ('c'));
+    Send (&S, Key (OkKeyEnd, 0));
+    Send (&S, Command ('v'));
+    Expect (strcmp (s_Edit, "OkapiaOkapia") == 0, "Commande-C puis Commande-V colle");
+
+    Send (&S, Command ('a'));
+    Send (&S, Command ('x'));
+    Expect (strcmp (s_Edit, "") == 0 && !WidgetFieldHasSelection (&W[WField]),
+            "Commande-X coupe tout");
+    Send (&S, Command ('v'));
+    Expect (strcmp (s_Edit, "OkapiaOkapia") == 0, "et ce qui a été coupé se recolle");
+
+    // Taper par-dessus une sélection la remplace.
+    Send (&S, Key (OkKeyHome, 0));
+    Send (&S, Key (OkKeyRight, ModShift));
+    Send (&S, Key (OkKeyRight, ModShift));
+    Send (&S, Char ('X'));
+    Expect (strcmp (s_Edit, "XapiaOkapia") == 0, "taper remplace ce qui est sélectionné");
+
+    Send (&S, Command ('a'));
+    Send (&S, Key (OkKeyBackspace, 0));
+    Expect (strcmp (s_Edit, "") == 0, "et le retour arrière efface la sélection entière");
+
+    // Tirer à la souris sélectionne.
+    strcpy (s_Edit, "Okapia");
+    W[WField].nCaret = W[WField].nAnchor = 0;
+    const int nY2 = W[WField].Rect.nY + 2;
+    Send (&S, Mouse (EventMouseDown, W[WField].Rect.nX + 2, nY2));
+    Send (&S, Mouse (EventMouseMove, W[WField].Rect.nX + 200, nY2));
+    Expect (WidgetFieldHasSelection (&W[WField]) && W[WField].nAnchor == 0
+            && W[WField].nCaret == 6, "tirer dans le champ sélectionne");
+}
+
 static void CheckMenu (void)
 {
     TWidget W[WCount];
@@ -535,7 +603,9 @@ static void CheckMouse (void)
     Expect (r.Result != ScreenActivated, "relâché dehors : rien de fait");
 
     r = Send (&S, Mouse (EventMouseDown, 300, 50));     // le bouton inactif
-    Expect (r.Result == ScreenIdle && !Pressed (&S, WOff), "un contrôle inactif ne prend rien");
+    Expect (!Pressed (&S, WOff), "un contrôle inactif ne prend rien");
+    Expect (r.Result == ScreenChanged && S.nFocus < 0,
+            "et le clic compte comme un clic dans le vide : le focus part");
 
     const int nRow = (int) s_Theme.M.nRowHeight;
     Send (&S, Mouse (EventMouseDown, 100, 121 + nRow + nRow / 2));      // la troisième
@@ -543,9 +613,17 @@ static void CheckMouse (void)
     Expect (W[WList].nChoice == 1, "cliquer une ligne la sélectionne");
     Expect (FocusIs (&S, WList), "et donne le focus à la liste");
 
+    // Cliquer dans le vide fait sortir du contrôle courant — sans quoi on ne
+    // peut pas quitter un champ de saisie à la souris, et c'est le premier
+    // endroit où la main va.
+    Send (&S, Mouse (EventMouseDown, 100, 145));
+    Send (&S, Mouse (EventMouseUp,   100, 145));
     r = Send (&S, Mouse (EventMouseDown, 5, 5));        // le fond
-    Expect (r.Result == ScreenIdle && FocusIs (&S, WList),
-            "cliquer à côté ne perd pas le focus");
+    Expect (r.Result == ScreenChanged && S.nFocus < 0, "cliquer dans le fond quitte le contrôle");
+    r = Send (&S, Mouse (EventMouseDown, 5, 5));
+    Expect (r.Result == ScreenIdle, "et une deuxième fois ne change plus rien");
+    Send (&S, Key (OkKeyTab, 0));
+    Expect (S.nFocus == WStart, "Tab repart du premier contrôle");
 }
 
 int main (void)
@@ -555,6 +633,7 @@ int main (void)
     CheckList ();
     CheckScroller ();
     CheckField ();
+    CheckSelection ();
     CheckMenu ();
     CheckMouse ();
 

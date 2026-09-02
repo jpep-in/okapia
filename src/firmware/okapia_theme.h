@@ -47,6 +47,16 @@ enum TPartState
     StateCaret    = 1u << 7
 };
 
+// What a field has to say about itself beyond its text. Only the theme knows
+// where the letters were drawn, so it is the theme that turns byte offsets into
+// a caret and a highlight — and passing them as one thing keeps the drawing
+// call from becoming a row of six numbers nobody reads.
+struct TFieldMark
+{
+    unsigned nCaret;                    // the insertion point, a byte offset
+    unsigned nAnchor;                   // where a selection began; equal when none
+};
+
 struct TThemeMetrics
 {
     unsigned nStroke;                   // the ordinary line weight of the chrome
@@ -125,12 +135,8 @@ struct TTheme
     void (*DrawScrollbar)    (TSurface *, const TRect &, unsigned nTop, unsigned nVisible,
                               unsigned nTotal, const TTheme *);
     void (*DrawPopup)        (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
-    // The caret's byte offset rides along, because only the theme knows where
-    // the text was drawn — and a caret placed at the end of the whole string,
-    // which is what it used to be, is wrong the moment anybody types in the
-    // middle of a name.
     void (*DrawField)        (TSurface *, const TRect &, const char *, unsigned,
-                              unsigned nCaret, const TTheme *);
+                              const TFieldMark &, const TTheme *);
     void (*DrawProgress)     (TSurface *, const TRect &, unsigned, const TTheme *);
     void (*DrawSeparator)    (TSurface *, const TRect &, const TTheme *);
     // The radius comes from the caller so that the ring follows the shape it

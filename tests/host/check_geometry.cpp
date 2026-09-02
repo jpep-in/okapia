@@ -147,7 +147,8 @@ static void CheckScale (unsigned nScale16)
 
     const TRect Field = Rect (120, 60, 140, T.M.nFieldHeight);
     s = Blank ();
-    T.DrawField (&s, Field, "Okapia", StateFocused, 6, &T);
+    const TFieldMark Mark = { 6, 6 };
+    T.DrawField (&s, Field, "Okapia", StateFocused | StateCaret, Mark, &T);
     CheckRing (&s, "champ de saisie — focus", Field, nFocus);
 
     // The tick box and the radio sit inside a taller row, so the ring is
@@ -422,7 +423,8 @@ static void CheckTruncation (unsigned nScale16)
     // is the position that used to place it beyond a cut label.
     {
         TSurface s = Blank ();
-        T.DrawField (&s, Control, Long, StateFocused, (unsigned) strlen (Long), &T);
+        const TFieldMark Mark = { (unsigned) strlen (Long), (unsigned) strlen (Long) };
+        T.DrawField (&s, Control, Long, StateFocused | StateCaret, Mark, &T);
         printf ("  champ, curseur à la fin\n");
         Outside (&s, Control, ThemeReach (&T, StateFocused));
     }

@@ -77,6 +77,7 @@ struct TWidget
     char               *pEdit;
     unsigned            nEditSize;      // bytes available, terminator included
     unsigned            nCaret;         // the insertion point, as a byte offset
+    unsigned            nAnchor;        // where a selection began; equal when none
 };
 
 // Fills one in with nothing set. Every screen builds its components through
@@ -126,13 +127,30 @@ void     WidgetListReveal (TWidget *pWidget, const TTheme *pTheme);
 // Where the caret goes when the field is clicked at nX. The inset the theme
 // draws the text at lives in one place, so a click lands where the letters
 // actually are and not where a second copy of the arithmetic thought they were.
-void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX);
+void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX, bool bExtend);
 
+// The caret and the anchor, as the theme wants them.
+TFieldMark WidgetFieldMark (const TWidget *pWidget);
+
+// bExtend keeps the anchor where it is, which is what Shift does everywhere.
 void WidgetFieldInsert (TWidget *pWidget, unsigned nCode);
 void WidgetFieldBackspace (TWidget *pWidget);
 void WidgetFieldDelete (TWidget *pWidget);
-void WidgetFieldCaret (TWidget *pWidget, int nStep);    // -1 left, +1 right
-void WidgetFieldHome (TWidget *pWidget);
-void WidgetFieldEnd (TWidget *pWidget);
+void WidgetFieldCaret (TWidget *pWidget, int nStep, bool bExtend);
+void WidgetFieldHome (TWidget *pWidget, bool bExtend);
+void WidgetFieldEnd (TWidget *pWidget, bool bExtend);
+
+/*
+ *  Selection, and the scrap
+ *
+ *  One scrap for the whole firmware, fixed and small: there is one field on a
+ *  screen and nothing here allocates. It is the Clipboard in the only sense
+ *  this machine needs — a place text waits between two of its own fields.
+ */
+void WidgetFieldSelectAll (TWidget *pWidget);
+bool WidgetFieldHasSelection (const TWidget *pWidget);
+void WidgetFieldCopy (const TWidget *pWidget);
+void WidgetFieldCut (TWidget *pWidget);
+void WidgetFieldPaste (TWidget *pWidget);
 
 #endif

@@ -2632,6 +2632,20 @@ mise en page ne s'est pas calée sur la longueur des libellés français.
   d'environ 70 pixels la marque cesse de grandir. L'icône de l'alerte fait deux interlignes, ce qui la
   garde en deçà à toutes les échelles utilisées — et c'est aussi la proportion du panneau d'époque.
 
+  **Le champ apprend à sélectionner.** Ancre et curseur, donc une sélection ; Maj-flèches l'étendent, une
+  flèche seule la replie sur le bord visé, tirer à la souris la trace, taper ou effacer la remplace. Le
+  thème la dessine en retournant la portion — l'inversion est juste ici pour la raison qui la rend juste
+  sur une ligne de liste et fausse sur un bouton : c'est un rectangle. Le curseur ne se dessine plus tant
+  qu'il y a une sélection : une barre au milieu d'un texte retourné ne pointe rien.
+
+  Avec elle, **Commande-A, C, X, V** et un presse-papiers de vingt-huit octets — la taille d'un nom de
+  volume, qui est ce qu'il transportera. Un piège au passage : `CKeyMap::Translate` répond `KeyNone` dès
+  qu'Alt ou une touche Windows est tenue, donc Commande-C n'arrivait avec **aucun caractère**. Le pont
+  traduit maintenant avec le bit Commande retiré, le modificateur continuant de voyager sur l'événement.
+
+  **Et un clic dans le vide quitte le contrôle courant.** Sans cela on ne peut pas sortir d'un champ à la
+  souris, et c'est le premier endroit où la main va.
+
 **16g — Le sélecteur.** Le premier vrai écran. `HfsInventory()` et `HfsSystemVersion()` alimentent les
 lignes — la phase 15bis les a déjà livrés —, colonne radio pour le défaut, cases lecture seule et montage,
 et écriture dans `BasiliskII_Prefs` par `SavePrefs()`.

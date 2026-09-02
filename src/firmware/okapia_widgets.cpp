@@ -25,6 +25,7 @@ void WidgetClear (TWidget *pWidget)
     pWidget->pEdit     = 0;
     pWidget->nEditSize = 0;
     pWidget->nCaret    = 0;
+    pWidget->nAnchor   = 0;
 }
 
 /*
@@ -237,7 +238,7 @@ void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidge
 
     case WidgetField:
         pTheme->DrawField (pSurface, pWidget->Rect, pWidget->pText, pWidget->nState,
-                           pWidget->nCaret, pTheme);
+                           WidgetFieldMark (pWidget), pTheme);
         break;
 
     case WidgetProgress:
@@ -345,7 +346,7 @@ static bool Continuation (char c)
     return ((unsigned char) c & 0xC0) == 0x80;
 }
 
-void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX)
+void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX, bool bExtend)
 {
     if (pWidget->pEdit == 0)
     {
@@ -353,6 +354,97 @@ void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX)
     }
     pWidget->nCaret = GfxTextOffsetAt (pTheme->pBodyFont, pWidget->pEdit,
                                        nX - pWidget->Rect.nX - ThemeFieldInset (pTheme));
+    if (!bExtend)
+    {
+        pWidget->nAnchor = pWidget->nCaret;
+    }
+}
+
+TFieldMark WidgetFieldMark (const TWidget *pWidget)
+{
+    TFieldMark m = { pWidget->nCaret, pWidget->nAnchor };
+    return m;
+}
+
+// One scrap for the whole firmware: there is one field on a screen at a time
+// and nothing here allocates. Twenty-eight bytes, the same as a field, because
+// what it carries between two of them is a volume name.
+static char s_Scrap[28];
+
+bool WidgetFieldHasSelection (const TWidget *pWidget)
+{
+    return pWidget->pEdit != 0 && pWidget->nAnchor != pWidget->nCaret;
+}
+
+static unsigned SelFrom (const TWidget *p)
+{
+    return p->nAnchor < p->nCaret ? p->nAnchor : p->nCaret;
+}
+
+static unsigned SelTo (const TWidget *p)
+{
+    return p->nAnchor < p->nCaret ? p->nCaret : p->nAnchor;
+}
+
+// Removes the nBytes bytes starting at nAt.
+static void Remove (TWidget *pWidget, unsigned nAt, unsigned nBytes)
+{
+    const unsigned nLen = Length (pWidget->pEdit);
+    for (unsigned i = nAt; i + nBytes <= nLen; i++)
+    {
+        pWidget->pEdit[i] = pWidget->pEdit[i + nBytes];
+    }
+}
+
+static void DeleteSelection (TWidget *pWidget)
+{
+    if (!WidgetFieldHasSelection (pWidget))
+    {
+        return;
+    }
+    const unsigned nFrom = SelFrom (pWidget), nTo = SelTo (pWidget);
+    Remove (pWidget, nFrom, nTo - nFrom);
+    pWidget->nCaret = pWidget->nAnchor = nFrom;
+}
+
+void WidgetFieldSelectAll (TWidget *pWidget)
+{
+    if (pWidget->pEdit != 0)
+    {
+        pWidget->nAnchor = 0;
+        pWidget->nCaret  = Length (pWidget->pEdit);
+    }
+}
+
+void WidgetFieldCopy (const TWidget *pWidget)
+{
+    if (!WidgetFieldHasSelection (pWidget))
+    {
+        return;                         // copying nothing must not empty the scrap
+    }
+    const unsigned nFrom = SelFrom (pWidget), nTo = SelTo (pWidget);
+    unsigned n = nTo - nFrom;
+    if (n > sizeof s_Scrap - 1)
+    {
+        n = sizeof s_Scrap - 1;
+        // Never in the middle of a character: a scrap cut through a two-byte
+        // letter is not text any more, and it would be pasted as one.
+        while (n > 0 && Continuation (pWidget->pEdit[nFrom + n]))
+        {
+            n--;
+        }
+    }
+    for (unsigned i = 0; i < n; i++)
+    {
+        s_Scrap[i] = pWidget->pEdit[nFrom + i];
+    }
+    s_Scrap[n] = '\0';
+}
+
+void WidgetFieldCut (TWidget *pWidget)
+{
+    WidgetFieldCopy (pWidget);
+    DeleteSelection (pWidget);
 }
 
 void WidgetFieldInsert (TWidget *pWidget, unsigned nCode)
@@ -361,6 +453,10 @@ void WidgetFieldInsert (TWidget *pWidget, unsigned nCode)
     {
         return;                         // control codes are not text
     }
+    // Typing over a selection replaces it, which is what every field has done
+    // since anyone could select anything.
+    DeleteSelection (pWidget);
+
     // UTF-8, because that is what the faces are indexed by and what every
     // string in this firmware already is.
     char Bytes[2];
@@ -395,21 +491,47 @@ void WidgetFieldInsert (TWidget *pWidget, unsigned nCode)
         pWidget->pEdit[pWidget->nCaret + i] = Bytes[i];
     }
     pWidget->nCaret += nBytes;
+    pWidget->nAnchor = pWidget->nCaret;
 }
 
-// Removes the nBytes bytes starting at nAt.
-static void Remove (TWidget *pWidget, unsigned nAt, unsigned nBytes)
+void WidgetFieldPaste (TWidget *pWidget)
 {
-    const unsigned nLen = Length (pWidget->pEdit);
-    for (unsigned i = nAt; i + nBytes <= nLen; i++)
+    if (pWidget->pEdit == 0)
     {
-        pWidget->pEdit[i] = pWidget->pEdit[i + nBytes];
+        return;
+    }
+    DeleteSelection (pWidget);
+    // Through the same door as a keystroke, so the room left, the UTF-8 and the
+    // caret are all handled in one place.
+    const unsigned char *p = (const unsigned char *) s_Scrap;
+    while (*p != '\0')
+    {
+        unsigned nCode = *p;
+        if ((*p & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80)
+        {
+            nCode = (unsigned) ((*p & 0x1F) << 6) | (p[1] & 0x3F);
+            p += 2;
+        }
+        else
+        {
+            p++;
+        }
+        WidgetFieldInsert (pWidget, nCode);
     }
 }
 
 void WidgetFieldBackspace (TWidget *pWidget)
 {
-    if (pWidget->pEdit == 0 || pWidget->nCaret == 0)
+    if (pWidget->pEdit == 0)
+    {
+        return;
+    }
+    if (WidgetFieldHasSelection (pWidget))
+    {
+        DeleteSelection (pWidget);
+        return;
+    }
+    if (pWidget->nCaret == 0)
     {
         return;
     }
@@ -419,12 +541,21 @@ void WidgetFieldBackspace (TWidget *pWidget)
         nAt--;
     }
     Remove (pWidget, nAt, pWidget->nCaret - nAt);
-    pWidget->nCaret = nAt;
+    pWidget->nCaret = pWidget->nAnchor = nAt;
 }
 
 void WidgetFieldDelete (TWidget *pWidget)
 {
-    if (pWidget->pEdit == 0 || pWidget->pEdit[pWidget->nCaret] == '\0')
+    if (pWidget->pEdit == 0)
+    {
+        return;
+    }
+    if (WidgetFieldHasSelection (pWidget))
+    {
+        DeleteSelection (pWidget);
+        return;
+    }
+    if (pWidget->pEdit[pWidget->nCaret] == '\0')
     {
         return;
     }
@@ -434,32 +565,36 @@ void WidgetFieldDelete (TWidget *pWidget)
         nEnd++;
     }
     Remove (pWidget, pWidget->nCaret, nEnd - pWidget->nCaret);
+    pWidget->nAnchor = pWidget->nCaret;
 }
 
-void WidgetFieldCaret (TWidget *pWidget, int nStep)
+void WidgetFieldCaret (TWidget *pWidget, int nStep, bool bExtend)
 {
     if (pWidget->pEdit == 0)
     {
         return;
     }
+    // An arrow with a selection standing collapses it to the end it points at,
+    // and moves no further: that is what the mark is for.
+    if (!bExtend && WidgetFieldHasSelection (pWidget))
+    {
+        pWidget->nCaret = nStep < 0 ? SelFrom (pWidget) : SelTo (pWidget);
+        pWidget->nAnchor = pWidget->nCaret;
+        return;
+    }
     if (nStep < 0)
     {
-        if (pWidget->nCaret == 0)
-        {
-            return;
-        }
-        pWidget->nCaret--;
-        while (pWidget->nCaret > 0 && Continuation (pWidget->pEdit[pWidget->nCaret]))
+        if (pWidget->nCaret > 0)
         {
             pWidget->nCaret--;
+            while (pWidget->nCaret > 0 && Continuation (pWidget->pEdit[pWidget->nCaret]))
+            {
+                pWidget->nCaret--;
+            }
         }
     }
-    else
+    else if (pWidget->pEdit[pWidget->nCaret] != '\0')
     {
-        if (pWidget->pEdit[pWidget->nCaret] == '\0')
-        {
-            return;
-        }
         pWidget->nCaret++;
         while (pWidget->pEdit[pWidget->nCaret] != '\0'
                && Continuation (pWidget->pEdit[pWidget->nCaret]))
@@ -467,17 +602,29 @@ void WidgetFieldCaret (TWidget *pWidget, int nStep)
             pWidget->nCaret++;
         }
     }
+    if (!bExtend)
+    {
+        pWidget->nAnchor = pWidget->nCaret;
+    }
 }
 
-void WidgetFieldHome (TWidget *pWidget)
+void WidgetFieldHome (TWidget *pWidget, bool bExtend)
 {
     pWidget->nCaret = 0;
+    if (!bExtend)
+    {
+        pWidget->nAnchor = 0;
+    }
 }
 
-void WidgetFieldEnd (TWidget *pWidget)
+void WidgetFieldEnd (TWidget *pWidget, bool bExtend)
 {
     if (pWidget->pEdit != 0)
     {
         pWidget->nCaret = Length (pWidget->pEdit);
+        if (!bExtend)
+        {
+            pWidget->nAnchor = pWidget->nCaret;
+        }
     }
 }

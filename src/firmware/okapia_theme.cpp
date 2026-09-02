@@ -350,7 +350,7 @@ static void DrawPopup (TSurface *pSurface, const TRect &rRect, const char *pText
 }
 
 static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText,
-                       unsigned nState, unsigned nCaret, const TTheme *pTheme)
+                       unsigned nState, const TFieldMark &rMark, const TTheme *pTheme)
 {
     GfxFill (pSurface, rRect, ColorWhite);
     GfxFrame (pSurface, rRect, Ink (nState), pTheme->M.nStroke);
@@ -362,12 +362,32 @@ static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText
     const unsigned nWidth = GfxTextBox (pSurface, pTheme->pBodyFont, Text, pText,
                                         Ink (nState), TextAlignLeft);
 
-    if ((nState & StateFocused) && (nState & StateCaret))
+    // The selection first, by turning the run inside out. Inverting is right
+    // here for the same reason it is right for a list row and wrong for a
+    // button: the run is a rectangle. It is drawn whether or not the caret is
+    // showing, since a selection does not blink.
+    if ((nState & StateFocused) && rMark.nAnchor != rMark.nCaret)
+    {
+        const unsigned nFrom = rMark.nAnchor < rMark.nCaret ? rMark.nAnchor : rMark.nCaret;
+        const unsigned nTo   = rMark.nAnchor < rMark.nCaret ? rMark.nCaret : rMark.nAnchor;
+        unsigned nA = GfxTextWidthUpTo (pTheme->pBodyFont, pText, nFrom);
+        unsigned nB = GfxTextWidthUpTo (pTheme->pBodyFont, pText, nTo);
+        if (nA > nWidth)  nA = nWidth;
+        if (nB > nWidth)  nB = nWidth;
+        if (nB > nA)
+        {
+            GfxInvert (pSurface, Rect (Text.nX + (int) nA, nY, nB - nA,
+                                       pTheme->pBodyFont->nHeight));
+        }
+    }
+    // The caret only when nothing is selected: a bar inside a highlighted run
+    // has nothing to point at, and the Macintosh did not draw one either.
+    else if ((nState & StateFocused) && (nState & StateCaret))
     {
         // At the insertion point, and never past the text actually drawn: a cut
         // label ends in an ellipsis, and a caret standing beyond it would be
         // pointing at something nobody can see.
-        unsigned nAt = GfxTextWidthUpTo (pTheme->pBodyFont, pText, nCaret);
+        unsigned nAt = GfxTextWidthUpTo (pTheme->pBodyFont, pText, rMark.nCaret);
         if (nAt > nWidth)
         {
             nAt = nWidth;

@@ -145,7 +145,15 @@ static void KeyHandler (unsigned char ucModifiers, const unsigned char RawKeys[6
             unsigned nChar = 0;
             if (s_pKeyMap != 0)
             {
-                const unsigned nLogical = s_pKeyMap->Translate (ucKey, ucModifiers);
+                // Translated with the Command bit taken out. Circle's map
+                // answers KeyNone outright while Alt or a Windows key is held
+                // (keymap.cpp), so Command-C would arrive as no character at
+                // all and the four shortcuts every Macintosh has answered to
+                // could not be recognised. The modifier itself still rides on
+                // the event, so nothing downstream mistakes one for the other.
+                const unsigned char ucForChar =
+                    (unsigned char) (ucModifiers & ~(unsigned char) (0x08 | 0x80));
+                const unsigned nLogical = s_pKeyMap->Translate (ucKey, ucForChar);
                 if (nLogical >= 0x20 && nLogical < 0x100 && nLogical != 0x7F)
                 {
                     nChar = nLogical;   // Latin-1, which is also its code point

@@ -597,21 +597,41 @@ static TScreenReply HandleMenu (TScreen *pScreen, const TEvent *pEvent)
 
 static TScreenReply HandleField (TScreen *pScreen, TWidget *p, const TEvent *pEvent)
 {
+    const bool bExtend = (pEvent->nModifiers & ModShift) != 0;
+
+    // Command and a letter: the four every Macintosh has answered to since
+    // 1984, and the reason the bridge translates the key with the Command bit
+    // taken out — Circle's map answers nothing at all while it is held.
+    if (pEvent->nModifiers & ModCommand)
+    {
+        const unsigned c = pEvent->nChar >= 'A' && pEvent->nChar <= 'Z'
+                               ? pEvent->nChar + 32 : pEvent->nChar;
+        switch (c)
+        {
+        case 'a':   WidgetFieldSelectAll (p);   break;
+        case 'c':   WidgetFieldCopy (p);        break;
+        case 'x':   WidgetFieldCut (p);         break;
+        case 'v':   WidgetFieldPaste (p);       break;
+        default:    return Reply (ScreenIdle, -1);
+        }
+        ScreenTouch (pScreen, pScreen->nFocus);
+        return Reply (ScreenChanged, -1);
+    }
+
     bool bMine = true;
     switch (pEvent->nKey)
     {
-    case OkKeyBackspace:  WidgetFieldBackspace (p); break;
-    case OkKeyDelete:     WidgetFieldDelete (p);    break;
-    case OkKeyLeft:       WidgetFieldCaret (p, -1); break;
-    case OkKeyRight:      WidgetFieldCaret (p, +1); break;
-    case OkKeyHome:       WidgetFieldHome (p);      break;
-    case OkKeyEnd:        WidgetFieldEnd (p);       break;
+    case OkKeyBackspace:  WidgetFieldBackspace (p);          break;
+    case OkKeyDelete:     WidgetFieldDelete (p);             break;
+    case OkKeyLeft:       WidgetFieldCaret (p, -1, bExtend); break;
+    case OkKeyRight:      WidgetFieldCaret (p, +1, bExtend); break;
+    case OkKeyHome:       WidgetFieldHome (p, bExtend);      break;
+    case OkKeyEnd:        WidgetFieldEnd (p, bExtend);       break;
     default:
         // Anything that produced a character. Tab and Return produce none, so
         // they fall through to the screen and keep meaning what they mean
-        // everywhere; Command and Control combinations are not text either.
-        bMine = pEvent->nChar != 0
-             && !(pEvent->nModifiers & (ModCommand | ModControl));
+        // everywhere; Control combinations are not text either.
+        bMine = pEvent->nChar != 0 && !(pEvent->nModifiers & ModControl);
         if (bMine)
         {
             WidgetFieldInsert (p, pEvent->nChar);
@@ -747,6 +767,16 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
             {
                 return Reply (ScreenIdle, -1);
             }
+            // Dragging inside a field selects, which is the only way anyone
+            // has ever selected text with a mouse.
+            if (pScreen->pWidgets[pScreen->nPressed].Type == WidgetField
+                && pScreen->pWidgets[pScreen->nPressed].pEdit != 0)
+            {
+                WidgetFieldClick (&pScreen->pWidgets[pScreen->nPressed], pScreen->pTheme,
+                                  pEvent->nX, true);
+                ScreenTouch (pScreen, pScreen->nPressed);
+                return Reply (ScreenChanged, -1);
+            }
             // Dragging out of a control it is holding lets go of it visually
             // and takes it back on the way in — TrackControl, and the reason a
             // mistaken click on a Macintosh could always be taken back.
@@ -770,7 +800,16 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
                                         pEvent->nX, pEvent->nY);
             if (nHit < 0)
             {
-                return Reply (ScreenIdle, -1);
+                // Clicking nothing means aiming at nothing: the focus leaves.
+                // A field that keeps its caret because the click landed on the
+                // background is a field one cannot get out of with the mouse,
+                // and that is where the hand goes first.
+                if (pScreen->nFocus < 0)
+                {
+                    return Reply (ScreenIdle, -1);
+                }
+                SetFocus (pScreen, -1);
+                return Reply (ScreenChanged, -1);
             }
             // A row gives the focus to its list, not to itself: the focus rests
             // on things the keyboard can then move around in.
@@ -810,7 +849,8 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
             // arrows, which nobody does.
             if (pScreen->pWidgets[nHit].Type == WidgetField)
             {
-                WidgetFieldClick (&pScreen->pWidgets[nHit], pScreen->pTheme, pEvent->nX);
+                WidgetFieldClick (&pScreen->pWidgets[nHit], pScreen->pTheme, pEvent->nX,
+                                  (pEvent->nModifiers & ModShift) != 0);
                 ScreenTouch (pScreen, nHit);
             }
             pScreen->nPressed = nHit;
