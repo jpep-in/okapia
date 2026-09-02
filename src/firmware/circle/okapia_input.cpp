@@ -182,8 +182,13 @@ static void ClaimMouse (void)
     }
 }
 
-bool FwInputBegin (unsigned nWidth, unsigned nHeight)
+bool FwInputWatch (void)
 {
+    if (s_pKeyboard != 0)
+    {
+        return true;                    // already watching; do not lose the latch
+    }
+
     s_nHead = s_nTail = 0;
     s_nModifiers = 0;
     s_nSeenModifiers = 0;
@@ -191,11 +196,6 @@ bool FwInputBegin (unsigned nWidth, unsigned nHeight)
     s_nButtons = 0;
     memset (s_LastKeys, 0, sizeof s_LastKeys);
     memset ((void *) s_SeenKeys, 0, sizeof s_SeenKeys);
-
-    s_nMaxX = (int) nWidth  - 1;
-    s_nMaxY = (int) nHeight - 1;
-    s_nX = s_nMaxX / 2;
-    s_nY = s_nMaxY / 2;
 
     s_pKeyboard = (CUSBKeyboardDevice *)
         CDeviceNameService::Get ()->GetDevice ("ukbd1", FALSE);
@@ -210,10 +210,18 @@ bool FwInputBegin (unsigned nWidth, unsigned nHeight)
     s_pMouseNext = 0;
     ClaimMouse ();
 
-    CLogger::Get ()->Write (FROM, LogNotice, "Input: %s, %s",
+    CLogger::Get ()->Write (FROM, LogNotice, "Watching: %s, %s",
                             s_pKeyboard != 0 ? "keyboard" : "no keyboard",
                             s_pMouse != 0 ? "mouse" : "no mouse");
     return s_pKeyboard != 0;
+}
+
+void FwInputBounds (unsigned nWidth, unsigned nHeight)
+{
+    s_nMaxX = (int) nWidth  - 1;
+    s_nMaxY = (int) nHeight - 1;
+    s_nX = s_nMaxX / 2;
+    s_nY = s_nMaxY / 2;
 }
 
 bool FwInputPassMouseTo (TMouseStatusHandler *pHandler)

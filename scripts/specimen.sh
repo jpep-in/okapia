@@ -9,7 +9,14 @@
 # page is asked for with an arrow key through the monitor rather than waited
 # for. No argument takes the first page, "2" the second.
 #
-#   usage: specimen.sh [2] [width height]
+#   usage: specimen.sh [2] [width height]      capture, headless
+#          specimen.sh live [width height]     a window, driven by hand
+#
+# "live" is the one to reach for when the question is how the interface feels
+# rather than what it measures: Tab and Maj-Tab walk the focus, Espace operates
+# what holds it, Retour the default button, the arrows move the list, and
+# Gauche/Droite turn the page. The mouse works, and the pointer appears the
+# moment it moves. No card is touched, so it is always safe to leave running.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,11 +33,23 @@ WORK="$(mktemp -d -t okapiaspec)"
 trap 'rm -rf "$WORK"' EXIT
 
 PAGE=1
+LIVE=0
 if [ "${1:-}" = "2" ]; then PAGE=2; shift; fi
+if [ "${1:-}" = "live" ]; then LIVE=1; shift; fi
 
 GEOMETRY=()
 if [ $# -ge 2 ]; then
     GEOMETRY=(-global "bcm2835-fb.xres=$1" -global "bcm2835-fb.yres=$2")
+fi
+
+# Driven by hand: a window, the serial on the terminal, and no clock deciding
+# anything. It ends when the window is closed.
+if [ "$LIVE" = "1" ]; then
+    echo "Tab / Maj-Tab : le focus · Espace : actionner · Retour : bouton par défaut"
+    echo "Flèches : la liste · Gauche/Droite : la page · souris : cliquez"
+    exec qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial stdio \
+        -display cocoa -semihosting -device usb-kbd -device usb-mouse \
+        "${GEOMETRY[@]}"
 fi
 
 # A keyboard and a mouse, because the specimen is an interface and not a

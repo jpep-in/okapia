@@ -120,7 +120,8 @@ TShutdownMode CSpecimenKernel::Run (void)
     TTheme Theme;
     ThemeMake (nScale16, &Theme);
 
-    FwInputBegin (nWidth, nHeight);
+    FwInputWatch ();
+    FwInputBounds (nWidth, nHeight);
 
     unsigned nPage = 0;
     const unsigned nPages = SpecimenPageCount (&Surface);

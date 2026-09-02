@@ -282,6 +282,15 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   output at all: the Mac played its alert, waited for a completion that never came, and froze — and the
   hard stop that followed cost a card. A device that will not start must leave the platform hook exactly
   as the `src/dummy/` version leaves it, and the decision belongs at init, not in a hook the 68k calls.
+- **A USB keyboard reports changes, never state.** A key held from power-on sends one report at the
+  moment it goes down and nothing more until it is released, and `CUSBKeyboardDevice` offers no way to
+  ask what is currently down. So a window that starts listening when it opens sees Option when a script
+  sends it and never when a person holds it — which is exactly how a real user tries it. `FwInputWatch()`
+  is therefore called from `CKernel::Initialize()` as soon as USB is up, and the window only reads the
+  latch. A Macintosh had no such gap: it read the keyboard's state register.
+- **`UnregisterKeyStatusHandlerRaw()` exists**, and is the only correct way to detach a raw handler —
+  passing 0 to the register call does not detach, see below. Okapia never detaches, because Circle keeps
+  one handler and `InputInit()` replacing it *is* the handover.
 - **Circle's mouse can be claimed once per boot and never given back.**
   `CMouseDevice::RegisterStatusHandler` asserts `m_pStatusHandler == 0` (`mouse.cpp:85`) and offers no
   withdrawal, so the second claim is a failed assertion and a dead kernel. The keyboard is nothing like
@@ -331,5 +340,6 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 ./scripts/run-qemu.sh       # serial on stdout, GDB on :1234
 ./scripts/build-pi.sh 4     # kernel for Pi 3, 4 or 5
 ./scripts/specimen.sh [2]   # firmware theme specimen under QEMU, page 1 or 2, no SD card
+./scripts/specimen.sh live  # the same, in a window, driven by hand
 make -C tests/host          # the same specimen rendered here, plus the geometry checks
 ```

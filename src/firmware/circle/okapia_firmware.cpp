@@ -73,19 +73,20 @@ TFirmwareResult FirmwareRun (void)
 
     Theme.DrawDesktop (&Surface, &Theme);
 
-    // The keyboard and the mouse, taken for the length of the window and *not*
-    // given back. Circle keeps one handler per device and InputInit() puts the
-    // Macintosh's in their place when StartMacintosh() runs, which is the whole
-    // handover.
+    // The keyboard has been watched since USB came up, not since this function
+    // started: a key held from power-on reports once, before any of this, and
+    // says nothing more until it is released. Watching from here made Option
+    // work when a machine sent it and never when a person held it.
     //
-    // Registering 0 to detach looks tidier and wedges the boot: it does not
-    // detach anything, it puts the device back into cooked mode
-    // (usbkeyboard.cpp:200), and the reports then arriving go to
-    // CKeyboardBehaviour instead. Measured — with that call the kernel stopped
-    // dead after this function returned, with no further log at all, and
-    // removing it was enough. Leaving ours in place until InputInit() replaces
-    // them costs nothing: they only ever touch their own statics.
-    const bool bKeyboard = FwInputBegin (nWidth, nHeight);
+    // The devices are *not* given back afterwards. Circle keeps one handler
+    // each and InputInit() puts the Macintosh's in their place when
+    // StartMacintosh() runs, which is the whole handover. Registering 0 to
+    // detach looks tidier and wedges the boot: it does not detach anything, it
+    // puts the device back into cooked mode (usbkeyboard.cpp:200) and the
+    // reports then go to CKeyboardBehaviour. Measured — with that call the
+    // kernel stopped dead here with no further log at all.
+    const bool bKeyboard = FwInputWatch ();
+    FwInputBounds (nWidth, nHeight);
 
     CLogger::Get ()->Write (FROM, LogNotice, "Output %ux%u, theme scale %u/16, %s, holding %u ms",
                             nWidth, nHeight, nScale16,

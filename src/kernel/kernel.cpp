@@ -6,6 +6,7 @@
 //
 #include "kernel.h"
 #include "okapia_firmware.h"
+#include "okapia_input.h"
 #include <circle_glue.h>
 #include <circle/memory.h>
 #include <stdio.h>
@@ -142,6 +143,14 @@ bool CKernel::Initialize (void)
     {
         m_Logger.Write (FROM, LogWarning, "No USB: keyboard and mouse unavailable");
     }
+
+    // The firmware starts listening here rather than when its window opens. A
+    // USB keyboard reports changes and not state, so Option held from power-on
+    // sends its one report before the window and nothing during it — which made
+    // the combination work when a script sent it and never when a person held
+    // it. There is no state to read back: CUSBKeyboardDevice will say when
+    // something changes and never what is down.
+    FwInputWatch ();
 
     return true;
 }

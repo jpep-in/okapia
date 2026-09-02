@@ -25,10 +25,23 @@
 
 #include <circle/input/mouse.h>
 
-// Attaches whatever is plugged in and puts the pointer in the middle of a
-// surface of this size. Answers false when there is no keyboard, which is worth
-// knowing and is not an error: a machine wired to a screen alone still boots.
-bool FwInputBegin (unsigned nWidth, unsigned nHeight);
+// Attaches whatever is plugged in and starts latching. Answers false when there
+// is no keyboard, which is worth knowing and is not an error: a machine wired to
+// a screen alone still boots.
+//
+// Call it the moment USB is up, and not when the window opens. A USB keyboard
+// reports changes, not state: a key already held when the window opens produced
+// its report before it and sends nothing more until it is released, so a user
+// holding Option from power-on — which is the only way anyone has ever done it —
+// was invisible to a window that started listening at its own beginning. A
+// Macintosh read the keyboard's state register and had no such gap; this is the
+// nearest thing to it that Circle offers, since CUSBKeyboardDevice will not say
+// what is down, only tell you when it changes.
+bool FwInputWatch (void);
+
+// Where the pointer may go, and it starts in the middle. Separate from the
+// watch because the display is claimed long after the keyboard is.
+void FwInputBounds (unsigned nWidth, unsigned nHeight);
 
 // The next event, or false when there is none. Reports arrive by interrupt, so
 // this is the only thing the loop has to call — and it must be called often
