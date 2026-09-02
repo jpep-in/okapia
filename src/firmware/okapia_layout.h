@@ -43,6 +43,13 @@ TRect LayoutBottom (TLayout *pLayout, unsigned nHeight);
 // A band for controls in this state, with what their rings draw outside
 // themselves kept clear above and below. Two rows an ordinary gap apart still
 // collide when both wear one — found by measuring, never by looking.
+//
+// **A control that can take the focus is placed with StateFocused**, whatever
+// state it is drawn in. The layout runs before the loop and cannot know which
+// control will end up focused; a control that can be will be, so the room is
+// not optional. Leaving it out put a footer icon's ring one pixel into the
+// margin the moment the focus landed on it, and nothing in the layout was
+// wrong — the reservation simply had not been asked for.
 TRect LayoutRow (TLayout *pLayout, unsigned nHeight, unsigned nState);
 
 void LayoutSkip (TLayout *pLayout, unsigned nAmount);

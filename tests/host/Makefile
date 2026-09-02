@@ -70,12 +70,13 @@ check: check_geometry check_screen
 	./check_geometry
 	./check_screen
 
+# Every page, the count being the flow's to decide: naming them here again is
+# how the second page went stale the day a third appeared.
 specimen.ppm: render_specimen
-	./render_specimen specimen.ppm 1 0
-	./render_specimen specimen-2.ppm 1 1
+	./render_specimen specimen.ppm 1
 
 view: render_specimen
-	./render_specimen specimen-2x.ppm 2
+	./render_specimen specimen-2x.ppm 2 0
 	@command -v open >/dev/null && open specimen-2x.ppm || echo "wrote specimen-2x.ppm"
 
 clean:

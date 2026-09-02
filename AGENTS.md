@@ -345,7 +345,7 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 ./scripts/build-qemu.sh     # AArch64 kernel for QEMU raspi3b
 ./scripts/run-qemu.sh       # serial on stdout, GDB on :1234
 ./scripts/build-pi.sh 4     # kernel for Pi 3, 4 or 5
-./scripts/specimen.sh [2]   # firmware theme specimen under QEMU, page 1 or 2, no SD card
+./scripts/specimen.sh [n]   # firmware theme specimen under QEMU, page n, no SD card
 ./scripts/specimen.sh live  # the same, in a window, driven by hand
 make -C tests/host          # the same specimen rendered here, plus the geometry checks
 ```

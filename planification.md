@@ -2479,6 +2479,20 @@ où il existe, sinon personne ne le regarde.
   et la flèche Bas est arrivée en Échap. Les trois Makefile compilent maintenant avec `-MMD -MP` et
   relisent les `.d` ; celui du spécimen passe même ses propres sources par `obj/` pour cela.
 
+  **Complété le 2026-09-02.** La fenêtre du spécimen s'ouvrait en timbre-poste : la façade cocoa de QEMU
+  dimensionne sa fenêtre en points, un par pixel invité, et ne la redimensionne jamais ensuite —
+  `run-live.sh` avait tranché la même chose pour l'émulateur, en 1280x960, qui est à la fois confortable et
+  exactement le double de 640x480, donc une échelle entière de 2 plutôt qu'une fraction qui fait scintiller
+  les courbes.
+
+  En le corrigeant, la comparaison capture QEMU / rendu hôte a divergé, et pour une bonne raison : le rendu
+  de l'hôte ne faisait pas tourner la boucle, donc il ne montrait pas où le focus se pose. Les deux le font
+  maintenant — et la mesure a immédiatement trouvé un vrai défaut : **un contrôle doit réserver la place de
+  l'anneau de focus qu'il peut recevoir, pas seulement celle de l'état dans lequel il est tracé.** La mise
+  en page tourne avant la boucle et ne peut pas savoir qui sera focalisé ; l'icône de réglages du pied de
+  page, posée en `StateNormal`, mettait son anneau un pixel dans la marge dès que le focus s'y posait. La
+  règle est inscrite dans `okapia_layout.h`, et le contrôle géométrique la garde.
+
 **16f — Les traductions.** Une table de chaînes, anglais et français, depuis `boot-menu/strings.tsv` ;
 langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
 mise en page ne s'est pas calée sur la longueur des libellés français.

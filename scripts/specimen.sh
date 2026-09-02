@@ -7,9 +7,9 @@
 #
 # The specimen answers now: the kernel runs the firmware's event loop, so the
 # page is asked for with an arrow key through the monitor rather than waited
-# for. No argument takes the first page, "2" the second.
+# for. No argument takes the first page; a digit takes that one.
 #
-#   usage: specimen.sh [2] [width height]      capture, headless
+#   usage: specimen.sh [page] [width height]   capture, headless
 #          specimen.sh live [width height]     a window, driven by hand
 #
 # The window opens at 1280x960 — twice the design's 640x480, so the theme lands
@@ -38,8 +38,10 @@ trap 'rm -rf "$WORK"' EXIT
 
 PAGE=1
 LIVE=0
-if [ "${1:-}" = "2" ]; then PAGE=2; shift; fi
-if [ "${1:-}" = "live" ]; then LIVE=1; shift; fi
+case "${1:-}" in
+    [1-9]) PAGE="$1"; shift ;;
+    live)  LIVE=1; shift ;;
+esac
 
 GEOMETRY=()
 if [ $# -ge 2 ]; then
@@ -85,10 +87,14 @@ say () { echo "$1" | nc -U "${WORK}/monitor.sock" >/dev/null 2>&1 || true; }
 # Long enough for the first paint, which costs the better part of a second under
 # QEMU at 640x480 and rather more above it.
 sleep 5
-if [ "$PAGE" = "2" ]; then
+# One arrow per page past the first. The kernel turns them itself, so the
+# capture lands where it was asked to rather than where a clock left it.
+n=1
+while [ "$n" -lt "$PAGE" ]; do
     say "sendkey right"
-    sleep 4
-fi
+    sleep 3
+    n=$((n + 1))
+done
 say "screendump ${WORK}/screen.ppm"
 sleep 2
 kill -9 $QPID 2>/dev/null || true
@@ -110,7 +116,7 @@ echo "Screen captured: $OUT"
 # comparison. A difference means the two builds disagree, which is worth
 # knowing long before a design decision rests on the wrong one.
 HOST="${REPO_ROOT}/tests/host/specimen.ppm"
-[ "$PAGE" = "2" ] && HOST="${REPO_ROOT}/tests/host/specimen-2.ppm"
+[ "$PAGE" = "1" ] || HOST="${REPO_ROOT}/tests/host/specimen-${PAGE}.ppm"
 if [ $# -lt 2 ] && [ -f "$HOST" ]; then
     if cmp -s "$OUT" "$HOST"; then
         echo "Identical to the host render."

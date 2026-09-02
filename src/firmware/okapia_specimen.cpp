@@ -50,16 +50,20 @@ static TWidget *Add (TWidgetType Type, const TRect &rRect, const char *pText, un
 // "Enregistrer et redémarrer" and "Save and restart" are not the same width,
 // and a table of hard-coded rectangles is precisely how translated Macintosh
 // dialogues used to come apart.
+// Placed with the room a focus ring needs, whatever state they are drawn in:
+// the layout runs before the loop and cannot know which control will be
+// focused, and one that can be will be. See okapia_layout.h.
 static void AddButton (TRow *pRow, const char *pText, unsigned nState)
 {
     const unsigned nWidth = WidgetButtonWidth (pRow->pTheme, pText, nState);
-    Add (WidgetButton, RowNext (pRow, nWidth, nState), pText, nState);
+    Add (WidgetButton, RowNext (pRow, nWidth, nState | StateFocused), pText, nState);
 }
 
 static void AddIconButton (TRow *pRow, TIconPainter Paint, unsigned nState)
 {
     const unsigned nSize = pRow->pTheme->M.nButtonHeight;
-    Add (WidgetIconButton, RowNext (pRow, nSize, nState), 0, nState)->Paint = Paint;
+    Add (WidgetIconButton, RowNext (pRow, nSize, nState | StateFocused), 0, nState)
+        ->Paint = Paint;
 }
 
 // A section's own heading, and the rule above it. Every section wears the same
@@ -251,11 +255,11 @@ static void SectionAlert (TLayout *pLayout)
     RowBegin (&Buttons, pTheme, LayoutRow (&Inside, pTheme->M.nButtonHeight, StateDefault));
     Add (WidgetButton,
          RowLast (&Buttons, WidgetButtonWidth (pTheme, "Réparer", StateDefault),
-                  StateDefault),
+                  StateDefault | StateFocused),
          "Réparer", StateDefault);
     Add (WidgetButton,
          RowLast (&Buttons, WidgetButtonWidth (pTheme, "Démarrer sans réparer", StateNormal),
-                  StateNormal),
+                  StateFocused),
          "Démarrer sans réparer", StateNormal);
 }
 
@@ -376,7 +380,8 @@ static void PageFrame (TLayout *pLayout, const TTheme *pTheme, const TRect &rCon
     AddIconButton (&Foot, OkapiaPaintPower,    StateNormal);
 
     const unsigned nStart = WidgetButtonWidth (pTheme, "Démarrer", StateDefault);
-    Add (WidgetButton, RowLast (&Foot, nStart, StateDefault), "Démarrer", StateDefault);
+    Add (WidgetButton, RowLast (&Foot, nStart, StateDefault | StateFocused),
+         "Démarrer", StateDefault);
 
     // Which page of how many, in the space the footer has left over. It is only
     // ever seen when the components need more than one, which is the honest

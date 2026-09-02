@@ -21,6 +21,7 @@
 
 #include "okapia_gfx.h"
 #include "okapia_theme.h"
+#include "okapia_screen.h"
 #include "okapia_specimen.h"
 #include "okapia_widgets.h"
 
@@ -215,6 +216,20 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
     }
     TSurface s = { (unsigned char *) p, nW, nH, nW * (unsigned) sizeof (unsigned) };
     SpecimenDraw (&s, nPage);
+
+    TTheme T0;
+    ThemeMake (ThemeScaleFor (nW, nH), &T0);
+    // The focus as the loop will place it, and not as the layout left it: a
+    // ring is drawn outside the control it surrounds, so a page that acquires
+    // one on a control placed without room for it would put it in the margin —
+    // and measuring the layout alone would never see that.
+    {
+        TWidget *pW = 0;
+        const unsigned nN = SpecimenWidgets (&pW);
+        TScreen Screen;
+        ScreenInit (&Screen, &T0, pW, nN);
+        SpecimenRepaint (&s);
+    }
 
     TTheme T;
     ThemeMake (ThemeScaleFor (nW, nH), &T);
