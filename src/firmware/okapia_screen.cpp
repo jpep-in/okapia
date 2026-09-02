@@ -57,17 +57,66 @@ static int DefaultWidget (const TScreen *pScreen)
     return -1;
 }
 
+void ScreenTouch (TScreen *pScreen, int nIndex)
+{
+    if (nIndex < 0 || pScreen->bDirtyAll)
+    {
+        return;
+    }
+    for (unsigned i = 0; i < pScreen->nDirtyCount; i++)
+    {
+        if (pScreen->nDirty[i] == (unsigned) nIndex)
+        {
+            return;
+        }
+    }
+    if (pScreen->nDirtyCount == sizeof pScreen->nDirty / sizeof pScreen->nDirty[0])
+    {
+        pScreen->bDirtyAll = true;      // more than it is worth tracking
+        return;
+    }
+    pScreen->nDirty[pScreen->nDirtyCount++] = (unsigned) nIndex;
+}
+
 static void SetFocus (TScreen *pScreen, int nIndex)
 {
     for (unsigned i = 0; i < pScreen->nCount; i++)
     {
-        pScreen->pWidgets[i].nState &= ~(unsigned) StateFocused;
+        if (pScreen->pWidgets[i].nState & StateFocused)
+        {
+            pScreen->pWidgets[i].nState &= ~(unsigned) StateFocused;
+            ScreenTouch (pScreen, (int) i);
+        }
     }
     if (nIndex >= 0)
     {
         pScreen->pWidgets[nIndex].nState |= StateFocused;
+        ScreenTouch (pScreen, nIndex);
     }
     pScreen->nFocus = nIndex;
+}
+
+bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen)
+{
+    if (pScreen->bDirtyAll)
+    {
+        pScreen->bDirtyAll   = false;
+        pScreen->nDirtyCount = 0;
+        return false;                   // the caller redraws the lot
+    }
+    // The widest a control ever draws beyond itself, whatever state it is in.
+    // Asking per control would be a pixel tighter and wrong the moment one
+    // gains a state between two paints.
+    const unsigned nReach = ThemeReach (pScreen->pTheme, StateDefault | StateFocused);
+    for (unsigned i = 0; i < pScreen->nDirtyCount; i++)
+    {
+        const TWidget *p = &pScreen->pWidgets[pScreen->nDirty[i]];
+        GfxFill (pSurface, RectInset (p->Rect, -(int) nReach, -(int) nReach),
+                 pScreen->Background);
+        WidgetDraw (pSurface, pScreen->pTheme, p);
+    }
+    pScreen->nDirtyCount = 0;
+    return true;
 }
 
 void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsigned nCount)
@@ -79,6 +128,11 @@ void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsi
     pScreen->nPressed = -1;
     pScreen->nX       = 0;
     pScreen->nY       = 0;
+    pScreen->nDragList   = -1;
+    pScreen->nDragGrab   = 0;
+    pScreen->nDirtyCount = 0;
+    pScreen->bDirtyAll   = true;        // nothing has been drawn yet
+    pScreen->Background  = ColorWhite;
 
     // A screen that says where its focus starts is obeyed — an alert wants it on
     // its field, not on whichever control it happened to place first. Failing
@@ -106,6 +160,7 @@ void ScreenOperate (TScreen *pScreen, int nIndex)
         return;
     }
     TWidget *p = &pScreen->pWidgets[nIndex];
+    ScreenTouch (pScreen, nIndex);
 
     switch (p->Type)
     {
@@ -119,9 +174,11 @@ void ScreenOperate (TScreen *pScreen, int nIndex)
         for (unsigned i = 0; i < pScreen->nCount; i++)
         {
             if (pScreen->pWidgets[i].Type == WidgetRadio
-                && pScreen->pWidgets[i].nGroup == p->nGroup)
+                && pScreen->pWidgets[i].nGroup == p->nGroup
+                && (pScreen->pWidgets[i].nState & StateChecked))
             {
                 pScreen->pWidgets[i].nState &= ~(unsigned) StateChecked;
+                ScreenTouch (pScreen, (int) i);
             }
         }
         p->nState |= StateChecked;
@@ -194,7 +251,89 @@ static bool ListMove (TScreen *pScreen, int nList, int nStep)
     }
     p->nChoice = nWanted;
     WidgetListReveal (p, pScreen->pTheme);
+    ScreenTouch (pScreen, nList);
     return true;
+}
+
+// The thumb inside a list's scroller, from the one place that works it out.
+static bool ThumbOf (const TWidget *p, const TTheme *pTheme, TRect *pOut)
+{
+    const TRect Bar = WidgetListScroller (p, pTheme);
+    if (Bar.nWidth == 0)
+    {
+        return false;
+    }
+    *pOut = ThemeScrollThumb (pTheme, Bar, p->nTop, WidgetListVisible (p, pTheme),
+                              p->nItems);
+    return pOut->nHeight != 0;
+}
+
+// Puts the top row where a thumb whose top is at nY would put it.
+static bool ScrollTo (TScreen *pScreen, int nList, int nY)
+{
+    TWidget *p = &pScreen->pWidgets[nList];
+    TRect Thumb;
+    if (!ThumbOf (p, pScreen->pTheme, &Thumb))
+    {
+        return false;
+    }
+    const TRect Bar = WidgetListScroller (p, pScreen->pTheme);
+    const unsigned nVisible = WidgetListVisible (p, pScreen->pTheme);
+    const unsigned nSteps = p->nItems - nVisible;
+    const int nTravel = (int) (Bar.nHeight - 2 - Thumb.nHeight);
+    if (nTravel <= 0)
+    {
+        return false;
+    }
+    int nWanted = ((nY - (Bar.nY + 1)) * (int) nSteps + nTravel / 2) / nTravel;
+    if (nWanted < 0)                nWanted = 0;
+    if (nWanted > (int) nSteps)     nWanted = (int) nSteps;
+    if ((unsigned) nWanted == p->nTop)
+    {
+        return false;
+    }
+    p->nTop = (unsigned) nWanted;
+    ScreenTouch (pScreen, nList);
+    return true;
+}
+
+// A click in the scroller: on the thumb it takes hold of it, above or below it
+// moves by a page — which is what a Macintosh's scroll bar did, and what keeps
+// a click from throwing the reader somewhere they did not aim for.
+static TScreenReply ScrollerClick (TScreen *pScreen, int nList, int nX, int nY)
+{
+    TWidget *p = &pScreen->pWidgets[nList];
+    TRect Thumb;
+    if (!ThumbOf (p, pScreen->pTheme, &Thumb))
+    {
+        return Reply (ScreenIdle, -1);
+    }
+    if (RectContains (Thumb, nX, nY))
+    {
+        pScreen->nDragList = nList;
+        pScreen->nDragGrab = nY - Thumb.nY;
+        return Reply (ScreenIdle, -1);
+    }
+
+    const unsigned nVisible = WidgetListVisible (p, pScreen->pTheme);
+    const unsigned nPage = nVisible > 1 ? nVisible - 1 : 1;
+    const unsigned nSteps = p->nItems - nVisible;
+    unsigned nWanted;
+    if (nY < Thumb.nY)
+    {
+        nWanted = p->nTop > nPage ? p->nTop - nPage : 0;
+    }
+    else
+    {
+        nWanted = p->nTop + nPage > nSteps ? nSteps : p->nTop + nPage;
+    }
+    if (nWanted == p->nTop)
+    {
+        return Reply (ScreenIdle, -1);
+    }
+    p->nTop = nWanted;
+    ScreenTouch (pScreen, nList);
+    return Reply (ScreenChanged, -1);
 }
 
 static bool ListChoose (TScreen *pScreen, int nList, int nItem)
@@ -208,6 +347,7 @@ static bool ListChoose (TScreen *pScreen, int nList, int nItem)
     }
     p->nChoice = nItem;
     WidgetListReveal (p, pScreen->pTheme);
+    ScreenTouch (pScreen, nList);
     return true;
 }
 
@@ -217,6 +357,7 @@ static void SetPressed (TScreen *pScreen, int nIndex, bool bPressed)
     {
         return;
     }
+    ScreenTouch (pScreen, nIndex);
     if (bPressed)
     {
         pScreen->pWidgets[nIndex].nState |= StatePressed;
@@ -233,25 +374,33 @@ static void SetPressed (TScreen *pScreen, int nIndex, bool bPressed)
 // screen ends up doing two things for one key.
 static TScreenReply HandleField (TScreen *pScreen, TWidget *p, const TEvent *pEvent)
 {
+    bool bMine = true;
     switch (pEvent->nKey)
     {
-    case OkKeyBackspace:  WidgetFieldBackspace (p); return Reply (ScreenChanged, -1);
-    case OkKeyDelete:     WidgetFieldDelete (p);    return Reply (ScreenChanged, -1);
-    case OkKeyLeft:       WidgetFieldCaret (p, -1); return Reply (ScreenChanged, -1);
-    case OkKeyRight:      WidgetFieldCaret (p, +1); return Reply (ScreenChanged, -1);
-    case OkKeyHome:       WidgetFieldHome (p);      return Reply (ScreenChanged, -1);
-    case OkKeyEnd:        WidgetFieldEnd (p);       return Reply (ScreenChanged, -1);
+    case OkKeyBackspace:  WidgetFieldBackspace (p); break;
+    case OkKeyDelete:     WidgetFieldDelete (p);    break;
+    case OkKeyLeft:       WidgetFieldCaret (p, -1); break;
+    case OkKeyRight:      WidgetFieldCaret (p, +1); break;
+    case OkKeyHome:       WidgetFieldHome (p);      break;
+    case OkKeyEnd:        WidgetFieldEnd (p);       break;
     default:
+        // Anything that produced a character. Tab and Return produce none, so
+        // they fall through to the screen and keep meaning what they mean
+        // everywhere; Command and Control combinations are not text either.
+        bMine = pEvent->nChar != 0
+             && !(pEvent->nModifiers & (ModCommand | ModControl));
+        if (bMine)
+        {
+            WidgetFieldInsert (p, pEvent->nChar);
+        }
         break;
     }
-    // Anything that produced a character. Tab and Return produce none, so they
-    // fall through to the screen and keep meaning what they mean everywhere.
-    if (pEvent->nChar != 0 && !(pEvent->nModifiers & (ModCommand | ModControl)))
+    if (!bMine)
     {
-        WidgetFieldInsert (p, pEvent->nChar);
-        return Reply (ScreenChanged, -1);
+        return Reply (ScreenIdle, -1);
     }
-    return Reply (ScreenIdle, -1);
+    ScreenTouch (pScreen, pScreen->nFocus);
+    return Reply (ScreenChanged, -1);
 }
 
 static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
@@ -355,6 +504,12 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
         {
             pScreen->nX = pEvent->nX;
             pScreen->nY = pEvent->nY;
+            if (pScreen->nDragList >= 0)
+            {
+                return Reply (ScrollTo (pScreen, pScreen->nDragList,
+                                        pEvent->nY - pScreen->nDragGrab)
+                                  ? ScreenChanged : ScreenIdle, -1);
+            }
             if (pScreen->nPressed < 0)
             {
                 return Reply (ScreenIdle, -1);
@@ -392,9 +547,18 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
             }
             // A click inside a list picks the row it landed on, there and then:
             // a list that only answers on release cannot be dragged through,
-            // which is how one has always been read.
+            // which is how one has always been read. In its scroller it scrolls
+            // instead, and picks nothing.
             if (pScreen->pWidgets[nHit].Type == WidgetList)
             {
+                const TRect Bar = WidgetListScroller (&pScreen->pWidgets[nHit],
+                                                      pScreen->pTheme);
+                if (Bar.nWidth != 0 && RectContains (Bar, pEvent->nX, pEvent->nY))
+                {
+                    ScrollerClick (pScreen, nHit, pEvent->nX, pEvent->nY);
+                    pScreen->nPressed = nHit;
+                    return Reply (ScreenChanged, -1);
+                }
                 ListChoose (pScreen, nHit,
                             WidgetListItemAt (&pScreen->pWidgets[nHit], pScreen->pTheme,
                                               pEvent->nX, pEvent->nY));
@@ -408,6 +572,12 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
         {
             pScreen->nX = pEvent->nX;
             pScreen->nY = pEvent->nY;
+            if (pScreen->nDragList >= 0)
+            {
+                pScreen->nDragList = -1;
+                pScreen->nPressed  = -1;
+                return Reply (ScreenIdle, -1);
+            }
             const int nPressed = pScreen->nPressed;
             if (nPressed < 0)
             {

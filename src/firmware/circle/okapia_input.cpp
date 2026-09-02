@@ -8,6 +8,7 @@
 #include "okapia_input.h"
 
 #include <circle/devicenameservice.h>
+#include <circle/input/keymap.h>
 #include <circle/input/mouse.h>
 #include <circle/input/mousebehaviour.h>
 #include <circle/logger.h>
@@ -35,6 +36,16 @@ static volatile unsigned      s_nSeenModifiers;
 static volatile unsigned char s_SeenKeys[32];   // one bit per USB usage
 static volatile bool          s_bSeenAnything;
 
+// Circle's own keyboard map, so that a French keyboard types what is written on
+// it. Built with new rather than as a static: its constructor reads
+// CKernelOptions, which does not exist until the kernel is being built, and a
+// static one would assert before serial — the failure with no output at all.
+//
+// It is asked only for the character. The navigation keys come from the USB
+// usage identifier instead, because those are physical and mean the same thing
+// on every layout: Tab is Tab wherever the letters have moved to.
+static CKeyMap *s_pKeyMap;
+
 static CUSBKeyboardDevice *s_pKeyboard;
 static CMouseDevice       *s_pMouse;
 
@@ -45,7 +56,7 @@ static TMouseStatusHandler *s_pMouseNext;
 
 // Nothing here waits: a handler runs at interrupt level and a queue that is full
 // is a queue the loop is not draining, which dropping one event cannot fix.
-static void Post (TEventType Type, unsigned nKey, int nX, int nY)
+static void Post (TEventType Type, unsigned nKey, unsigned nChar, int nX, int nY)
 {
     const unsigned nNext = (s_nHead + 1) % QUEUE;
     if (nNext == s_nTail)
@@ -54,6 +65,7 @@ static void Post (TEventType Type, unsigned nKey, int nX, int nY)
     }
     s_Queue[s_nHead].Type       = Type;
     s_Queue[s_nHead].nKey       = nKey;
+    s_Queue[s_nHead].nChar      = nChar;
     s_Queue[s_nHead].nModifiers = s_nModifiers;
     s_Queue[s_nHead].nX         = nX;
     s_Queue[s_nHead].nY         = nY;
@@ -128,9 +140,18 @@ static void KeyHandler (unsigned char ucModifiers, const unsigned char RawKeys[6
         if (!bWasDown)
         {
             const unsigned nKey = LogicalKey (ucKey);
-            if (nKey != OkKeyNone)
+            unsigned nChar = 0;
+            if (s_pKeyMap != 0)
             {
-                Post (EventKeyDown, nKey, s_nX, s_nY);
+                const unsigned nLogical = s_pKeyMap->Translate (ucKey, ucModifiers);
+                if (nLogical >= 0x20 && nLogical < 0x100 && nLogical != 0x7F)
+                {
+                    nChar = nLogical;   // Latin-1, which is also its code point
+                }
+            }
+            if (nKey != OkKeyNone || nChar != 0)
+            {
+                Post (EventKeyDown, nKey, nChar, s_nX, s_nY);
             }
         }
     }
@@ -153,7 +174,7 @@ static void MouseHandler (unsigned nButtons, int nDX, int nDY, int nWheel)
         if (s_nY < 0)       s_nY = 0;
         if (s_nX > s_nMaxX) s_nX = s_nMaxX;
         if (s_nY > s_nMaxY) s_nY = s_nMaxY;
-        Post (EventMouseMove, OkKeyNone, s_nX, s_nY);
+        Post (EventMouseMove, OkKeyNone, 0, s_nX, s_nY);
     }
 
     // The left button and nothing else. A boot menu with a context menu would
@@ -162,7 +183,7 @@ static void MouseHandler (unsigned nButtons, int nDX, int nDY, int nWheel)
     const unsigned nNow = nButtons   & MOUSE_BUTTON_LEFT;
     if (nWas != nNow)
     {
-        Post (nNow ? EventMouseDown : EventMouseUp, OkKeyNone, s_nX, s_nY);
+        Post (nNow ? EventMouseDown : EventMouseUp, OkKeyNone, 0, s_nX, s_nY);
         s_bSeenAnything = true;
     }
     s_nButtons = nButtons;
@@ -196,6 +217,11 @@ bool FwInputWatch (void)
     s_nButtons = 0;
     memset (s_LastKeys, 0, sizeof s_LastKeys);
     memset ((void *) s_SeenKeys, 0, sizeof s_SeenKeys);
+
+    if (s_pKeyMap == 0)
+    {
+        s_pKeyMap = new CKeyMap;
+    }
 
     s_pKeyboard = (CUSBKeyboardDevice *)
         CDeviceNameService::Get ()->GetDevice ("ukbd1", FALSE);
@@ -241,6 +267,7 @@ bool FwInputNext (TEvent *pOut)
     // volatile is the point — the handlers that fill this run on an interrupt.
     pOut->Type       = s_Queue[s_nTail].Type;
     pOut->nKey       = s_Queue[s_nTail].nKey;
+    pOut->nChar      = s_Queue[s_nTail].nChar;
     pOut->nModifiers = s_Queue[s_nTail].nModifiers;
     pOut->nX         = s_Queue[s_nTail].nX;
     pOut->nY         = s_Queue[s_nTail].nY;

@@ -67,17 +67,19 @@ static void DrawDialog (TSurface *pSurface, const TRect &rRect, const TTheme *pT
               pTheme->M.nDialogInner);
 }
 
-// The same frame with the outer rule doubled. An alert has to read as more
-// urgent than a dialogue without becoming a different thing: what interrupts is
-// heavier, and that is the whole of it.
+// The dialogue's own frame with the *inner* rule heavier. Doubling the outer
+// one instead read as a different construction altogether: the pair only works
+// as a frame because one of the two leads, and thickening the wrong one turns
+// that relationship inside out. An alert is a dialogue that interrupts, so it
+// says so with more of the same weight and not with a second language.
 static void DrawAlert (TSurface *pSurface, const TRect &rRect, const TTheme *pTheme)
 {
-    const unsigned nBorder = 2 * pTheme->M.nDialogBorder;
+    const unsigned nBorder = pTheme->M.nDialogBorder;
     const int nInset = (int) (nBorder + pTheme->M.nDialogGap);
     GfxFill (pSurface, rRect, ColorWhite);
     GfxFrame (pSurface, rRect, ColorBlack, nBorder);
     GfxFrame (pSurface, RectInset (rRect, nInset, nInset), ColorBlack,
-              pTheme->M.nDialogInner);
+              2 * pTheme->M.nDialogInner);
 }
 
 static void DrawTitle (TSurface *pSurface, const TRect &rRect, const char *pText,
@@ -303,31 +305,11 @@ static void DrawScrollbar (TSurface *pSurface, const TRect &rRect, unsigned nTop
     GfxFill (pSurface, rRect, ColorLtGray);
     GfxFrame (pSurface, rRect, ColorBlack, pTheme->M.nStroke);
 
-    if (nTotal == 0 || nVisible == 0 || nVisible >= nTotal)
+    const TRect Thumb = ThemeScrollThumb (pTheme, rRect, nTop, nVisible, nTotal);
+    if (Thumb.nHeight == 0)
     {
         return;                         // everything is in view: no thumb to draw
     }
-    const unsigned nTrack = rRect.nHeight - 2;
-    const unsigned nMin = rRect.nWidth * 2;      // never a sliver: two squares
-
-    // As much of the track as the view is of the whole. That is what tells the
-    // reader how much is out of sight, and it is the only thing a scroller has
-    // ever been read for at a glance.
-    unsigned nThumb = nTrack * nVisible / nTotal;
-    if (nThumb < nMin)
-    {
-        nThumb = nMin;
-    }
-    if (nThumb > nTrack)
-    {
-        nThumb = nTrack;
-    }
-    const unsigned nTravel = nTrack - nThumb;
-    const unsigned nSteps  = nTotal - nVisible;
-    const unsigned nAt = nTop > nSteps ? nTravel : nTravel * nTop / nSteps;
-
-    const TRect Thumb = Rect (rRect.nX + 1, rRect.nY + 1 + (int) nAt,
-                              rRect.nWidth - 2, nThumb);
     GfxFill (pSurface, Thumb, ColorWhite);
     GfxFrame (pSurface, Thumb, ColorBlack, pTheme->M.nStroke);
 }
@@ -492,6 +474,37 @@ TRect ThemeContent (const TRect &rDialog, const TTheme *pTheme)
                               + pTheme->M.nDialogInner);
     return RectInset (rDialog, nFrame + (int) pTheme->M.nMargin,
                       nFrame + (int) pTheme->M.nMargin);
+}
+
+TRect ThemeScrollThumb (const TTheme *pTheme, const TRect &rBar, unsigned nTop,
+                        unsigned nVisible, unsigned nTotal)
+{
+    if (nTotal == 0 || nVisible == 0 || nVisible >= nTotal || rBar.nHeight < 3)
+    {
+        return Rect (0, 0, 0, 0);
+    }
+    const unsigned nTrack = rBar.nHeight - 2;
+    const unsigned nMin = rBar.nWidth * 2;      // never a sliver: two squares
+
+    // As much of the track as the view is of the whole. That is what tells the
+    // reader how much is out of sight, and it is the only thing a scroller has
+    // ever been read for at a glance.
+    unsigned nThumb = nTrack * nVisible / nTotal;
+    if (nThumb < nMin)
+    {
+        nThumb = nMin;
+    }
+    if (nThumb > nTrack)
+    {
+        nThumb = nTrack;
+    }
+    const unsigned nSteps = nTotal - nVisible;
+    if (nTop > nSteps)
+    {
+        nTop = nSteps;
+    }
+    const unsigned nAt = (nTrack - nThumb) * nTop / nSteps;
+    return Rect (rBar.nX + 1, rBar.nY + 1 + (int) nAt, rBar.nWidth - 2, nThumb);
 }
 
 unsigned ThemeReach (const TTheme *pTheme, unsigned nState)

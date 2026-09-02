@@ -29,6 +29,28 @@ struct TScreen
     int           nPressed;             // control the mouse is holding down, or -1
     int           nX;                   // where the pointer was last seen
     int           nY;
+
+    // Dragging a list's scroller, and where inside its thumb it was taken hold
+    // of. Grabbing a thumb by its middle whatever part of it was clicked makes
+    // it jump under the hand at the first pixel of movement.
+    int           nDragList;            // the list being scrolled, or -1
+    int           nDragGrab;
+
+    /*
+     *  What has changed since the last paint
+     *
+     *  A screen redrawn whole on every keystroke flickers, and under a window
+     *  it costs far more than the machine has: a full repaint at 1280x960 runs
+     *  into tens of milliseconds, the pointer visibly stops while it happens,
+     *  and the ground being painted back in before the controls makes the whole
+     *  surface blink. The Mac's own compositor answers this the same way, and
+     *  the check that no two controls overlap is what makes redrawing one of
+     *  them on its own safe.
+     */
+    unsigned      nDirty[12];
+    unsigned      nDirtyCount;
+    bool          bDirtyAll;            // the caller must redraw everything
+    TOkapiaColor  Background;           // what a control stands on
 };
 
 enum TScreenResult
@@ -49,6 +71,16 @@ struct TScreenReply
 // the first control that can hold it. A screen with none — an alert that only
 // waits for Return — is a legitimate case and not an error.
 void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsigned nCount);
+
+// Marks a control as needing to be drawn again. Every change of state inside
+// this file goes through it; a screen that changes one itself owes the call.
+void ScreenTouch (TScreen *pScreen, int nIndex);
+
+// Draws again only what changed, putting the ground back under each control
+// first. Answers false when too much has changed to be worth tracking, in which
+// case the caller redraws the screen whole — that is the first paint and a
+// change of page, and nothing else in ordinary use.
+bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen);
 
 // One event in, one answer out. Never draws: the caller repaints when the
 // answer says something changed, which is also what keeps a moving pointer from

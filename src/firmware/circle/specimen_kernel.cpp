@@ -132,6 +132,7 @@ TShutdownMode CSpecimenKernel::Run (void)
     // its own business, so pWidgets has to be filled before it is passed.
     unsigned nCount = SpecimenWidgets (&pWidgets);
     ScreenInit (&Screen, &Theme, pWidgets, nCount);
+    Screen.Background = ColorWhite;             // the dialogue's ground
     SpecimenRepaint (&Surface);
 
     // The pointer appears when the mouse first moves, and not before. A menu
@@ -187,6 +188,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                     SpecimenDraw (&Surface, nPage);
                     nCount = SpecimenWidgets (&pWidgets);
                     ScreenInit (&Screen, &Theme, pWidgets, nCount);
+                    Screen.Background = ColorWhite;
                     m_Logger.Write (FROM, LogNotice, "Page %u", nPage);
                     bRepaint = true;
                 }
@@ -197,10 +199,20 @@ TShutdownMode CSpecimenKernel::Run (void)
         // Hidden before anything under it is touched, shown after: the pointer
         // keeps what it covered, and painting over it would leave those pixels
         // in the save-under to be stamped back at the next move.
+        //
+        // And only what changed is drawn again. Repainting the screen whole on
+        // every click made it blink — the ground going back down before the
+        // controls — and cost so much at 1280x960 under a window that reports
+        // piled up behind it and the pointer stopped on its way. The screen
+        // says what to redraw; it falls back to everything on the first paint
+        // and on a change of page, where everything is what changed.
         if (bRepaint)
         {
             GfxCursorHide (&Surface);
-            SpecimenRepaint (&Surface);
+            if (!ScreenPaintDirty (&Surface, &Screen))
+            {
+                SpecimenRepaint (&Surface);
+            }
             bMoved = bPointer;
         }
         if (bMoved)

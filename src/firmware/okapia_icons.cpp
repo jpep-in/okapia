@@ -6,6 +6,7 @@
  */
 
 #include "okapia_icons.h"
+#include "okapia_font.h"
 
 /*
  *  Chrome icons, painted from the rectangle they are given
@@ -160,25 +161,60 @@ void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor In
                          TOkapiaColor Back)
 {
     const int N = (int) rRect.nWidth;
-    const int t = N / 9 < 2 ? 2 : N / 9;
+    // Lighter than the chrome's other marks. A caution triangle is read as a
+    // shape with something inside it, and at the weight the power ring wears it
+    // closes up into a black lozenge with a notch.
+    const int t = N / 14 < 2 ? 2 : N / 14;
 
     const int cx = rRect.nX + (int) rRect.nWidth / 2;
     const int y0 = rRect.nY + t / 2;
     const int y1 = rRect.nY + (int) rRect.nHeight - 1 - t / 2;
     const int hb = (int) rRect.nWidth / 2 - t / 2;
+    const int H  = y1 - y0;
+    if (H <= 0 || hb <= 0)
+    {
+        return;
+    }
 
     Triangle (pSurface, cx, y0, y1, hb, Ink);
-    // The apex moves down by more than the stroke: a corner as sharp as this
-    // one is thicker along its bisector than across the side, and insetting
-    // every edge by t leaves a blunt, heavy point.
-    Triangle (pSurface, cx, y0 + 2 * t, y1 - t, hb - 2 * t, Back);
 
-    // The exclamation, in the same weight as the outline. Its dot sits a full
-    // gap below the bar, or the two read as one stroke.
-    const int nBarTop = y0 + 4 * t;
-    const int nDot    = y1 - 2 * t;
-    const int nGap    = t < 2 ? 2 : t;
-    GfxFill (pSurface, Rect (cx - t / 2, nBarTop, (unsigned) t,
-                             (unsigned) (nDot - nGap - nBarTop)), Ink);
-    GfxFill (pSurface, Rect (cx - t / 2, nDot, (unsigned) t, (unsigned) t), Ink);
+    // The inner triangle is the outer one offset inward by t *perpendicular to
+    // each side*, which is not the same as inset by t on each axis. A corner as
+    // sharp as this apex is far thicker along its bisector than across a side —
+    // shifting it by a couple of strokes and taking the same off the width, as
+    // this did, leaves a blunt point and an outline half again too heavy.
+    const float d = __builtin_sqrtf ((float) (H * H + hb * hb));
+    const int nApex = (int) ((float) t * d / (float) hb + 0.5f);
+    const int nHalf = (int) ((float) hb * (float) (H - t) / (float) H
+                             - (float) t * d / (float) H + 0.5f);
+    if (nHalf <= 0 || y1 - t <= y0 + nApex)
+    {
+        return;
+    }
+    Triangle (pSurface, cx, y0 + nApex, y1 - t, nHalf, Back);
+
+    /*
+     *  The exclamation is the typeface's own
+     *
+     *  Drawn rather than constructed, because a bar and a square dot are a
+     *  passable imitation of a mark the face already has, and the imitation has
+     *  to be re-tuned at every size while the glyph is simply set. It also
+     *  keeps the icon in the same voice as everything else on the screen.
+     *
+     *  The face is picked from the ladder for the room there is, so the mark is
+     *  drawn at a size that exists rather than magnified — and, like the pixel
+     *  icons, it stops growing once the largest rung is reached.
+     */
+    const int yA = y0 + nApex;                  // the interior's own apex
+    const int yB = y1 - t;                      // and its base
+    // The lower part of the wedge, where it is wide enough to set anything.
+    const TRect Box = Rect (cx - nHalf, yA + (yB - yA) / 4,
+                            (unsigned) (2 * nHalf),
+                            (unsigned) ((yB - yA) - (yB - yA) / 4));
+    if (Box.nHeight == 0)
+    {
+        return;
+    }
+    const TOkapiaFontSet *pFace = FontNearest (Box.nHeight);
+    GfxTextBox (pSurface, pFace->pBold, Box, "!", Ink, TextAlignCenter);
 }

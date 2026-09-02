@@ -317,6 +317,46 @@ static void CheckList (void)
             "Fin va à la dernière et l'amène en vue");
 }
 
+static void CheckScroller (void)
+{
+    TWidget W[WCount];
+    TScreen S;
+    Build (W);
+    ScreenInit (&S, &s_Theme, W, WCount);
+
+    printf ("L'ascenseur de la liste\n");
+
+    const TRect Bar = WidgetListScroller (&W[WList], &s_Theme);
+    Expect (Bar.nWidth != 0, "sept articles pour trois lignes : il y a un ascenseur");
+
+    const TRect Thumb = ThemeScrollThumb (&s_Theme, Bar, W[WList].nTop, VISIBLE, ITEMS);
+    Expect (Thumb.nHeight * ITEMS >= (Bar.nHeight - 2) * VISIBLE - ITEMS
+            && Thumb.nHeight * ITEMS <= (Bar.nHeight - 2) * VISIBLE + ITEMS,
+            "le curseur occupe de la piste ce que la vue occupe du tout");
+
+    const int nMid = Bar.nX + (int) Bar.nWidth / 2;
+
+    // Below the thumb: a page down, not a jump to where the click landed.
+    Send (&S, Mouse (EventMouseDown, nMid, Bar.nY + (int) Bar.nHeight - 2));
+    Send (&S, Mouse (EventMouseUp,   nMid, Bar.nY + (int) Bar.nHeight - 2));
+    Expect (W[WList].nTop == VISIBLE - 1, "cliquer sous le curseur avance d'une page");
+    Expect (W[WList].nChoice < 0, "et ne choisit rien : on a bougé la vue, pas la sélection");
+
+    Send (&S, Mouse (EventMouseDown, nMid, Bar.nY + 1));
+    Send (&S, Mouse (EventMouseUp,   nMid, Bar.nY + 1));
+    Expect (W[WList].nTop == 0, "cliquer au-dessus recule d'autant");
+
+    // Taking hold of the thumb and dragging it to the bottom.
+    const TRect T0 = ThemeScrollThumb (&s_Theme, Bar, 0, VISIBLE, ITEMS);
+    Send (&S, Mouse (EventMouseDown, nMid, T0.nY + (int) T0.nHeight / 2));
+    Send (&S, Mouse (EventMouseMove, nMid, Bar.nY + (int) Bar.nHeight));
+    Expect (W[WList].nTop == ITEMS - VISIBLE, "tirer le curseur en bas défile jusqu'au bout");
+    Send (&S, Mouse (EventMouseMove, nMid, Bar.nY - 20));
+    Expect (W[WList].nTop == 0, "et le remonter revient au sommet");
+    Send (&S, Mouse (EventMouseUp, nMid, Bar.nY - 20));
+    Expect (S.nDragList < 0, "relâcher lâche le curseur");
+}
+
 static void CheckField (void)
 {
     TWidget W[WCount];
@@ -415,6 +455,7 @@ int main (void)
     CheckTraversal ();
     CheckOperating ();
     CheckList ();
+    CheckScroller ();
     CheckField ();
     CheckMouse ();
 

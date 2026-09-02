@@ -151,6 +151,12 @@ TRect ThemeContent (const TRect &rDialog, const TTheme *pTheme);
 // Asking is the only way to know: those widths are the theme's, not the screen's.
 unsigned ThemeReach (const TTheme *pTheme, unsigned nState);
 
+// Where a scroller's thumb lies inside its track. The theme draws it and the
+// event loop has to hit-test it, and two answers to that question means a hand
+// landing beside the thumb it can see — so there is one, and it is here.
+TRect ThemeScrollThumb (const TTheme *pTheme, const TRect &rBar, unsigned nTop,
+                        unsigned nVisible, unsigned nTotal);
+
 // Whole sixteenths: 16 is 1:1, 36 is the 2.25 a 1920x1080 output asks for. The
 // base design is 640x480, and the factor is the smaller of the two ratios so
 // that the interface always fits.

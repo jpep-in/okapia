@@ -2493,6 +2493,34 @@ où il existe, sinon personne ne le regarde.
   page, posée en `StateNormal`, mettait son anneau un pixel dans la marge dès que le focus s'y posait. La
   règle est inscrite dans `okapia_layout.h`, et le contrôle géométrique la garde.
 
+  **Repris le 2026-09-02 après un essai à la main**, qui a trouvé quatre choses que ni les mesures ni les
+  captures ne pouvaient voir :
+
+  - **tout l'écran était repeint à chaque événement**, d'où un clignotement — le fond redescendait avant
+    les contrôles — et un coût tel sous une fenêtre que les rapports s'empilaient derrière et que le
+    pointeur s'arrêtait en chemin. L'écran tient maintenant la liste de ce qui a changé et ne redessine
+    que cela, en remettant d'abord le fond sous chaque contrôle ; il ne redemande le tout que pour le
+    premier tracé et le changement de page. **C'est le contrôle « aucun contrôle n'en chevauche un
+    autre » qui rend ce redessin isolé légitime** — les deux vont ensemble ;
+  - **la saisie ne marchait pas** parce que rien ne produisait de caractère. Le pont passe désormais par
+    `CKeyMap` de Circle, donc par la disposition dont la machine est configurée : un clavier français
+    tape ce qui est écrit dessus. Les touches de navigation continuent de venir de l'identifiant d'usage
+    USB, qui est physique — Tab est Tab où que soient passées les lettres ;
+  - **l'ascenseur ne répondait pas.** Cliquer sous ou sur le curseur avance ou recule d'une page, tirer le
+    curseur défile. Et le curseur n'est plus calculé à deux endroits : le thème le dessine et la boucle le
+    teste depuis `ThemeScrollThumb`, faute de quoi la main atterrit à côté de ce qu'elle voit ;
+  - **le cadre d'alerte** doublait le mauvais filet. La paire ne fait un cadre que parce que l'un des deux
+    mène ; épaissir l'extérieur retournait ce rapport. C'est l'intérieur qui est doublé, donc la même
+    construction que le dialogue, en plus appuyé. Le triangle est plus fin, son intérieur est décalé
+    **perpendiculairement à chaque côté** et non sur chaque axe — un sommet aussi aigu est bien plus épais
+    le long de sa bissectrice —, et le point d'exclamation est le vrai glyphe de la fonte plutôt qu'une
+    barre et un carré à re-régler à chaque taille.
+
+  Au passage, la mesure a rattrapé une barre d'exclamation de hauteur négative : écrite comme « ce qui
+  reste après le point et l'écart », elle devenait un rectangle non signé énorme qui remplissait toute une
+  colonne du dialogue, à une taille sur trois seulement. Les parts d'une répartition ne se calculent pas
+  par soustraction.
+
 **16f — Les traductions.** Une table de chaînes, anglais et français, depuis `boot-menu/strings.tsv` ;
 langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
 mise en page ne s'est pas calée sur la longueur des libellés français.
