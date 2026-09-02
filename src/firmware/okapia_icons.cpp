@@ -17,19 +17,6 @@
  *  meant to keep.
  */
 
-// Largest n with n*n <= v. Used to place the ring's rounded ends exactly on the
-// arc rather than by eye, which is the difference between an icon that looks
-// drawn and one that looks assembled.
-static unsigned ISqrt (unsigned v)
-{
-    unsigned n = 0;
-    while ((n + 1) * (n + 1) <= v)
-    {
-        n++;
-    }
-    return n;
-}
-
 // A stroke with round ends: a rounded rectangle whose radius is half its own
 // thickness. Every line in these icons is one, which is what gives them the
 // drawn look the references have and a bare rectangle has not.
@@ -117,20 +104,61 @@ void OkapiaPaintPower (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
 
     const int cx = Ring.nX + (int) Ring.nWidth / 2;
     const int cy = Ring.nY + (int) Ring.nHeight / 2;
-    const int R  = ((int) Ring.nWidth - t) / 2;     // radius of the stroke's mid-line
-    // Half the notch: the bar's half-width plus a clearance that is never zero.
-    // Writing it as a fraction of t alone rounded down to exactly the bar's own
-    // half-width at fourteen pixels, and the bar welded itself to the ring.
-    const int nAir = t / 2 < 1 ? 1 : t / 2;
+    // The stroke's mid-line radius, measured rather than assumed. GfxCircleFrame
+    // works from a distance field taken from the rectangle's centre, and pixel
+    // centres sit half a pixel further out — so the ink lands at
+    // (width - t) / 2 + 1/2, exactly, at every size checked from sixteen pixels
+    // to ninety-six. Computing it without that half pixel put the caps a whole
+    // pixel off the arc wherever the division also truncated, which is why the
+    // small sizes were the ones that showed it.
+    const float R = ((float) Ring.nWidth - (float) t) / 2.0f + 0.5f;
+    // Half the notch: the bar's half-width plus the air either side of it. A
+    // single pixel of air is not a gap, it is a printing fault — the ring has to
+    // read as open, a U rather than an O with something laid across it, and that
+    // takes air one can see at the size the chrome is actually drawn.
+    //
+    // Written as a fraction of t alone it rounded down to exactly the bar's own
+    // half-width at fourteen pixels and the bar welded itself to the ring, so
+    // the floor is not decoration either.
+    const int nAir = t * 3 / 4 < 2 ? 2 : t * 3 / 4;
     const int hn = t / 2 + nAir + t / 2;
 
-    GfxFill (pSurface, Rect (cx - hn - t / 2, Ring.nY - 1,
-                             (unsigned) (2 * hn + t), (unsigned) (t + 2)), Back);
+    // The notch is cut down to where the arc actually reaches the width of the
+    // opening, not merely through the top of the stroke. Cutting a band one
+    // stroke deep left the arc standing between the two caps as soon as the
+    // opening was widened — a slot in the ring with two marks beside it,
+    // instead of a ring that is open.
+    // Where the arc is actually cut, which is the edge of the notch and not its
+    // centre line: the erase takes everything within hn + t/2 of the middle, so
+    // the stroke survives from there outward and that is where its end is. Both
+    // the depth of the cut and the caps that round it off are measured from
+    // this — measured from hn instead, the caps sat a half stroke inside the
+    // gap and floated free of the ring.
+    const int hOpen = hn + t / 2;
+    // Rounded, not truncated: at ninety-six pixels the true height was 23.8 and
+    // a floor put the caps a whole pixel above the arc, so each one floated
+    // free of the ring it was supposed to finish.
+    const int ey = cy - (int) (__builtin_sqrtf (R * R - (float) (hOpen * hOpen)) + 0.5f);
+    if (ey >= cy)
+    {
+        return;
+    }
 
-    const int ey = cy - (int) ISqrt ((unsigned) (R * R - hn * hn));
+    // The notch is a wedge and not a rectangle, because the stroke has to be
+    // cut *along a radius*. A vertical cut crosses the arc obliquely, so its
+    // face is longer than the stroke is thick and no round cap can cover it —
+    // a thin spur was left standing beyond each cap, which is what the artefact
+    // was. Cut radially and the face is exactly one stroke wide, which is what
+    // a disc of that diameter caps precisely.
+    for (int y = rRect.nY; y <= cy; y++)
+    {
+        const int hw = hOpen * (cy - y) / (cy - ey);
+        GfxHLine (pSurface, cx - hw, y, (unsigned) (2 * hw + 1), Back);
+    }
+
     for (int nSide = -1; nSide <= 1; nSide += 2)
     {
-        Capsule (pSurface, cx + nSide * hn - t / 2, ey - t / 2,
+        Capsule (pSurface, cx + nSide * hOpen - t / 2, ey - t / 2,
                  (unsigned) t, (unsigned) t, Ink);
     }
 

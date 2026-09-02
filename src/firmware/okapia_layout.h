@@ -56,6 +56,13 @@ void LayoutSkip (TLayout *pLayout, unsigned nAmount);
 void LayoutRowGap (TLayout *pLayout);           // between rows of one group
 void LayoutSectionGap (TLayout *pLayout);       // between groups
 
+// The same, off the bottom. A footer is built upwards, so the air above its
+// rule has to be taken from the bottom too — taken from the top it lands
+// nowhere near the rule and the rule sits hard against the buttons, which is
+// exactly how it read.
+void LayoutSkipBottom (TLayout *pLayout, unsigned nAmount);
+void LayoutSectionGapBottom (TLayout *pLayout);
+
 unsigned LayoutRoom (const TLayout *pLayout);   // what is still unspent, vertically
 
 // A whole band being spent left to right. The same model turned on its side.

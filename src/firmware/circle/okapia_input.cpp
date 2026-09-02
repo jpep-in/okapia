@@ -167,6 +167,17 @@ static void KeyHandler (unsigned char ucModifiers, const unsigned char RawKeys[6
     memcpy (s_LastKeys, RawKeys, sizeof s_LastKeys);
 }
 
+// A pointer that moves one pixel per count crosses a 1280-pixel screen only
+// with several sweeps of the hand. Every system has answered this the same way
+// since the mouse existed: aim precisely when moving slowly, cover ground when
+// moving fast. The threshold is what keeps a careful click from being thrown
+// off, and it is deliberately low — the hand is never as slow as it thinks.
+static int Accelerate (int nDelta)
+{
+    const int n = nDelta < 0 ? -nDelta : nDelta;
+    return n <= 2 ? nDelta : nDelta * 2;
+}
+
 static void MouseHandler (unsigned nButtons, int nDX, int nDY, int nWheel)
 {
     if (s_pMouseNext != 0)
@@ -177,8 +188,8 @@ static void MouseHandler (unsigned nButtons, int nDX, int nDY, int nWheel)
 
     if (nDX != 0 || nDY != 0)
     {
-        s_nX += nDX;
-        s_nY += nDY;
+        s_nX += Accelerate (nDX);
+        s_nY += Accelerate (nDY);
         if (s_nX < 0)       s_nX = 0;
         if (s_nY < 0)       s_nY = 0;
         if (s_nX > s_nMaxX) s_nX = s_nMaxX;

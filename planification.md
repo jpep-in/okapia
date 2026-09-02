@@ -2556,6 +2556,27 @@ où il existe, sinon personne ne le regarde.
   au-dessus d'un champ modifiable, avec son propre point de visée, l'écran étant seul à savoir ce qu'il y
   a dessous.
 
+  **Finitions.** Le pointeur accélère au-delà de deux points de déplacement — précis quand la main va
+  lentement, rapide quand elle balaie, ce que tout système fait depuis que la souris existe ; mesuré, un
+  delta de 100 déplace de 195 pixels. Le pied de page réserve son air **par le bas**, la barre au-dessus
+  des boutons ayant été construite vers le haut : pris par le haut, l'écart atterrissait ailleurs et le
+  filet touchait les boutons.
+
+  La marque d'alimentation a demandé trois corrections successives, toutes de la même famille — **on ne
+  suppose pas où l'encre tombe, on le mesure** :
+
+  - l'encoche était **rectangulaire** alors que le trait doit être coupé **le long d'un rayon**. Une coupe
+    verticale traverse l'arc en biais, donc sa face est plus longue que l'épaisseur du trait et aucun
+    capuchon rond ne peut la couvrir : il restait un ergot au-delà de chaque bout ;
+  - les capuchons étaient posés au **centre** de l'encoche alors que l'arc est coupé à son **bord**, une
+    demi-épaisseur plus loin ;
+  - et le rayon de la ligne médiane valait `(largeur - épaisseur) / 2`, alors que `GfxCircleFrame` travaille
+    depuis un champ de distance pris au centre du rectangle et que les centres de pixels sont un demi-pixel
+    plus loin : l'encre tombe à `(largeur - épaisseur) / 2 + 1/2`, **vérifié de seize à quatre-vingt-seize
+    pixels** en scrutant le tracé. Sans ce demi-pixel, les tailles où la division tronquait aussi
+    décalaient le capuchon d'un pixel entier — d'où des petites tailles fautives et des grandes correctes,
+    ce qui envoyait chercher au mauvais endroit.
+
 **16f — Les traductions.** Une table de chaînes, anglais et français, depuis `boot-menu/strings.tsv` ;
 langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
 mise en page ne s'est pas calée sur la longueur des libellés français.

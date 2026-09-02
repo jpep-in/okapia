@@ -68,6 +68,16 @@ void LayoutSectionGap (TLayout *pLayout)
     LayoutSkip (pLayout, pLayout->pTheme->M.nSectionGap);
 }
 
+void LayoutSkipBottom (TLayout *pLayout, unsigned nAmount)
+{
+    LayoutBottom (pLayout, nAmount);
+}
+
+void LayoutSectionGapBottom (TLayout *pLayout)
+{
+    LayoutSkipBottom (pLayout, pLayout->pTheme->M.nSectionGap);
+}
+
 void RowBegin (TRow *pRow, const TTheme *pTheme, const TRect &rBand)
 {
     pRow->pTheme    = pTheme;

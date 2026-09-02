@@ -422,9 +422,10 @@ static void PageFrame (TLayout *pLayout, const TTheme *pTheme, const TRect &rCon
         Add (WidgetLabel, RowRest (&Foot, StateNormal), s_Page, StateNormal);
     }
 
-    LayoutSectionGap (pLayout);
+    // Upwards from the footer, since that is the direction it was built in.
+    LayoutSectionGapBottom (pLayout);
     Add (WidgetSeparator, LayoutBottom (pLayout, 1), 0, StateNormal);
-    LayoutSectionGap (pLayout);
+    LayoutSectionGapBottom (pLayout);
 }
 
 static TRect ContentFor (TSurface *pSurface, const TTheme *pTheme)
