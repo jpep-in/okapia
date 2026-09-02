@@ -270,7 +270,7 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
     // No two components may touch, once each is given the room its state draws
     // in. The list frame legitimately contains its rows and its scroller, and a
     // separator is a rule laid in the space between things, so those are exempt.
-    const TWidget *pList = 0;
+    TWidget *pList = 0;
     const unsigned nCount = SpecimenWidgets (&pList);
     unsigned nOverlaps = 0;
     for (unsigned i = 0; i < nCount; i++)

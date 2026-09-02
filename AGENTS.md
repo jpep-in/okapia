@@ -170,6 +170,12 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   Mac's double-click time, so select then `sendkey meta_l-o` (Command-O) to open; the Mac applies pointer
   acceleration, so a delta of 40 moves about 29 pixels — aim by screenshot, not by arithmetic; and
   System 7 menus are **not** sticky, so a menu needs press, move, release rather than click, click.
+- **A PRAM zap moves the startup disk, and the next boot may stop on an alert.** `BasiliskII_Prefs` lists
+  `disk /boot608.hda` first, so a Mac with no startup disk in its parameter RAM falls back to it and a
+  IIci ROM in 32-bit mode answers "System 6.0.8 does not work with 32-bit addressing" and waits for a
+  click. `run-test.sh` then reports a volume never mounted and no writes — which reads exactly like a
+  code regression and is not one. Look at the screen first, as AGENTS.md already says, and remember that
+  `run-test.sh [seconds] qemu/sd-contents/boot71.img` builds its own card and is unaffected.
 - **A test that picks its subject by guessing can go green on the wrong volume.** `run-test.sh` used to
   inspect the first `*.image` on the card; once a second System was staged, that was no longer the volume
   the Mac had booted, and the verdict meant nothing. The kernel now logs `Boot volume: <path>` and the
@@ -276,6 +282,17 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   output at all: the Mac played its alert, waited for a completion that never came, and froze — and the
   hard stop that followed cost a card. A device that will not start must leave the platform hook exactly
   as the `src/dummy/` version leaves it, and the decision belongs at init, not in a hook the 68k calls.
+- **Circle's mouse can be claimed once per boot and never given back.**
+  `CMouseDevice::RegisterStatusHandler` asserts `m_pStatusHandler == 0` (`mouse.cpp:85`) and offers no
+  withdrawal, so the second claim is a failed assertion and a dead kernel. The keyboard is nothing like
+  it — a raw handler simply replaces the last one — so the two devices cannot be handed over the same
+  way. `src/firmware/circle/okapia_input.cpp` holds the one registration for the life of the boot and
+  forwards the reports onward: `FwInputPassMouseTo()` is what `InputInit()` calls instead of registering.
+- **A USB host built as a member of the kernel class is a silent hang.** Member constructors run before
+  `Initialize()`, so before serial: `CUSBHCIDevice m_USBHCI` produced a kernel with no output at all, and
+  nothing to say why. Built with `new` once the logger exists, the same code enumerates the hub, the
+  keyboard and the mouse and says so. Same trap as the console below, different device — anything whose
+  construction can fail belongs after the log, not beside it.
 - **`RegisterKeyStatusHandlerRaw (0)` does not detach a keyboard, it changes its mode.** A null raw handler
   makes `ReportHandler` fall through to the cooked path (`usbkeyboard.cpp:200`) and hand the reports to
   `CKeyboardBehaviour`. Doing that to "give the keyboard back" after the firmware's window stopped the

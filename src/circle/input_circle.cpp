@@ -22,6 +22,8 @@
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
 #include <circle/devicenameservice.h>
+
+#include "okapia_input.h"
 #include <string.h>
 
 #include "adb.h"
@@ -273,11 +275,15 @@ void InputAttachDevices (void)
 
     if (s_pMouse == 0)
     {
-        s_pMouse = (CMouseDevice *)
-            CDeviceNameService::Get ()->GetDevice ("mouse1", FALSE);
-        if (s_pMouse != 0)
+        // Through the firmware's bridge and not straight to Circle: the boot
+        // menu ran first and claimed the mouse, and CMouseDevice asserts on a
+        // second registration with no way to withdraw the first (mouse.cpp:85).
+        // The bridge holds that one registration and forwards from here on; it
+        // claims the device itself on a boot where the firmware never ran.
+        if (FwInputPassMouseTo (MouseStatusHandler))
         {
-            s_pMouse->RegisterStatusHandler (MouseStatusHandler);
+            s_pMouse = (CMouseDevice *)
+                CDeviceNameService::Get ()->GetDevice ("mouse1", FALSE);
             ADBSetRelMouseMode (true);
             CLogger::Get ()->Write (FROM, LogNotice, "Mouse attached, relative mode");
         }

@@ -2375,6 +2375,40 @@ le `ModalDialog` du Dialog Manager. Focus et son parcours (Tab, Maj-Tab, flèche
 Échap), `WidgetHit` enfin appelé, état enfoncé pendant le clic. Vérifiable sur l'hôte en injectant des
 événements de synthèse : c'est le premier morceau du firmware qui se teste sans écran.
 
+  **Fait le 2026-09-02.** `okapia_event.h` pose l'événement — touche logique, modificateurs, pointeur —
+  et `okapia_screen.{h,cpp}` la boucle : focus et son parcours, `WidgetHit`, enfoncement suivi comme
+  `TrackControl` (sortir du contrôle le relâche, y revenir le reprend, relâcher dehors annule).
+  `tests/host/check_screen.cpp` l'exerce par événements de synthèse, 33 mesures, sans écran ni clavier.
+
+  Quatre choses tranchées en l'écrivant :
+
+  - **Espace suit le focus, Retour suit le bouton par défaut.** Les faire converger rend l'un des deux
+    imprévisible ; les séparer est ce que promet l'anneau autour du bouton par défaut ;
+  - **les flèches appartiennent à la liste.** Ailleurs elles ne font rien, sciemment : en faire un second
+    parcours de focus donnerait un écran dont le comportement dépend de l'endroit où le focus se trouve
+    déjà. Le focus se pose sur le cadre de liste, jamais sur ses lignes, sinon Tab traverse les volumes ;
+  - **une ligne appartient à la liste qui la contient**, géométriquement et non par un champ. La règle se
+    voit à l'écran, donc elle ne peut pas se désynchroniser de ce qui est dessiné ;
+  - **`nGroup` sur les radios.** Effacer tous les radios de l'écran est la version évidente et elle est
+    fausse le jour où un écran pose deux questions — le sélecteur en posera.
+
+  `ScreenInit` **suit le focus déclaré** par l'écran s'il y en a un, et n'efface rien : ranger le tableau
+  est le travail de Tab. C'est ce qui garde le spécimen vivant identique au rendu de `tests/host`, et le
+  dialogue de 16i ouvrira sur son champ.
+
+  Côté Circle, `circle/okapia_input.{h,cpp}` traduit les rapports USB en événements — les identifiants
+  d'usage s'arrêtent là — et le noyau spécimen répond maintenant : Tab, Espace, Retour, flèches,
+  Gauche/Droite pour la page. La fenêtre de deux secondes passe par le même pont, donc elle a aussi la
+  souris. Le pointeur est dessiné par le firmware (`GfxCursorShow`, sauvegarde de ce qu'il recouvre) et
+  n'apparaît qu'au premier mouvement : un menu que personne n'a touché n'a rien à pointer, et cela garde
+  la capture QEMU identique au pixel près au rendu de l'hôte.
+
+  Deux pièges de Circle, tous deux inscrits dans AGENTS.md : la **souris ne se réclame qu'une fois**
+  (`mouse.cpp:85` assène une assertion sur la seconde inscription et n'offre aucun retrait), donc le pont
+  garde l'inscription et transmet — `FwInputPassMouseTo()` est ce qu'appelle `InputInit()` ; et un
+  **contrôleur USB construit en membre** du noyau tourne avant la série, donc un noyau muet sans un mot
+  d'explication.
+
 **16d — Le modèle de boîtes.** Lignes et colonnes, mesure du texte, et **troncature d'une chaîne à son
 contrôle** — la limite connue, relevée par le mesureur. Le spécimen redevient une page, ses ordonnées
 n'étant plus posées à la main. Les contrôles gagnent « aucun texte hors de son contrôle ».

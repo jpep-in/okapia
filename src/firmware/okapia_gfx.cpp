@@ -560,3 +560,136 @@ void GfxTextCentered (TSurface *pSurface, const TOkapiaFont *pFont, const TRect 
     const int nX = rRect.nX + ((int) rRect.nWidth - (int) nWidth) / 2;
     GfxText (pSurface, pFont, nX, GfxTextTop (pFont, rRect), pText, Color);
 }
+
+/*
+ *  The pointer
+ *
+ *  The arrow is the shape alone; its white surround is computed by dilating it,
+ *  the same habit as the rest of the chrome — one bitmap cannot fall out of step
+ *  with a second one that does not exist. A cursor without that surround
+ *  disappears the moment it crosses black text, which is most of a dialogue.
+ */
+
+static const unsigned CURSOR_W = 12;
+static const unsigned CURSOR_H = 16;
+
+static const unsigned short s_CursorRows[CURSOR_H] =
+{
+    0x800, 0xC00, 0xE00, 0xF00, 0xF80, 0xFC0, 0xFE0, 0xFF0,
+    0xFF8, 0xFC0, 0xEC0, 0xC60, 0x860, 0x030, 0x030, 0x000
+};
+
+static bool CursorInk (int nX, int nY)
+{
+    if (nX < 0 || nY < 0 || nX >= (int) CURSOR_W || nY >= (int) CURSOR_H)
+    {
+        return false;
+    }
+    return (s_CursorRows[nY] & (1 << (CURSOR_W - 1 - nX))) != 0;
+}
+
+// The largest whole scale the interface ever asks of an icon. The save-under is
+// a static because the firmware allocates nothing once it is running, so its
+// size has to be decided here rather than discovered.
+static const unsigned CURSOR_MAX_SCALE = 4;
+static const unsigned CURSOR_MAX_W = (CURSOR_W + 2) * CURSOR_MAX_SCALE;
+static const unsigned CURSOR_MAX_H = (CURSOR_H + 2) * CURSOR_MAX_SCALE;
+
+static unsigned s_Under[CURSOR_MAX_W * CURSOR_MAX_H];
+static TRect    s_UnderRect;
+static bool     s_bCursorShown;
+
+void GfxCursorHide (TSurface *pSurface)
+{
+    if (!s_bCursorShown)
+    {
+        return;
+    }
+    for (unsigned y = 0; y < s_UnderRect.nHeight; y++)
+    {
+        const int nY = s_UnderRect.nY + (int) y;
+        if (nY < 0 || nY >= (int) pSurface->nHeight)
+        {
+            continue;
+        }
+        unsigned *pRow = (unsigned *) (pSurface->pPixels + (size_t) nY * pSurface->nPitch);
+        for (unsigned x = 0; x < s_UnderRect.nWidth; x++)
+        {
+            const int nX = s_UnderRect.nX + (int) x;
+            if (nX < 0 || nX >= (int) pSurface->nWidth)
+            {
+                continue;
+            }
+            pRow[nX] = s_Under[y * CURSOR_MAX_W + x];
+        }
+    }
+    s_bCursorShown = false;
+}
+
+void GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale)
+{
+    GfxCursorHide (pSurface);
+
+    if (nScale < 1)
+    {
+        nScale = 1;
+    }
+    if (nScale > CURSOR_MAX_SCALE)
+    {
+        nScale = CURSOR_MAX_SCALE;
+    }
+
+    // One bitmap pixel of margin all round, which is where the white surround
+    // goes: the arrow's own tip is at 0,0 and the surround is outside it.
+    const TRect Box = Rect (nX - (int) nScale, nY - (int) nScale,
+                            (CURSOR_W + 2) * nScale, (CURSOR_H + 2) * nScale);
+    s_UnderRect = Box;
+
+    const unsigned nBlack = GfxPaletteEntry (ColorBlack);
+    const unsigned nWhite = GfxPaletteEntry (ColorWhite);
+
+    for (unsigned y = 0; y < Box.nHeight; y++)
+    {
+        const int nDstY = Box.nY + (int) y;
+        if (nDstY < 0 || nDstY >= (int) pSurface->nHeight)
+        {
+            continue;
+        }
+        unsigned *pRow = (unsigned *) (pSurface->pPixels + (size_t) nDstY * pSurface->nPitch);
+        const int nSrcY = (int) (y / nScale) - 1;
+        for (unsigned x = 0; x < Box.nWidth; x++)
+        {
+            const int nDstX = Box.nX + (int) x;
+            if (nDstX < 0 || nDstX >= (int) pSurface->nWidth)
+            {
+                continue;
+            }
+            s_Under[y * CURSOR_MAX_W + x] = pRow[nDstX];
+
+            const int nSrcX = (int) (x / nScale) - 1;
+            if (CursorInk (nSrcX, nSrcY))
+            {
+                pRow[nDstX] = nBlack;
+                continue;
+            }
+            // The surround: any cell of the margin touching the shape.
+            bool bEdge = false;
+            for (int dy = -1; dy <= 1 && !bEdge; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    if (CursorInk (nSrcX + dx, nSrcY + dy))
+                    {
+                        bEdge = true;
+                        break;
+                    }
+                }
+            }
+            if (bEdge)
+            {
+                pRow[nDstX] = nWhite;
+            }
+        }
+    }
+    s_bCursorShown = true;
+}

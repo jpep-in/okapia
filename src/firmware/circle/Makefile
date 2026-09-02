@@ -16,7 +16,7 @@ BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR1
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp)
 FIRMWARE_OBJS = $(addprefix obj/,$(notdir $(FIRMWARE_SRCS:.cpp=.o)))
 
-OBJS = specimen_main.o specimen_kernel.o $(FIRMWARE_OBJS) \
+OBJS = specimen_main.o specimen_kernel.o okapia_input.o $(FIRMWARE_OBJS) \
        obj/okapia_font_data.o obj/okapia_icons_data.o
 
 include $(CIRCLEHOME)/Rules.mk

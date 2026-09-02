@@ -38,10 +38,12 @@ endif
 # Upstream Unix files reused unchanged.
 REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 
-# The boot firmware: portable drawing code plus the one file that knows about
-# Circle. Its sources are generated from assets/, like the key table.
+# The boot firmware: portable drawing code plus the two files that know about
+# Circle — the window itself, and the bridge from USB reports to events. Its
+# font and icon sources are generated from assets/, like the key table.
 FIRMWARE      = ../../src/firmware
-FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) $(FIRMWARE)/circle/okapia_firmware.cpp
+FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
+                $(FIRMWARE)/circle/okapia_firmware.cpp $(FIRMWARE)/circle/okapia_input.cpp
 FONTDIR       = ../../assets/fonts
 ICONDIR       = ../../assets/icons
 BDF           = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf \

@@ -43,7 +43,19 @@ struct TWidget
     unsigned            nSpan;          // scroller range
     const TGlyphImage  *pIcon;          // a list row's picture, which is real pixel art
     TIconPainter        Paint;          // an icon button's mark, which is computed
+    // Which radio buttons are alternatives to one another. Picking one clears
+    // the others carrying the same number, and nothing else. A screen with a
+    // single group never has to say so; two groups on one screen would have
+    // ended up sharing a selection, which is the bug this field exists to make
+    // impossible rather than the feature it looks like.
+    unsigned            nGroup;
 };
+
+// Whether the focus can rest on it: something the user operates, and enabled.
+// A list frame answers yes and its rows answer no — the list takes the focus as
+// one thing and the arrow keys move the selection inside it, which is how a
+// list has always behaved and what stops Tab walking through forty volumes.
+bool WidgetFocusable (const TWidget *pWidget);
 
 void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidget);
 void WidgetDrawAll (TSurface *pSurface, const TTheme *pTheme, const TWidget *pList,

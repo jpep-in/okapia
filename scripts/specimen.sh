@@ -5,8 +5,9 @@
 # and the firmware's drawing code and nothing else. It is therefore always safe
 # to run alongside anything, and it can never touch a card.
 #
-# The kernel alternates its two pages every five seconds, so the capture is
-# timed rather than asked for: no argument takes the first page, "2" the second.
+# The specimen answers now: the kernel runs the firmware's event loop, so the
+# page is asked for with an arrow key through the monitor rather than waited
+# for. No argument takes the first page, "2" the second.
 #
 #   usage: specimen.sh [2] [width height]
 set -euo pipefail
@@ -32,16 +33,25 @@ if [ $# -ge 2 ]; then
     GEOMETRY=(-global "bcm2835-fb.xres=$1" -global "bcm2835-fb.yres=$2")
 fi
 
+# A keyboard and a mouse, because the specimen is an interface and not a
+# picture: without them the focus never moves and nothing here is exercised.
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial "file:${WORK}/serial.log" \
-    -display none -semihosting \
+    -display none -semihosting -device usb-kbd -device usb-mouse \
     -monitor "unix:${WORK}/monitor.sock,server,nowait" "${GEOMETRY[@]}" &
 QPID=$!
 
-# Timed into the page that is wanted. The kernel counts its own ticks, and a
-# full-screen antialiased redraw costs the better part of a second under QEMU,
-# so its cadence drifts — hence a generous aim rather than an exact one.
-if [ "$PAGE" = "2" ]; then sleep 13; else sleep 4; fi
-echo "screendump ${WORK}/screen.ppm" | nc -U "${WORK}/monitor.sock" >/dev/null 2>&1 || true
+# One command per connection, with a pause: a burst down a single socket is
+# dropped, which cost this project an afternoon once already (AGENTS.md).
+say () { echo "$1" | nc -U "${WORK}/monitor.sock" >/dev/null 2>&1 || true; }
+
+# Long enough for the first paint, which costs the better part of a second under
+# QEMU at 640x480 and rather more above it.
+sleep 5
+if [ "$PAGE" = "2" ]; then
+    say "sendkey right"
+    sleep 4
+fi
+say "screendump ${WORK}/screen.ppm"
 sleep 2
 kill -9 $QPID 2>/dev/null || true
 wait $QPID 2>/dev/null || true

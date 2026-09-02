@@ -44,6 +44,7 @@ static TWidget *Add (TWidgetType Type, const TRect &rRect, const char *pText, un
     p->nSpan  = 0;
     p->pIcon  = 0;
     p->Paint  = 0;
+    p->nGroup = 0;
     return p;
 }
 
@@ -63,7 +64,7 @@ TRect SpecimenDialog (void)
     return s_Dialog;
 }
 
-unsigned SpecimenWidgets (const TWidget **ppList)
+unsigned SpecimenWidgets (TWidget **ppList)
 {
     *ppList = s_Widgets;
     return s_nWidgets;
@@ -77,7 +78,6 @@ void SpecimenDraw (TSurface *pSurface, unsigned nPage)
     const TTheme *pTheme = &Theme;
 
     s_nWidgets = 0;
-    pTheme->DrawDesktop (pSurface, pTheme);
 
     // The dialogue keeps the design's proportions and is centred on whatever
     // the surface turns out to be.
@@ -85,7 +85,6 @@ void SpecimenDraw (TSurface *pSurface, unsigned nPage)
     const unsigned nDH = (unsigned) S (458);
     const TRect Dialog = Rect ((int) (pSurface->nWidth  - nDW) / 2,
                                (int) (pSurface->nHeight - nDH) / 2, nDW, nDH);
-    pTheme->DrawDialog (pSurface, Dialog, pTheme);
     s_Dialog = Dialog;
 
     // Everything flows from the content rectangle: down from its top, and the
@@ -285,5 +284,14 @@ void SpecimenDraw (TSurface *pSurface, unsigned nPage)
     const unsigned nStart = WidgetButtonWidth (pTheme, "Démarrer", StateDefault);
     AddButton (pTheme, nRight - nReach - (int) nStart, yFoot, "Démarrer", StateDefault);
 
-    WidgetDrawAll (pSurface, pTheme, s_Widgets, s_nWidgets);
+    SpecimenRepaint (pSurface);
+}
+
+void SpecimenRepaint (TSurface *pSurface)
+{
+    TTheme Theme;
+    ThemeMake (ThemeScaleFor (pSurface->nWidth, pSurface->nHeight), &Theme);
+    Theme.DrawDesktop (pSurface, &Theme);
+    Theme.DrawDialog (pSurface, s_Dialog, &Theme);
+    WidgetDrawAll (pSurface, &Theme, s_Widgets, s_nWidgets);
 }

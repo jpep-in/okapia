@@ -38,7 +38,16 @@ TRect SpecimenDialog (void);
 // The components the last call placed, so a test can check that none of them
 // touch. Two controls overlapping is invisible in a margin check and obvious
 // on screen; it needs its own measurement.
+//
+// Mutable, because an event loop above this owns their state: the specimen says
+// where a control is, the loop says whether it holds the focus. That division
+// is what lets the same screen be a static document here and a live one under
+// an emulator without being written twice.
 struct TWidget;
-unsigned SpecimenWidgets (const TWidget **ppList);
+unsigned SpecimenWidgets (TWidget **ppList);
+
+// Repaints from the components as they now stand, laying nothing out again.
+// SpecimenDraw() is a layout followed by one of these.
+void SpecimenRepaint (TSurface *pSurface);
 
 #endif

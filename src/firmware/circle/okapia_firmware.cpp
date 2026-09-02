@@ -8,15 +8,14 @@
 #include "okapia_firmware.h"
 
 #include <circle/bcmframebuffer.h>
-#include <circle/devicenameservice.h>
 #include <circle/logger.h>
 #include <circle/timer.h>
-#include <circle/usb/usbkeyboard.h>
 #include <circle/types.h>
 
 #include <wrap_fatfs.h>
 
 #include "okapia_gfx.h"
+#include "okapia_input.h"
 #include "okapia_theme.h"
 
 #define FROM "firmware"
@@ -32,76 +31,11 @@ static const unsigned WINDOW_MS = 2000;
 // first were true, and that is exactly the kind of thing not worth assuming.
 static const unsigned SLICE_MS = 20;
 
-/*
- *  What the window watched happen
- *
- *  Circle hands over the whole keyboard state rather than events, so the reply
- *  is a set of things seen at any moment, not a sequence. That suits the
- *  question being asked: not "what did the user type" but "was Option held".
- */
-// Everything is latched over the whole window rather than read at an instant.
-// A report arrives on every change, release included, so the four parts of
-// Command-Option-P-R are rarely all present in one of them — the first attempt
-// asked for that coincidence and missed the combination it was watching for.
-// Latching also matches what a Macintosh did, which sampled the keyboard's
-// state through the window rather than demanding a single perfect moment.
-static volatile unsigned      s_nSeen;          // TSeen bits, latched
-static volatile bool          s_bAnyKey;        // anything at all, for the log
-// What actually arrived, for the log alone. A window that saw nothing it wanted
-// should be able to say what it did see; guessing at that from the outside is
-// how one ends up blaming the keyboard for a wrong constant.
-static volatile unsigned char s_nModsSeen;
-static volatile unsigned char s_nFirstKey;
-
-// HID usage IDs of the keys the window cares about.
+// USB usage identifiers, which stop at okapia_input.cpp for everything except
+// this: the zap is asked for by two keys that mean nothing to a menu, so there
+// is no logical key to give them and inventing one would be worse.
 static const unsigned char KEY_P = 0x13;
 static const unsigned char KEY_R = 0x15;
-
-enum TSeen
-{
-    SeenP     = 1u << 0,
-    SeenR     = 1u << 1,
-    SeenAlt   = 1u << 2,
-    SeenGui   = 1u << 3,
-    SeenOther = 1u << 4                 // Control or Shift: not ours
-};
-
-// Left and right alike: a keyboard's two Option keys mean the same thing, and a
-// user holding the right one is not asking for something else.
-static const unsigned char MOD_ALT = 0x04 | 0x40;
-static const unsigned char MOD_GUI = 0x08 | 0x80;       // Command
-static const unsigned char MOD_CTRL = 0x01 | 0x10;
-static const unsigned char MOD_SHIFT = 0x02 | 0x20;
-
-static void FirmwareKeyHandler (unsigned char ucModifiers, const unsigned char RawKeys[6])
-{
-    unsigned nSeen = s_nSeen;
-
-    if (ucModifiers & MOD_ALT)                  nSeen |= SeenAlt;
-    if (ucModifiers & MOD_GUI)                  nSeen |= SeenGui;
-    if (ucModifiers & (MOD_CTRL | MOD_SHIFT))   nSeen |= SeenOther;
-
-    for (unsigned i = 0; i < 6; i++)
-    {
-        if (RawKeys[i] == 0)
-        {
-            continue;
-        }
-        s_bAnyKey = true;
-        if (RawKeys[i] == KEY_P) nSeen |= SeenP;
-        if (RawKeys[i] == KEY_R) nSeen |= SeenR;
-    }
-    if (ucModifiers != 0)
-    {
-        s_bAnyKey = true;
-    }
-    s_nModsSeen = (unsigned char) (s_nModsSeen | ucModifiers);
-    if (s_nFirstKey == 0 && RawKeys[0] != 0)
-    {
-        s_nFirstKey = RawKeys[0];
-    }
-    s_nSeen = nSeen;
-}
 
 TFirmwareResult FirmwareRun (void)
 {
@@ -139,51 +73,50 @@ TFirmwareResult FirmwareRun (void)
 
     Theme.DrawDesktop (&Surface, &Theme);
 
-    // The keyboard, taken for the length of the window and *not* given back.
-    // Circle keeps one raw handler and InputInit() puts the Macintosh's in its
-    // place when StartMacintosh() runs, which is the whole handover.
+    // The keyboard and the mouse, taken for the length of the window and *not*
+    // given back. Circle keeps one handler per device and InputInit() puts the
+    // Macintosh's in their place when StartMacintosh() runs, which is the whole
+    // handover.
     //
     // Registering 0 to detach looks tidier and wedges the boot: it does not
     // detach anything, it puts the device back into cooked mode
     // (usbkeyboard.cpp:200), and the reports then arriving go to
     // CKeyboardBehaviour instead. Measured — with that call the kernel stopped
     // dead after this function returned, with no further log at all, and
-    // removing it was enough. Leaving our handler in place until InputInit()
-    // replaces it costs nothing: it only ever touches its own statics.
-    CUSBKeyboardDevice *pKeyboard = (CUSBKeyboardDevice *)
-        CDeviceNameService::Get ()->GetDevice ("ukbd1", FALSE);
-    if (pKeyboard != 0)
-    {
-        s_nSeen     = 0;
-        s_bAnyKey   = false;
-        s_nModsSeen = 0;
-        s_nFirstKey = 0;
-        pKeyboard->RegisterKeyStatusHandlerRaw (FirmwareKeyHandler);
-    }
+    // removing it was enough. Leaving ours in place until InputInit() replaces
+    // them costs nothing: they only ever touch their own statics.
+    const bool bKeyboard = FwInputBegin (nWidth, nHeight);
 
     CLogger::Get ()->Write (FROM, LogNotice, "Output %ux%u, theme scale %u/16, %s, holding %u ms",
                             nWidth, nHeight, nScale16,
-                            pKeyboard != 0 ? "keyboard attached" : "no keyboard", WINDOW_MS);
+                            bKeyboard ? "keyboard attached" : "no keyboard", WINDOW_MS);
 
     for (unsigned nWaited = 0; nWaited < WINDOW_MS; nWaited += SLICE_MS)
     {
+        // Drained rather than read, so that a window nobody touches cannot end
+        // with a full queue: this one only wants the latch, but the queue is
+        // the same one the screens will read from.
+        TEvent Event;
+        while (FwInputNext (&Event))
+        {
+        }
         CTimer::Get ()->MsDelay (SLICE_MS);
     }
 
-    const unsigned nSeen = s_nSeen;
+    const unsigned nSeen = FwInputSeenModifiers ();
 
     // Command-Option-P-R, the combination a Macintosh answered by forgetting its
     // parameter RAM. It is watched here rather than passed on, because a real
     // Macintosh does this in its ROM before the emulated ADB is alive at all:
     // letting it through would reach nobody.
-    const bool bForgetPram = (nSeen & SeenAlt) && (nSeen & SeenGui)
-                          && (nSeen & SeenP)   && (nSeen & SeenR);
+    const bool bForgetPram = (nSeen & ModOption) && (nSeen & ModCommand)
+                          && FwInputSeenKey (KEY_P) && FwInputSeenKey (KEY_R);
 
     // Option on its own opens the chooser. Every other combination including it
     // belongs to the Macintosh, so anything else held alongside disqualifies it.
     const bool bOption = !bForgetPram
-                      && (nSeen & SeenAlt)
-                      && !(nSeen & (SeenGui | SeenOther));
+                      && (nSeen & ModOption)
+                      && !(nSeen & (ModCommand | ModControl | ModShift));
 
     if (bForgetPram)
     {
@@ -207,11 +140,11 @@ TFirmwareResult FirmwareRun (void)
     {
         CLogger::Get ()->Write (FROM, LogNotice, "Option held: the chooser would open here");
     }
-    else if (s_bAnyKey)
+    else if (FwInputSeenAnything ())
     {
         CLogger::Get ()->Write (FROM, LogNotice,
-                                "Keys during the window, none of ours: modifiers %02X, first key %02X",
-                                s_nModsSeen, s_nFirstKey);
+                                "Input during the window, none of ours: modifiers %02X",
+                                nSeen);
     }
 
     // Handed back before the emulator claims its own. Measured under QEMU: a

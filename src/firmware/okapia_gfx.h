@@ -121,6 +121,21 @@ struct TGlyphImage
 void GfxImage (TSurface *pSurface, const TGlyphImage *pImage, int nX, int nY,
                TOkapiaColor Color, unsigned nScale);
 
+/*
+ *  The pointer
+ *
+ *  Drawn by the firmware, because nothing else on the screen will: the Mac's own
+ *  arrow belongs to a QuickDraw that has not started yet. It keeps what it
+ *  covered, and puts it back — which is what a pointer has always cost, and the
+ *  reason moving one does not repaint a 1920x1080 display.
+ *
+ *  Hide before redrawing anything underneath, show again after. Painting over a
+ *  shown cursor leaves the old pixels in the save-under, and the next move
+ *  stamps them back onto the screen.
+ */
+void GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale);
+void GfxCursorHide (TSurface *pSurface);
+
 // The one place that knows what a role is worth, in 0x00RRGGBB.
 unsigned GfxPaletteEntry (TOkapiaColor Color);
 

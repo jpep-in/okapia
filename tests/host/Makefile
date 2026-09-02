@@ -59,10 +59,16 @@ render_specimen: $(LIBOBJS) render_specimen.o
 check_geometry: $(LIBOBJS) check_geometry.o
 	$(CXX) -o $@ $^
 
+check_screen: $(LIBOBJS) check_screen.o
+	$(CXX) -o $@ $^
+
 # The measurements are part of the build, not something to remember to run: an
-# asymmetry of one pixel is invisible on a screenshot and obvious at three.
-check: check_geometry
+# asymmetry of one pixel is invisible on a screenshot and obvious at three. The
+# behaviour joins them: what the focus does under a sequence of keys is decidable
+# on a machine with no keyboard, so there is no reason to go and look.
+check: check_geometry check_screen
 	./check_geometry
+	./check_screen
 
 specimen.ppm: render_specimen
 	./render_specimen specimen.ppm 1 0
@@ -73,6 +79,6 @@ view: render_specimen
 	@command -v open >/dev/null && open specimen-2x.ppm || echo "wrote specimen-2x.ppm"
 
 clean:
-	rm -f *.o *.d render_specimen check_geometry specimen*.ppm var*.ppm
+	rm -f *.o *.d render_specimen check_geometry check_screen specimen*.ppm var*.ppm
 
 .PHONY: all view check clean

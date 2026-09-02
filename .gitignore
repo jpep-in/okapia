@@ -34,6 +34,7 @@ src/firmware/circle/obj/
 src/firmware/circle/kernel8.*
 tests/host/render_specimen
 tests/host/check_geometry
+tests/host/check_screen
 tests/host/*.ppm
 
 # Kernel build intermediates

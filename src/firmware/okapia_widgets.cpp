@@ -108,6 +108,27 @@ void WidgetDrawAll (TSurface *pSurface, const TTheme *pTheme, const TWidget *pLi
     }
 }
 
+bool WidgetFocusable (const TWidget *pWidget)
+{
+    if (pWidget->nState & StateDisabled)
+    {
+        return false;
+    }
+    switch (pWidget->Type)
+    {
+    case WidgetButton:
+    case WidgetIconButton:
+    case WidgetCheckbox:
+    case WidgetRadio:
+    case WidgetListFrame:
+    case WidgetPopup:
+    case WidgetField:
+        return true;
+    default:
+        return false;
+    }
+}
+
 int WidgetHit (const TWidget *pList, unsigned nCount, int nX, int nY)
 {
     // Backwards, so the last drawn is the first hit: the array order is the
