@@ -111,6 +111,12 @@ void GfxInvert (TSurface *pSurface, const TRect &rRect);
 // the thing it imitates, and the theme picks the face anyway.
 unsigned GfxTextWidth (const TOkapiaFont *pFont, const char *pText);
 
+// How wide the ink actually is, side bearings left out. The advance is what
+// text is set by; a mark being fitted into a shape wants the ink, since two or
+// three pixels of bearing on a five-pixel glyph is the difference between one
+// rung of the ladder and the next.
+unsigned GfxTextInkWidth (const TOkapiaFont *pFont, const char *pText);
+
 // The width of the first nBytes of it. A caret is an offset into the bytes, and
 // this is what turns that offset into a place on the screen.
 unsigned GfxTextWidthUpTo (const TOkapiaFont *pFont, const char *pText, unsigned nBytes);

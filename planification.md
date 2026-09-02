@@ -2608,12 +2608,22 @@ mise en page ne s'est pas calée sur la longueur des libellés français.
   homothétie de centre l'**incentre** — depuis le centre de gravité, les trois côtés rentreraient de trois
   quantités différentes.
 
-  Le point d'exclamation est le glyphe de la fonte, et la fonte est **choisie d'après la place réelle**,
-  pas d'après un pourcentage de la hauteur : un triangle se rétrécit vers son sommet, donc la hauteur de
-  marque qu'il peut loger dépend de sa largeur. Réglé à une fraction, le fût touchait le côté gauche à la
-  taille qu'une alerte utilise vraiment — et deux traits qui se rejoignent, cela se lit exactement comme
-  une moitié de marque mangée. L'échelle est donc parcourue de la plus grande à la plus petite et la
-  première qui tient des deux bouts est retenue.
+  Le point d'exclamation est le glyphe de la fonte, et **la place est décidée avant la fonte** : la marque
+  est posée, puis on prend la plus grande fonte qui tient à cet endroit. L'ordre inverse — choisir la
+  fonte puis la caser où il reste de la place — a donné successivement une marque collée à la base, puis
+  une marque plaquée contre la pente, parce que la position était le reste et non la décision.
+
+  Deux mesures valent d'être retenues :
+
+  - **la place se mesure sur l'encre, pas sur la chasse.** Deux ou trois pixels d'approche sur un glyphe
+    de cinq, c'est un barreau d'échelle de différence — `GfxTextInkWidth` ;
+  - **le centre d'un triangle n'est pas sa mi-hauteur.** Toute la masse est en bas, donc une marque posée
+    au centre géométrique flotte dans la partie étroite avec un champ noir dessous et se lit **haut**. Elle
+    est posée aux trois cinquièmes : deux cinquièmes de hauteur au-dessus, trois en dessous. Poser plus
+    bas laisse aussi passer une fonte plus grande, la largeur y étant plus généreuse.
+
+  Un rappel au passage : le fût touchait le côté gauche à la taille qu'une alerte utilise vraiment, et
+  deux traits qui se rejoignent se lisent exactement comme une moitié de marque mangée.
 
   Limite connue : l'échelle de fontes plafonne à une capitale de 25 pixels, donc au-delà d'un triangle
   d'environ 70 pixels la marque cesse de grandir. L'icône de l'alerte fait deux interlignes, ce qui la

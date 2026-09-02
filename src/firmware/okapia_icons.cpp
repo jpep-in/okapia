@@ -206,8 +206,22 @@ void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor In
      *  means both ends: clear of the base rule below, and inside the taper
      *  above.
      */
-    const int nBase  = rRect.nY + (int) rRect.nHeight;
-    const int nBottom = nBase - 2 * t - 1;      // clear of the base rule
+    const int nBase   = rRect.nY + (int) rRect.nHeight;
+    const int nLowest = nBase - 2 * t - 1;      // clear of the base rule
+    const int H = (int) rRect.nHeight;
+    const int W = (int) rRect.nWidth;
+
+    // Centred — but on the triangle's *visual* middle, which is not its
+    // half-height. A triangle carries all its weight at the base, so a mark on
+    // the geometric centre floats in the narrow part with a broad black field
+    // beneath it and reads high; the eye puts the centre of such a shape down
+    // near its centroid. Three sixths of the way down read high, four sixths
+    // read low, and this is between them.
+    //
+    // Choosing the placement first also lets a larger face through: lower in
+    // the triangle there is more room across, so the rule "the largest face
+    // that can sit centred" answers one rung higher than it did.
+    const int nMiddle = rRect.nY + H * 60 / 100;
 
     const TOkapiaFont *pFace = 0;
     int nTop = 0;
@@ -215,24 +229,42 @@ void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor In
     {
         const TOkapiaFont *p = OkapiaFaces[i].pBold;
         const int nCap = (int) p->nCapHeight;
-        const int y = nBottom - nCap;
-        if (y <= rRect.nY)
-        {
-            continue;                   // taller than the triangle
-        }
-        // The interior's half-width where the mark's head would sit: the outer
-        // taper, less the stroke measured *across* rather than along, since a
-        // side this steep is wider in x than it is thick — for a triangle as
-        // tall as it is wide that is nine eighths of the stroke — and one pixel
-        // of air. Subtracting a whole clearance on each side as well is what
-        // made the fit so cautious it fell two rungs down the ladder.
-        const int nHalf = (int) rRect.nWidth * (y - rRect.nY) / (2 * (int) rRect.nHeight)
-                        - t * 9 / 8 - 1;
-        if (2 * nHalf >= (int) GfxTextWidth (p, "!"))
+        const int nInk = (int) GfxTextInkWidth (p, "!");
+
+        // The highest the mark may start. The interior's half-width at a height
+        // y is the outer taper less the stroke measured *across* rather than
+        // along — a side this steep is wider in x than it is thick, nine
+        // eighths of the stroke for a triangle as tall as it is wide — and two
+        // pixels of air, one being not a gap but a coincidence. Solving that
+        // for y is the highest the mark may start.
+        const int nHighest = W > 0
+            ? rRect.nY + (nInk / 2 + t * 9 / 8 + 2) * 2 * H / W
+            : rRect.nY;
+        const int nLatest = nLowest - nCap;
+
+        const int y = nMiddle - nCap / 2;
+        if (y >= nHighest && y <= nLatest)
         {
             pFace = p;
             nTop  = y;
             break;
+        }
+    }
+    // Nothing could be centred: take the largest that fits at all rather than
+    // leave the triangle empty, and let it sit where it can.
+    for (int i = (int) OkapiaFaceCount - 1; pFace == 0 && i >= 0; i--)
+    {
+        const TOkapiaFont *p = OkapiaFaces[i].pBold;
+        const int nCap = (int) p->nCapHeight;
+        const int nInk = (int) GfxTextInkWidth (p, "!");
+        const int nHighest = W > 0
+            ? rRect.nY + (nInk / 2 + t * 9 / 8 + 2) * 2 * H / W
+            : rRect.nY;
+        const int nLatest = nLowest - nCap;
+        if (nHighest <= nLatest)
+        {
+            pFace = p;
+            nTop  = nHighest;
         }
     }
     if (pFace == 0)
@@ -241,6 +273,6 @@ void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor In
     }
 
     const TRect Box = Rect (rRect.nX, nTop, rRect.nWidth,
-                            (unsigned) (nBottom - nTop));
+                            (unsigned) pFace->nCapHeight);
     GfxTextBox (pSurface, pFace, Box, "!", Ink, TextAlignCenter);
 }

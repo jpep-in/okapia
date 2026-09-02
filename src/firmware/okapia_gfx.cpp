@@ -712,6 +712,41 @@ void GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
     TextRun (pSurface, pFont, nX, nY, (const unsigned char *) pText, 0, Color);
 }
 
+unsigned GfxTextInkWidth (const TOkapiaFont *pFont, const char *pText)
+{
+    const unsigned nStride = pFont->nBytesPerRow;
+    const unsigned nBits   = nStride * 8;
+    const unsigned char *p = (const unsigned char *) pText;
+
+    int nLeft = (int) nBits, nRight = -1;
+    int nPen = 0;
+    for (int nCode = NextChar (&p); nCode >= 0; nCode = NextChar (&p))
+    {
+        const int nIndex = GlyphIndex (pFont, nCode);
+        if (nIndex < 0)
+        {
+            continue;
+        }
+        const unsigned char *pBits = pFont->pBits
+                                   + (size_t) nIndex * pFont->nHeight * nStride;
+        for (unsigned row = 0; row < pFont->nHeight; row++)
+        {
+            const unsigned char *pRow = pBits + row * nStride;
+            for (unsigned bit = 0; bit < nBits; bit++)
+            {
+                if (pRow[bit >> 3] & (0x80u >> (bit & 7)))
+                {
+                    const int x = nPen + (int) bit;
+                    if (x < nLeft)  nLeft = x;
+                    if (x > nRight) nRight = x;
+                }
+            }
+        }
+        nPen += (int) pFont->pWidth[nIndex];
+    }
+    return nRight < nLeft ? 0 : (unsigned) (nRight - nLeft + 1);
+}
+
 unsigned GfxTextWidthUpTo (const TOkapiaFont *pFont, const char *pText, unsigned nBytes)
 {
     const unsigned char *p = (const unsigned char *) pText;
