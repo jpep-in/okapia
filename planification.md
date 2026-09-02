@@ -2109,42 +2109,50 @@ sans autre mécanisme.
 ### Phase 16 — Firmware Okapia
 
 - [ ] `hal_circle` consolidé et utilisable hors émulateur
-- [x] pas LVGL. Le tampon est réclamé par `CBcmFrameBuffer (0, 0, 32)` comme le fait le compositeur ;
-      `C2DGraphics` reste à prendre le jour où l'interface bougera et voudra un double tampon, un écran
-      fixe n'en ayant pas besoin. Noir, blanc et **gris pleins** à la profondeur de sortie
+- [x] pas LVGL. Le tampon est réclamé par `CBcmFrameBuffer (0, 0, 32)` comme le fait le compositeur.
+      Noir, blanc et **gris pleins** à la profondeur de sortie. L'interface bouge désormais, et le double
+      tampon est venu — mais de nous : tout est tracé dans une surface d'ombre et seule la partie changée
+      est recopiée, faute de quoi le fond redescend sous les yeux avant le contrôle et l'écran clignote
 - [x] **primitives sur une surface** — pointeur, dimensions, pas — dans `src/firmware/okapia_gfx.*`,
-      sans un seul type Circle. Toile logique en 8 bits sur une palette de quatre entrées : 300 Ko au lieu
-      de 1,2 Mo, et l'expansion vers la sortie se fait une fois, par table (`okapia_present.cpp`)
+      sans un seul type Circle. **La toile logique a été abandonnée** : on dessine à la profondeur et à la
+      résolution de sortie, les métriques du thème étant multipliées par une échelle. Une toile agrandie
+      ne fait qu'agrandir son propre escalier ; recalculée, une courbe est aussi lisse à 2,25 qu'à 1
 - [x] inversion vidéo, roundrect et mesure de texte : les trois manques face à QuickDraw, écrits. Une
       seule table d'entames sert le rempli et le contour, sinon un bouton dépasse de son propre trait ;
       les pixels sont testés en leur centre, ce qui sépare un coin rond d'un coin encoché
 - [x] **pas de motif tramé** : rien n'en a eu besoin, et la primitive n'existe donc pas
 - [x] **thème = structure constante de fonctions *et de métriques*** (`okapia_theme.*`) ; aucun composant
       ne connaît une hauteur de bouton, il la demande
-- [ ] **thème uchronique, aucun système mesuré** : le menu s'ouvre devant System 6 à Mac OS 9, donc le
+- [x] **thème uchronique, aucun système mesuré** : le menu s'ouvre devant System 6 à Mac OS 9, donc le
       chrome ne se date pas. Plat — ni biseaux Platinum, ni gel Aqua —, rectangles arrondis, double cerclé
       du bouton par défaut réutilisé pour le focus, ascenseur sans flèches. Les icônes portent l'époque,
       pas le cadre
-- [x] composants avant écrans (`okapia_widgets.*`) : cadre de dialogue, étiquette, bouton et bouton par
-      défaut, bouton à icône, case, radio, liste, ascenseur, menu local, champ de saisie, barre de
-      progression, liseré de focus, séparateur
-- [ ] restent le cadre d'alerte et le repli à la ligne des étiquettes, que le dialogue de réparation
-      demandera le premier
+- [x] composants avant écrans (`okapia_widgets.*`) : cadre de dialogue et cadre d'alerte, étiquette,
+      paragraphe, bouton et bouton par défaut, bouton à icône, icône seule, case, radio, liste qui défile
+      avec son ascenseur, menu local qui reste ouvert, champ de saisie avec sélection et presse-papiers,
+      barre de progression, liseré de focus, séparateur — et une boucle d'événements qui les anime
+      (`okapia_screen.*`), éprouvée par 43 mesures sur l'hôte
+- [x] cadre d'alerte et repli à la ligne des étiquettes, que le dialogue de réparation demandera le
+      premier — faits en 16e, avec la liste qui défile et le champ modifiable
 - [x] **écran de spécimen** : chaque composant dans chaque état, sous QEMU (`scripts/specimen.sh`) et en
       fichier sur l'hôte (`tests/host`). Comme rien n'est copié d'un système existant, il est le seul
       arbitre du thème — d'où sa place avant le sélecteur, pas après
 - [x] largeur des boutons calculée depuis leur propre libellé et le rembourrage du thème
-- [ ] modèle de boîtes complet en lignes et colonnes ; le spécimen pose encore ses ordonnées à la main
-- [ ] focus clavier complet — Tab et Shift-Tab, flèches en liste, Espace et Retour, Échap
-- [x] toile logique 640×480 agrandie d'un facteur entier et centrée, même méthode que
-      `video_circle.cpp:254-262` ; vérifié à ×1 sur 640×480 et à ×2 sur 1280×960
-- [x] blitter de glyphes à largeur variable, plus gras et italique synthétisés à la QuickDraw
-- [x] `scripts/gen-font.py` convertit les fontes de Circle au format du projet, qui porte déjà une avance
-      par glyphe — la colonne qu'une proportionnelle remplira sans toucher au C++
-- [ ] proportionnelle bitmap X11, **jamais Chicago** ; `Font8x16`/`Font8x12` tiennent la place en attendant
-- [x] `œ`, `Œ`, `…` et `’` absents d'ISO-8859-1 : les sources restent en UTF-8 et `GfxText` décode, en
-      repliant ces signes sur leurs ancêtres ASCII. Cela évite aussi le piège du littéral `"\xE9"`, qui
-      avale la lettre suivante quand elle est un chiffre hexadécimal
+- [x] modèle de boîtes complet en lignes et colonnes (`okapia_layout.*`) : un rectangle qu'on dépense,
+      plus une seule ordonnée écrite à la main dans le spécimen, et sa pagination cesse d'être une décision
+- [x] focus clavier complet — Tab et Shift-Tab, flèches en liste, Espace et Retour, Échap. Espace suit le
+      focus, Retour suit le bouton par défaut ; les flèches appartiennent à la liste et nulle part ailleurs
+- [x] ~~toile logique agrandie d'un facteur entier~~ — remplacé par l'indépendance de résolution :
+      l'interface est composée pour la taille reçue, échelles fractionnaires comprises (36/16 à 1920×1080).
+      Vérifié à ×1 sur 640×480 et à ×2 sur 1280×960, au pixel près entre QEMU et l'hôte
+- [x] blitter de glyphes à largeur variable. **Pas de styles synthétiques** : la graisse étalée et
+      l'italique cisaillée valaient tant que la fonte était unique, la famille X11 portant un vrai gras
+- [x] `scripts/gen-font.py` convertit les BDF X11 au format du projet, qui porte une avance par glyphe
+- [x] proportionnelle bitmap X11 (Adobe Helvetica, `assets/fonts/`), **jamais Chicago** — une échelle de
+      six corps, deux graisses réelles, choisie pour la taille voulue plutôt qu'agrandie
+- [x] `œ`, `Œ`, `…` et `’` absents d'ISO-8859-1 : les sources restent en UTF-8 et `GfxText` décode. La
+      fonte **porte** ces signes, donc rien n'est replié sur un ancêtre ASCII. Cela évite aussi le piège du
+      littéral `"\xE9"`, qui avale la lettre suivante quand elle est un chiffre hexadécimal
 - [ ] liste des systèmes avec détection automatique du modèle compatible, et état propre/sale par volume
 - [ ] icônes de dossier monochromes tracées depuis les références System 6, System 7 et Mac OS 8/9
 - [ ] colonne radio « par défaut », indépendante de la sélection courante, qui place son `disk` en premier
@@ -2159,9 +2167,12 @@ sans autre mécanisme.
 - [ ] aucune résolution dans les réglages : sortie détectée, mode logique possédé par Moniteurs et la PRAM
 - [ ] aucun réseau tant qu'il n'existe pas un choix utile au-delà d'activé/désactivé
 - [ ] ne pas masquer une préférence cible parce que sa valeur est encore en dur ; planifier son branchement
-- [ ] anglais et français par une table de chaînes du projet ; langue persistée dans les préférences
+- [x] anglais et français par une table de chaînes du projet (`assets/strings.tsv`), langue persistée dans
+      la préférence `language` ; et **chaque page est mesurée dans chaque langue**, ce qui est la raison de
+      l'avoir fait avant le sélecteur
 - [ ] écriture dans le seul `BasiliskII_Prefs`, qui reste la source de vérité
-- [ ] fond gris uni (~`#BCBCBC`) pendant environ deux secondes ; `Option` seule ouvre le sélecteur
+- [x] fond gris uni (~`#BCBCBC`) pendant environ deux secondes, clavier et souris pris avant le Mac ;
+      `Option` seule est reconnue — reste à lui donner le sélecteur à ouvrir (16g)
 - [ ] ouverture automatique si la configuration manque ou si aucun système n'est amorçable
 
 **Ce que la phase 16 hérite, après nettoyage** — `src/firmware/` : surface et primitives antialiasées,
