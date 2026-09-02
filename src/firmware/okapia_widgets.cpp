@@ -218,7 +218,13 @@ void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidge
         break;
 
     case WidgetPopup:
-        pTheme->DrawPopup (pSurface, pWidget->Rect, pWidget->pText, pWidget->nState, pTheme);
+        // Its label is whichever item is chosen, when it has any: a pop-up that
+        // shows a fixed string is a button wearing a triangle.
+        pTheme->DrawPopup (pSurface, pWidget->Rect,
+                           pWidget->pItems != 0 && pWidget->nChoice >= 0
+                               ? pWidget->pItems[pWidget->nChoice].pText
+                               : pWidget->pText,
+                           pWidget->nState, pTheme);
         break;
 
     case WidgetField:
@@ -329,6 +335,16 @@ static unsigned Length (const char *p)
 static bool Continuation (char c)
 {
     return ((unsigned char) c & 0xC0) == 0x80;
+}
+
+void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX)
+{
+    if (pWidget->pEdit == 0)
+    {
+        return;
+    }
+    pWidget->nCaret = GfxTextOffsetAt (pTheme->pBodyFont, pWidget->pEdit,
+                                       nX - pWidget->Rect.nX - ThemeFieldInset (pTheme));
 }
 
 void WidgetFieldInsert (TWidget *pWidget, unsigned nCode)

@@ -82,6 +82,45 @@ static inline unsigned Value (TOkapiaColor Color)
     return GfxPaletteEntry (Color);
 }
 
+TRect RectUnion (const TRect &rA, const TRect &rB)
+{
+    if (rA.nWidth == 0 || rA.nHeight == 0)
+    {
+        return rB;
+    }
+    if (rB.nWidth == 0 || rB.nHeight == 0)
+    {
+        return rA;
+    }
+    const int nLeft   = rA.nX < rB.nX ? rA.nX : rB.nX;
+    const int nTop    = rA.nY < rB.nY ? rA.nY : rB.nY;
+    const int nRightA = rA.nX + (int) rA.nWidth,  nRightB = rB.nX + (int) rB.nWidth;
+    const int nBotA   = rA.nY + (int) rA.nHeight, nBotB   = rB.nY + (int) rB.nHeight;
+    const int nRight  = nRightA > nRightB ? nRightA : nRightB;
+    const int nBottom = nBotA > nBotB ? nBotA : nBotB;
+    return Rect (nLeft, nTop, (unsigned) (nRight - nLeft), (unsigned) (nBottom - nTop));
+}
+
+void GfxBlit (TSurface *pDst, const TSurface *pSrc, const TRect &rRect)
+{
+    int nX0 = rRect.nX < 0 ? 0 : rRect.nX;
+    int nY0 = rRect.nY < 0 ? 0 : rRect.nY;
+    int nX1 = rRect.nX + (int) rRect.nWidth;
+    int nY1 = rRect.nY + (int) rRect.nHeight;
+    if (nX1 > (int) pDst->nWidth)   nX1 = (int) pDst->nWidth;
+    if (nY1 > (int) pDst->nHeight)  nY1 = (int) pDst->nHeight;
+
+    for (int y = nY0; y < nY1; y++)
+    {
+        const unsigned *pIn = (const unsigned *) (pSrc->pPixels + (size_t) y * pSrc->nPitch);
+        unsigned *pOut = (unsigned *) (pDst->pPixels + (size_t) y * pDst->nPitch);
+        for (int x = nX0; x < nX1; x++)
+        {
+            pOut[x] = pIn[x];
+        }
+    }
+}
+
 void GfxClear (TSurface *pSurface, TOkapiaColor Color)
 {
     for (unsigned y = 0; y < pSurface->nHeight; y++)
@@ -681,6 +720,33 @@ unsigned GfxTextBox (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &
     return nDrawn + GfxTextWidth (pFont, ELLIPSIS);
 }
 
+unsigned GfxTextOffsetAt (const TOkapiaFont *pFont, const char *pText, int nX)
+{
+    if (pText == 0 || nX <= 0)
+    {
+        return 0;
+    }
+    const unsigned char *pStart = (const unsigned char *) pText;
+    const unsigned char *p = pStart;
+    int nWidth = 0;
+    for (;;)
+    {
+        const unsigned char *pBefore = p;
+        const int nCode = NextChar (&p);
+        if (nCode < 0)
+        {
+            return (unsigned) (pBefore - pStart);
+        }
+        const int nIndex = GlyphIndex (pFont, nCode);
+        const int nAdvance = nIndex < 0 ? 0 : (int) pFont->pWidth[nIndex];
+        if (nX < nWidth + nAdvance / 2)
+        {
+            return (unsigned) (pBefore - pStart);
+        }
+        nWidth += nAdvance;
+    }
+}
+
 bool GfxTextFits (const TOkapiaFont *pFont, const TRect &rBox, const char *pText)
 {
     return pText == 0 || GfxTextWidth (pFont, pText) <= rBox.nWidth;
@@ -724,11 +790,11 @@ static unsigned s_Under[CURSOR_MAX_W * CURSOR_MAX_H];
 static TRect    s_UnderRect;
 static bool     s_bCursorShown;
 
-void GfxCursorHide (TSurface *pSurface)
+TRect GfxCursorHide (TSurface *pSurface)
 {
     if (!s_bCursorShown)
     {
-        return;
+        return Rect (0, 0, 0, 0);
     }
     for (unsigned y = 0; y < s_UnderRect.nHeight; y++)
     {
@@ -749,11 +815,12 @@ void GfxCursorHide (TSurface *pSurface)
         }
     }
     s_bCursorShown = false;
+    return s_UnderRect;
 }
 
-void GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale)
+TRect GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale)
 {
-    GfxCursorHide (pSurface);
+    const TRect Was = GfxCursorHide (pSurface);
 
     if (nScale < 1)
     {
@@ -817,6 +884,7 @@ void GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale)
         }
     }
     s_bCursorShown = true;
+    return RectUnion (Was, Box);
 }
 
 /*

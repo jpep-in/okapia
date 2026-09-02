@@ -45,8 +45,9 @@ static void Expect (bool bOK, const char *pWhat)
 //   7 radio, group 1
 //   8 a list of seven items, three of them visible
 //   9 an editable field
+//  10 a pop-up with four choices
 enum { WLabel, WStart, WSettings, WOff, WCheck, WRadioA, WRadioB, WOther, WList,
-       WField, WCount };
+       WField, WPopup, WCount };
 
 static TTheme s_Theme;
 
@@ -66,6 +67,16 @@ static const unsigned ITEMS = sizeof s_Items / sizeof s_Items[0];
 static const unsigned VISIBLE = 3;
 
 static char s_Edit[16];
+
+// A pop-up's choices. Four, one of them out of reach, so that both the walk and
+// the refusal are exercised.
+static const TListItem s_Rates[] =
+{
+    { "Dynamique",   0, StateNormal   },
+    { "60 images/s", 0, StateNormal   },
+    { "30 images/s", 0, StateDisabled },
+    { "15 images/s", 0, StateNormal   }
+};
 
 static void Build (TWidget *pW)
 {
@@ -115,6 +126,12 @@ static void Build (TWidget *pW)
     pW[WField]   .pEdit     = s_Edit;
     pW[WField]   .nEditSize = sizeof s_Edit;
     pW[WField]   .nCaret    = 6;
+
+    pW[WPopup]   .Type    = WidgetPopup;
+    pW[WPopup]   .Rect    = Rect (10, 300, 200, s_Theme.M.nButtonHeight);
+    pW[WPopup]   .pItems  = s_Rates;
+    pW[WPopup]   .nItems  = sizeof s_Rates / sizeof s_Rates[0];
+    pW[WPopup]   .nChoice = 0;
 }
 
 static TEvent Key (unsigned nKey, unsigned nModifiers)
@@ -410,6 +427,55 @@ static void CheckField (void)
     Expect (S.nFocus != WField, "Tab quitte le champ au lieu d'y être écrit");
 }
 
+static void CheckMenu (void)
+{
+    TWidget W[WCount];
+    TScreen S;
+    Build (W);
+    ScreenInit (&S, &s_Theme, W, WCount);
+    S.Bounds = Rect (0, 0, 640, 480);
+
+    printf ("Le menu d'une déroulante\n");
+
+    for (unsigned i = 0; i < WCount && S.nFocus != WPopup; i++)
+    {
+        Send (&S, Key (OkKeyTab, 0));
+    }
+    Expect (FocusIs (&S, WPopup), "le focus atteint la déroulante");
+    Expect (!ScreenMenuOpen (&S), "et son menu est fermé");
+
+    Send (&S, Key (OkKeySpace, 0));
+    Expect (ScreenMenuOpen (&S), "Espace l'ouvre");
+    Expect (S.Menu.nChoice == 0, "sur le choix courant");
+
+    Send (&S, Key (OkKeyDown, 0));
+    Expect (S.Menu.nChoice == 1, "Bas descend dedans");
+    Send (&S, Key (OkKeyDown, 0));
+    Expect (S.Menu.nChoice == 3, "et enjambe un choix hors d'atteinte");
+    Expect (W[WPopup].nChoice == 0, "sans rien changer tant qu'on n'a pas validé");
+
+    TScreenReply r = Send (&S, Key (OkKeyReturn, 0));
+    Expect (r.Result == ScreenActivated && r.nIndex == WPopup, "Retour valide");
+    Expect (W[WPopup].nChoice == 3, "et le choix est pris");
+    Expect (!ScreenMenuOpen (&S), "le menu est refermé");
+    Expect (S.bDirtyAll, "et tout l'écran est à redessiner, puisqu'il en couvrait");
+
+    // Escape puts it back as it was, which is the whole point of a menu one can
+    // open to look at.
+    Send (&S, Key (OkKeySpace, 0));
+    Send (&S, Key (OkKeyUp, 0));
+    Send (&S, Key (OkKeyEscape, 0));
+    Expect (!ScreenMenuOpen (&S) && W[WPopup].nChoice == 3, "Échap referme sans rien changer");
+
+    // While it is open nothing underneath answers: that is what modal means.
+    Send (&S, Key (OkKeySpace, 0));
+    Send (&S, Key (OkKeyTab, 0));
+    Expect (ScreenMenuOpen (&S) && S.nFocus == WPopup,
+            "Tab ne traverse pas un menu ouvert");
+    Send (&S, Mouse (EventMouseDown, 400, 60));
+    Expect (!ScreenMenuOpen (&S), "un clic à côté le referme");
+}
+
 static void CheckMouse (void)
 {
     TWidget W[WCount];
@@ -457,6 +523,7 @@ int main (void)
     CheckList ();
     CheckScroller ();
     CheckField ();
+    CheckMenu ();
     CheckMouse ();
 
     printf ("\n%u écart(s)\n", s_nFailures);

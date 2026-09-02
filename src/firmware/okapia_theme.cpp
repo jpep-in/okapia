@@ -67,19 +67,18 @@ static void DrawDialog (TSurface *pSurface, const TRect &rRect, const TTheme *pT
               pTheme->M.nDialogInner);
 }
 
-// The dialogue's own frame with the *inner* rule heavier. Doubling the outer
-// one instead read as a different construction altogether: the pair only works
-// as a frame because one of the two leads, and thickening the wrong one turns
-// that relationship inside out. An alert is a dialogue that interrupts, so it
-// says so with more of the same weight and not with a second language.
+// The dialogue's frame, at the dialogue's weights. Two attempts at making an
+// alert *look* more urgent by thickening one rule or the other both came out
+// wrong, and for the same reason: the two thicknesses are a constant of the
+// design, not a dial. What tells an alert apart is its caution mark and what it
+// says — a frame that is nearly the same reads as a mistake rather than as
+// emphasis.
+//
+// It stays a part of its own so that a theme may one day distinguish them; it
+// simply does not, today, and the seam is worth more than the difference.
 static void DrawAlert (TSurface *pSurface, const TRect &rRect, const TTheme *pTheme)
 {
-    const unsigned nBorder = pTheme->M.nDialogBorder;
-    const int nInset = (int) (nBorder + pTheme->M.nDialogGap);
-    GfxFill (pSurface, rRect, ColorWhite);
-    GfxFrame (pSurface, rRect, ColorBlack, nBorder);
-    GfxFrame (pSurface, RectInset (rRect, nInset, nInset), ColorBlack,
-              2 * pTheme->M.nDialogInner);
+    DrawDialog (pSurface, rRect, pTheme);
 }
 
 static void DrawTitle (TSurface *pSurface, const TRect &rRect, const char *pText,
@@ -356,7 +355,7 @@ static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText
     GfxFill (pSurface, rRect, ColorWhite);
     GfxFrame (pSurface, rRect, Ink (nState), pTheme->M.nStroke);
 
-    const int nPad = (int) pTheme->M.nGap / 2;
+    const int nPad = (int) ThemeFieldInset (pTheme);
     const TRect Text = Rect (rRect.nX + nPad, rRect.nY,
                              (unsigned) ((int) rRect.nWidth - 2 * nPad), rRect.nHeight);
     const int nY = GfxTextTop (pTheme->pBodyFont, rRect);
@@ -505,6 +504,11 @@ TRect ThemeScrollThumb (const TTheme *pTheme, const TRect &rBar, unsigned nTop,
     }
     const unsigned nAt = (nTrack - nThumb) * nTop / nSteps;
     return Rect (rBar.nX + 1, rBar.nY + 1 + (int) nAt, rBar.nWidth - 2, nThumb);
+}
+
+unsigned ThemeFieldInset (const TTheme *pTheme)
+{
+    return pTheme->M.nGap / 2;
 }
 
 unsigned ThemeReach (const TTheme *pTheme, unsigned nState)

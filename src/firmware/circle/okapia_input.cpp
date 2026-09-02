@@ -77,6 +77,8 @@ static unsigned LogicalKey (unsigned char ucUsage)
 {
     switch (ucUsage)
     {
+    case 0x2A:  return OkKeyBackspace;
+    case 0x4C:  return OkKeyDelete;
     case 0x2B:  return OkKeyTab;
     case 0x2C:  return OkKeySpace;
     case 0x28:  return OkKeyReturn;
@@ -147,6 +149,13 @@ static void KeyHandler (unsigned char ucModifiers, const unsigned char RawKeys[6
                 if (nLogical >= 0x20 && nLogical < 0x100 && nLogical != 0x7F)
                 {
                     nChar = nLogical;   // Latin-1, which is also its code point
+                }
+                else if (nLogical == KeySpace)
+                {
+                    // Circle files the space bar under its special keys, at
+                    // 0x100, so the ordinary filter drops it — and a field then
+                    // takes every letter and refuses the one key between words.
+                    nChar = ' ';
                 }
             }
             if (nKey != OkKeyNone || nChar != 0)

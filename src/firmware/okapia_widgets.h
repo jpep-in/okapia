@@ -120,6 +120,11 @@ void     WidgetListReveal (TWidget *pWidget, const TTheme *pTheme);
  *  change. Everything here is a no-op on a field with no storage, so a
  *  read-only one cannot be edited by a screen that forgot to check.
  */
+// Where the caret goes when the field is clicked at nX. The inset the theme
+// draws the text at lives in one place, so a click lands where the letters
+// actually are and not where a second copy of the arithmetic thought they were.
+void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX);
+
 void WidgetFieldInsert (TWidget *pWidget, unsigned nCode);
 void WidgetFieldBackspace (TWidget *pWidget);
 void WidgetFieldDelete (TWidget *pWidget);

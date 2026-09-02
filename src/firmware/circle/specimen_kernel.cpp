@@ -102,11 +102,27 @@ TShutdownMode CSpecimenKernel::Run (void)
     // Straight into the frame buffer: there is no canvas to magnify. The theme
     // is built for this size, so the faces and the curves are drawn at the
     // display's own resolution rather than blown up from 640x480.
+    TSurface Screen0;
+    Screen0.pPixels = (unsigned char *) (uintptr) pOutput->GetBuffer ();
+    Screen0.nWidth  = nWidth;
+    Screen0.nHeight = nHeight;
+    Screen0.nPitch  = nPitch;
+
+    // Everything is drawn here and only the part that changed is copied
+    // forward. Painting into the visible buffer means the ground goes down
+    // before the control on top of it, and at sixty refreshes a second that is
+    // seen — the screen blinks on every click, which is exactly what it did.
+    // One allocation, at the start, and none afterwards.
     TSurface Surface;
-    Surface.pPixels = (unsigned char *) (uintptr) pOutput->GetBuffer ();
     Surface.nWidth  = nWidth;
     Surface.nHeight = nHeight;
-    Surface.nPitch  = nPitch;
+    Surface.nPitch  = nWidth * (unsigned) sizeof (unsigned);
+    Surface.pPixels = new unsigned char[(size_t) Surface.nPitch * nHeight];
+    if (Surface.pPixels == 0)
+    {
+        m_Logger.Write (FROM, LogError, "No room for a shadow surface");
+        return ShutdownHalt;
+    }
 
     const unsigned nScale16 = ThemeScaleFor (nWidth, nHeight);
     m_Logger.Write (FROM, LogNotice, "Theme scale %u/16 for a %ux%u output",
@@ -133,7 +149,9 @@ TShutdownMode CSpecimenKernel::Run (void)
     unsigned nCount = SpecimenWidgets (&pWidgets);
     ScreenInit (&Screen, &Theme, pWidgets, nCount);
     Screen.Background = ColorWhite;             // the dialogue's ground
+    Screen.Bounds     = Rect (0, 0, nWidth, nHeight);
     SpecimenRepaint (&Surface);
+    GfxBlit (&Screen0, &Surface, Screen.Bounds);
 
     // The pointer appears when the mouse first moves, and not before. A menu
     // nobody has touched has nothing to point with, and it keeps this screen
@@ -162,10 +180,16 @@ TShutdownMode CSpecimenKernel::Run (void)
             switch (Reply.Result)
             {
             case ScreenActivated:
-                m_Logger.Write (FROM, LogNotice, "Actionné : %s \"%s\"",
-                                WidgetName (&pWidgets[Reply.nIndex]),
-                                pWidgets[Reply.nIndex].pText != 0
-                                    ? pWidgets[Reply.nIndex].pText : "");
+                {
+                    // A pop-up's label is whichever item it holds, so the log
+                    // says what was chosen rather than an empty pair of quotes.
+                    const TWidget *pW = &pWidgets[Reply.nIndex];
+                    const char *pWhat = pW->pItems != 0 && pW->nChoice >= 0
+                                            ? pW->pItems[pW->nChoice].pText
+                                            : (pW->pText != 0 ? pW->pText : "");
+                    m_Logger.Write (FROM, LogNotice, "Actionné : %s \"%s\"",
+                                    WidgetName (pW), pWhat);
+                }
                 bRepaint = true;
                 break;
 
@@ -189,6 +213,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                     nCount = SpecimenWidgets (&pWidgets);
                     ScreenInit (&Screen, &Theme, pWidgets, nCount);
                     Screen.Background = ColorWhite;
+                    Screen.Bounds     = Rect (0, 0, nWidth, nHeight);
                     m_Logger.Write (FROM, LogNotice, "Page %u", nPage);
                     bRepaint = true;
                 }
@@ -206,19 +231,29 @@ TShutdownMode CSpecimenKernel::Run (void)
         // piled up behind it and the pointer stopped on its way. The screen
         // says what to redraw; it falls back to everything on the first paint
         // and on a change of page, where everything is what changed.
+        TRect Damage = Rect (0, 0, 0, 0);
+
         if (bRepaint)
         {
-            GfxCursorHide (&Surface);
-            if (!ScreenPaintDirty (&Surface, &Screen))
+            Damage = GfxCursorHide (&Surface);
+            TRect Painted;
+            if (!ScreenPaintDirty (&Surface, &Screen, &Painted))
             {
                 SpecimenRepaint (&Surface);
+                Painted = Screen.Bounds;
             }
+            Damage = RectUnion (Damage, Painted);
             bMoved = bPointer;
         }
         if (bMoved)
         {
             FwInputPointer (&nX, &nY);
-            GfxCursorShow (&Surface, nX, nY, Theme.nIconScale);
+            Damage = RectUnion (Damage,
+                                GfxCursorShow (&Surface, nX, nY, Theme.nIconScale));
+        }
+        if (Damage.nWidth != 0)
+        {
+            GfxBlit (&Screen0, &Surface, Damage);
         }
 
         if (nTick % 100 == 0)

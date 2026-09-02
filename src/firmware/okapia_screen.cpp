@@ -96,8 +96,14 @@ static void SetFocus (TScreen *pScreen, int nIndex)
     pScreen->nFocus = nIndex;
 }
 
-bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen)
+bool ScreenMenuOpen (const TScreen *pScreen)
 {
+    return pScreen->nMenu >= 0;
+}
+
+bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen, TRect *pDamage)
+{
+    *pDamage = Rect (0, 0, 0, 0);
     if (pScreen->bDirtyAll)
     {
         pScreen->bDirtyAll   = false;
@@ -111,11 +117,18 @@ bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen)
     for (unsigned i = 0; i < pScreen->nDirtyCount; i++)
     {
         const TWidget *p = &pScreen->pWidgets[pScreen->nDirty[i]];
-        GfxFill (pSurface, RectInset (p->Rect, -(int) nReach, -(int) nReach),
-                 pScreen->Background);
+        const TRect Around = RectInset (p->Rect, -(int) nReach, -(int) nReach);
+        GfxFill (pSurface, Around, pScreen->Background);
         WidgetDraw (pSurface, pScreen->pTheme, p);
+        *pDamage = RectUnion (*pDamage, Around);
     }
     pScreen->nDirtyCount = 0;
+    // Last, and over everything: a menu is in front by definition.
+    if (pScreen->nMenu >= 0)
+    {
+        WidgetDraw (pSurface, pScreen->pTheme, &pScreen->Menu);
+        *pDamage = RectUnion (*pDamage, pScreen->Menu.Rect);
+    }
     return true;
 }
 
@@ -128,6 +141,9 @@ void ScreenInit (TScreen *pScreen, const TTheme *pTheme, TWidget *pWidgets, unsi
     pScreen->nPressed = -1;
     pScreen->nX       = 0;
     pScreen->nY       = 0;
+    pScreen->nMenu       = -1;
+    WidgetClear (&pScreen->Menu);
+    pScreen->Bounds      = Rect (0, 0, 0, 0);
     pScreen->nDragList   = -1;
     pScreen->nDragGrab   = 0;
     pScreen->nDirtyCount = 0;
@@ -194,9 +210,8 @@ void ScreenOperate (TScreen *pScreen, int nIndex)
 // Moves a list's choice by nStep items, stepping over the disabled ones and
 // stopping at the ends. No wrapping: a list that jumps from the last volume
 // back to the first reads as a glitch, and the Mac's own lists stopped too.
-static bool ListMove (TScreen *pScreen, int nList, int nStep)
+static bool ListMoveIn (TWidget *p, const TTheme *pTheme, int nStep)
 {
-    TWidget *p = &pScreen->pWidgets[nList];
     if (p->nItems == 0)
     {
         return false;                   // an empty list: the card may have none
@@ -250,7 +265,16 @@ static bool ListMove (TScreen *pScreen, int nList, int nStep)
         return false;
     }
     p->nChoice = nWanted;
-    WidgetListReveal (p, pScreen->pTheme);
+    WidgetListReveal (p, pTheme);
+    return true;
+}
+
+static bool ListMove (TScreen *pScreen, int nList, int nStep)
+{
+    if (!ListMoveIn (&pScreen->pWidgets[nList], pScreen->pTheme, nStep))
+    {
+        return false;
+    }
     ScreenTouch (pScreen, nList);
     return true;
 }
@@ -372,6 +396,131 @@ static void SetPressed (TScreen *pScreen, int nIndex, bool bPressed)
 // that mean something else anywhere on the screen — Left and Right move a caret
 // there and nothing at all elsewhere — and burying that in one switch is how a
 // screen ends up doing two things for one key.
+/*
+ *  The pop-up's menu
+ *
+ *  It opens over the control with the chosen item on top of it, the way one
+ *  always has: what is already selected stays under the hand, so choosing it
+ *  again costs no movement at all. Clamped to the screen, because a pop-up near
+ *  the bottom would otherwise open past it.
+ */
+static void MenuOpen (TScreen *pScreen, int nPopup)
+{
+    TWidget *p = &pScreen->pWidgets[nPopup];
+    if (p->pItems == 0 || p->nItems == 0)
+    {
+        return;
+    }
+    const unsigned nRow = pScreen->pTheme->M.nRowHeight;
+    const unsigned nHeight = p->nItems * nRow + 2;
+    const int nChosen = p->nChoice < 0 ? 0 : p->nChoice;
+
+    int nY = p->Rect.nY - 1 - (int) (nChosen * nRow);
+    if (nY + (int) nHeight > pScreen->Bounds.nY + (int) pScreen->Bounds.nHeight)
+    {
+        nY = pScreen->Bounds.nY + (int) pScreen->Bounds.nHeight - (int) nHeight;
+    }
+    if (nY < pScreen->Bounds.nY)
+    {
+        nY = pScreen->Bounds.nY;
+    }
+
+    WidgetClear (&pScreen->Menu);
+    pScreen->Menu.Type    = WidgetList;
+    pScreen->Menu.Rect    = Rect (p->Rect.nX, nY, p->Rect.nWidth, nHeight);
+    pScreen->Menu.pItems  = p->pItems;
+    pScreen->Menu.nItems  = p->nItems;
+    pScreen->Menu.nChoice = nChosen;
+    pScreen->nMenu = nPopup;
+}
+
+static void MenuClose (TScreen *pScreen)
+{
+    pScreen->nMenu = -1;
+    // Everything under it has to come back, and only the screen as a whole
+    // knows what was there — a menu is the one thing here that overlaps.
+    pScreen->bDirtyAll = true;
+}
+
+// Answers what the loop should report. A menu takes every event while it is
+// open: that is what modal means, and it is the whole reason a pop-up can be
+// read without the rest of the screen answering underneath it.
+static TScreenReply HandleMenu (TScreen *pScreen, const TEvent *pEvent)
+{
+    const int nPopup = pScreen->nMenu;
+
+    if (pEvent->Type == EventKeyDown)
+    {
+        switch (pEvent->nKey)
+        {
+        case OkKeyUp:
+        case OkKeyDown:
+            return Reply (ListMoveIn (&pScreen->Menu, pScreen->pTheme,
+                                      pEvent->nKey == OkKeyDown ? +1 : -1)
+                              ? ScreenChanged : ScreenIdle, -1);
+
+        case OkKeyEscape:
+            MenuClose (pScreen);
+            return Reply (ScreenChanged, -1);
+
+        case OkKeySpace:
+        case OkKeyReturn:
+            pScreen->pWidgets[nPopup].nChoice = pScreen->Menu.nChoice;
+            MenuClose (pScreen);
+            return Reply (ScreenActivated, nPopup);
+
+        default:
+            return Reply (ScreenIdle, -1);
+        }
+    }
+
+    if (pEvent->Type == EventMouseMove)
+    {
+        pScreen->nX = pEvent->nX;
+        pScreen->nY = pEvent->nY;
+        const int nAt = WidgetListItemAt (&pScreen->Menu, pScreen->pTheme,
+                                          pEvent->nX, pEvent->nY);
+        if (nAt < 0 || nAt == pScreen->Menu.nChoice
+            || (pScreen->Menu.pItems[nAt].nState & StateDisabled))
+        {
+            return Reply (ScreenIdle, -1);
+        }
+        pScreen->Menu.nChoice = nAt;
+        return Reply (ScreenChanged, -1);
+    }
+
+    if (pEvent->Type == EventMouseDown || pEvent->Type == EventMouseUp)
+    {
+        pScreen->nX = pEvent->nX;
+        pScreen->nY = pEvent->nY;
+        if (!RectContains (pScreen->Menu.Rect, pEvent->nX, pEvent->nY))
+        {
+            // Outside is how a menu is dismissed, and a press outside is enough
+            // — waiting for the release leaves it standing under the hand.
+            if (pEvent->Type == EventMouseDown)
+            {
+                MenuClose (pScreen);
+                return Reply (ScreenChanged, -1);
+            }
+            return Reply (ScreenIdle, -1);
+        }
+        if (pEvent->Type == EventMouseUp)
+        {
+            const int nAt = WidgetListItemAt (&pScreen->Menu, pScreen->pTheme,
+                                              pEvent->nX, pEvent->nY);
+            if (nAt < 0 || (pScreen->Menu.pItems[nAt].nState & StateDisabled))
+            {
+                return Reply (ScreenIdle, -1);
+            }
+            pScreen->pWidgets[nPopup].nChoice = nAt;
+            MenuClose (pScreen);
+            return Reply (ScreenActivated, nPopup);
+        }
+        return Reply (ScreenIdle, -1);
+    }
+    return Reply (ScreenIdle, -1);
+}
+
 static TScreenReply HandleField (TScreen *pScreen, TWidget *p, const TEvent *pEvent)
 {
     bool bMine = true;
@@ -468,6 +617,11 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
         {
             return Reply (ScreenIdle, -1);
         }
+        if (p != 0 && p->Type == WidgetPopup && p->pItems != 0)
+        {
+            MenuOpen (pScreen, nFocused);
+            return Reply (ScreenChanged, -1);
+        }
         ScreenOperate (pScreen, pScreen->nFocus);
         return Reply (ScreenActivated, pScreen->nFocus);
 
@@ -495,6 +649,11 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
 
 TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
 {
+    if (pScreen->nMenu >= 0)
+    {
+        return HandleMenu (pScreen, pEvent);
+    }
+
     switch (pEvent->Type)
     {
     case EventKeyDown:
@@ -562,6 +721,23 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
                 ListChoose (pScreen, nHit,
                             WidgetListItemAt (&pScreen->pWidgets[nHit], pScreen->pTheme,
                                               pEvent->nX, pEvent->nY));
+            }
+            // A click on a pop-up opens its menu, which then has every event
+            // until it is done with.
+            if (pScreen->pWidgets[nHit].Type == WidgetPopup
+                && pScreen->pWidgets[nHit].pItems != 0)
+            {
+                MenuOpen (pScreen, nHit);
+                pScreen->nPressed = -1;
+                return Reply (ScreenChanged, -1);
+            }
+            // A click in a field puts the caret where it landed. Without it the
+            // only way to reach the middle of a name is to walk there with the
+            // arrows, which nobody does.
+            if (pScreen->pWidgets[nHit].Type == WidgetField)
+            {
+                WidgetFieldClick (&pScreen->pWidgets[nHit], pScreen->pTheme, pEvent->nX);
+                ScreenTouch (pScreen, nHit);
             }
             pScreen->nPressed = nHit;
             SetPressed (pScreen, nHit, true);

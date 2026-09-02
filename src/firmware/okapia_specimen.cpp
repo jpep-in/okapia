@@ -189,11 +189,38 @@ static void SectionList (TLayout *pLayout)
     TLayout Column;
     LayoutBegin (&Column, pTheme, RowRest (&Row, StateFocused));
 
-    Add (WidgetPopup, LayoutRow (&Column, pTheme->M.nButtonHeight, StateFocused),
-         "Dynamique", StateNormal);
+    // Real choices, so the menu has something to show. A pop-up carrying a
+    // fixed string is a button wearing a triangle.
+    static const TListItem Rates[] =
+    {
+        { "Dynamique",     0, StateNormal },
+        { "60 images/s",   0, StateNormal },
+        { "30 images/s",   0, StateNormal },
+        { "15 images/s",   0, StateNormal },
+        { "10 images/s",   0, StateNormal }
+    };
+    static const TListItem Outputs[] =
+    {
+        { "Coupé",  0, StateNormal   },
+        { "HDMI",   0, StateNormal   },
+        { "Jack",   0, StateNormal   },
+        { "USB",    0, StateDisabled }
+    };
+
+    TWidget *pRate = Add (WidgetPopup,
+                          LayoutRow (&Column, pTheme->M.nButtonHeight, StateFocused),
+                          0, StateNormal);
+    pRate->pItems  = Rates;
+    pRate->nItems  = sizeof Rates / sizeof Rates[0];
+    pRate->nChoice = 0;
     LayoutRowGap (&Column);
-    Add (WidgetPopup, LayoutRow (&Column, pTheme->M.nButtonHeight, StateFocused),
-         "HDMI", StateNormal);
+
+    TWidget *pOut = Add (WidgetPopup,
+                         LayoutRow (&Column, pTheme->M.nButtonHeight, StateFocused),
+                         0, StateNormal);
+    pOut->pItems  = Outputs;
+    pOut->nItems  = sizeof Outputs / sizeof Outputs[0];
+    pOut->nChoice = 1;
     LayoutRowGap (&Column);
 
     // A field with storage of its own is an editable one; a field without is

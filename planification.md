@@ -2521,6 +2521,27 @@ où il existe, sinon personne ne le regarde.
   colonne du dialogue, à une taille sur trois seulement. Les parts d'une répartition ne se calculent pas
   par soustraction.
 
+  **Deuxième passage à la main, 2026-09-02.** Quatre choses de plus, dont deux que la première correction
+  n'avait fait qu'effleurer :
+
+  - **le clignotement ne venait pas du volume repeint mais de l'endroit.** On dessinait dans le tampon
+    visible, donc le fond redescendait sous les yeux avant le contrôle posé dessus, et à soixante
+    rafraîchissements par seconde cela se voit. Tout est maintenant tracé dans une **surface d'ombre** et
+    seule la partie changée est recopiée d'un coup. Une seule allocation, au démarrage ;
+  - **la barre d'espace et le retour arrière manquaient.** L'usage 0x2A n'était pas dans la table, et
+    Circle range l'espace parmi ses touches spéciales, à 0x100, donc le filtre « caractère imprimable » le
+    jetait : le champ prenait toutes les lettres et refusait la seule touche entre les mots. Un clic dans
+    un champ y pose aussi le curseur, la mesure du texte et l'encart du thème venant d'un seul endroit ;
+  - **la déroulante n'avait qu'une apparence.** Elle ouvre un vrai menu, posé de façon que le choix courant
+    tombe sur le contrôle — ce qui est déjà sous la main ne demande aucun mouvement — et il est modal : rien
+    dessous ne répond tant qu'il est ouvert. Un menu est **une liste**, donc c'en est une, et elle ne vit
+    pas dans le tableau de l'écran : rien ne se met en page autour de ce qui n'est là qu'une fraction du
+    temps. En se refermant il redemande tout l'écran, étant la seule chose ici qui en recouvre ;
+  - **le cadre d'alerte** reprend exactement les deux épaisseurs du dialogue. Deux tentatives pour le
+    rendre plus pressant en épaississant l'un ou l'autre filet ont échoué pour la même raison : ces deux
+    épaisseurs sont une constante du système, pas un réglage. Ce qui distingue une alerte, c'est sa marque
+    et ce qu'elle dit ; un cadre presque pareil se lit comme une erreur, pas comme une emphase.
+
 **16f — Les traductions.** Une table de chaînes, anglais et français, depuis `boot-menu/strings.tsv` ;
 langue persistée dans les préférences. À faire avant le sélecteur, pas après : c'est ce qui garantit que la
 mise en page ne s'est pas calée sur la longueur des libellés français.

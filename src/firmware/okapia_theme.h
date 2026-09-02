@@ -84,10 +84,10 @@ struct TTheme
 
     void (*DrawDesktop)      (TSurface *, const TTheme *);
     void (*DrawDialog)       (TSurface *, const TRect &, const TTheme *);
-    // An alert is a dialogue that interrupts. It says so with weight rather
-    // than with a second visual language: the same two rules, the outer one
-    // heavier, which is what "this one is not ordinary" has to mean when the
-    // palette is two colours.
+    // An alert is a dialogue that interrupts, and it says so with its caution
+    // mark and its words — not with a heavier frame. The two rule thicknesses
+    // are a constant of the design and the same everywhere; a frame that is
+    // nearly the dialogue's reads as a mistake, not as emphasis.
     void (*DrawAlert)        (TSurface *, const TRect &, const TTheme *);
     void (*DrawTitle)        (TSurface *, const TRect &, const char *, const TTheme *);
     void (*DrawLabel)        (TSurface *, const TRect &, const char *, unsigned, const TTheme *);
@@ -137,6 +137,11 @@ struct TTheme
 // The theme at 1:1. A second theme would be a second value of this type, and
 // nothing in the components would change.
 extern const TTheme OkapiaThemeBase;
+
+// How far inside a field its text begins. The theme draws it there and a click
+// has to find it there; two copies of that number is a caret landing beside the
+// letter it was aimed at.
+unsigned ThemeFieldInset (const TTheme *pTheme);
 
 // Where a dialogue's contents may start: inside its frame, then clear of it by
 // the margin. Measuring the margin from the dialogue's outer edge instead —

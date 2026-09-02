@@ -30,6 +30,19 @@ struct TScreen
     int           nX;                   // where the pointer was last seen
     int           nY;
 
+    TRect         Bounds;               // where a menu may open without leaving the screen
+
+    /*
+     *  The pop-up menu that is open, if one is
+     *
+     *  A menu is a list that appears over the screen and goes away again — so it
+     *  is a list, and it lives here rather than in the array, because nothing
+     *  else on the screen may be laid out around something that is not there
+     *  most of the time.
+     */
+    int           nMenu;                // the pop-up it belongs to, or -1
+    TWidget       Menu;                 // the list it shows while it is open
+
     // Dragging a list's scroller, and where inside its thumb it was taken hold
     // of. Grabbing a thumb by its middle whatever part of it was clicked makes
     // it jump under the hand at the first pixel of movement.
@@ -80,7 +93,13 @@ void ScreenTouch (TScreen *pScreen, int nIndex);
 // first. Answers false when too much has changed to be worth tracking, in which
 // case the caller redraws the screen whole — that is the first paint and a
 // change of page, and nothing else in ordinary use.
-bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen);
+// pDamage is filled with the rectangle that was touched, so a caller drawing
+// into a shadow surface knows exactly what to copy to the screen.
+bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen, TRect *pDamage);
+
+// Whether a pop-up's menu is open. The loop asks in order to know that closing
+// it will need the screen underneath drawn again.
+bool ScreenMenuOpen (const TScreen *pScreen);
 
 // One event in, one answer out. Never draws: the caller repaints when the
 // answer says something changed, which is also what keeps a moving pointer from

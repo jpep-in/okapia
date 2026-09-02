@@ -66,6 +66,16 @@ inline TRect Rect (int nX, int nY, unsigned nWidth, unsigned nHeight)
 TRect RectInset (const TRect &rRect, int nDX, int nDY);
 bool  RectContains (const TRect &rRect, int nX, int nY);
 
+// The smallest rectangle holding both. An empty one contributes nothing, which
+// is what lets a caller start from nothing and add what it touched.
+TRect RectUnion (const TRect &rA, const TRect &rB);
+
+// Copies a rectangle from one surface to another of the same size. This is what
+// makes a shadow surface worth having: everything is drawn off to the side and
+// only the part that changed reaches the screen, in one pass, so nobody ever
+// sees the ground go down before the control on top of it.
+void GfxBlit (TSurface *pDst, const TSurface *pSrc, const TRect &rRect);
+
 void GfxClear (TSurface *pSurface, TOkapiaColor Color);
 void GfxFill (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color);
 void GfxFrame (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color, unsigned nThickness);
@@ -121,6 +131,12 @@ enum TTextAlign
 unsigned GfxTextBox (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &rBox,
                      const char *pText, TOkapiaColor Color, TTextAlign Align);
 
+// The byte offset in pText nearest nX pixels from where it starts. A caret put
+// down by a click has to land *between* two characters, so the boundary chosen
+// is the nearer of the two — clicking the right half of a letter puts the caret
+// after it, which is what a text field has always done.
+unsigned GfxTextOffsetAt (const TOkapiaFont *pFont, const char *pText, int nX);
+
 // Whether it would be drawn whole. A layout asks this when it wants to widen a
 // control rather than let its label be cut.
 bool GfxTextFits (const TOkapiaFont *pFont, const TRect &rBox, const char *pText);
@@ -170,8 +186,10 @@ void GfxImage (TSurface *pSurface, const TGlyphImage *pImage, int nX, int nY,
  *  shown cursor leaves the old pixels in the save-under, and the next move
  *  stamps them back onto the screen.
  */
-void GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale);
-void GfxCursorHide (TSurface *pSurface);
+// Both answer the rectangle they touched, so a caller keeping a shadow surface
+// knows what to copy forward without working the pointer's size out itself.
+TRect GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale);
+TRect GfxCursorHide (TSurface *pSurface);
 
 // The one place that knows what a role is worth, in 0x00RRGGBB.
 unsigned GfxPaletteEntry (TOkapiaColor Color);
