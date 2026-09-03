@@ -2153,10 +2153,18 @@ sans autre mécanisme.
 - [x] `œ`, `Œ`, `…` et `’` absents d'ISO-8859-1 : les sources restent en UTF-8 et `GfxText` décode. La
       fonte **porte** ces signes, donc rien n'est replié sur un ancêtre ASCII. Cela évite aussi le piège du
       littéral `"\xE9"`, qui avale la lettre suivante quand elle est un chiffre hexadécimal
-- [ ] liste des systèmes avec détection automatique du modèle compatible, et état propre/sale par volume
-- [ ] icônes de dossier monochromes tracées depuis les références System 6, System 7 et Mac OS 8/9
-- [ ] colonne radio « par défaut », indépendante de la sélection courante, qui place son `disk` en premier
-- [ ] cases « lecture seule » (préfixe `*`, `disk.cpp:161`) et « monter » par ligne
+- [x] liste des systèmes avec version lue sur le volume et état propre/sale par ligne. La version est
+      composée depuis les nombres de la ressource `vers` et non depuis sa chaîne courte : un Système
+      localisé l'écrit « F1-7.1.2 », qui ne se lit pas et dont le premier caractère n'est pas l'époque
+- [x] icônes de dossier monochromes System 6, System 7, Mac OS 8 et 9, choisies sur la version lue —
+      le seul endroit du firmware où l'époque décide d'une apparence, le chrome n'en portant aucune
+- [x] disque de démarrage indépendant de la sélection courante : la ligne le porte par une pastille, et
+      une case sous la liste le désigne. Il place son `disk` en premier, l'ordre **étant** le réglage
+      (`disk.cpp:161`) — il n'y a pas d'autre endroit où l'écrire
+- [x] cases « lecture seule » (préfixe `*`) et « monté », sous la liste et non par ligne : elles portent
+      sur le volume choisi, comme le tableau de bord Démarrage le faisait. Le volume de démarrage ne peut
+      pas être démonté sous ses propres pieds, et un volume sans Système ne peut pas le devenir — les
+      cases le disent en grisant, pas en refusant quand on appuie
 - [ ] réglages derrière un bouton à glyphe : RAM, rafraîchissement, partage, nom du volume partagé,
       audio et langue — **pas de date ni de fuseau**, l'horloge se règle dans Mac OS (§7.7)
 - [ ] audio en quatre états — coupé / HDMI / jack / USB — et non un booléen (`audio_circle.cpp:70`)
@@ -2170,7 +2178,8 @@ sans autre mécanisme.
 - [x] anglais et français par une table de chaînes du projet (`assets/strings.tsv`), langue persistée dans
       la préférence `language` ; et **chaque page est mesurée dans chaque langue**, ce qui est la raison de
       l'avoir fait avant le sélecteur
-- [ ] écriture dans le seul `BasiliskII_Prefs`, qui reste la source de vérité
+- [x] écriture dans le seul `BasiliskII_Prefs`, qui reste la source de vérité. Les lignes `disk` sont
+      **remplacées** et non modifiées : l'ordre est le réglage, donc il n'y a rien à modifier en place
 - [x] fond gris uni (~`#BCBCBC`) pendant environ deux secondes, clavier et souris pris avant le Mac ;
       `Option` seule est reconnue — reste à lui donner le sélecteur à ouvrir (16g)
 - [ ] ouverture automatique si la configuration manque ou si aucun système n'est amorçable
@@ -2660,6 +2669,25 @@ mise en page ne s'est pas calée sur la longueur des libellés français.
 **16g — Le sélecteur.** Le premier vrai écran. `HfsInventory()` et `HfsSystemVersion()` alimentent les
 lignes — la phase 15bis les a déjà livrés —, colonne radio pour le défaut, cases lecture seule et montage,
 et écriture dans `BasiliskII_Prefs` par `SavePrefs()`.
+
+  **Fait le 2026-09-03.** `okapia_chooser.{h,cpp}` ne connaît ni HFS ni un fichier de préférences : on lui
+  donne une liste de volumes, il répond ce que l'utilisateur a demandé, et l'appelant lit et écrit. C'est
+  ce qui permet de le piloter par événements de synthèse sur l'hôte — `tests/host/check_chooser.cpp`, vingt
+  mesures — et de le dessiner sur une carte inventée qui porte tous les cas tordus à la fois :
+  `render_chooser` en fait une image.
+
+  Ce qui est mesuré est **ce qui partira sur la carte de l'utilisateur** : l'ordre des lignes `disk` et
+  l'étoile devant une lecture seule. Se tromper là, c'est un Macintosh qui démarre sur le mauvais Système,
+  ou un volume monté en écriture qu'on croyait à l'abri.
+
+  Une chose apprise en le pilotant : **l'ordre de tabulation change avec l'état**, puisqu'un contrôle
+  inactif ne prend pas le focus. C'est le bon comportement et cela rend un script de test fragile — le
+  premier essai a coché « lecture seule » en croyant cocher « disque de démarrage ». Le défaut était dans
+  le script, pas dans l'écran, mais il vaut d'être noté avant qu'il ne coûte une heure à quelqu'un.
+
+  Vérifié de bout en bout sous QEMU sur une copie de la vraie carte : Option ouvre le sélecteur, il liste
+  les deux volumes avec leur époque et leur version, choisir le second et démarrer écrit
+  `disk /machd76.image` puis `disk /boot71.img`, et le noyau démarre bien sur 7.6.1.
 
 **16h — Réglages, informations, arrêt, oubli de la PRAM.** Le reste des écrans, une fois la mécanique
 éprouvée par le sélecteur.

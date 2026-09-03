@@ -109,6 +109,33 @@ void ScreenPaintMenu (TSurface *pSurface, TScreen *pScreen, TRect *pDamage)
     *pDamage = RectUnion (*pDamage, pScreen->Menu.Rect);
 }
 
+void ScreenPresent (TSurface *pShadow, TSurface *pOutput, TScreen *pScreen,
+                    void (*pRepaint) (TSurface *), bool bPointer, int nX, int nY,
+                    unsigned nCursorScale)
+{
+    TRect Damage = GfxCursorHide (pShadow);
+
+    TRect Painted;
+    if (!ScreenPaintDirty (pShadow, pScreen, &Painted))
+    {
+        pRepaint (pShadow);
+        Painted = Rect (0, 0, pShadow->nWidth, pShadow->nHeight);
+        ScreenPaintMenu (pShadow, pScreen, &Painted);
+    }
+    Damage = RectUnion (Damage, Painted);
+
+    if (bPointer)
+    {
+        const TGfxCursor Shape = ScreenCursorAt (pScreen, nX, nY) == CursorBeam
+                                     ? GfxCursorBeam : GfxCursorArrow;
+        Damage = RectUnion (Damage, GfxCursorShow (pShadow, nX, nY, nCursorScale, Shape));
+    }
+    if (Damage.nWidth != 0)
+    {
+        GfxBlit (pOutput, pShadow, Damage);
+    }
+}
+
 bool ScreenMenuOpen (const TScreen *pScreen)
 {
     return pScreen->nMenu >= 0;

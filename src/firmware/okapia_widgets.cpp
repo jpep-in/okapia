@@ -144,12 +144,24 @@ static void DrawList (TSurface *pSurface, const TTheme *pTheme, const TWidget *p
             GfxImage (pSurface, pItem->pIcon, nInk, nIconY, ColorBlack, pTheme->nIconScale);
             nInk += (int) (pItem->pIcon->nWidth * pTheme->nIconScale) + (int) pTheme->M.nGap;
         }
+        // A row the screen has singled out — the volume that boots, the choice
+        // a menu already holds — wears a bullet at its right. A mark rather
+        // than a weight, because the ladder has no third face and a row is not
+        // a place to invent one.
+        int nRight = Row.nX + (int) Row.nWidth - (int) pTheme->M.nGap;
+        if (pItem->nState & StateChecked)
+        {
+            const unsigned nDot = pTheme->M.nCheckSize / 3 < 3 ? 3
+                                                               : pTheme->M.nCheckSize / 3;
+            GfxCircleFill (pSurface,
+                           Rect (nRight - (int) nDot,
+                                 Row.nY + ((int) Row.nHeight - (int) nDot) / 2, nDot, nDot),
+                           ColorBlack);
+            nRight -= (int) nDot + (int) pTheme->M.nGap;
+        }
         if (pItem->pText != 0)
         {
-            const TRect Text = Rect (nInk, Row.nY,
-                                     (unsigned) (Row.nX + (int) Row.nWidth
-                                                 - (int) pTheme->M.nGap - nInk),
-                                     Row.nHeight);
+            const TRect Text = Rect (nInk, Row.nY, (unsigned) (nRight - nInk), Row.nHeight);
             GfxTextBox (pSurface, pTheme->pBodyFont, Text, pItem->pText,
                         (pItem->nState & StateDisabled) ? ColorDim : ColorBlack,
                         TextAlignLeft);

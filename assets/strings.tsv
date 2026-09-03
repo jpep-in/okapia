@@ -37,6 +37,13 @@ repair_title	Repair the volume?	Réparer le volume ?
 repair_body	This volume was not unmounted properly. Okapia can repair it before starting, which takes a few seconds and does not touch your files.	Ce volume n’a pas été démonté proprement. Okapia peut le réparer avant de démarrer, ce qui prend quelques secondes et ne touche pas à vos fichiers.
 repair_now	Repair	Réparer
 repair_skip	Start without repairing	Démarrer sans réparer
+startup_disk	Startup disk	Disque de démarrage
+mounted	Mounted	Monté
+volume_in_use	in use	en cours d’utilisation
+volume_clean	ready	prête
+mb_free	MB free	Mo libres
+no_volume	No volume on the card	Aucun volume sur la carte
+not_mounted	not mounted	non montée
 spec_title	Specimen — the component system	Échantillon — le système de composants
 spec_buttons	Buttons	Boutons
 spec_choices	Tick boxes and radio buttons	Cases et boutons radio

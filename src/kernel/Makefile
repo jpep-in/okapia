@@ -82,7 +82,7 @@ include $(CIRCLEHOME)/Rules.mk
 OKAPIA_BUILD_TIME := $(shell date +%s)
 EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
 EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) -I$(HFS) \
-               -I$(FIRMWARE) -I$(FIRMWARE)/circle \
+               -I$(FIRMWARE) -I$(FIRMWARE)/circle -I$(OKAPIA)/circle \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform
 

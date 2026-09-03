@@ -20,7 +20,11 @@
 #include "sysdeps.h"
 #include "prefs.h"
 
+#include "hfs_volume_circle.h"
+
+#include "okapia_chooser.h"
 #include "okapia_gfx.h"
+#include "okapia_screen.h"
 #include "okapia_strings.h"
 #include "okapia_input.h"
 #include "okapia_theme.h"
@@ -43,6 +47,246 @@ static const unsigned SLICE_MS = 20;
 // is no logical key to give them and inventing one would be worse.
 static const unsigned char KEY_P = 0x13;
 static const unsigned char KEY_R = 0x15;
+
+/*
+ *  What the card holds, as the chooser wants it
+ *
+ *  Two sources, joined here and nowhere else: the volumes that exist, from the
+ *  inventory, and what the preferences say about them. A volume the preferences
+ *  name but the card does not hold is simply gone; a volume the card holds and
+ *  the preferences ignore is there, unmounted, waiting to be ticked.
+ */
+static void GatherVolumes (TChooser *pChooser)
+{
+    static THfsVolumeInfo Found[CHOOSER_MAX];
+    const unsigned nFound = HfsInventory (Found, CHOOSER_MAX);
+
+    pChooser->nCount   = 0;
+    pChooser->nStartup = -1;
+
+    for (unsigned i = 0; i < nFound; i++)
+    {
+        TChooserVolume *v = &pChooser->Volumes[pChooser->nCount];
+        unsigned k = 0;
+        for (; k + 1 < sizeof v->Path && Found[i].Path[k] != '\0'; k++)
+        {
+            v->Path[k] = Found[i].Path[k];
+        }
+        v->Path[k] = '\0';
+        for (k = 0; k + 1 < sizeof v->Name && Found[i].Name[k] != '\0'; k++)
+        {
+            v->Name[k] = Found[i].Name[k];
+        }
+        v->Name[k] = '\0';
+
+        // Built from the numbers, not from the resource's own short string: a
+        // localised System states it as "F1-7.1.2", which is not a version
+        // anybody wants to read and whose first character is not the era — and
+        // the era is what chooses the icon.
+        v->System[0] = '\0';
+        THfsSystemVersion Version;
+        if (Found[i].Blessed != 0 && HfsSystemVersion (Found[i].Path, &Version))
+        {
+            k = 0;
+            v->System[k++] = (char) ('0' + Version.nMajor % 10);
+            v->System[k++] = '.';
+            v->System[k++] = (char) ('0' + Version.nMinor % 10);
+            if (Version.nBugfix != 0)
+            {
+                v->System[k++] = '.';
+                v->System[k++] = (char) ('0' + Version.nBugfix % 10);
+            }
+            v->System[k] = '\0';
+        }
+        v->bBootable = Found[i].Blessed != 0;
+        v->bClean    = Found[i].bClean;
+        v->nFreeKB   = Found[i].FreeKB;
+        v->bMounted  = false;
+        v->bReadOnly = false;
+        pChooser->nCount++;
+    }
+
+    // Now what the preferences say. The first disk they name is the one the ROM
+    // is offered first, so it is the startup volume — that is not a separate
+    // setting anywhere, it is the order (disk.cpp:161).
+    for (int nIndex = 0; ; nIndex++)
+    {
+        const char *pDisk = PrefsFindString ("disk", nIndex);
+        if (pDisk == 0)
+        {
+            break;
+        }
+        const bool bReadOnly = pDisk[0] == '*';
+        const char *pPath = bReadOnly ? pDisk + 1 : pDisk;
+        for (unsigned i = 0; i < pChooser->nCount; i++)
+        {
+            const char *a = pChooser->Volumes[i].Path, *b = pPath;
+            while (*a != '\0' && *a == *b)
+            {
+                a++;
+                b++;
+            }
+            if (*a != '\0' || *b != '\0')
+            {
+                continue;
+            }
+            pChooser->Volumes[i].bMounted  = true;
+            pChooser->Volumes[i].bReadOnly = bReadOnly;
+            if (pChooser->nStartup < 0 && pChooser->Volumes[i].bBootable)
+            {
+                pChooser->nStartup = (int) i;
+            }
+            break;
+        }
+    }
+}
+
+// What the user chose, onto the card. Every `disk` line is replaced rather than
+// edited: the order is the setting, so there is nothing to edit in place.
+static void ApplyVolumes (const TChooser *pChooser)
+{
+    static char Lines[CHOOSER_MAX][CHOOSER_LINE];
+    const unsigned n = ChooserDiskLines (pChooser, Lines, CHOOSER_MAX);
+
+    while (PrefsFindString ("disk", 0) != 0)
+    {
+        PrefsRemoveItem ("disk", 0);
+    }
+    for (unsigned i = 0; i < n; i++)
+    {
+        PrefsAddString ("disk", Lines[i]);
+        CLogger::Get ()->Write (FROM, LogNotice, "disk %s", Lines[i]);
+    }
+    SavePrefs ();
+}
+
+// The parameter RAM, forgotten. main.cpp:106 rebuilds it from scratch as soon
+// as the "NuMc" signature is missing, so removing the file *is* the zap — and
+// it touches nothing of the user's data.
+//
+// f_unlink and not remove(): the newlib glue's remove() deletes the file and
+// then leaves something behind that wedges the next fopen — the ROM never
+// opened and the kernel stopped dead, with no log at all.
+static void ForgetPram (void)
+{
+    const FRESULT nResult = f_unlink ("SD:/BasiliskII_XPRAM");
+    CLogger::Get ()->Write (FROM, LogNotice, "Parameter RAM %s (%d)",
+                            nResult == FR_OK ? "forgotten"
+                                             : (nResult == FR_NO_FILE ? "was already absent"
+                                                                      : "could not be removed"),
+                            (int) nResult);
+}
+
+/*
+ *  The chooser, for as long as the user wants it
+ *
+ *  Everything about painting a frame lives in ScreenPresent, so what is left
+ *  here is the loop itself: take the events, hand them to the screen, and ask
+ *  the chooser what a control meant.
+ */
+static TFirmwareResult RunChooser (TSurface *pOutput, const TTheme *pTheme)
+{
+    TChooser Model;
+    GatherVolumes (&Model);
+    CLogger::Get ()->Write (FROM, LogNotice, "Chooser: %u volume(s), startup %d",
+                            Model.nCount, Model.nStartup);
+
+    // Drawn beside the screen and copied forward in one pass: painting into the
+    // visible buffer puts the ground down before the control that stands on it,
+    // and at sixty refreshes a second that is seen.
+    TSurface Shadow;
+    Shadow.nWidth  = pOutput->nWidth;
+    Shadow.nHeight = pOutput->nHeight;
+    Shadow.nPitch  = pOutput->nWidth * (unsigned) sizeof (unsigned);
+    Shadow.pPixels = new unsigned char[(size_t) Shadow.nPitch * Shadow.nHeight];
+    if (Shadow.pPixels == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "No room for a shadow surface");
+        return FirmwareBoot;
+    }
+
+    ChooserDraw (&Shadow, &Model);
+    TWidget *pWidgets = 0;
+    const unsigned nCount = ChooserWidgets (&pWidgets);
+
+    TScreen Screen;
+    ScreenInit (&Screen, pTheme, pWidgets, nCount);
+    Screen.Background = ColorWhite;
+    Screen.Bounds     = Rect (0, 0, pOutput->nWidth, pOutput->nHeight);
+    ChooserRepaint (&Shadow);
+    GfxBlit (pOutput, &Shadow, Screen.Bounds);
+    TRect Ignored;
+    ScreenPaintDirty (&Shadow, &Screen, &Ignored);
+
+    int nX = 0, nY = 0;
+    bool bPointer = false;
+    TFirmwareResult Result = FirmwareBoot;
+    bool bDone = false;
+
+    for (unsigned nTick = 0; !bDone; nTick++)
+    {
+        TEvent Event;
+        bool bChanged = false;
+        while (FwInputNext (&Event))
+        {
+            if (Event.Type == EventMouseMove)
+            {
+                bPointer = true;
+            }
+            const TScreenReply Reply = ScreenEvent (&Screen, &Event);
+            if (Reply.Result == ScreenChanged)
+            {
+                // Moving in the list changes what the controls underneath are
+                // true of, so they follow it.
+                bChanged = true;
+                ChooserSync (&Model);
+            }
+            else if (Reply.Result == ScreenActivated)
+            {
+                bChanged = true;
+                switch (ChooserOperate (&Model, Reply.nIndex))
+                {
+                case ChooserStart:
+                    ApplyVolumes (&Model);
+                    bDone = true;
+                    break;
+
+                case ChooserShutDown:
+                    Result = FirmwareHalt;
+                    bDone = true;
+                    break;
+
+                case ChooserForgetPram:
+                    ForgetPram ();
+                    break;
+
+                case ChooserSettings:
+                    CLogger::Get ()->Write (FROM, LogNotice, "Settings: phase 16h");
+                    break;
+
+                default:
+                    break;
+                }
+                // A control that only changed the model may have changed what
+                // the rows say, so the screen is drawn again whole rather than
+                // guessed at.
+                Screen.bDirtyAll = true;
+            }
+        }
+
+        if (bChanged || (nTick % (500 / SLICE_MS) == 0 && ScreenBlinkCaret (&Screen))
+            || bPointer)
+        {
+            FwInputPointer (&nX, &nY);
+            ScreenPresent (&Shadow, pOutput, &Screen, ChooserRepaint, bPointer, nX, nY,
+                           pTheme->nIconScale);
+        }
+        CTimer::Get ()->MsDelay (10);
+    }
+
+    delete[] Shadow.pPixels;
+    return Result;
+}
 
 TFirmwareResult FirmwareRun (void)
 {
@@ -153,7 +397,11 @@ TFirmwareResult FirmwareRun (void)
     }
     else if (bOption)
     {
-        CLogger::Get ()->Write (FROM, LogNotice, "Option held: the chooser would open here");
+        CLogger::Get ()->Write (FROM, LogNotice, "Option held: the chooser");
+        const TFirmwareResult Chosen = RunChooser (&Surface, &Theme);
+        delete pOutput;
+        CLogger::Get ()->Write (FROM, LogNotice, "Display handed back");
+        return Chosen;
     }
     else if (FwInputSeenAnything ())
     {

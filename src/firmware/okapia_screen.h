@@ -116,6 +116,24 @@ bool ScreenPaintDirty (TSurface *pSurface, TScreen *pScreen, TRect *pDamage);
 // the screen it stands in front of has just been painted over it.
 void ScreenPaintMenu (TSurface *pSurface, TScreen *pScreen, TRect *pDamage);
 
+/*
+ *  One frame, from the screen to the glass
+ *
+ *  The pointer taken down, what changed drawn again — or everything, through
+ *  pRepaint, when the screen says so — the pointer put back, and only the part
+ *  that moved copied forward. Every subtlety about tearing, the save-under and
+ *  the menu that stands in front lives here instead of in each caller's loop,
+ *  which is where two of them would slowly stop agreeing.
+ *
+ *  pShadow is where everything is drawn and pOutput is the frame buffer. They
+ *  must be the same size; nothing is ever drawn straight into pOutput, because
+ *  painting the ground before the control that stands on it is visible at sixty
+ *  refreshes a second.
+ */
+void ScreenPresent (TSurface *pShadow, TSurface *pOutput, TScreen *pScreen,
+                    void (*pRepaint) (TSurface *), bool bPointer, int nX, int nY,
+                    unsigned nCursorScale);
+
 // Whether a pop-up's menu is open. The loop asks in order to know that closing
 // it will need the screen underneath drawn again.
 bool ScreenMenuOpen (const TScreen *pScreen);
