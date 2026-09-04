@@ -247,7 +247,7 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   back — `src/kernel`, `src/firmware/circle` (which builds even its own sources through `obj/` for this
   reason) and `tests/host`. **A rule without them is a bug, not a style.** And after adding the flags to a
   rule, `make okapia-clean` once: an object built before them still carries no dependencies.
-- **Objects in `src/kernel/emu/` do not depend on the Makefile**, so changing a `-D`, a flag or a
+- **Objects in `src/kernel/emu-<engine>/` do not depend on the Makefile**, so changing a `-D`, a flag or a
   `#define` in `external/` rebuilds nothing: `make` links stale objects and you test a kernel that no
   longer matches the sources. This silently cost 4.8x guest speed — objects compiled while Basilisk's
   `D(bug())` tracing was on flooded the serial port (20 MB and 2.8M lines per run, 3000 k opcodes/s
@@ -399,6 +399,11 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 ## Commands
 
 <!-- filled in at bootstrap; don't invent commands that don't exist yet -->
+
+One engine per kernel image, chosen at build time: `make -C src/kernel` builds
+Basilisk II, `ENGINE=sheepshaver` names the other tree. The two cores define the
+same symbols and cannot be linked together; objects therefore live in
+`emu-<engine>/`, and `make okapia-clean` removes both.
 
 ```
 ./scripts/bootstrap.sh      # tools, submodules, references

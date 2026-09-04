@@ -1,12 +1,46 @@
 #
-# Makefile — Okapia kernel: Circle + the Basilisk II core + the platform layer.
+# Makefile — Okapia kernel: Circle + an emulator core + the platform layer.
 #
 include ../../external/circle-stdlib/Config.mk
 
-MACEMU  = ../../external/macemu/BasiliskII/src
+# Which emulator this kernel carries.
+#
+# One engine per image, and that is not a matter of taste: the two cores define
+# the same symbols — InitAll, ExitAll, EmulOp, PatchROM, Execute68k — so they
+# cannot be linked together, and even the files they share compile differently
+# under -DSHEEPSHAVER (planification.md §19.3). What changes with the engine is
+# the upstream tree, the config.h that describes this target to it, the flags,
+# the object directory, and the mangled names the linker is asked to wrap.
+#
+# sheepshaver names paths and nothing more for now: its core compiles for this
+# target unchanged (scripts/check-engine.sh) but it has no platform layer yet,
+# so there is nothing to link. Phase 20 fills that in.
+ENGINE ?= basilisk
+
 GEN     = ../../build/generated
 OKAPIA  = ../../src/circle
 CIRCLEH = $(CIRCLEHOME)
+
+ifeq ($(ENGINE),basilisk)
+  MACEMU         = ../../external/macemu/BasiliskII/src
+  ENGINE_CONFIG  = $(OKAPIA)
+  ENGINE_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE
+else ifeq ($(ENGINE),sheepshaver)
+  MACEMU         = ../../external/macemu/SheepShaver/src
+  # Its own config.h, ahead of Basilisk's on the include path: upstream includes
+  # the file by that plain name from both trees.
+  ENGINE_CONFIG  = $(OKAPIA)/sheepshaver
+  # Direct addressing comes from NATMEM_OFFSET in that config.h, and there is no
+  # UAE FPU on this side — the PowerPC brings its own.
+  ENGINE_DEFINES =
+else
+  $(error ENGINE must be basilisk or sheepshaver, not "$(ENGINE)")
+endif
+
+# One directory per engine. Objects carry the engine's flags and its config.h,
+# so a directory shared between the two would link a kernel built half one way
+# and half the other — and succeed.
+OBJ = emu-$(ENGINE)
 
 # bincue.cpp needs SDL and is an upstream option, off by default.
 CORE_SRCS   = $(filter-out $(MACEMU)/bincue.cpp,$(wildcard $(MACEMU)/*.cpp))
@@ -65,11 +99,11 @@ HFS_SRCS    = $(wildcard $(HFS)/*.c)
 EMU_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) \
            $(COMPAT_SRCS) $(PLATFORM_SRCS) $(REUSED_SRCS) $(FIRMWARE_SRCS)
 
-HFS_OBJS = $(addprefix emu/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
+HFS_OBJS = $(addprefix $(OBJ)/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
-EMU_OBJS = $(addprefix emu/,$(notdir $(EMU_SRCS:.cpp=.o))) \
-           emu/okapia_font_data.o emu/okapia_icons_data.o emu/okapia_strings_data.o \
-           $(addprefix emu/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
+EMU_OBJS = $(addprefix $(OBJ)/,$(notdir $(EMU_SRCS:.cpp=.o))) \
+           $(OBJ)/okapia_font_data.o $(OBJ)/okapia_icons_data.o $(OBJ)/okapia_strings_data.o \
+           $(addprefix $(OBJ)/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
 
 # Our entry point is okapia_main.cpp, not main.cpp: VPATH also finds the core's
 # main.cpp, and identical names silently resolve to the wrong file.
@@ -81,8 +115,10 @@ include $(CIRCLEHOME)/Rules.mk
 # dates into a volume makes its MDB inconsistent; the build time is a
 # plausible floor until phase 10 provides a real source.
 OKAPIA_BUILD_TIME := $(shell date +%s)
-EMU_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
-EMU_INCLUDES = -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) -I$(HFS) \
+EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
+# The engine's own config.h comes first, which is the whole reason it lives in
+# a directory of its own.
+EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) -I$(HFS) \
                -I$(FIRMWARE) -I$(FIRMWARE)/circle -I$(OKAPIA)/circle \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform
@@ -129,7 +165,7 @@ $(KEYCODES_H): $(MACEMU)/Unix/keycodes ../../scripts/gen-keycodes.py
 	@mkdir -p $(GEN)
 	@../../scripts/gen-keycodes.py $< $@
 
-emu/input_circle.o: $(KEYCODES_H)
+$(OBJ)/input_circle.o: $(KEYCODES_H)
 
 # The faces and the system-folder icons, converted at build time from assets/.
 # Explicit rules rather than the pattern above: a pattern cannot match a file
@@ -153,36 +189,39 @@ $(STR_SRC) $(STR_IDS): ../../scripts/gen-strings.py ../../assets/strings.tsv
 	@mkdir -p $(GEN)
 	@../../scripts/gen-strings.py $(STR_SRC) $(STR_IDS) ../../assets/strings.tsv
 
-emu/okapia_font_data.o: $(FONT_SRC) | emu
+$(OBJ)/okapia_font_data.o: $(FONT_SRC) | $(OBJ)
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
-emu/okapia_icons_data.o: $(ICON_SRC) | emu
+$(OBJ)/okapia_icons_data.o: $(ICON_SRC) | $(OBJ)
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
-emu/okapia_strings_data.o: $(STR_SRC) $(STR_IDS) | emu
+$(OBJ)/okapia_strings_data.o: $(STR_SRC) $(STR_IDS) | $(OBJ)
 	@printf '  CPP   generated/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
-emu:
-	@mkdir -p emu
+$(OBJ):
+	@mkdir -p $(OBJ)
 
 # libhfs is plain C. It wants its own include path and none of the C++ flags.
-emu/hfs_%.o: $(HFS)/%.c | emu
+$(OBJ)/hfs_%.o: $(HFS)/%.c | $(OBJ)
 	@printf '  CC    libhfs/%s\n' "$(notdir $<)"
 	@$(CC) $(CFLAGS) -I$(HFS) -MMD -MP -Wno-unused-result -c -o $@ $<
 
-emu/%.o: %.cpp | emu
+$(OBJ)/%.o: %.cpp | $(OBJ)
 	@printf '  CC    %s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
-emu/cpuemu%.o: $(GEN)/cpuemu.cpp | emu
+$(OBJ)/cpuemu%.o: $(GEN)/cpuemu.cpp | $(OBJ)
 	@printf '  CC    cpuemu part %s\n' "$*"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -DPART_$* -MMD -MP -c -o $@ $<
 
+# Both engines' objects, not just the one being built: a flag change that
+# matters to one usually matters to the other, and a stale directory left
+# behind is the trap AGENTS.md describes.
 okapia-clean:
-	rm -rf emu
+	rm -rf emu emu-basilisk emu-sheepshaver
 
 .PHONY: okapia-clean
 
@@ -192,4 +231,4 @@ okapia-clean:
 # other objects on the old layout, and the link succeeds. Ours generate their
 # own, and this is where they are read back.
 -include $(DEPS)
--include $(wildcard emu/*.d)
+-include $(wildcard $(OBJ)/*.d)

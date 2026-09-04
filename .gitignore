@@ -44,7 +44,7 @@ tests/host/render_pages
 tests/host/*.ppm
 
 # Kernel build intermediates
-src/kernel/emu/
+src/kernel/emu-*/
 src/kernel/*.o
 src/kernel/*.d
 src/kernel/kernel8.*

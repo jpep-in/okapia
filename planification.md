@@ -3577,7 +3577,17 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
 
       `scripts/check-engine.sh` refait le tour en une commande, pour que la réponse ne pourrisse pas
       pendant que le reste s'écrit.
-- [ ] `Makefile` paramétré par `ENGINE`, deux répertoires d'objets (§19.3)
+- [x] **`Makefile` paramétré par `ENGINE` — fait le 2026-09-05.** `ENGINE=basilisk` par défaut,
+      `ENGINE=sheepshaver` reconnu ; un nom inconnu arrête le build en le citant. Ce que le moteur
+      choisit vient des deux configurations réellement compilées : l'arbre amont, le `config.h`, les
+      définitions (`-DDIRECT_ADDRESSING -DFPU_UAE` d'un côté, rien de l'autre — l'adressage vient de
+      `NATMEM_OFFSET` et le PowerPC apporte son FPU) et le répertoire d'objets, `emu-<moteur>/`.
+
+      Les répertoires séparés ne sont pas cosmétiques : les objets portent les drapeaux et le `config.h`
+      de leur moteur, et un répertoire partagé lierait un noyau construit moitié d'une façon, moitié de
+      l'autre — en réussissant. Côté `sheepshaver` le Makefile ne nomme aujourd'hui que des chemins : le
+      cœur compile, mais il n'a pas de couche plateforme, donc il n'y a rien à lier. C'est écrit dans le
+      fichier plutôt que laissé à découvrir.
 - [ ] `main_circle.cpp` variante SheepShaver : un bloc contigu, `RAM_BASE`/`ROM_BASE` choisis, `VMBaseDiff`
 - [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification (§19.4)
 - [x] `check-rom.py` étendu — fait, et deux ROM vérifiées (§19.6)
