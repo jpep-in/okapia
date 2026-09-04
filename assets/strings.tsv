@@ -26,6 +26,9 @@ forget_pram	Forget the parameter RAM	Oublier la PRAM
 rescue_disk	Rescue disk	Disque de secours
 read_only	Read-only	Lecture seule
 no_system	No system	Aucun système
+cpu_68k	68k	68k
+cpu_powerpc	PowerPC	PowerPC
+cpu_universal	universal	universel
 volume_name	Volume name	Nom du volume
 shared_folder	Shared folder	Dossier partagé
 screen_refresh	Screen refresh	Rafraîchissement

@@ -149,11 +149,23 @@ int main (void)
 
     printf ("Le sélecteur\n");
     Open ();
-    Expect (s_Model.nCount == 5, "cinq volumes sur la carte");
+    Expect (s_Model.nCount == 6, "six volumes sur la carte");
     Expect (ChooserSelected () == 0, "la sélection part sur le volume de démarrage");
 
+    // The processor sits with the version, not among the dotted states: the
+    // labels come from Str() so this measures the row and not one language.
+    Expect (strstr (s_Items ()[0].pText, Str (StrCpu68k)) != 0,
+            "un volume 7.1.2 annonce son processeur");
+    Expect (strstr (s_Items ()[1].pText, Str (StrCpuUniversal)) != 0,
+            "un 7.6 universel le dit, puisque là il y aura un choix");
+    Expect (strstr (s_Items ()[5].pText, Str (StrCpuPowerpc)) != 0,
+            "et un 8.6 annonce PowerPC");
+    Expect (strstr (s_Items ()[4].pText, Str (StrCpu68k)) == 0
+            && strstr (s_Items ()[4].pText, Str (StrCpuPowerpc)) == 0,
+            "un volume sans Système lisible n'invente pas de processeur");
+
     unsigned n = Lines (Out);
-    Expect (n == 4, "quatre volumes montés sur cinq");
+    Expect (n == 5, "cinq volumes montés sur six");
     Expect (strcmp (Out[0], "/boot71.img") == 0, "le volume de démarrage vient en premier");
     Expect (strcmp (Out[2], "*/os81.img") == 0, "un volume en lecture seule porte son étoile");
 
@@ -188,7 +200,7 @@ int main (void)
     Cell (ColMounted);
     Expect (!s_Model.Volumes[0].bMounted, "on peut démonter un volume");
     n = Lines (Out);
-    Expect (n == 3, "et il quitte les lignes écrites");
+    Expect (n == 4, "et il quitte les lignes écrites");
 
     // Le volume de démarrage, lui, ne peut pas être démonté sous ses propres pieds.
     Expect ((s_Items ()[1].nCell[ColMounted - 1] & StateDisabled) != 0,

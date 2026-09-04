@@ -98,9 +98,18 @@ static void GatherVolumes (TChooser *pChooser)
         // anybody wants to read and whose first character is not the era — and
         // the era is what chooses the icon.
         v->System[0] = '\0';
+        v->CPU = CPUUnknown;
         THfsSystemVersion Version;
         if (Found[i].Blessed != 0 && HfsSystemVersion (Found[i].Path, &Version))
         {
+            switch (HfsFlavourOf (&Version))
+            {
+            case HfsFlavour68k:         v->CPU = CPU68k;        break;
+            case HfsFlavourPowerPC:     v->CPU = CPUPowerPC;    break;
+            case HfsFlavourUniversal:   v->CPU = CPUUniversal;  break;
+            default:                    v->CPU = CPUUnknown;    break;
+            }
+
             k = 0;
             v->System[k++] = (char) ('0' + Version.nMajor % 10);
             v->System[k++] = '.';

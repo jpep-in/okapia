@@ -27,11 +27,24 @@ static const unsigned CHOOSER_MAX = 8;
 // One volume, as the chooser needs it. The strings are copied in rather than
 // pointed at: the caller's inventory is free to go away, and a screen that
 // outlives its data is a screen that draws freed memory.
+// Which processor a volume's System is built for, and so which emulator can
+// start it. A value the firmware is handed, never a reading it makes: nothing
+// here knows what a resource map is, and everything that does stays in
+// src/circle (hfs_volume_circle.h).
+enum TChooserCPU
+{
+    CPUUnknown,         // no readable version, so no idea
+    CPU68k,
+    CPUPowerPC,
+    CPUUniversal        // either, and one day somebody will have to choose
+};
+
 struct TChooserVolume
 {
     char Path[64];                      // as the preferences name it, no * prefix
     char Name[28];
     char System[32];                    // "7.1.2"; empty when there is none
+    TChooserCPU CPU;                    // and which processor it is built for
     bool bBootable;                     // it has a blessed folder
     bool bClean;                        // it was unmounted properly
     bool bReadOnly;                     // mounted with the * prefix (disk.cpp:161)

@@ -52,6 +52,19 @@ static void RowText (const TChooser *pChooser, unsigned i)
         n = StrAppend (pOut, sizeof s_Rows[i], n, " — ");
         n = StrAppend (pOut, sizeof s_Rows[i], n, "System ");
         n = StrAppend (pOut, sizeof s_Rows[i], n, p->System);
+
+        // The processor belongs with the version and not among the dotted
+        // states that follow: it says what this volume *is*, where those say
+        // what is wrong with it. It is also what will one day say which of two
+        // emulators is about to start, so it reads better beside the System
+        // than at the end of a list of complaints.
+        static const TStringId Chip[] =
+            { StrCpu68k, StrCpu68k, StrCpuPowerpc, StrCpuUniversal };
+        if (p->CPU != CPUUnknown)
+        {
+            n = StrAppend (pOut, sizeof s_Rows[i], n, ", ");
+            n = StrAppend (pOut, sizeof s_Rows[i], n, Str (Chip[p->CPU]));
+        }
     }
     else
     {
