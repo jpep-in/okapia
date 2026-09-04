@@ -159,6 +159,29 @@ bool HfsInspect (const char *pPath)
  *  you that.
  */
 
+// Mount whatever kind of image this is, without writing to it.
+//
+// libhfs takes a partition number, and the two kinds of image on a card answer
+// to different ones: a flat disk image is partition 0 — the whole file is the
+// volume — while a CD carries an Apple partition map and its HFS volume is
+// partition 1. Asking for the wrong one fails outright ("not a Macintosh HFS
+// volume" one way, "invalid partition map" the other), so both are tried.
+//
+// Measured on a Mac OS 8.6 install CD: partition 0 refused it, partition 1
+// mounted "Mac OS 8.6", 600 MB, blessed folder and all. Its driver descriptor
+// announces 2048-byte blocks while its partition map is written at 512, which
+// is why the emulator's own find_hfs_partition() — 512 throughout,
+// cdrom.cpp:194 — reads it correctly and a stricter reader does not.
+static hfsvol *MountReadOnly (const char *pPath)
+{
+    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDONLY);
+    if (pVolume == 0)
+    {
+        pVolume = hfs_mount (pPath, 1, HFS_MODE_RDONLY);
+    }
+    return pVolume;
+}
+
 bool HfsDescribe (const char *pPath, THfsVolumeInfo *pInfo)
 {
     memset (pInfo, 0, sizeof *pInfo);
@@ -167,7 +190,7 @@ bool HfsDescribe (const char *pPath, THfsVolumeInfo *pInfo)
     // Whether libhfs can mount it is what makes a file a volume, so ask that
     // first: everything else is only meaningful once it answers yes, and the
     // inventory calls this on every file whose name looks like an image.
-    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDONLY);
+    hfsvol *pVolume = MountReadOnly (pPath);
     if (pVolume == 0)
     {
         return false;
@@ -207,7 +230,11 @@ bool HfsDescribe (const char *pPath, THfsVolumeInfo *pInfo)
 
 static bool LooksLikeAnImage (const char *pName)
 {
-    static const char *Suffixes[] = { ".image", ".img", ".hda", ".dsk", ".hfv", ".iso", 0 };
+    // .toast and .iso are CD images and carry a partition map rather than being
+    // a bare volume; MountReadOnly() takes both kinds, so what is behind the
+    // name no longer decides what may be listed.
+    static const char *Suffixes[] = { ".image", ".img", ".hda", ".dsk", ".hfv",
+                                      ".iso", ".toast", 0 };
 
     const char *pDot = strrchr (pName, '.');
     if (pDot == 0)
@@ -355,51 +382,73 @@ static bool ReadAt (hfsfile *pFile, unsigned long nOffset, void *pBuffer, unsign
     return hfs_read (pFile, pBuffer, nLength) == nLength;
 }
 
-// Find one resource of the given type, preferring the lowest id, and leave the
-// fork positioned on its data. Returns its length, or 0.
-static unsigned long FindResource (hfsfile *pFile, const char *pType)
+// Locate one resource type in the map: where its reference list is, how many
+// references it holds, and where the data area starts. False when the fork is
+// not a resource fork, or when the type is simply not in it.
+//
+// Split out of FindResource because presence is a question of its own: the
+// System's flavour is read from two types whose data nobody wants.
+static bool FindTypeList (hfsfile *pFile, const char *pType,
+                          uint32 *pnDataOff, uint32 *pnRefList, unsigned *pnRefs)
 {
     uint8 Header[kResHeaderLen];
     if (!ReadAt (pFile, 0, Header, sizeof Header))
     {
-        return 0;
+        return false;
     }
 
-    const uint32 nDataOff = BE32 (Header);
-    const uint32 nMapOff  = BE32 (Header + 4);
+    *pnDataOff = BE32 (Header);
+    const uint32 nMapOff = BE32 (Header + 4);
 
     uint8 MapHead[4];
     if (!ReadAt (pFile, nMapOff + kResMapTypeOff, MapHead, sizeof MapHead))
     {
-        return 0;
+        return false;
     }
     const uint32 nTypeList = nMapOff + BE16 (MapHead);
 
     uint8 Count[2];
     if (!ReadAt (pFile, nTypeList, Count, sizeof Count))
     {
-        return 0;
+        return false;
     }
     const unsigned nTypes = (unsigned) BE16 (Count) + 1;
 
-    uint32 nRefList = 0;
-    unsigned nRefs  = 0;
     for (unsigned i = 0; i < nTypes; i++)
     {
         uint8 Entry[kTypeEntryLen];
         if (!ReadAt (pFile, nTypeList + 2 + i * kTypeEntryLen, Entry, sizeof Entry))
         {
-            return 0;
+            return false;
         }
         if (memcmp (Entry, pType, 4) != 0)
         {
             continue;
         }
-        nRefs    = (unsigned) BE16 (Entry + 4) + 1;
-        nRefList = nTypeList + BE16 (Entry + 6);
-        break;
+        *pnRefs    = (unsigned) BE16 (Entry + 4) + 1;
+        *pnRefList = nTypeList + BE16 (Entry + 6);
+        return true;
     }
-    if (nRefs == 0)
+    return false;
+}
+
+// Is there at least one resource of this type? Not the same question as
+// FindResource returning non-zero: that answers with a length, and a resource
+// of length zero exists just as much as any other.
+static bool HasResourceType (hfsfile *pFile, const char *pType)
+{
+    uint32   nDataOff, nRefList;
+    unsigned nRefs;
+    return FindTypeList (pFile, pType, &nDataOff, &nRefList, &nRefs);
+}
+
+// Find one resource of the given type, preferring the lowest id, and leave the
+// fork positioned on its data. Returns its length, or 0.
+static unsigned long FindResource (hfsfile *pFile, const char *pType)
+{
+    uint32   nDataOff, nRefList;
+    unsigned nRefs;
+    if (!FindTypeList (pFile, pType, &nDataOff, &nRefList, &nRefs))
     {
         return 0;
     }
@@ -438,37 +487,31 @@ static unsigned long FindResource (hfsfile *pFile, const char *pType)
     return BE32 (Length);       // the fork is now positioned on the data itself
 }
 
-bool HfsSystemVersion (const char *pPath, THfsSystemVersion *pVersion)
+// Open the System file of the blessed folder, resource fork selected, and
+// report its name. The name is localised — "Système" on the volumes staged here
+// — so the file is found by type and creator and never by name. Null when the
+// volume has no blessed folder, no System file in it, or no resource fork.
+static hfsfile *OpenSystemFile (hfsvol *pVolume, char *pName, size_t nNameSize)
 {
-    memset (pVersion, 0, sizeof *pVersion);
-
-    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDONLY);
-    if (pVolume == 0)
-    {
-        return false;
-    }
-
-    bool bOk = false;
     hfsvolent Ent;
-    hfsdirent DirEnt;
-    hfsdir *pDir = 0;
-
     if (hfs_vstat (pVolume, &Ent) < 0 || Ent.blessed == 0)
     {
-        goto done;
+        return 0;
     }
     if (hfs_setcwd (pVolume, Ent.blessed) < 0)
     {
-        goto done;
+        return 0;
     }
 
     // ":" is libhfs for "the current directory" (volume.c, v_resolve).
-    pDir = hfs_opendir (pVolume, ":");
+    hfsdir *pDir = hfs_opendir (pVolume, ":");
     if (pDir == 0)
     {
-        goto done;
+        return 0;
     }
 
+    hfsfile *pFile = 0;
+    hfsdirent DirEnt;
     while (hfs_readdir (pDir, &DirEnt) == 0)
     {
         if (DirEnt.flags & HFS_ISDIR)
@@ -481,14 +524,42 @@ bool HfsSystemVersion (const char *pPath, THfsSystemVersion *pVersion)
             continue;
         }
 
-        snprintf (pVersion->File, sizeof pVersion->File, "%s", DirEnt.name);
-
-        hfsfile *pFile = hfs_open (pVolume, DirEnt.name);
-        if (pFile == 0)
+        if (pName != 0)
         {
-            break;
+            snprintf (pName, nNameSize, "%s", DirEnt.name);
         }
-        if (hfs_setfork (pFile, 1) == 0)        // 1 = resource fork
+
+        pFile = hfs_open (pVolume, DirEnt.name);
+        if (pFile != 0 && hfs_setfork (pFile, 1) < 0)       // 1 = resource fork
+        {
+            hfs_close (pFile);
+            pFile = 0;
+        }
+        break;
+    }
+
+    hfs_closedir (pDir);
+    return pFile;
+}
+
+bool HfsSystemVersion (const char *pPath, THfsSystemVersion *pVersion)
+{
+    memset (pVersion, 0, sizeof *pVersion);
+
+    hfsvol *pVolume = MountReadOnly (pPath);
+    if (pVolume == 0)
+    {
+        return false;
+    }
+
+    bool bOk = false;
+    hfsfile *pFile = OpenSystemFile (pVolume, pVersion->File, sizeof pVersion->File);
+    if (pFile != 0)
+    {
+        // Asked before 'vers', because FindResource leaves the fork positioned
+        // on the data it found and the read below depends on that.
+        pVersion->bNativeCode = HasResourceType (pFile, "cfrg");
+
         {
             unsigned long nLength = FindResource (pFile, "vers");
             uint8 Vers[24];
@@ -528,12 +599,31 @@ bool HfsSystemVersion (const char *pPath, THfsSystemVersion *pVersion)
             }
         }
         hfs_close (pFile);
-        break;
     }
 
-    hfs_closedir (pDir);
-
-done:
     hfs_umount (pVolume);
     return bOk;
+}
+
+THfsSystemFlavour HfsFlavourOf (const THfsSystemVersion *pVersion)
+{
+    if (pVersion->nMajor == 0)
+    {
+        return HfsFlavourUnreadable;
+    }
+
+    // 7.6.1 becomes 761, 8.5 becomes 850. The two halves of the second BCD byte
+    // are each one digit, so no version can collide with its neighbour.
+    const unsigned nCode = pVersion->nMajor * 100 + pVersion->nMinor * 10
+                         + pVersion->nBugfix;
+
+    if (nCode < 752)
+    {
+        return HfsFlavour68k;
+    }
+    if (nCode >= 850)
+    {
+        return HfsFlavourPowerPC;
+    }
+    return pVersion->bNativeCode ? HfsFlavourUniversal : HfsFlavour68k;
 }

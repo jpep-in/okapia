@@ -533,11 +533,18 @@ void CKernel::ApplyModelId (void)
     const int32 nWas = PrefsFindInt32 ("modelid");
     PrefsReplaceInt32 ("modelid", nModelID);
 
+    // Which emulator could take this volume, said out loud while the version is
+    // in hand. Nothing acts on it yet — the boot menu will — but a card that
+    // will one day be offered a choice should already say what it is.
+    static const char *const FlavourName[] =
+        { "unreadable", "68k", "PowerPC", "universal" };
+
     m_Logger.Write (FROM, LogNotice,
-                    "%s: \"%s\" says System %u.%u.%u (%s) — model %d%s",
+                    "%s: \"%s\" says System %u.%u.%u (%s), %s — model %d%s",
                     s_BootVolume, Version.File,
                     Version.nMajor, Version.nMinor, Version.nBugfix,
                     Version.Short[0] != '\0' ? Version.Short : "no short version",
+                    FlavourName[HfsFlavourOf (&Version)],
                     (int) nModelID,
                     nModelID == nWas ? "" : ", overriding the preferences");
 }

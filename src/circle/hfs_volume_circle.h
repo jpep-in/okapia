@@ -50,11 +50,46 @@ struct THfsSystemVersion
     unsigned nBugfix;
     char     Short[32];       // as the file states it, e.g. "7.6"
     char     File[32];        // the System file's name, which is localised
+
+    // Does the System file carry PowerPC code? True when its resource map holds
+    // a 'cfrg', the code fragment resource. Measured on the two volumes staged
+    // here: 7.1 has none, 7.6 has ten — and that 7.6 was installed for a 68k
+    // machine, which is the whole point. From System 7.5 on Apple shipped one
+    // universal System, so this says "a PowerPC could run it too", never "only
+    // a PowerPC can".
+    bool     bNativeCode;
 };
 
 // Read it without touching the volume. False when there is no blessed folder,
 // no System file in it, or no readable 'vers' resource.
 bool HfsSystemVersion (const char *pPath, THfsSystemVersion *pVersion);
+
+// Which emulator can boot this System — the question the boot menu has to
+// answer before it can offer anything.
+enum THfsSystemFlavour
+{
+    HfsFlavourUnreadable,   // no version to go on
+    HfsFlavour68k,          // Basilisk II, and nothing to ask
+    HfsFlavourPowerPC,      // SheepShaver, and nothing to ask
+    HfsFlavourUniversal     // either will do, so somebody has to choose
+};
+
+// The rule, kept apart from any volume so it can be tested on its own.
+//
+// Two bounds, both read off the emulators' own patch lists, and one measurement
+// in between:
+//
+//   - below 7.5.2, SheepShaver has no correctives at all
+//     (SheepShaver/src/rsrc_patches.cpp names 7.5.2 as its earliest);
+//   - from 8.5 up, Basilisk stops (BasiliskII/src/rsrc_patches.cpp names no
+//     version above 8.1) — 8.5 is where Apple dropped the 68k machines;
+//   - between the two, the System is universal in the literal sense, and
+//     'cfrg' is what says the PowerPC half is actually installed.
+//
+// Note what this deliberately does not do: treat 'cfrg' alone as "PowerPC
+// only". Mac OS stayed largely 68k code inside until Mac OS X, so a native
+// fragment proves the PowerPC half is there and nothing more.
+THfsSystemFlavour HfsFlavourOf (const THfsSystemVersion *pVersion);
 
 // Scavenge a volume an interrupted session left marked in use, and mark it
 // clean again. This writes to the volume.
