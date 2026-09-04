@@ -18,6 +18,7 @@
 #include "sysdeps.h"
 
 #include <stdio.h>
+#include <string.h>
 #include <string>
 
 #include "okapia_circle.h"
@@ -155,6 +156,93 @@ void AddPlatformPrefsDefaults(void)
 }
 
 /*
+ *  Lines this build does not understand, carried across a save
+ *
+ *  A keyword is only alive if some table declares it: LoadPrefsFromStream()
+ *  warns and drops the ones it cannot find (prefs.cpp:417-419), and
+ *  write_prefs() only ever writes the ones it can (prefs.cpp:448-476). So a
+ *  keyword from a desktop Basilisk II, from a later upstream, or — once the
+ *  card serves both emulators — from the other one, survives being read and
+ *  then vanishes the next time anything writes the file. Nothing says so. The
+ *  line is simply gone, and with it whatever the owner meant by it.
+ *
+ *  Reading them back before the file is truncated and putting them after the
+ *  generated content costs one pass and closes the hole for keywords that do
+ *  not exist yet — which is the only way to close it, since this build cannot
+ *  know them by definition.
+ */
+
+static bool KeywordDeclared(const char *pKeyword, const prefs_desc *pList)
+{
+	// TYPE_END is the terminator, and its name is NULL: test the type, never
+	// the name (prefs.cpp:210-217 does the same).
+	for (; pList->type != TYPE_END; pList++) {
+		if (strcmp(pList->name, pKeyword) == 0)
+			return true;
+	}
+	return false;
+}
+
+unsigned PrefsCollectUnknown(const char *pPath, char *pBuffer, size_t nSize,
+                             unsigned *pnKept)
+{
+	*pnKept = 0;
+	if (nSize > 0)
+		pBuffer[0] = '\0';
+
+	FILE *f = fopen(pPath, "r");
+	if (f == NULL)
+		return 0;
+
+	unsigned nFound = 0;
+	size_t   nUsed  = 0;
+
+	// 256 is upstream's own line buffer (prefs.cpp:388). Matching it matters:
+	// a longer line comes back from fgets in two pieces, and both readers have
+	// to split it in the same place or they disagree on what the keyword is.
+	char Line[256];
+	while (fgets(Line, sizeof Line, f) != NULL) {
+		size_t nLen = strlen(Line);
+		while (nLen > 0 && (Line[nLen - 1] == '\n' || Line[nLen - 1] == '\r'))
+			Line[--nLen] = '\0';
+		if (nLen == 0)
+			continue;
+
+		// Comments are ours: SavePrefs() writes the header afresh every time,
+		// so keeping them would double it line by line, save after save.
+		if (Line[0] == '#' || Line[0] == ';')
+			continue;
+
+		char Keyword[64];
+		size_t nKey = 0;
+		while (nKey < nLen && Line[nKey] != ' ' && Line[nKey] != '\t'
+		       && nKey < sizeof Keyword - 1) {
+			Keyword[nKey] = Line[nKey];
+			nKey++;
+		}
+		Keyword[nKey] = '\0';
+		if (nKey == 0)		// a line that starts with a space has no keyword
+			continue;
+
+		if (KeywordDeclared(Keyword, common_prefs_items)
+		    || KeywordDeclared(Keyword, platform_prefs_items))
+			continue;
+
+		nFound++;
+		if (nUsed + nLen + 2 > nSize)	// the line, its newline, the NUL
+			continue;
+		memcpy(pBuffer + nUsed, Line, nLen);
+		nUsed += nLen;
+		pBuffer[nUsed++] = '\n';
+		pBuffer[nUsed]   = '\0';
+		(*pnKept)++;
+	}
+
+	fclose(f);
+	return nFound;
+}
+
+/*
  *  Load preferences from the card
  */
 
@@ -194,6 +282,14 @@ void LoadPrefs(const char *vmdir)
 
 void SavePrefs(void)
 {
+	// Before the file is opened for writing, because opening it truncates it.
+	// File scope and not a local: 2 KB is more than this kernel's taste for
+	// stack frames, and SavePrefs() is called from the firmware too.
+	static char s_Unknown[2048];
+	unsigned nKept  = 0;
+	unsigned nFound = PrefsCollectUnknown(PREFS_FILE_NAME, s_Unknown,
+	                                      sizeof s_Unknown, &nKept);
+
 	FILE *f = fopen(PREFS_FILE_NAME, "w");
 	if (f == NULL) {
 		CLogger::Get()->Write(FROM, LogWarning, "Cannot write %s", PREFS_FILE_NAME);
@@ -262,5 +358,29 @@ void SavePrefs(void)
 		"# written back unchanged. README.md says which ones and why.\n"
 		"\n");
 	SavePrefsToStream(f);
+
+	if (nKept > 0) {
+		fprintf(f,
+			"\n"
+			"# Kept untouched: %u line(s) whose keyword this build does not\n"
+			"# declare. Another Okapia kernel, or a Basilisk II on a desktop,\n"
+			"# may well understand them, so they are written back rather than\n"
+			"# dropped. Delete them here if they are yours to delete.\n",
+			nKept);
+		fputs(s_Unknown, f);
+	}
 	fclose(f);
+
+	// Never quietly: a preferences file that loses a line is exactly the kind
+	// of failure nobody notices until the setting is needed.
+	if (nFound > nKept) {
+		CLogger::Get()->Write(FROM, LogWarning,
+				      "%s: %u unrecognised line(s) did not fit and were "
+				      "dropped; %u kept", PREFS_FILE_NAME,
+				      nFound - nKept, nKept);
+	} else if (nKept > 0) {
+		CLogger::Get()->Write(FROM, LogNotice,
+				      "%s: %u unrecognised line(s) written back unchanged",
+				      PREFS_FILE_NAME, nKept);
+	}
 }
