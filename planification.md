@@ -3222,20 +3222,35 @@ c'est-à-dire un projet en soi.
 
 La correspondance entre ces noms de nanokernel et les machines réelles (TNT, Gossamer et les autres) est de
 notoriété commune mais **n'est pas vérifiable dans ce dépôt** : ne pas l'écrire ici comme un fait établi
-(voir la mémoire « faits d'époque non vérifiables »). Ce qui est vérifiable, c'est le test lui-même, et il
-tient en une ligne sur un candidat décompressé :
+(voir la mémoire « faits d'époque non vérifiables »). Ce qui est vérifiable, c'est le test lui-même, et
+`scripts/check-rom.py` le fait désormais.
 
-```
-dd if=rom.bin bs=1 skip=3199076 count=16 2>/dev/null | strings
-```
+**Deux ROM sont en main et vérifiées, le 2026-09-04**, toutes deux acceptées par les règles d'amont :
+
+| Fichier | Forme | Nanokernel à `0x30d064` | Type | Mac OS |
+|---|---|---|---|---|
+| `powermac9600v1.rom` | 4 Mo bruts, somme de tête `960E4BE9` | `Boot TNT 0.1p` | **TNT**, Old World | **7.5.2 → 9.0.4** |
+| `macosrom16.rom` | `<CHRP-BOOT>`, 1 900 Ko, LZSS | `NewWorld v1.0` | **NewWorld** | **8.1 → 9.0.4** |
+
+Deux remarques à ne pas relire de travers plus tard. Le fichier `macosrom16` est une *Mac OS ROM 1.6*
+mais le nanokernel qu'il contient s'annonce `NewWorld v1.0` : ce sont deux numéros de versions
+différentes, et l'amont ne compare que le préfixe `NewWorld` (`memcmp` sur 8 octets,
+`rom_patches.cpp:693`). Et son `<COMPATIBLE>` nomme `iMac,1 PowerMac1,1 PowerBook1,1` — ce qui donne
+gratuitement, pour une fois, une correspondance machine que le dépôt peut montrer.
+
+La décompression LZSS retombe **exactement** sur 4 194 304 octets, ce qui vaut contrôle du portage : un
+décodeur faux ne tomberait pas sur la taille pile.
+
+Donc la couverture demandée est complète, avec la TNT pour 7.5.x → 8.x et l'une ou l'autre au-delà.
 
 **Deux conséquences pratiques :**
 
-- **`scripts/check-rom.py` doit apprendre les ROM PowerPC** : reconnaître 4 Mo ou `<CHRP-BOOT>`,
-  décompresser en mémoire, lire la chaîne à `0x30d064`, nommer le type et **annoncer la plage de Mac OS
-  qu'il autorise** — en particulier le refus de tout Système antérieur à 8.1 sur une NewWorld. C'est le
-  même service que rend aujourd'hui le contrôle « 32-bit clean » : dire non avant le démarrage plutôt
-  qu'après un écran noir.
+- **`scripts/check-rom.py` connaît les ROM PowerPC — fait le 2026-09-04.** Il reconnaît 4 Mo ou
+  `<CHRP-BOOT>`, décompresse en mémoire (LZSS et *parcels*, portés de `DecodeROM()`), lit la chaîne à
+  `0x30d064`, nomme le type et **annonce la plage de Mac OS qu'il autorise** — dont le refus de tout
+  Système antérieur à 8.1 sur une NewWorld. Même service que le contrôle « 32-bit clean » côté 68k : dire
+  non avant le démarrage plutôt qu'après un écran noir. Un fichier de 4 Mo qui n'est pas une ROM est
+  refusé avec son motif.
 - **La ROM se choisit toute seule, comme le `modelid`.** Exactement comme `modelid` suit le Système
   installé et non la ROM (§7.11), la ROM suit le moteur et la version du Système lue sur le volume
   d'amorçage : une carte porte deux ROM et deux Systèmes sans que rien n'ait à être « synchronisé », et
@@ -3410,20 +3425,55 @@ gestionnaire de tick, jamais au niveau IRQ.
 
 Elles viennent **après** M13, et la première est une porte : elle peut fermer les suivantes.
 
+**La matière première est réunie depuis le 2026-09-04** : deux ROM vérifiées (§19.6) et un CD d'installation
+**Mac OS 8.6 PowerPC** — `installppc86fr.toast`, volume « Mac OS 8.6 », 600 Mo, dossier béni présent, MDB
+propre. Notre propre lecteur y répond *Système 8.6.0, PowerPC, rien à demander*, ce qui valide au passage
+la règle du §19.7 sur un Système PowerPC pur et non plus seulement sur du 68k. Il reste à fabriquer un
+volume vide comme cible d'installation, ce qui ne demande rien à personne.
+
 #### Phase 19 — Mesurer l'interpréteur PowerPC (porte)
 
-- [ ] compiler `kpx_cpu` en interprété pour AArch64, hors Circle, sur l'hôte ; faire tourner
-      `test-powerpc.cpp` et exiger un passage propre
-- [ ] même chose sur la carte, en bare-metal minimal : pas de glue SheepShaver, une boucle et un compteur
-- [ ] mesurer les MIPS PowerPC obtenus, avec et sans `VM_CAN_ACCESS_UNALIGNED`
+- [x] **compiler `kpx_cpu` en interprété pour AArch64, hors Circle — fait le 2026-09-04.** Les sept
+      fichiers de `configure.ac:1580-1587` compilent sans une seule retouche ; il a suffi d'un `config.h`
+      minimal et de `HAVE_FENV_H`, faute de quoi `ppc-execute.cpp` ne trouve pas `FE_TONEAREST`. **Le
+      risque n°3 est levé.**
+- [x] **et il exécute juste.** Un programme de cinq instructions — `lis`/`ori`/`lwz`/`addi`/`stw` — lancé
+      mille fois laisse 1000 dans la cellule mémoire du guest, `r10` à 1000 et `r11` à `0x10080000`.
+      Chargements, rangements, arithmétique et fin de bloc : vérifiés, pas supposés.
+- [x] **le modèle mémoire du §19.4 tient sur un hôte 64 bits.** `hôte = VMBaseDiff + (invité & 0xffffffff)`
+      avec une base variable, sans rien exiger des adresses basses — ce que Circle ferait. Ce n'est pas un
+      détail de confort : macOS **tue** un binaire lié avec `-pagezero_size` pour libérer les adresses
+      basses qu'exige `REAL_ADDRESSING`, donc c'est ce montage-là, et lui seul, qui a permis de mesurer.
+- [ ] ~~faire tourner `test-powerpc.cpp` et exiger un passage propre~~ — **impossible en l'état, et il
+      faut le savoir avant de le promettre.** Le testeur compare à un fichier de résultats *produit sur un
+      vrai PowerPC* et refuse de tourner sans (`test-powerpc.cpp:2221-2224`) ; celui que publie l'amont
+      est derrière un lien de wiki mort. Deuxième obstacle, mineur : le testeur d'amont **ne compile pas
+      en interprété seul**, il appelle `enable_jit()` que `ppc-cpu.hpp:337` ne déclare que sous
+      `PPC_ENABLE_JIT`. Donc soit une machine PowerPC réelle, soit ce fichier retrouvé, soit un autre
+      corpus — `BasiliskII/qa/` et les tests VEX cités par la doc du testeur.
+- [ ] **la mesure qui compte reste à faire, et pas ici.** Sur cette machine le banc donne ~1,1 G instr/s
+      en registre pur et ~800 M avec accès mémoire — chiffres à ne **pas** reporter : un cœur M-series
+      vaut huit à douze cœurs de Pi 4 sur du code de répartition, et ces charges sont des meilleurs cas
+      (un bloc unique, parfaitement prédit, sans pression de cache). Ils ne servent qu'à dire que
+      l'instrument fonctionne.
+- [ ] refaire la mesure **sur la carte**, en bare-metal minimal, sur du code qui branche et qui touche la
+      mémoire, avec et sans `VM_CAN_ACCESS_UNALIGNED`
 - [ ] rapporter le résultat à ce qu'exige Mac OS 8.6 / 9 et **décider** : continuer, ou clore et rouvrir la
       question sur le JIT AArch64
+
+**La recette, pour ne pas la redériver** : un `config.h` de quinze lignes (`EMULATED_PPC`, les `SIZEOF_*`,
+`HAVE_FENV_H`, `NATMEM_OFFSET`), `ppc-execute-impl.cpp` produit par
+`c++ -E -DGENEXEC ppc-decode.cpp | perl genexec.pl`, les sept sources plus `vm_alloc.cpp`, et quatre
+bouchons pour ce que l'interpréteur appelle en dehors de lui-même : `PVR`, `TimebaseSpeed`,
+`GetTicks_usec()`, `PrefsFindBool()` et `HandleInterrupt()`.
 
 #### Phase 20 — Mémoire, ROM, nanokernel
 
 - [ ] `main_circle.cpp` variante SheepShaver : un bloc contigu, `RAM_BASE`/`ROM_BASE` choisis, `VMBaseDiff`
 - [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification
-- [ ] `check-rom.py` étendu ; chargement d'une ROM `<CHRP-BOOT>`
+- [x] `check-rom.py` étendu — fait, et deux ROM vérifiées (§19.6)
+- [ ] chargement d'une ROM `<CHRP-BOOT>` par le noyau : le décodeur est à porter en C++, l'étalon est la
+      sortie de `check-rom.py` sur `macosrom16.rom`
 - [ ] `PatchROM()` passe, le nanokernel démarre — jalon : quelque chose s'affiche
 
 #### Phase 21 — La couche plateforme sert les deux moteurs
@@ -3450,9 +3500,9 @@ rien à voir avec SheepShaver, et la détection automatique de la ROM est le pro
 |---|---|---|
 | **1** | **La vitesse de l'interprété PowerPC.** C'est le risque dominant, et le seul qui puisse tout arrêter | phase 19, avant toute glue |
 | 2 | Le gestionnaire `SIGSEGV` réduit n'a pas d'équivalent Circle immédiat | page fantôme ou data abort, §19.4 |
-| 3 | `mathlib/ieeefp.cpp` face à newlib | compilation, puis `test-powerpc.cpp` |
+| 3 | ~~`mathlib/ieeefp.cpp` face à newlib~~ — **levé côté compilateur** : il ne demande que `HAVE_FENV_H` et les constantes de `<fenv.h>` | reste à confronter à newlib, pas à la libc de l'hôte |
 | 4 | Bascule de moteur : `EnableChainBoot` est incompatible avec `ARM_ALLOW_MULTI_CORE` et ne gère pas le recouvrement | chargeur monocœur, tampon en mémoire haute |
-| 5 | La correspondance nanokernel ↔ machine réelle n'est pas vérifiable ici | la chaîne à `0x30d064`, sur une ROM en main |
+| 5 | ~~La correspondance nanokernel ↔ machine réelle n'est pas vérifiable ici~~ — **levé** : deux ROM en main, types lus et acceptés (§19.6) | reste à trouver un Système PowerPC amorçable |
 | 6 | Mac OS 9 sur 256 Mo, avec le disque virtuel désactivé par l'amont (`rsrc_patches.cpp:212-233`) | mesure, une fois le Finder atteint |
 
 **Ce qui n'est pas un risque, et qu'il ne faut pas re-craindre** : les adresses fixes (§19.4), le tas non

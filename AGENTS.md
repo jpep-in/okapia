@@ -274,6 +274,12 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   5 = 12, and **0 = Dynamic**) — which showed up here as a 9 Hz display and a mouse that dragged. Honour
   the preference, never hardcode the rate, and report the composite rate rather than the VBL rate: calling
   55 VBL/s "fps" hid a 9 Hz screen behind a reassuring number.
+- **A CD image is partition 1, a disk image is partition 0**, and libhfs refuses the wrong one outright —
+  "not a Macintosh HFS volume" one way, "invalid partition map" the other. `MountReadOnly()` tries both.
+  Worse, a Toast image's driver descriptor announces **2048-byte blocks while its partition map is written
+  at 512**: the emulator reads it correctly only because `find_hfs_partition()` assumes 512 throughout
+  (`cdrom.cpp:194`, `disk.cpp:120`), and a reader that trusts the descriptor finds nothing. Verified on
+  `installppc86fr.toast`, whose HFS volume starts at byte 170 496 = block 333 x 512.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
 - **`config.h` declares, it never includes.** It is pulled in ahead of everything else; adding a system
   header there breaks the include order across the whole core.
