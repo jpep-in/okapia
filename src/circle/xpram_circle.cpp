@@ -11,7 +11,7 @@
  * pulled plug is a case this project takes seriously, and losing the Mac's
  * settings to one is avoidable. XPRAMWatchdog() writes the file when anything
  * in it changes, called from the Mac's own PRAM access rather than from a
- * timer — see xpram_hook_circle.cpp.
+ * timer — see emul_op_hook_circle.cpp.
  *
  * Copyright (C) 2026  Okapia contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -109,7 +109,7 @@ void ZapPRAM (void)
  *  Driven by the event, not by a timer: every read and write of the Mac's
  *  clock/PRAM chip arrives as M68K_EMUL_OP_CLKNOMEM, and that is the only path
  *  by which XPRAM changes once the Mac is running (emul_op.cpp:159 and :170).
- *  xpram_hook_circle.cpp watches for it, so the comparison happens exactly when
+ *  emul_op_hook_circle.cpp watches for it, so the comparison happens exactly when
  *  something could have changed and never otherwise.
  *
  *  It runs in the 68k thread, the same context as Sys_write, so writing to the

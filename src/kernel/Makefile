@@ -43,7 +43,8 @@ REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 # font and icon sources are generated from assets/, like the key table.
 FIRMWARE      = ../../src/firmware
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
-                $(FIRMWARE)/circle/okapia_firmware.cpp $(FIRMWARE)/circle/okapia_input.cpp
+                $(FIRMWARE)/circle/okapia_firmware.cpp $(FIRMWARE)/circle/okapia_input.cpp \
+                $(FIRMWARE)/circle/okapia_output.cpp
 FONTDIR       = ../../assets/fonts
 ICONDIR       = ../../assets/icons
 BDF           = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf \
@@ -99,7 +100,8 @@ LIBS := $(CIRCLEHOME)/lib/sound/libsound.a $(CIRCLE_STDLIB_LIBS)
 # Two upstream hooks that are part of the product, not diagnostics, so they are
 # always on. Mangled names: extfs_write(int, void*, size_t) for the shared
 # folder's flush policy (extfs_sync_circle.cpp), and EmulOp(uint16,
-# M68kRegisters*) to notice the Mac writing its PRAM (xpram_hook_circle.cpp).
+# M68kRegisters*) to hear the Mac write its PRAM and restart itself
+# (emul_op_hook_circle.cpp).
 LDFLAGS += --wrap=_Z11extfs_writeiPvm --wrap=_Z6EmulOptP13M68kRegisters
 
 # Diagnostics, off by default: build with OKAPIA_TRACE=1 to hook upstream

@@ -41,6 +41,11 @@ bool FwInputWatch (void);
 
 // Where the pointer may go, and it starts in the middle. Separate from the
 // watch because the display is claimed long after the keyboard is.
+// Take the keyboard and mouse back from the Macintosh, for a window that opens
+// after the guest has run. FwInputWatch() is the power-on path and keeps its
+// latch; this one starts from nothing on purpose.
+void FwInputReclaim (void);
+
 void FwInputBounds (unsigned nWidth, unsigned nHeight);
 
 // The next event, or false when there is none. Reports arrive by interrupt, so

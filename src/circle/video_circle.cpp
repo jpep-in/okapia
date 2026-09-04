@@ -20,6 +20,8 @@
 #include <circle/bcmframebuffer.h>
 #include <string.h>
 
+#include "okapia_output.h"
+
 #include "cpu_emulation.h"
 #include "main.h"
 #include "prefs.h"
@@ -88,6 +90,7 @@ static bool    s_bFullRedraw = true;
 static unsigned s_nDirtyBoxes;
 static unsigned s_nLastWindow;
 static uint32  s_nMacBufferSize;
+static uint32  s_nAllocated;     // what the two buffers above were sized for
 
 /*
  *  Compositor placement, recomputed on every mode switch.
@@ -485,10 +488,12 @@ void Circle_monitor_desc::composite (void)
 
 bool VideoInit (bool classic)
 {
-    // Claim the output. Ask for what we want; report what the firmware granted,
-    // because on the Pi 5 the request is ignored.
-    s_pOutput = new CBcmFrameBuffer (0, 0, 32);      // 0,0 = the display's own size
-    if (!s_pOutput->Initialize ())
+    // Borrowed, not claimed: the firmware holds the one claim for the life of the
+    // board (okapia_output.h). Taking a frame buffer of our own here would mean
+    // a mailbox transaction on every handover, and there is one at every restart
+    // from Mac OS — the display changes hands twice per round.
+    s_pOutput = FwOutputClaim ();
+    if (s_pOutput == 0)
     {
         CLogger::Get ()->Write (FROM, LogError, "No frame buffer");
         return false;
@@ -538,19 +543,41 @@ bool VideoInit (bool classic)
             s_nMacBufferSize = nSize;
         }
     }
-    s_pMacPixels = (uint8 *) CMemorySystem::HeapAllocate (s_nMacBufferSize, HEAP_ANY);
-    if (s_pMacPixels == 0)
+    // Once for the life of the board, not once per start. A restart from Mac OS
+    // comes back through here, and two blocks this size taken on every round
+    // would eat the card's remaining memory a Macintosh at a time. The output
+    // cannot change size between rounds, so the first pair is always big enough
+    // — but say so rather than trust it.
+    if (s_pMacPixels != 0 && s_nMacBufferSize > s_nAllocated)
     {
-        CLogger::Get ()->Write (FROM, LogError, "Cannot allocate the Mac frame buffer");
+        CLogger::Get ()->Write (FROM, LogError,
+                                "The output grew from %u to %u KB between starts",
+                                (unsigned) (s_nAllocated / 1024),
+                                (unsigned) (s_nMacBufferSize / 1024));
         return false;
     }
 
-    s_pShadow = (uint8 *) CMemorySystem::HeapAllocate (s_nMacBufferSize, HEAP_ANY);
-    if (s_pShadow == 0)
+    if (s_pMacPixels == 0)
     {
-        CLogger::Get ()->Write (FROM, LogError, "Cannot allocate the compositor shadow");
-        return false;
+        s_pMacPixels = (uint8 *) CMemorySystem::HeapAllocate (s_nMacBufferSize, HEAP_ANY);
+        if (s_pMacPixels == 0)
+        {
+            CLogger::Get ()->Write (FROM, LogError, "Cannot allocate the Mac frame buffer");
+            return false;
+        }
+
+        s_pShadow = (uint8 *) CMemorySystem::HeapAllocate (s_nMacBufferSize, HEAP_ANY);
+        if (s_pShadow == 0)
+        {
+            CLogger::Get ()->Write (FROM, LogError, "Cannot allocate the compositor shadow");
+            return false;
+        }
+        s_nAllocated = s_nMacBufferSize;
     }
+
+    // Nothing on the output belongs to this Macintosh yet: the firmware drew a
+    // whole screen of its own between the two.
+    s_bFullRedraw = true;
 
     CLogger::Get ()->Write (FROM, LogNotice, "%u modes offered, %u KB guest buffer",
                             (unsigned) modes.size (), (unsigned) (s_nMacBufferSize / 1024));
@@ -563,7 +590,26 @@ bool VideoInit (bool classic)
 
 void VideoExit (void)
 {
-    delete s_pOutput;
+    // VideoInit() added a monitor to the list and upstream never takes one out
+    // again — it exits the process next and has no reason to. Okapia goes round
+    // instead, and a second entry is a second screen: InitAll() reads
+    // VideoMonitors[0] (main.cpp:180) and the Mac's video driver opens the
+    // monitor from the previous life, so the picture is drawn into a buffer
+    // nothing composites. That is exactly what a restart looked like — a grey
+    // field under System 7.1, a wallpaper landing half off the screen under 7.6.
+    for (unsigned i = 0; i < VideoMonitors.size (); i++)
+    {
+        if (VideoMonitors[i] == s_pMonitor)
+        {
+            VideoMonitors.erase (VideoMonitors.begin () + i);
+            break;
+        }
+    }
+    delete s_pMonitor;
+    s_pMonitor = 0;
+
+    // The frame buffers stay: see VideoInit(). So does the output, which was
+    // never ours to release.
     s_pOutput = 0;
 }
 

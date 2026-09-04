@@ -498,7 +498,7 @@ Deux nuances :
 
 **L'écriture se capte sans toucher à `external/`**, et le crochet existe déjà. Le trap `ClkNoMem` ($A053) est
 patché en `M68K_EMUL_OP_CLKNOMEM` sur notre ROM — `rom_patches.cpp:1188`, branche « ROM23/26/27/32 », ROM32
-étant la Quadra 32-bit clean — donc l'écriture passe par `EmulOp()`, que `xpram_hook_circle.cpp` enveloppe
+étant la Quadra 32-bit clean — donc l'écriture passe par `EmulOp()`, que `emul_op_hook_circle.cpp` enveloppe
 déjà avec `--wrap=_Z6EmulOptP13M68kRegisters`. Les octets de l'horloge arrivent dans `d1` et `d2`. Trois
 précautions :
 
@@ -1757,7 +1757,7 @@ la chaîne d'horloge ci-dessus valait le détour.
 - [ ] patch `xpram_dirty` et écriture différée
 - [ ] **écriture d'horloge, par le crochet qui existe déjà et non par un patch**. Le trap `ClkNoMem`
       ($A053) est patché en `M68K_EMUL_OP_CLKNOMEM` sur notre ROM (`rom_patches.cpp:1188`, branche
-      « ROM23/26/27/32 »), donc l'écriture passe par `EmulOp()`, que `xpram_hook_circle.cpp` enveloppe
+      « ROM23/26/27/32 »), donc l'écriture passe par `EmulOp()`, que `emul_op_hook_circle.cpp` enveloppe
       déjà. Capturer `d1`/`d2` **à l'entrée** du wrapper — `EmulOp` finit par `r->d[1] = r->d[2]` —,
       reconstituer les quatre octets écrits un par un, puis poser l'heure dans `CFirmwareRTC` s'il
       répond, sinon `CMCP7941X`, sinon un fichier sur la carte. Cette valeur explicite prime sur le
@@ -2181,7 +2181,12 @@ sans autre mécanisme.
 - [x] écriture dans le seul `BasiliskII_Prefs`, qui reste la source de vérité. Les lignes `disk` sont
       **remplacées** et non modifiées : l'ordre est le réglage, donc il n'y a rien à modifier en place
 - [x] fond gris uni (~`#BCBCBC`) pendant environ deux secondes, clavier et souris pris avant le Mac ;
-      `Option` seule est reconnue — reste à lui donner le sélecteur à ouvrir (16g)
+      `Option` seule est reconnue
+- [x] **la fenêtre revient à chaque redémarrage depuis Mac OS**, et pas seulement à la mise sous tension :
+      un redémarrage est un reset du 68000, l'opcode de Basilisk est sur ce chemin, donc `CKernel::Run()`
+      démonte l'émulateur et redonne la parole au firmware. Sans cela le menu est atteignable une fois
+      par allumage et plus jamais. Voir AGENTS.md : tout ce qui se réservait « une fois par démarrage »
+      se réserve désormais une fois par *carte*
 - [ ] ouverture automatique si la configuration manque ou si aucun système n'est amorçable
 
 **Ce que la phase 16 hérite, après nettoyage** — `src/firmware/` : surface et primitives antialiasées,

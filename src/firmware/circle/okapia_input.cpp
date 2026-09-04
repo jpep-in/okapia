@@ -270,6 +270,35 @@ bool FwInputWatch (void)
     return s_pKeyboard != 0;
 }
 
+/*
+ *  Take the devices back from the Macintosh, for a firmware window that opens
+ *  again after the guest has been running.
+ *
+ *  FwInputWatch() deliberately keeps its hands off a second time, so that the
+ *  latch taken at power-on survives until the window reads it. Here the
+ *  opposite is wanted: the keyboard belongs to input_circle.cpp by now, and
+ *  everything the user typed at the Macintosh must not count as an answer to a
+ *  window that had not opened yet.
+ */
+void FwInputReclaim (void)
+{
+    s_nHead = s_nTail = 0;
+    s_nModifiers = 0;
+    s_nSeenModifiers = 0;
+    s_bSeenAnything = false;
+    s_nButtons = 0;
+    memset (s_LastKeys, 0, sizeof s_LastKeys);
+    memset ((void *) s_SeenKeys, 0, sizeof s_SeenKeys);
+
+    // Registering over the Macintosh's handler is the whole handover, in this
+    // direction as in the other one.
+    if (s_pKeyboard != 0)
+    {
+        s_pKeyboard->RegisterKeyStatusHandlerRaw (KeyHandler);
+    }
+    s_pMouseNext = 0;
+}
+
 void FwInputBounds (unsigned nWidth, unsigned nHeight)
 {
     s_nMaxX = (int) nWidth  - 1;

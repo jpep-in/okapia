@@ -36,7 +36,9 @@ tests/host/render_specimen
 tests/host/check_geometry
 tests/host/check_screen
 tests/host/check_chooser
+tests/host/check_pages
 tests/host/render_chooser
+tests/host/render_pages
 tests/host/*.ppm
 
 # Kernel build intermediates
@@ -47,3 +49,8 @@ src/kernel/kernel8.*
 qemu/serial.log
 src/kernel/kernel8.lst
 .idea/
+
+# Working material, not the project: design references gathered by hand and
+# notes taken while reading upstream. They belong to whoever wrote them.
+boot-menu/
+research_notes/

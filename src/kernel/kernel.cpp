@@ -18,6 +18,7 @@
 #include "main.h"
 #include "prefs.h"
 #include "xpram.h"
+#include "spcflags.h"
 #include "hfs_volume_circle.h"
 
 #define FROM "okapia"
@@ -26,6 +27,13 @@
 extern bool MacMemoryAllocate (uint32 nRAMSize);
 extern bool MacROMLoad (const char *pFileName);
 extern bool QuitRequested (void);
+
+// emul_op_hook_circle.cpp — the Macintosh going round again.
+extern void MacRestartArm (void);
+extern bool MacRestarted (void);
+
+// input_circle.cpp — let go of the devices so the next InputInit() takes them.
+extern void InputRelease (void);
 
 // From src/circle/tick_circle.cpp
 extern void TickInit (void);
@@ -308,6 +316,16 @@ void CKernel::RefineClock (void)
     const long nOffset = (long) s_nTimeZoneMinutes * 60;
     long nBest = (long) OKAPIA_BUILD_TIME + nOffset;
     const char *pFrom = 0;
+
+    // And never behind the clock we are already keeping. This runs again after
+    // a restart from Mac OS, minutes into the session, and a floor made only of
+    // the build time would wind it back — which is precisely the drLsMod before
+    // drCrDate that fsck_hfs reports as "MDB needs minor repair".
+    const long nNow = (long) m_Timer.GetLocalTime ();
+    if (nNow > nBest)
+    {
+        nBest = nNow;
+    }
 
     for (unsigned i = 0; i < s_nVolumes; i++)
     {
@@ -660,6 +678,7 @@ bool CKernel::StartMacintosh (void)
     TickStart ();
 
     m_Logger.Write (FROM, LogNotice, "Entering 68k execution");
+    MacRestartArm ();
     Start680x0 ();
     TickStop ();                          // does not return until the Mac stops
 
@@ -669,42 +688,107 @@ bool CKernel::StartMacintosh (void)
 
 TShutdownMode CKernel::Run (void)
 {
-    // The firmware has its say before the emulator exists. Everything it needs
-    // is already in place: the card is mounted, the preferences are read, the
-    // Mac's memory is allocated and USB is up — Initialize() sees to all four,
-    // and InputInit() only takes the keyboard for the Macintosh later on.
-    switch (FirmwareRun ())
+    // The Macintosh may go round more than once. A restart from Mac OS is a
+    // reset of the 68000, and Basilisk's own opcode sits on that path
+    // (emul_op_hook_circle.cpp), so the emulator can be unwound and set up
+    // again — which puts the firmware's window in front of every restart,
+    // exactly where it is on a cold boot. That is the whole point: without it
+    // the menu is reachable once per power-on and never again.
+    //
+    // Rebooting the Pi would arrive at the same screen and cost more. It re-runs
+    // the whole of Circle, and it loses the very key the window is waiting for:
+    // USB re-enumerates and a keyboard reports changes, never state, so Option
+    // held across the reboot would arrive nowhere. Under QEMU it ends the
+    // session outright.
+    //
+    // There is deliberately no cut-out for a Macintosh that restarts on its own.
+    // One was tried and it was worse than the thing it guarded: a System 7.1
+    // boots in about three seconds, so somebody restarting a few times in a row
+    // is indistinguishable from a loop, and the cut-out took the window away
+    // from the person using it. And a loop is not a brick — the firmware's two
+    // seconds come round every time, so Option still reaches the chooser and
+    // still picks another volume. The log below names the pattern instead.
+
+    for (;;)
     {
-    case FirmwareHalt:
-        m_Logger.Write (FROM, LogNotice, "Powered off from the firmware");
-        return ShutdownHalt;
-
-    case FirmwareReboot:
-        m_Logger.Write (FROM, LogNotice, "Restarting Okapia at the firmware's request");
-        return ShutdownReboot;
-
-    case FirmwareBoot:
-    default:
-        break;
-    }
-
-    if (!StartMacintosh ())
-    {
-        m_Logger.Write (FROM, LogError, "The Macintosh did not start");
-        // Stay alive rather than reboot: the serial log is the only diagnosis.
-        for (unsigned i = 0; i < 10; i++)
+        // The firmware has its say before the emulator exists. Everything it
+        // needs is already in place: the card is mounted, the preferences are
+        // read, the Mac's memory is allocated and USB is up — Initialize() sees
+        // to all four, and InputInit() only takes the keyboard for the Macintosh
+        // later on.
+        switch (FirmwareRun ())
         {
-            CTimer::Get ()->MsDelay (1000);
+        case FirmwareHalt:
+            m_Logger.Write (FROM, LogNotice, "Powered off from the firmware");
+            return ShutdownHalt;
+
+        case FirmwareReboot:
+            m_Logger.Write (FROM, LogNotice, "Restarting Okapia at the firmware's request");
+            return ShutdownReboot;
+
+        case FirmwareBoot:
+        default:
+            break;
         }
-        return ShutdownHalt;
+
+        const unsigned nStarted = CTimer::Get ()->GetTicks ();
+
+        if (!StartMacintosh ())
+        {
+            m_Logger.Write (FROM, LogError, "The Macintosh did not start");
+            // Stay alive rather than reboot: the serial log is the only diagnosis.
+            for (unsigned i = 0; i < 10; i++)
+            {
+                CTimer::Get ()->MsDelay (1000);
+            }
+            return ShutdownHalt;
+        }
+
+        // ExitAll() closes the drivers in order — DiskExit() is what finally
+        // calls Sys_close() on the disk image, flushing FatFs to the card. It
+        // saves the PRAM itself, so no separate XPRAMExit() here.
+        ExitAll ();
+
+        // Not in ExitAll(), which leaves 680x0 emulation up: upstream exits the
+        // process next and never has to pair it. Going round again does, and an
+        // unpaired init_m68k() would set the FPU up a second time.
+        Exit680x0 ();
+
+        // Init680x0() takes a fresh one every time and nothing ever gives it
+        // back (basilisk_glue.cpp:73). It is a few bytes, but an appliance is
+        // meant to run for months and a few bytes per restart is still a leak.
+        B2_delete_mutex (spcflags_lock);
+        spcflags_lock = 0;
+
+        if (QuitRequested ())
+        {
+            m_Logger.Write (FROM, LogNotice, "Shut down cleanly, disk closed");
+            return ShutdownHalt;
+        }
+
+        if (!MacRestarted ())
+        {
+            // The interpreter left for a reason nobody named. Say so rather
+            // than looping on it.
+            m_Logger.Write (FROM, LogNotice, "68k execution ended, disk closed");
+            return ShutdownReboot;
+        }
+
+        // The Macintosh had them; the firmware needs them back, and needs the
+        // keys typed at the Macintosh not to count as an answer to a window
+        // that had not opened yet.
+        InputRelease ();
+        FwInputReclaim ();
+
+        // How long it ran, and how much memory is left. Going round is where a
+        // leak turns into a machine that stops booting after a while, and a
+        // number that does not move is the cheapest proof that nothing is being
+        // left behind. The seconds say whether the Macintosh was used or came
+        // straight back, which is what a runaway restart would look like.
+        m_Logger.Write (FROM, LogNotice,
+                        "Restarted after %u s: disk closed, %u KB free,"
+                        " the firmware has its say again",
+                        (CTimer::Get ()->GetTicks () - nStarted) / HZ,
+                        (unsigned) (CMemorySystem::Get ()->GetHeapFreeSpace (HEAP_ANY) / 1024));
     }
-
-    // ExitAll() closes the drivers in order — DiskExit() is what finally calls
-    // Sys_close() on the disk image, flushing FatFs to the card. It saves the
-    // PRAM itself, so no separate XPRAMExit() here.
-    ExitAll ();
-
-    m_Logger.Write (FROM, LogNotice, "Shut down cleanly, disk closed");
-
-    return QuitRequested () ? ShutdownHalt : ShutdownReboot;
 }

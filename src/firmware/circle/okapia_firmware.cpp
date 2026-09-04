@@ -27,6 +27,7 @@
 #include "okapia_screen.h"
 #include "okapia_strings.h"
 #include "okapia_input.h"
+#include "okapia_output.h"
 #include "okapia_theme.h"
 
 #define FROM "firmware"
@@ -290,14 +291,14 @@ static TFirmwareResult RunChooser (TSurface *pOutput, const TTheme *pTheme)
 
 TFirmwareResult FirmwareRun (void)
 {
-    // 0, 0 asks the firmware for the display's own size; what it grants is
-    // reported rather than assumed, because on a Pi 5 the request is ignored
-    // outright and under QEMU the answer is a device property.
-    CBcmFrameBuffer *pOutput = new CBcmFrameBuffer (0, 0, 32);
-    if (pOutput == 0 || !pOutput->Initialize ())
+    // Claimed once for the life of the board and lent out, never taken and given
+    // back: this runs again after every restart from Mac OS, and a mailbox
+    // transaction repeated at each handover is one that has to succeed every
+    // time. See okapia_output.h.
+    CBcmFrameBuffer *pOutput = FwOutputClaim ();
+    if (pOutput == 0)
     {
         CLogger::Get ()->Write (FROM, LogWarning, "No frame buffer; going straight to the Mac");
-        delete pOutput;
         return FirmwareBoot;
     }
 
@@ -308,7 +309,6 @@ TFirmwareResult FirmwareRun (void)
     if (nDepth != 32)
     {
         CLogger::Get ()->Write (FROM, LogWarning, "Expected 32 bpp, got %u; skipping", nDepth);
-        delete pOutput;
         return FirmwareBoot;
     }
 
@@ -399,7 +399,6 @@ TFirmwareResult FirmwareRun (void)
     {
         CLogger::Get ()->Write (FROM, LogNotice, "Option held: the chooser");
         const TFirmwareResult Chosen = RunChooser (&Surface, &Theme);
-        delete pOutput;
         CLogger::Get ()->Write (FROM, LogNotice, "Display handed back");
         return Chosen;
     }
@@ -409,12 +408,6 @@ TFirmwareResult FirmwareRun (void)
                                 "Input during the window, none of ours: modifiers %02X",
                                 nSeen);
     }
-
-    // Handed back before the emulator claims its own. Measured under QEMU: a
-    // frame buffer can be claimed, released and claimed again, same address and
-    // same size, and the second one is live. Worth re-checking on hardware —
-    // the mailbox is the firmware's, not ours.
-    delete pOutput;
 
     CLogger::Get ()->Write (FROM, LogNotice, "Display handed back");
     return FirmwareBoot;

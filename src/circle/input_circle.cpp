@@ -297,3 +297,19 @@ void InputInit (void)
     s_LastMouseButtons = 0;
     InputAttachDevices ();
 }
+
+/*
+ *  Let go of the devices, so that a later InputInit() attaches them again.
+ *
+ *  Nothing is unregistered here, and nothing can be: Circle keeps one raw
+ *  keyboard handler, and its mouse cannot be given back at all (mouse.cpp:85).
+ *  What this clears is only the record of having attached them — the firmware
+ *  takes the keyboard by registering over us and the bridge stops forwarding
+ *  the mouse, and without this the guards above would refuse to take either
+ *  back when the Macintosh starts again.
+ */
+void InputRelease (void)
+{
+    s_pKeyboard = 0;
+    s_pMouse    = 0;
+}

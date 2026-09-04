@@ -117,7 +117,18 @@ void TickInit (void)
     s_nTickCounter = 0;
     s_bRunning = false;
 
-    CTimer::Get ()->RegisterPeriodicHandler (PeriodicHandler);
+    // Once for the life of the board, never once per start. Circle keeps four
+    // periodic slots and offers no way to give one back, so a registration at
+    // each start asserts on the fifth (timer.cpp:637) — and an assertion halts,
+    // which under QEMU ends the session outright. That is four restarts from Mac
+    // OS and then a machine that dies at the next one, seemingly at random.
+    // Everything this handler needs is reset above, and s_bRunning gates it.
+    static bool s_bArmed;
+    if (!s_bArmed)
+    {
+        CTimer::Get ()->RegisterPeriodicHandler (PeriodicHandler);
+        s_bArmed = true;
+    }
 
     CLogger::Get ()->Write (FROM, LogNotice,
                             "Tick armed: host %u Hz, Mac tick every %u us",

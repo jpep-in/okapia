@@ -321,6 +321,34 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   `CKeyboardBehaviour`. Doing that to "give the keyboard back" after the firmware's window stopped the
   kernel dead — no further log at all, and the Macintosh never started. There is nothing to give back:
   Circle keeps one raw handler, so `InputInit()` replacing it in `StartMacintosh()` *is* the handover.
+- **The Macintosh goes round more than once, so "once per boot" is not "once per start".** A restart
+  from Mac OS re-enters the ROM's reset path, where Basilisk's own `M68K_EMUL_OP_RESET` sits
+  (`rom_patches.cpp:1069`, handler at `emul_op.cpp:87`), so `CKernel::Run()` unwinds the emulator and
+  runs the firmware's window again — the only way the boot menu is reachable after the first power-on.
+  Measured on 7.1 and 7.6.1, headless and windowed: **an ordinary boot produces exactly one reset**, so
+  the first is the cold start and every later one is the guest going round. Everything that used to run
+  once now runs once *per start*, and three things could not stand it:
+  `CTimer::RegisterPeriodicHandler` (four slots, no way to return one — the fifth start asserts and a
+  Circle assertion halts, which under QEMU ends the session); `VideoMonitors.push_back` (a second entry
+  is a **second screen**, and `InitAll()` reads `VideoMonitors[0]`, so the Mac draws where nothing
+  composites); and the frame buffer, claimed and released at each handover, which lost 4.8 MB a round.
+  All three are now taken once for the life of the board — the frame buffer through
+  `FwOutputClaim()` (`okapia_output.h`), on the model of the one mouse registration. **Before adding
+  any registration, claim or `push_back` to a start path, ask what the fifth restart does to it**, and
+  log the free heap per round: a number that does not move is the cheapest proof there is.
+- **`quit_program` stays set after the interpreter leaves** (`newcpu.cpp:1562`): upstream exits the
+  process next and never has to start again. A second `Start680x0()` therefore returns at once, which
+  reads exactly like "the Macintosh would not start". `MacRestartArm()` clears it.
+- **Never cut a feature out to guard against a loop nobody has seen.** A guard that disabled the restart
+  window after three quick rounds "in case the Mac restarts itself" fired on the person using it
+  instead: System 7.1 boots in about three seconds, so somebody restarting a few times in a row is
+  indistinguishable from a runaway. And a runaway would not have been a brick — the firmware's two
+  seconds come round every time, so Option still reaches the chooser. The log names the pattern; nothing
+  disengages.
+- **Test against `boot71.img`, not the 500 MB System 7.6 volume.** System 7.1 reaches the Finder in
+  about three seconds under QEMU where 7.6.1 takes two to three minutes, and a card carrying it is built
+  in a second by the recipe in `run-test.sh` (`mformat`, then the image copied in as `machd76.image`).
+  A verification loop that costs minutes per round does not get run.
 - **`CActLED::Blink()` is not a hint, it is a pair of blocking delays.** `actled.cpp:95` turns the LED on,
   waits 200 ms, turns it off and waits 500 ms — synchronously. One call per second in the firmware's event
   loop stopped it dead for seven tenths of every second, so the pointer stuttered and keystrokes arrived
