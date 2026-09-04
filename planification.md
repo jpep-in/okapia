@@ -3436,7 +3436,9 @@ gestionnaire de tick, jamais au niveau IRQ.
 
 ### 19.9 Phases
 
-Elles viennent **après** M13, et la première est une porte : elle peut fermer les suivantes.
+Elles viennent **après** M13. La phase 19 était une porte ; elle ne l'est plus (§19.9), ce qui change
+l'ordre de tout ce qui suit : on ne cherche plus à savoir si c'est possible, on cherche le chemin le plus
+court jusqu'au premier écran.
 
 **La matière première est réunie depuis le 2026-09-04** : deux ROM vérifiées (§19.6) et un CD d'installation
 **Mac OS 8.6 PowerPC** — `installppc86fr.toast`, volume « Mac OS 8.6 », 600 Mo, dossier béni présent, MDB
@@ -3543,32 +3545,54 @@ volume vide comme cible d'installation, ce qui ne demande rien à personne.
 bouchons pour ce que l'interpréteur appelle en dehors de lui-même : `PVR`, `TimebaseSpeed`,
 `GetTicks_usec()`, `PrefsFindBool()` et `HandleInterrupt()`.
 
-#### Phase 20 — Mémoire, ROM, nanokernel
+#### Phase 20 — SheepShaver démarre
 
+**Une tranche verticale, et pas un socle.** Tant que SheepShaver n'a pas mis un pixel à l'écran, tout le
+§19 reste de la théorie ; le chemin le plus court jusqu'à un premier écran en apprend plus que n'importe
+quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre.
+
+- [ ] `Makefile` paramétré par `ENGINE`, deux répertoires d'objets — c'est le préalable de tout le reste
+      et il est petit (§19.3)
 - [ ] `main_circle.cpp` variante SheepShaver : un bloc contigu, `RAM_BASE`/`ROM_BASE` choisis, `VMBaseDiff`
-- [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification
+- [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification (§19.4)
 - [x] `check-rom.py` étendu — fait, et deux ROM vérifiées (§19.6)
 - [ ] chargement d'une ROM `<CHRP-BOOT>` par le noyau : le décodeur est à porter en C++, l'étalon est la
       sortie de `check-rom.py` sur `macosrom16.rom`
-- [ ] `PatchROM()` passe, le nanokernel démarre — jalon : quelque chose s'affiche
+- [ ] la sortie de secours des accès matériels (§19.4) : page fantôme d'abord, *data abort* si elle ne
+      suffit pas
+- [ ] vidéo au strict minimum — le framebuffer, aucune optimisation
+- [ ] **jalon : `PatchROM()` passe, le nanokernel démarre, quelque chose s'affiche**
 
 #### Phase 21 — La couche plateforme sert les deux moteurs
 
 - [ ] compositeur extrait de `video_circle.cpp` dans un module neutre ; adaptateur par moteur
-- [ ] `video_set_dirty_area()` branché sur les tuiles
+- [ ] `video_set_dirty_area()` branché sur les tuiles, et l'accélération QuickDraw activée (§19.2)
 - [ ] tick, entrées, son, PRAM, préférences : tables et `#ifdef`, rien de neuf
-- [ ] Finder de Mac OS 9 atteint
+- [ ] **jalon : Mac OS 8.6 s'installe depuis le CD sur un volume vide.** C'est le meilleur jalon
+      disponible — il exerce d'un coup l'écriture disque, la vidéo, les entrées et le CD, et c'est une
+      histoire d'utilisateur entière plutôt qu'un écran figé
+- [ ] puis le Finder de Mac OS 9
 
 #### Phase 22 — Deux images et le choix du moteur
 
-- [ ] `Makefile` paramétré par `ENGINE`, deux répertoires d'objets, deux images
-- [ ] bascule par chargeur et `EnableChainBoot`, retour au menu par `reboot()`
-- [ ] le firmware annonce le moteur déduit du volume, et le laisse trancher dans la bande 7.5.2 → 8.1
+- [ ] bascule par chargeur et `EnableChainBoot`, retour au menu par `reboot()` (§19.3)
+- [ ] l'enregistrement `machine` (§19.7), écrit par le sélecteur
+- [ ] le sélecteur grise ce que le noyau courant ne sait pas démarrer, et tranche dans la bande
+      7.5.2 → 8.1
 
-Les deux corrections de préférences (§19.7) **ne dépendent d'aucune de ces phases** et valent d'être faites
-tout de suite : la préservation des lignes inconnues par `SavePrefs()` est un correctif de sûreté qui n'a
-rien à voir avec SheepShaver, et la détection automatique de la ROM est le prolongement direct de
-`ApplyModelId()`, déjà écrit.
+**Hors phase, et à faire dès maintenant** — rien de tout cela n'attend SheepShaver :
+
+- [x] `SavePrefs()` préserve les lignes inconnues — correctif de sûreté, sans rapport avec le moteur
+- [x] le sélecteur annonce le processeur du Système (`HfsFlavourOf`)
+- [ ] **le moteur passé au firmware comme une donnée**, pas une constante de compilation : c'est ce qui
+      permet de griser un volume PowerPC sous un noyau Basilisk sans salir la pureté du firmware
+- [ ] `VM_CAN_ACCESS_UNALIGNED` pour AArch64 dans `vm.hpp` : les 24 % mesurés en phase 19 sont à
+      reprendre avec, et c'est un bon candidat à une remontée amont
+- [ ] la détection automatique de la ROM, prolongement direct de `ApplyModelId()`
+
+**Et le préalable qui n'est pas dans cette section** : les deux dernières cases de la phase 16, dont
+`hal_circle` — la séparation matériel/émulateur de §3.5. C'est littéralement ce sur quoi la phase 20
+s'appuie, donc la finir n'est pas un détour.
 
 ### 19.10 Risques et questions ouvertes
 
