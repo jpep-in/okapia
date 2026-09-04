@@ -3506,6 +3506,32 @@ volume vide comme cible d'installation, ce qui ne demande rien à personne.
       vaut huit à douze cœurs de Pi 4 sur du code de répartition, et ces charges sont des meilleurs cas
       (un bloc unique, parfaitement prédit, sans pression de cache). Ils ne servent qu'à dire que
       l'instrument fonctionne.
+- [x] **d'autres l'ont déjà mesuré, sur notre configuration exacte** — relevé le 2026-09-05 sur
+      emaculation. Un utilisateur y publie des scores **Speedometer 4.02** obtenus avec le fork
+      **kanjitalk755**, en **interprété sans JIT**, sous **Mac OS 9.0.4**, sur Raspberry Pi. C'est le
+      même fork, le même mode et la même famille de carte que nous. Le repère de Speedometer 4 est le
+      **Quadra 605 (68040 à 25 MHz) = 1,00**.
+
+      | | Pi 4 | Pi 5 |
+      |---|---|---|
+      | CPU | 5,44 | **11,75** |
+      | Graphismes | 3,22 | 7,89 |
+      | Disque | 3,08 | 4,91 |
+      | Math | 690 | 1957 |
+      | **Note globale** | **4,32** | **8,86** |
+
+      Pour situer : une compilation **avec JIT** sur x86 de bureau donne **14,3** au même test, et le
+      portage OpenPOWER annonce ~7 en interprété contre ~15 avec JIT. **Un Pi 5 en interprété est donc
+      déjà au-dessus d'un POWER9 en interprété, et à environ 62 % d'une machine de bureau avec JIT.**
+      Un Pi 4 est à peu près à 30 % de cette dernière.
+
+      Conséquence pour ce projet : **la porte est essentiellement franchie, et par d'autres.** La phase 19
+      cesse d'être un go/no-go pour devenir une confirmation. Ce qui reste à mesurer chez nous est plus
+      étroit — ce que le bare-metal change dans un sens (pas de système hôte) et dans l'autre (pas de SDL,
+      notre propre compositeur).
+
+      **Réserve d'usage** : ce sont des chiffres rapportés par des tiers sous Linux, pas les nôtres, et
+      Speedometer mélange CPU, graphismes et disque. Les citer, jamais les présenter comme mesurés ici.
 - [ ] refaire la mesure **sur la carte**, en bare-metal minimal, sur du code qui branche et qui touche la
       mémoire, avec et sans `VM_CAN_ACCESS_UNALIGNED`
 - [ ] rapporter le résultat à ce qu'exige Mac OS 8.6 / 9 et **décider** : continuer, ou clore et rouvrir la
@@ -3548,7 +3574,8 @@ rien à voir avec SheepShaver, et la détection automatique de la ROM est le pro
 
 | | Risque | Ce qui le lève |
 |---|---|---|
-| **1** | ~~La vitesse de l'interprété PowerPC~~ — **redimensionné le 2026-09-04** : par instruction, `kpx_cpu` bat `uae_cpu` d'un facteur 1,5 à 2 (phase 19). Ce qui reste : le nombre d'instructions pour un même travail, et surtout **la double interprétation** du Toolbox 68k par l'émulateur 68k de la ROM | mesurer sur la carte, et mesurer le chemin 68k, pas le PowerPC natif |
+| **1** | ~~La vitesse de l'interprété PowerPC~~ — **levé le 2026-09-05** : `kpx_cpu` bat `uae_cpu` de 1,5 à 2 par instruction, et des tiers publient 8,86 au Speedometer sur Pi 5 en interprété contre 14,3 pour un bureau x86 avec JIT (phase 19) | confirmer sur notre carte, pas décider |
+| **1bis** | **Le chemin 68k**, et c'est là que le risque s'est déplacé. Mac OS fait tourner du 68k sur l'émulateur de la ROM, lui-même en PowerPC — deux couches. Un rapport d'usage décrit la souris qui « rame sans JIT » parce que le sondage ADB passe par des interruptions 68k doublement émulées | mesurer ce chemin en particulier ; et il existe un levier nommé, `jit68k`, le recompilateur dynamique de la ROM, éteint par défaut |
 | 2 | Le gestionnaire `SIGSEGV` réduit n'a pas d'équivalent Circle immédiat | page fantôme ou data abort, §19.4 |
 | 3 | ~~`mathlib/ieeefp.cpp` face à newlib~~ — **levé côté compilateur** : il ne demande que `HAVE_FENV_H` et les constantes de `<fenv.h>` | reste à confronter à newlib, pas à la libc de l'hôte |
 | 4 | Bascule de moteur : `EnableChainBoot` est incompatible avec `ARM_ALLOW_MULTI_CORE` et ne gère pas le recouvrement | chargeur monocœur, tampon en mémoire haute |
