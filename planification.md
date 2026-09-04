@@ -3451,6 +3451,43 @@ volume vide comme cible d'installation, ce qui ne demande rien à personne.
       en interprété seul**, il appelle `enable_jit()` que `ppc-cpu.hpp:337` ne déclare que sous
       `PPC_ENABLE_JIT`. Donc soit une machine PowerPC réelle, soit ce fichier retrouvé, soit un autre
       corpus — `BasiliskII/qa/` et les tests VEX cités par la doc du testeur.
+- [x] **les deux interpréteurs comparés sur le même hôte — et le résultat renverse l'inquiétude
+      initiale.** Bancs équivalents, tous deux validés avant d'être crus (le 68k laisse exactement 16 384
+      tours pour 65 536 instructions ; le PowerPC laisse 1000 dans une cellule du guest après 1000
+      exécutions) :
+
+      | Charge | 68k, `uae_cpu_2021` | PowerPC, `kpx_cpu` |
+      |---|---|---|
+      | registres seuls | 486 M instr/s | **895 à 953** M instr/s |
+      | avec accès mémoire | 457 M instr/s | **682** M instr/s |
+
+      **L'interpréteur PowerPC est une fois et demie à deux fois plus rapide, par instruction, que le
+      cœur 68k que ce projet fait déjà tourner.** La raison est structurelle : `kpx_cpu` garde un cache
+      de décodage (`ppc-cpu.cpp:619-700`) là où `uae_cpu` redécode le flux à chaque passage. Le banc
+      flatte ce cache — une boucle courte rejouée des millions de fois est son meilleur cas — donc
+      l'écart réel est plus petit ; mais il n'y a **rien** ici qui soutienne l'idée d'un interpréteur
+      PowerPC structurellement lent. La crainte était mal placée.
+
+      Une asymétrie mesurée en revanche : la mémoire coûte **24 %** au PowerPC contre **6 %** au 68k.
+      Candidat désigné, `vm.hpp:27`, qui ne déclare pas AArch64 capable d'accès non alignés là où
+      `Unix/sysdeps.h` traite le cas. Une ligne, à mesurer.
+- [x] **et combien de 68k reste-t-il vraiment ? mesuré sur le CD d'installation 8.6.** Son fichier
+      Système porte **5,1 Mo de fork de données contenant 70 conteneurs PEF** — du PowerPC natif — contre
+      environ **1,5 Mo de code 68k** dans le fork de ressources (`gpch` 627 Ko, `DRVR` 193 Ko, `PACK`
+      175 Ko, `ptch` 175 Ko, `scod` 94 Ko, `proc` 73 Ko, plus les `CDEF`/`WDEF`/`MDEF`). Donc **8.6 est
+      très majoritairement natif**, et une note antérieure de ce document, écrite de mémoire, exagérait
+      la part du 68k. Elle est corrigée.
+
+      Ce qui reste vrai et compte : `gpch` est, à 627 Ko, **le plus gros type de ressource du fichier
+      Système**, et c'est du code 68k de rustine chargé au démarrage. Le chemin 68k n'a pas disparu, il
+      a maigri.
+
+      Et Apple ne l'a pas laissé au frein à main : la ROM porte un **recompilateur dynamique** pour le
+      68k, dont SheepShaver connaît l'adresse et le cache (`cpu_emulation.h:32-35`, `DR_EMULATOR_BASE`
+      et `DR_CACHE_BASE`) et qu'il expose sous la préférence `jit68k`, « enable 68k DR emulator »
+      (`prefs_items.cpp:59`). **Mais il est à `false` par défaut** (`:108`) et l'allocation de son cache
+      est sous `#if 0` dans `main_unix.cpp:1022-1043`. Le frein à main, s'il y en a un, est donc le
+      nôtre et non celui d'Apple — et c'est un levier identifié avant même d'avoir commencé.
 - [ ] **la mesure qui compte reste à faire, et pas ici.** Sur cette machine le banc donne ~1,1 G instr/s
       en registre pur et ~800 M avec accès mémoire — chiffres à ne **pas** reporter : un cœur M-series
       vaut huit à douze cœurs de Pi 4 sur du code de répartition, et ces charges sont des meilleurs cas
@@ -3498,7 +3535,7 @@ rien à voir avec SheepShaver, et la détection automatique de la ROM est le pro
 
 | | Risque | Ce qui le lève |
 |---|---|---|
-| **1** | **La vitesse de l'interprété PowerPC.** C'est le risque dominant, et le seul qui puisse tout arrêter | phase 19, avant toute glue |
+| **1** | ~~La vitesse de l'interprété PowerPC~~ — **redimensionné le 2026-09-04** : par instruction, `kpx_cpu` bat `uae_cpu` d'un facteur 1,5 à 2 (phase 19). Ce qui reste : le nombre d'instructions pour un même travail, et surtout **la double interprétation** du Toolbox 68k par l'émulateur 68k de la ROM | mesurer sur la carte, et mesurer le chemin 68k, pas le PowerPC natif |
 | 2 | Le gestionnaire `SIGSEGV` réduit n'a pas d'équivalent Circle immédiat | page fantôme ou data abort, §19.4 |
 | 3 | ~~`mathlib/ieeefp.cpp` face à newlib~~ — **levé côté compilateur** : il ne demande que `HAVE_FENV_H` et les constantes de `<fenv.h>` | reste à confronter à newlib, pas à la libc de l'hôte |
 | 4 | Bascule de moteur : `EnableChainBoot` est incompatible avec `ARM_ALLOW_MULTI_CORE` et ne gère pas le recouvrement | chargeur monocœur, tampon en mémoire haute |

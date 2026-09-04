@@ -87,8 +87,10 @@ enum THfsSystemFlavour
 //     'cfrg' is what says the PowerPC half is actually installed.
 //
 // Note what this deliberately does not do: treat 'cfrg' alone as "PowerPC
-// only". Mac OS stayed largely 68k code inside until Mac OS X, so a native
-// fragment proves the PowerPC half is there and nothing more.
+// only". A native fragment proves the PowerPC half is installed and nothing
+// more — Mac OS 8.6, which no 68k machine can boot, still carries some 1.5 MB
+// of 68k code in its System file, 'gpch' alone being the largest resource type
+// in it. So the fragment answers "could a PowerMac run this", never "must it".
 THfsSystemFlavour HfsFlavourOf (const THfsSystemVersion *pVersion);
 
 // Scavenge a volume an interrupted session left marked in use, and mark it
