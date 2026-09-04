@@ -37,6 +37,8 @@ tests/host/check_geometry
 tests/host/check_screen
 tests/host/check_chooser
 tests/host/check_pages
+tests/host/check_platform
+tests/host/check_platform.tmp
 tests/host/render_chooser
 tests/host/render_pages
 tests/host/*.ppm

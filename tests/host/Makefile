@@ -27,6 +27,25 @@ CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -I$(FIRMWARE) -I$(GEN) -std=c
 
 VPATH = $(FIRMWARE):$(GEN):.
 
+# Two files of the platform layer build here too, and they are the two where a
+# mistake costs data rather than pixels: prefs_circle.cpp, which can silently
+# drop somebody's settings, and hfs_volume_circle.cpp, which reads volumes we
+# must never damage. Neither touches Circle for anything but the log, so
+# shims/okapia_circle.h — force-included ahead of the real one, whose include
+# guard then swallows it — is the whole cost. They come with upstream's prefs
+# tables, so the checks run against the real keyword lists and not a copy.
+CIRCLE   = $(ROOT)/src/circle
+MACEMU   = $(ROOT)/external/macemu/BasiliskII/src
+LIBHFS   = $(ROOT)/external/hfsutils/libhfs
+
+PLATFORM_CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c++14 \
+    -include shims/okapia_circle.h -I$(CIRCLE) -I$(MACEMU)/include \
+    -I$(MACEMU)/Unix -I$(MACEMU)/uae_cpu_2021 -I$(LIBHFS) \
+    -DDIRECT_ADDRESSING -DFPU_UAE
+PLATFORM_OBJS = p_prefs_circle.o p_hfs_volume_circle.o p_prefs.o p_prefs_items.o
+HFS_SRCS      = $(wildcard $(LIBHFS)/*.c)
+HFS_OBJS      = $(addprefix hfs_,$(notdir $(HFS_SRCS:.c=.o)))
+
 all: specimen.ppm check
 
 $(FONT_SRC): $(ROOT)/scripts/gen-font.py $(BDF)
@@ -83,15 +102,36 @@ render_pages: $(LIBOBJS) render_pages.o pages_sample.o
 check_pages: $(LIBOBJS) check_pages.o pages_sample.o
 	$(CXX) -o $@ $^
 
+# The platform objects carry a p_ prefix and libhfs an hfs_ one: without them
+# prefs.cpp from upstream and prefs_circle.cpp from here would both want to be
+# prefs.o, and the second would quietly win.
+p_%.o: $(CIRCLE)/%.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+p_%.o: $(MACEMU)/%.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+hfs_%.o: $(LIBHFS)/%.c
+	$(CC) -O2 -w -I$(LIBHFS) -MMD -MP -c -o $@ $<
+
+# An explicit rule, because the pattern above would build it with the firmware's
+# include paths and it needs the platform's.
+check_platform.o: check_platform.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+check_platform: check_platform.o $(PLATFORM_OBJS) $(HFS_OBJS)
+	$(CXX) -o $@ $^
+
 # The measurements are part of the build, not something to remember to run: an
 # asymmetry of one pixel is invisible on a screenshot and obvious at three. The
 # behaviour joins them: what the focus does under a sequence of keys is decidable
 # on a machine with no keyboard, so there is no reason to go and look.
-check: check_geometry check_screen check_chooser check_pages
+check: check_geometry check_screen check_chooser check_pages check_platform
 	./check_geometry
 	./check_screen
 	./check_chooser
 	./check_pages
+	./check_platform
 
 # Every page, the count being the flow's to decide: naming them here again is
 # how the second page went stale the day a third appeared.
@@ -106,7 +146,7 @@ view: render_specimen
 
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
-	      check_chooser check_pages \
+	      check_chooser check_pages check_platform check_platform.tmp \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean
