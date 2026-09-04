@@ -6,16 +6,14 @@
  */
 
 #include "okapia_chooser.h"
-#include "okapia_layout.h"
+#include "okapia_page.h"
 #include "okapia_strings.h"
 
 // The screen's own array. Laid out once and then only restated, so that the
 // list keeps pointing at the same rows while the user works.
 static const unsigned MAX_WIDGETS = 24;
-static TWidget   s_Widgets[MAX_WIDGETS];
-static unsigned  s_nWidgets;
-static TRect     s_Dialog;
-static unsigned  s_nScale16 = 16;
+static TWidget s_Widgets[MAX_WIDGETS];
+static TPage   s_Page;
 
 // What each row says, and what the selected volume's line says underneath. Both
 // are rebuilt in place, so nothing has to be laid out again when a tick box
@@ -26,59 +24,19 @@ static char      s_Detail[96];
 
 // The components the rest of this file needs to reach again.
 static int s_nList     = -1;
-static int s_nStartup  = -1;            // the "startup disk" tick box
-static int s_nReadOnly = -1;
-static int s_nMounted  = -1;
 static int s_nDetail   = -1;
+
+// The three columns of the list, and what each one means. They were three tick
+// boxes under the list, which meant reading a row, looking down, and trusting
+// that the boxes still spoke about the row one had just read. In the row they
+// are the row's own answer, and the whole card can be taken in at a glance.
+enum { ColStartup = 1, ColReadOnly = 2, ColMounted = 3 };
+static TListColumn s_Columns[LIST_COLUMNS];
 static int s_nStart    = -1;
 static int s_nSettings = -1;
+static int s_nInfo     = -1;
 static int s_nPram     = -1;
 static int s_nPower    = -1;
-
-static inline int S (int nValue)
-{
-    return nValue * (int) s_nScale16 / 16;
-}
-
-/*
- *  Text, put together without a printf
- *
- *  The firmware has no format string anywhere else and there is no reason to
- *  start here: three appends say what one format would, and they cannot run off
- *  the end of the buffer while doing it.
- */
-static unsigned Append (char *pOut, unsigned nSize, unsigned nAt, const char *pWhat)
-{
-    if (pWhat == 0)
-    {
-        return nAt;
-    }
-    while (*pWhat != '\0' && nAt + 1 < nSize)
-    {
-        pOut[nAt++] = *pWhat++;
-    }
-    pOut[nAt] = '\0';
-    return nAt;
-}
-
-static unsigned AppendNumber (char *pOut, unsigned nSize, unsigned nAt, unsigned long nValue)
-{
-    char Digits[12];
-    unsigned n = 0;
-    do
-    {
-        Digits[n++] = (char) ('0' + (nValue % 10));
-        nValue /= 10;
-    }
-    while (nValue != 0 && n < sizeof Digits);
-
-    while (n-- > 0 && nAt + 1 < nSize)
-    {
-        pOut[nAt++] = Digits[n];
-    }
-    pOut[nAt] = '\0';
-    return nAt;
-}
 
 // "Macintosh HD — System 7.1.2" — and what is wrong with it, when something is.
 // The state belongs on the row rather than only under the selection: a card
@@ -87,33 +45,33 @@ static void RowText (const TChooser *pChooser, unsigned i)
 {
     const TChooserVolume *p = &pChooser->Volumes[i];
     char *pOut = s_Rows[i];
-    unsigned n = Append (pOut, sizeof s_Rows[i], 0, p->Name);
+    unsigned n = StrAppend (pOut, sizeof s_Rows[i], 0, p->Name);
 
     if (p->System[0] != '\0')
     {
-        n = Append (pOut, sizeof s_Rows[i], n, " — ");
-        n = Append (pOut, sizeof s_Rows[i], n, "System ");
-        n = Append (pOut, sizeof s_Rows[i], n, p->System);
+        n = StrAppend (pOut, sizeof s_Rows[i], n, " — ");
+        n = StrAppend (pOut, sizeof s_Rows[i], n, "System ");
+        n = StrAppend (pOut, sizeof s_Rows[i], n, p->System);
     }
     else
     {
-        n = Append (pOut, sizeof s_Rows[i], n, " — ");
-        n = Append (pOut, sizeof s_Rows[i], n, Str (StrNoSystem));
+        n = StrAppend (pOut, sizeof s_Rows[i], n, " — ");
+        n = StrAppend (pOut, sizeof s_Rows[i], n, Str (StrNoSystem));
     }
     if (!p->bClean)
     {
-        n = Append (pOut, sizeof s_Rows[i], n, " · ");
-        n = Append (pOut, sizeof s_Rows[i], n, Str (StrVolumeInUse));
+        n = StrAppend (pOut, sizeof s_Rows[i], n, " · ");
+        n = StrAppend (pOut, sizeof s_Rows[i], n, Str (StrVolumeInUse));
     }
     if (p->bReadOnly)
     {
-        n = Append (pOut, sizeof s_Rows[i], n, " · ");
-        n = Append (pOut, sizeof s_Rows[i], n, Str (StrReadOnly));
+        n = StrAppend (pOut, sizeof s_Rows[i], n, " · ");
+        n = StrAppend (pOut, sizeof s_Rows[i], n, Str (StrReadOnly));
     }
     if (!p->bMounted)
     {
-        n = Append (pOut, sizeof s_Rows[i], n, " · ");
-        Append (pOut, sizeof s_Rows[i], n, Str (StrNotMounted));
+        n = StrAppend (pOut, sizeof s_Rows[i], n, " · ");
+        StrAppend (pOut, sizeof s_Rows[i], n, Str (StrNotMounted));
     }
 }
 
@@ -126,52 +84,25 @@ static void DetailText (const TChooser *pChooser, int nSel)
         return;
     }
     const TChooserVolume *p = &pChooser->Volumes[nSel];
-    unsigned n = Append (s_Detail, sizeof s_Detail, 0, p->Path);
-    n = Append (s_Detail, sizeof s_Detail, n, " · ");
-    n = AppendNumber (s_Detail, sizeof s_Detail, n, p->nFreeKB / 1024);
-    n = Append (s_Detail, sizeof s_Detail, n, " ");
-    n = Append (s_Detail, sizeof s_Detail, n, Str (StrMbFree));
-    n = Append (s_Detail, sizeof s_Detail, n, " · ");
-    Append (s_Detail, sizeof s_Detail, n, p->bClean ? Str (StrVolumeClean)
+    unsigned n = StrAppend (s_Detail, sizeof s_Detail, 0, p->Path);
+    n = StrAppend (s_Detail, sizeof s_Detail, n, " · ");
+    n = StrAppendNumber (s_Detail, sizeof s_Detail, n, p->nFreeKB / 1024);
+    n = StrAppend (s_Detail, sizeof s_Detail, n, " ");
+    n = StrAppend (s_Detail, sizeof s_Detail, n, Str (StrMbFree));
+    n = StrAppend (s_Detail, sizeof s_Detail, n, " · ");
+    StrAppend (s_Detail, sizeof s_Detail, n, p->bClean ? Str (StrVolumeClean)
                                                     : Str (StrVolumeInUse));
 }
 
 static TWidget *Add (TWidgetType Type, const TRect &rRect, const char *pText, unsigned nState)
 {
-    if (s_nWidgets >= MAX_WIDGETS)
-    {
-        return &s_Widgets[MAX_WIDGETS - 1];
-    }
-    TWidget *p = &s_Widgets[s_nWidgets++];
-    WidgetClear (p);
-    p->Type   = Type;
-    p->Rect   = rRect;
-    p->pText  = pText;
-    p->nState = nState;
-    return p;
-}
-
-// Placed with the room a focus ring needs whatever state it is drawn in: the
-// layout runs before the loop and cannot know which control will be focused.
-static void AddButton (TRow *pRow, const char *pText, unsigned nState, int *pIndex)
-{
-    const unsigned nWidth = WidgetButtonWidth (pRow->pTheme, pText, nState);
-    *pIndex = (int) s_nWidgets;
-    Add (WidgetButton, RowNext (pRow, nWidth, nState | StateFocused), pText, nState);
-}
-
-static void AddIconButton (TRow *pRow, TIconPainter Paint, unsigned nState, int *pIndex)
-{
-    const unsigned nSize = pRow->pTheme->M.nButtonHeight;
-    *pIndex = (int) s_nWidgets;
-    Add (WidgetIconButton, RowNext (pRow, nSize, nState | StateFocused), 0, nState)
-        ->Paint = Paint;
+    return PageAdd (&s_Page, Type, rRect, pText, nState);
 }
 
 unsigned ChooserWidgets (TWidget **ppList)
 {
     *ppList = s_Widgets;
-    return s_nWidgets;
+    return s_Page.nCount;
 }
 
 int ChooserSelected (void)
@@ -182,42 +113,33 @@ int ChooserSelected (void)
 void ChooserSync (TChooser *pChooser)
 {
     const int nSel = ChooserSelected ();
-    const TChooserVolume *p = nSel >= 0 ? &pChooser->Volumes[nSel] : 0;
-
-    // A volume with no System cannot be a startup disk, and one that is not
-    // mounted cannot be either — the controls say so by going grey rather than
-    // by refusing when they are pressed.
-    unsigned nStartupState = StateNormal;
-    if (p == 0 || !p->bBootable || !p->bMounted)
-    {
-        nStartupState = StateDisabled;
-    }
-    if (nSel >= 0 && nSel == pChooser->nStartup)
-    {
-        nStartupState |= StateChecked;
-    }
-    s_Widgets[s_nStartup].nState = (s_Widgets[s_nStartup].nState & StateFocused)
-                                 | nStartupState;
-
-    s_Widgets[s_nReadOnly].nState = (s_Widgets[s_nReadOnly].nState & StateFocused)
-                                  | (p == 0 ? StateDisabled
-                                            : (p->bReadOnly ? StateChecked : StateNormal));
-
-    // The startup volume must stay mounted, so its own tick box is held down
-    // rather than left to be turned off from under it.
-    unsigned nMountedState = p == 0 ? StateDisabled
-                                    : (p->bMounted ? StateChecked : StateNormal);
-    if (nSel >= 0 && nSel == pChooser->nStartup)
-    {
-        nMountedState |= StateDisabled;
-    }
-    s_Widgets[s_nMounted].nState = (s_Widgets[s_nMounted].nState & StateFocused)
-                                 | nMountedState;
 
     for (unsigned i = 0; i < pChooser->nCount; i++)
     {
+        const TChooserVolume *v = &pChooser->Volumes[i];
         RowText (pChooser, i);
-        s_Items[i].nState = (int) i == pChooser->nStartup ? StateChecked : StateNormal;
+        s_Items[i].nState = StateNormal;
+
+        // A volume with no System cannot be a startup disk, and one that is not
+        // mounted cannot be either — the mark says so by going grey rather than
+        // by refusing when it is pressed.
+        unsigned nStartup = (!v->bBootable || !v->bMounted) ? StateDisabled : StateNormal;
+        if ((int) i == pChooser->nStartup)
+        {
+            nStartup |= StateChecked;
+        }
+        s_Items[i].nCell[ColStartup - 1] = nStartup;
+
+        s_Items[i].nCell[ColReadOnly - 1] = v->bReadOnly ? StateChecked : StateNormal;
+
+        // The startup volume must stay mounted, so its own mark is held down
+        // rather than left to be turned off from under it.
+        unsigned nMounted = v->bMounted ? StateChecked : StateNormal;
+        if ((int) i == pChooser->nStartup)
+        {
+            nMounted |= StateDisabled;
+        }
+        s_Items[i].nCell[ColMounted - 1] = nMounted;
     }
     DetailText (pChooser, nSel);
 
@@ -227,33 +149,34 @@ void ChooserSync (TChooser *pChooser)
                                                          : StateDefault | StateDisabled;
 }
 
-TChooserAction ChooserOperate (TChooser *pChooser, int nIndex)
+TChooserAction ChooserOperate (TChooser *pChooser, int nIndex, unsigned nCell)
 {
     if (nIndex == s_nStart)      return ChooserStart;
     if (nIndex == s_nSettings)   return ChooserSettings;
+    if (nIndex == s_nInfo)       return ChooserInformation;
     if (nIndex == s_nPram)       return ChooserForgetPram;
     if (nIndex == s_nPower)      return ChooserShutDown;
 
     const int nSel = ChooserSelected ();
-    if (nSel < 0)
+    if (nIndex != s_nList || nCell == 0 || nSel < 0)
     {
         ChooserSync (pChooser);
         return ChooserNothing;
     }
     TChooserVolume *p = &pChooser->Volumes[nSel];
 
-    if (nIndex == s_nStartup)
+    if (nCell == ColStartup)
     {
         // It behaves as one of a set and not as a switch: a machine has to
         // start from something, so choosing this one is all it can mean.
         pChooser->nStartup = nSel;
         p->bMounted = true;
     }
-    else if (nIndex == s_nReadOnly)
+    else if (nCell == ColReadOnly)
     {
         p->bReadOnly = !p->bReadOnly;
     }
-    else if (nIndex == s_nMounted)
+    else if (nCell == ColMounted)
     {
         p->bMounted = !p->bMounted;
         if (!p->bMounted && pChooser->nStartup == nSel)
@@ -283,9 +206,9 @@ unsigned ChooserDiskLines (const TChooser *pChooser, char Lines[][CHOOSER_LINE],
             unsigned nAt = 0;
             if (pChooser->Volumes[i].bReadOnly)
             {
-                nAt = Append (Lines[n], CHOOSER_LINE, nAt, "*");
+                nAt = StrAppend (Lines[n], CHOOSER_LINE, nAt, "*");
             }
-            Append (Lines[n], CHOOSER_LINE, nAt, pChooser->Volumes[i].Path);
+            StrAppend (Lines[n], CHOOSER_LINE, nAt, pChooser->Volumes[i].Path);
             n++;
         }
     }
@@ -309,64 +232,23 @@ static const TGlyphImage *EraIcon (const char *pSystem)
 
 void ChooserDraw (TSurface *pSurface, TChooser *pChooser)
 {
-    TTheme Theme;
-    s_nScale16 = ThemeScaleFor (pSurface->nWidth, pSurface->nHeight);
-    ThemeMake (s_nScale16, &Theme);
-    const TTheme *pTheme = &Theme;
-
-    s_nWidgets = 0;
-
-    const unsigned nDW = (unsigned) S (608);
-    const unsigned nDH = (unsigned) S (458);
-    s_Dialog = Rect ((int) (pSurface->nWidth  - nDW) / 2,
-                     (int) (pSurface->nHeight - nDH) / 2, nDW, nDH);
-
-    TLayout Layout;
-    LayoutBegin (&Layout, pTheme, ThemeContent (s_Dialog, pTheme));
-
-    Add (WidgetTitle, LayoutTop (&Layout, pTheme->pTitleFont->nHeight),
-         Str (StrChooseSystem), StateNormal);
-    LayoutRowGap (&Layout);
-    Add (WidgetSeparator, LayoutTop (&Layout, 1), 0, StateNormal);
-    LayoutSectionGap (&Layout);
+    PageBegin (&s_Page, pSurface, s_Widgets, MAX_WIDGETS, PAGE_WIDTH, PAGE_HEIGHT,
+               Str (StrChooseSystem));
+    const TTheme *pTheme = &s_Page.Theme;
+    TLayout &Layout = s_Page.Layout;
 
     // The footer first, so the middle knows where it must stop.
-    TRow Foot;
-    RowBegin (&Foot, pTheme,
-              LayoutBottom (&Layout, pTheme->M.nButtonHeight
-                                     + 2 * ThemeReach (pTheme, StateDefault)));
-    Foot.Free = Rect (Foot.Free.nX, Foot.Free.nY + (int) ThemeReach (pTheme, StateDefault),
-                      Foot.Free.nWidth, pTheme->M.nButtonHeight);
-    AddIconButton (&Foot, OkapiaPaintSettings, StateNormal, &s_nSettings);
-    AddIconButton (&Foot, OkapiaPaintPram,     StateNormal, &s_nPram);
-    AddIconButton (&Foot, OkapiaPaintPower,    StateNormal, &s_nPower);
-    s_nStart = (int) s_nWidgets;
-    Add (WidgetButton,
-         RowLast (&Foot, WidgetButtonWidth (pTheme, Str (StrStart), StateDefault),
-                  StateDefault | StateFocused),
-         Str (StrStart), StateDefault);
-
-    LayoutSectionGapBottom (&Layout);
-    Add (WidgetSeparator, LayoutBottom (&Layout, 1), 0, StateNormal);
-    LayoutSectionGapBottom (&Layout);
+    PageFooter (&s_Page);
+    s_nSettings = PageIconButton (&s_Page, OkapiaPaintSettings, StateNormal);
+    s_nInfo     = PageIconButton (&s_Page, OkapiaPaintInfo,     StateNormal);
+    s_nPram     = PageIconButton (&s_Page, OkapiaPaintPram,     StateNormal);
+    s_nPower    = PageIconButton (&s_Page, OkapiaPaintPower,    StateNormal);
+    s_nStart    = PageLast (&s_Page, Str (StrStart), StateDefault);
 
     // The volume's own line, then the three things one can say about it, both
     // taken off the bottom so the list gets everything that is left.
-    s_nDetail = (int) s_nWidgets;
+    s_nDetail = (int) s_Page.nCount;
     Add (WidgetLabel, LayoutBottom (&Layout, pTheme->M.nLineHeight), s_Detail, StateNormal);
-    LayoutSectionGapBottom (&Layout);
-
-    TRect Band = LayoutBottom (&Layout, pTheme->M.nCheckSize
-                                        + 2 * ThemeReach (pTheme, StateFocused));
-    Band = Rect (Band.nX, Band.nY + (int) ThemeReach (pTheme, StateFocused),
-                 Band.nWidth, pTheme->M.nCheckSize);
-    const unsigned nGutter = pTheme->M.nGap + 2 * ThemeReach (pTheme, StateFocused);
-    s_nStartup = (int) s_nWidgets;
-    Add (WidgetCheckbox, RectColumn (Band, 0, 3, nGutter), Str (StrStartupDisk), StateNormal);
-    s_nReadOnly = (int) s_nWidgets;
-    Add (WidgetCheckbox, RectColumn (Band, 1, 3, nGutter), Str (StrReadOnly), StateNormal);
-    s_nMounted = (int) s_nWidgets;
-    Add (WidgetCheckbox, RectColumn (Band, 2, 3, nGutter), Str (StrMounted), StateNormal);
     LayoutSectionGapBottom (&Layout);
 
     // And the list takes what is left, which is the point of claiming both ends
@@ -377,16 +259,27 @@ void ChooserDraw (TSurface *pSurface, TChooser *pChooser)
         s_Items[i].pIcon  = EraIcon (pChooser->Volumes[i].System);
         s_Items[i].nState = StateNormal;
     }
-    s_nList = (int) s_nWidgets;
+    s_Columns[ColStartup  - 1].pHeader = Str (StrStartupDisk);
+    s_Columns[ColStartup  - 1].bRadio  = true;
+    s_Columns[ColReadOnly - 1].pHeader = Str (StrReadOnly);
+    s_Columns[ColReadOnly - 1].bRadio  = false;
+    s_Columns[ColMounted  - 1].pHeader = Str (StrMounted);
+    s_Columns[ColMounted  - 1].bRadio  = false;
+
+    s_nList = (int) s_Page.nCount;
     TWidget *pList = Add (WidgetList, LayoutRow (&Layout, LayoutRoom (&Layout)
                                                           - 2 * ThemeReach (pTheme,
                                                                             StateFocused),
                                                  StateFocused),
                           0, StateNormal);
-    pList->pItems  = s_Items;
-    pList->nItems  = pChooser->nCount;
-    pList->nChoice = pChooser->nCount == 0 ? -1
-                   : (pChooser->nStartup >= 0 ? pChooser->nStartup : 0);
+    pList->pItems   = s_Items;
+    pList->pColumns = s_Columns;
+    pList->nColumns = LIST_COLUMNS;
+    pList->nItems   = pChooser->nCount;
+    pList->nChoice  = pChooser->nCount == 0 ? -1
+                    : (pChooser->nStartup >= 0 ? pChooser->nStartup : 0);
+    // The keyboard starts on the name, where reading starts.
+    pList->nCell    = 0;
 
     ChooserSync (pChooser);
     ChooserRepaint (pSurface);
@@ -394,9 +287,5 @@ void ChooserDraw (TSurface *pSurface, TChooser *pChooser)
 
 void ChooserRepaint (TSurface *pSurface)
 {
-    TTheme Theme;
-    ThemeMake (ThemeScaleFor (pSurface->nWidth, pSurface->nHeight), &Theme);
-    Theme.DrawDesktop (pSurface, &Theme);
-    Theme.DrawDialog (pSurface, s_Dialog, &Theme);
-    WidgetDrawAll (pSurface, &Theme, s_Widgets, s_nWidgets);
+    PagePaint (pSurface, &s_Page);
 }

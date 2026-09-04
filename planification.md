@@ -143,6 +143,10 @@ l'amont fournit déjà ; il suffit de ne pas la casser.
   faisabilité d'un SheepShaver **utilisable** sur Pi est donc une question ouverte, à mesurer, pas à
   annoncer.
 
+Le premier de ces deux obstacles s'est révélé plus favorable qu'annoncé ici : voir **§19**, qui reprend la
+question au fichier près — carte mémoire, ROM, partage du code et préférences. Rien n'y est à faire
+maintenant ; la règle ci-dessus ne bouge pas.
+
 ### 3.4 Architecture cible
 
 ```
@@ -2158,36 +2162,53 @@ sans autre mécanisme.
       localisé l'écrit « F1-7.1.2 », qui ne se lit pas et dont le premier caractère n'est pas l'époque
 - [x] icônes de dossier monochromes System 6, System 7, Mac OS 8 et 9, choisies sur la version lue —
       le seul endroit du firmware où l'époque décide d'une apparence, le chrome n'en portant aucune
-- [x] disque de démarrage indépendant de la sélection courante : la ligne le porte par une pastille, et
-      une case sous la liste le désigne. Il place son `disk` en premier, l'ordre **étant** le réglage
-      (`disk.cpp:161`) — il n'y a pas d'autre endroit où l'écrire
-- [x] cases « lecture seule » (préfixe `*`) et « monté », sous la liste et non par ligne : elles portent
-      sur le volume choisi, comme le tableau de bord Démarrage le faisait. Le volume de démarrage ne peut
-      pas être démonté sous ses propres pieds, et un volume sans Système ne peut pas le devenir — les
-      cases le disent en grisant, pas en refusant quand on appuie
-- [ ] réglages derrière un bouton à glyphe : RAM, rafraîchissement, partage, nom du volume partagé,
-      audio et langue — **pas de date ni de fuseau**, l'horloge se règle dans Mac OS (§7.7)
-- [ ] audio en quatre états — coupé / HDMI / jack / USB — et non un booléen (`audio_circle.cpp:70`)
-- [ ] boutons Éteindre et Oublier la PRAM, plus Cmd-Option-P-R pendant la fenêtre de démarrage
-- [ ] volet d'informations : ROM et modèle retenus, carte, volumes, volume de démarrage, `modelid` et son
-      éventuel échec de détection, date de compilation, modèle de Pi, mode réellement accordé
-- [ ] marque `*` et action « Enregistrer et redémarrer » pour toute préférence non applicable à chaud
-- [ ] aucune résolution dans les réglages : sortie détectée, mode logique possédé par Moniteurs et la PRAM
-- [ ] aucun réseau tant qu'il n'existe pas un choix utile au-delà d'activé/désactivé
-- [ ] ne pas masquer une préférence cible parce que sa valeur est encore en dur ; planifier son branchement
+- [x] disque de démarrage, lecture seule (préfixe `*`) et montage : **trois colonnes de la liste**, avec
+      en-têtes, et non trois cases sous elle. Sous la liste il fallait lire une ligne, baisser les yeux et
+      faire confiance au fait que les cases parlaient encore d'elle ; dans la ligne elles *sont* sa
+      réponse, et la carte entière se lit d'un coup. Le disque de démarrage place son `disk` en premier,
+      l'ordre **étant** le réglage (`disk.cpp:161`) — il n'y a pas d'autre endroit où l'écrire
+- [x] ce qui est refusé l'est ligne par ligne : le volume de démarrage ne peut pas être démonté sous ses
+      propres pieds, un volume sans Système ne peut pas le devenir. Les cases le disent en grisant, pas
+      en refusant quand on appuie — et grisées par ligne, sans qu'il faille sélectionner pour le voir.
+      **Gauche et droite traversent les colonnes au clavier**, faute de quoi ce serait une chose que
+      seule la souris actionne
+- [x] réglages derrière un bouton à glyphe : RAM, rafraîchissement, partage, nom du volume partagé,
+      audio et langue — **pas de date ni de fuseau**, l'horloge se règle dans Mac OS (§7.7). La langue
+      s'applique immédiatement et la page est remise en page : ses libellés ne font pas deux fois la
+      même largeur
+- [x] audio en quatre états — coupé / HDMI / jack / USB — et non un booléen (`audio_circle.cpp:70`),
+      par la préférence `soundoutput`, `nosound` restant tenu en phase pour les fichiers venus d'ailleurs.
+      **L'USB n'existe que sur Pi 4 et Pi 5** (`lib/sound/Makefile:37`) : l'entrée est là et grisée sur un
+      Pi 3, une option qui disparaît d'une machine à l'autre se lisant comme une différence de version
+- [x] boutons Éteindre et Oublier la PRAM, plus Cmd-Option-P-R pendant la fenêtre de démarrage. Les deux
+      passent par une alerte de confirmation — un seul écran, `okapia_confirm.*`, que le dialogue de
+      réparation de 16i réutilisera : ils ne diffèrent que par leurs mots
+- [x] volet d'informations, **atteint depuis l'écran principal** et non derrière les réglages — une
+      machine qui ne démarre pas n'est pas une machine dont on veut chercher la raison à deux clics de
+      profondeur : ROM et modèle retenus, carte, volume de démarrage, `modelid` et son origine,
+      date de compilation, modèle de Pi, mode réellement accordé. Les volumes restent au sélecteur, qui
+      les montre déjà avec leur état ; les répéter ici serait deux vérités à tenir. **La taille de la ROM
+      est mesurée sur le fichier et non lue dans `ROMSize`** : ce volet tourne avant que le Macintosh
+      démarre, donc `ROMSize` y vaut zéro et l'afficher serait mentir sur la carte
+- [x] marque `*` et action « Enregistrer et redémarrer » pour toute préférence non applicable à chaud —
+      c'est-à-dire **la seule mémoire vive** : tout le reste est lu au démarrage du Macintosh, qui a lieu
+      chaque fois que l'on presse Démarrer. Le bouton change de libellé quand la marque est méritée, et la
+      note sous les contrôles s'allume au même moment plutôt que d'expliquer par avance
+- [x] aucune résolution dans les réglages : sortie détectée, mode logique possédé par Moniteurs et la PRAM
+- [x] aucun réseau tant qu'il n'existe pas un choix utile au-delà d'activé/désactivé
+- [x] ne pas masquer une préférence cible parce que sa valeur est encore en dur ; planifier son
+      branchement — ce que le son a fait : le réglage a été écrit *et* câblé dans `audio_circle.cpp`
 - [x] anglais et français par une table de chaînes du projet (`assets/strings.tsv`), langue persistée dans
       la préférence `language` ; et **chaque page est mesurée dans chaque langue**, ce qui est la raison de
       l'avoir fait avant le sélecteur
 - [x] écriture dans le seul `BasiliskII_Prefs`, qui reste la source de vérité. Les lignes `disk` sont
       **remplacées** et non modifiées : l'ordre est le réglage, donc il n'y a rien à modifier en place
 - [x] fond gris uni (~`#BCBCBC`) pendant environ deux secondes, clavier et souris pris avant le Mac ;
-      `Option` seule est reconnue
-- [x] **la fenêtre revient à chaque redémarrage depuis Mac OS**, et pas seulement à la mise sous tension :
-      un redémarrage est un reset du 68000, l'opcode de Basilisk est sur ce chemin, donc `CKernel::Run()`
-      démonte l'émulateur et redonne la parole au firmware. Sans cela le menu est atteignable une fois
-      par allumage et plus jamais. Voir AGENTS.md : tout ce qui se réservait « une fois par démarrage »
-      se réserve désormais une fois par *carte*
-- [ ] ouverture automatique si la configuration manque ou si aucun système n'est amorçable
+      `Option` seule est reconnue — reste à lui donner le sélecteur à ouvrir (16g)
+- [x] ouverture automatique si la configuration manque ou si aucun système n'est amorçable. L'inventaire
+      est donc lu **avant** la fenêtre et non à l'ouverture du sélecteur : il coûte un dixième de seconde
+      — il lit le bloc de répertoire principal de chaque image, pas son catalogue — et c'est lui qui décide
+      si la fenêtre est même la bonne chose à montrer
 
 **Ce que la phase 16 hérite, après nettoyage** — `src/firmware/` : surface et primitives antialiasées,
 fonte et son échelle de tailles, icônes peintes, thème avec ses métriques, composants avec leur test de
@@ -2694,11 +2715,74 @@ et écriture dans `BasiliskII_Prefs` par `SavePrefs()`.
   les deux volumes avec leur époque et leur version, choisir le second et démarrer écrit
   `disk /machd76.image` puis `disk /boot71.img`, et le noyau démarre bien sur 7.6.1.
 
-**16h — Réglages, informations, arrêt, oubli de la PRAM.** Le reste des écrans, une fois la mécanique
-éprouvée par le sélecteur.
+**16h — Réglages, informations, arrêt, oubli de la PRAM.**
+
+  **Fait le 2026-09-04.** Quatre écrans, et la mécanique du sélecteur n'a pas été recopiée quatre fois :
+  `okapia_page.*` tient la forme commune — dialogue centré, titre, filets, pied de page — et une seule
+  boucle d'événements les pilote tous, prenant sa page comme trois fonctions plutôt qu'en connaissant
+  aucune. Le sélecteur y a été reversé, ses vingt mesures servant de garde-fou au refactor.
+
+  Les écrans sont purs comme lui : on leur donne des valeurs, ils répondent des valeurs, et tout ce qui
+  sait à quoi ressemble un fichier de préférences est resté dans `okapia_firmware.cpp`. C'est ce qui rend
+  `tests/host/check_pages.cpp` possible — géométrie **et** comportement, dans les deux langues et aux deux
+  échelles, sans carte ni écran.
+
+  Un piège trouvé en le faisant, et qui valait les quinze mesures rouges qu'il a values : `Row()` ajoute
+  son étiquette *pendant* l'évaluation des arguments de `PageAdd()`, donc l'indice relevé à la ligne
+  précédente nommait l'étiquette et non le contrôle. Chaque menu répondait pour son voisin. Le rectangle
+  d'abord, l'indice ensuite, le composant en dernier.
+
+  **Trois corrections après essai, toutes des questions de lecture et non de code.**
+
+  **Une seule fenêtre pour les trois pages.** Le sélecteur, les réglages et les informations partagent
+  `PAGE_WIDTH × PAGE_HEIGHT` : trois dialogues de trois tailles se lisent comme trois programmes, alors
+  qu'un cadre dont le contenu change se lit comme des pages d'un seul. L'alerte est l'exception, et elle
+  la mérite en interrompant.
+
+  **Les trois réponses sont passées dans la ligne**, en colonnes avec en-têtes — disque de démarrage
+  (choix unique), lecture seule, montée — au lieu de trois cases sous la liste. Sous la liste, il fallait
+  lire une ligne, baisser les yeux, et faire confiance au fait que les cases parlaient encore de la ligne
+  qu'on venait de lire ; dans la ligne, elles *sont* sa réponse, et la carte entière se lit d'un coup —
+  y compris ce qui est refusé, puisqu'une case grisée l'est ligne par ligne. La liste sait donc porter des
+  colonnes (`TListColumn`, `TListItem::nCell`), et **gauche et droite les traversent au clavier**, faute
+  de quoi ce serait une chose que seule la souris actionne, alors que les trois contrôles remplacés
+  étaient atteignables par Tab.
+
+  **Les trois niveaux d'alerte du Macintosh sont revenus**, parce que ce sont une promesse sur les
+  conséquences et non une décoration : une note dit que quelque chose est arrivé, une attention dit que
+  cela peut coûter quelque chose, un arrêt dit que cela ne peut pas continuer — et répondre avec le
+  mauvais apprend à passer outre les trois. L'extinction est une note : le Macintosh n'a pas démarré,
+  rien n'est ouvert, rien ne peut être perdu, et un triangle là serait crier au loup. L'oubli de la PRAM
+  reste une attention. Les dessins sont les nôtres — la bulle, le triangle, l'octogone — et non l'artwork
+  d'Apple, §7.12 demandant que le chrome ne cite aucun système.
+
+  **Un seul trait pour les trois marques d'alerte.** Elles paraissent au même endroit, l'une après
+  l'autre, et un lecteur qui les voit se succéder voit le trait changer plutôt que la forme : le triangle
+  était au filet, la bulle un tiers plus épaisse. C'est désormais un seul nombre, entre les deux, pour
+  qu'elles ne puissent plus diverger. Les marques du pied de page sont une famille à part — plus petites,
+  jamais à côté de celles-ci — et gardent la leur.
+
+  **Le volet d'informations dit aussi de quoi Okapia est fait** : composants, licences et auteur, sous
+  leur propre filet. L'œuvre combinée n'est distribuable que sous la plus stricte des licences qu'elle
+  contient (§5), donc le volet leur doit une place — une machine qui ne dit rien de ce qui la compose est
+  une machine qui demande qu'on lui fasse confiance. Chaque ligne est recopiée du README et de
+  `scripts/fetch-fonts.sh`, où ces faits sont établis : **une licence écrite de mémoire est une licence
+  énoncée de travers.**
+
+  **Et l'alerte se dimensionne sur ce qu'elle dit**, en deux passes : c'est le seul écran autorisé à
+  choisir sa forme, puisqu'il interrompt. Le texte part du haut de la marque et court à côté d'elle, non
+  centré dans ce qui reste — centré, il tombait sous la marque et les deux se lisaient comme deux choses
+  au lieu d'une remarque et de sa marque.
+
+  **Et un artefact d'affichage qui disait quelque chose de juste** : au changement de page, un fragment du
+  bouton qu'on venait de cliquer restait à l'écran. Ce qui est sauvegardé sous le pointeur appartient à la
+  surface d'où il vient ; remplacer l'écran entier et laisser le prochain « cacher le pointeur » le
+  reposer, c'est estampiller un morceau de la page précédente sur la suivante — exactement là où l'œil
+  regarde déjà, puisque c'est là qu'est le pointeur. `GfxCursorForget()` l'oublie au lieu de le rendre.
 
 **16i — Le dialogue de réparation.** En dernier parce qu'il écrit dans le volume de l'utilisateur, et qu'il
-mérite que tout le reste soit sûr avant lui.
+mérite que tout le reste soit sûr avant lui. L'alerte de confirmation existe déjà (`okapia_confirm.*`) :
+il ne lui manque que ses mots, ses trois états et son décompte.
 
 - [ ] **dialogue de réparation du volume** : aujourd'hui `HfsRepair` scavenge en silence au démarrage.
       C'est ce qu'il faut pour un appareil, mais l'utilisateur doit pouvoir le voir et le refuser —
@@ -2859,10 +2943,12 @@ Ready
 ## 18. Après
 
 **Deuxième moteur : SheepShaver (PowerPC).** C'est l'extension la plus naturelle, puisque la couche
-plateforme est déjà partagée en amont (§3.5) : Mac OS 8.5 → 9.0.4, et tout le logiciel PowerPC. Deux
+plateforme est déjà partagée en amont (§3.5) : Mac OS 7.5.2 → 9.0.4, et tout le logiciel PowerPC. Deux
 préalables, dans cet ordre : régler le mappage mémoire à adresses fixes sous Circle, puis **mesurer**
 l'interpréteur PPC sur la carte. Si le résultat est inutilisable, la question devient celle du backend JIT
 AArch64 — c'est-à-dire un projet en soi, à ne pas ouvrir avant que Basilisk ne soit stable et mesuré.
+L'étude complète est en **§19** : elle montre que le mappage se règle avec deux lignes de préprocesseur, et
+que la mesure de l'interpréteur est la seule vraie porte.
 
 Ensuite : profils de machines multiples, gestionnaire d'amorçage (choix moteur + ROM + disque), Mini vMac
 pour System 1 → 7.5 en noir et blanc, accélération QuickDraw ciblée, presse-papiers partagé, AppleTalk, mode
@@ -2895,6 +2981,483 @@ La priorité reste :
 
 > **un Macintosh 68k bare-metal simple, stable, rapide et maintenable.**
 
+
+---
+
+## 19. SheepShaver — étude d'intégration (PowerPC)
+
+Étude faite le **2026-09-04** sur `external/macemu` tel qu'épinglé. Elle répond à trois questions : quelle
+ROM, comment partager le code avec l'adaptation Basilisk sans le dupliquer, et que faire des préférences.
+
+**Elle ne demande aucun travail immédiat.** §3.5 tient : ne rien implémenter pour SheepShaver tant que
+Basilisk n'est pas stable et mesuré, et aucune abstraction spéculative. Ce qui suit sert à ne pas fermer
+de portes, à savoir ce qu'il faudra mesurer le jour où la question s'ouvre, et à éviter de re-dériver tout
+cela une deuxième fois.
+
+### 19.1 Ce que SheepShaver émule, et jusqu'où
+
+Basilisk **remplace** le Toolbox : il charge une ROM 68k et en réécrit les entrées. SheepShaver fait
+l'inverse — il **exécute la vraie ROM PowerPC**, son *nanokernel* et l'émulateur 68k qu'elle contient, et
+se contente de la corriger là où elle parle au matériel. D'où une conséquence structurante : la ROM n'est
+pas une pièce interchangeable, c'est le système d'exploitation de bas niveau de la machine émulée.
+
+Les Systèmes explicitement rustinés, lus dans `SheepShaver/src/rsrc_patches.cpp` (chaque correctif porte en
+commentaire la liste des versions qu'il vise) : **7.5.2, 7.5.3 (dont Revision 2.2), 7.5.5, 7.6, 7.6.1, 8.0,
+8.1, 8.5, 8.6, 9.0**, et `NEWS` ajoute **9.0.4** (« Add support for MacOS 9.0.4 », instantané du
+2004-07-07). Au-delà de 9.0.4, rien : Mac OS 9.1+ n'est pas couvert.
+
+Deux modes de fonctionnement en amont, et un seul nous concerne :
+
+| Mode | Quand | Chez nous |
+|---|---|---|
+| natif (`!EMULATED_PPC`) | hôte PowerPC | sans objet |
+| **émulé (`EMULATED_PPC`)** | tout le reste | **le nôtre** |
+
+Le choix a une conséquence heureuse et souvent ignorée : **tout l'appareillage de signaux disparaît**. Les
+`sigaltstack`, la pile de secours, le trampoline `SIGUSR2`, le décodeur d'instructions hôte du gestionnaire
+`SIGSEGV` — tout l'avertissement en tête de `main_unix.cpp` (`:21-79`) — sont sous `#if !EMULATED_PPC`
+(`main_unix.cpp:646` pour l'installation des piles, `:1877` pour le gestionnaire). En mode émulé il ne
+reste qu'un gestionnaire `SIGSEGV`, et son rôle est réduit (§19.4).
+
+### 19.2 Le partage du code est déjà tranché en amont — il suffit de le lire
+
+§3.5 énonce le fait ; le voici précisé au fichier près. Dans `SheepShaver/src/Unix/`, **tout ce qui est un
+lien symbolique vers `BasiliskII/src/Unix/` est une couche plateforme partagée par les deux moteurs**, et
+la liste de ce qui n'en est pas un est courte :
+
+| Non partagé (propre à SheepShaver) | Partagé (lien vers BasiliskII) |
+|---|---|
+| `main_unix.cpp`, `video_x.cpp`, `user_strings_unix.cpp`, `sysdeps.h`, `paranoia.cpp`, `ppc_asm.S`, le GUI GTK | `prefs_unix.cpp`, `xpram_unix.cpp`, `timer_unix.cpp`, `sys_unix.cpp`, `extfs_unix.cpp`, `ether_unix.cpp`, `serial_unix.cpp`, `audio_oss_esd.cpp`, `posix_sem.cpp`, `vhd_unix.cpp`, `disk_sparsebundle.cpp`, `keycodes`, `tinyxml2` |
+
+Côté cœur, même chose : `adb.cpp`, `audio.cpp`, `timer.cpp`, `xpram.cpp`, `prefs.cpp`, `disk.cpp`,
+`cdrom.cpp`, `scsi.cpp`, `sony.cpp`, `extfs.cpp`, `slirp/`, `CrossPlatform/` et le répertoire `SDL/` entier
+sont des liens ; `main.cpp`, `emul_op.cpp`, `rom_patches.cpp`, `rsrc_patches.cpp`, `video.cpp`, `ether.cpp`,
+`serial.cpp`, `thunks.cpp`, `macos_util.cpp`, `name_registry.cpp`, `gfxaccel.cpp`, `user_strings.cpp` et
+`prefs_items.cpp` sont propres à SheepShaver.
+
+**La ligne de partage tombe donc sur quatre points seulement : `main`, `video`, `user_strings`,
+`sysdeps`.** Reporté sur nos 3 605 lignes de `src/circle/` :
+
+| Notre fichier | l. | Statut pour SheepShaver |
+|---|---|---|
+| `prefs_circle.cpp` | 266 | **tel quel** — `prefs.h` et `prefs.cpp` sont partagés ; seule la table `common_prefs_items[]` change, et elle est en amont |
+| `xpram_circle.cpp` | 137 | **tel quel** — `xpram.h`/`xpram.cpp` partagés ; reste à trouver le crochet périodique (§19.8) |
+| `timer_circle.cpp` | 137 | **tel quel** — `timer.h`/`timer.cpp` partagés |
+| `audio_circle.cpp` | 297 | **tel quel** — `audio.h`/`audio.cpp` partagés, mêmes points d'entrée |
+| `input_circle.cpp` | 315 | **tel quel** — `adb.h` est partagé. Amont noie clavier et souris dans `video_x.cpp` ; les avoir sortis dans un fichier à part nous les rend partagés d'office |
+| `extfs_sync_circle.cpp` | 48 | **tel quel** |
+| `hfs_volume_circle.cpp` (+`.h`) | 602 | **tel quel** — ne connaît que la carte et HFS, aucun moteur |
+| `trace_disk_circle.cpp` | 82 | **tel quel** — les symboles `Sys_read`/`Sys_write` enveloppés sont ceux de `sys_unix.cpp`, partagé |
+| `user_strings_circle.cpp` | 71 | **table à dupliquer** — `user_strings.h` diffère, les identifiants `STR_*` ne sont pas les mêmes |
+| `tick_circle.cpp` | 148 | **`#ifdef`** — les valeurs de `INTFLAG_*` diffèrent (`VIA`=1 chez l'un, `60HZ`=1 chez l'autre, `SERIAL` 2 contre 4…) et SheepShaver exige en plus `TriggerInterrupt()` |
+| `emul_op_hook_circle.cpp` | 95 | **à réécrire** — le crochet `--wrap=EmulOp` vise une fonction de signature différente ; le redémarrage passe par un autre chemin |
+| `main_circle.cpp` | 298 | **à dédoubler** — c'est `main_unix.cpp`, le fichier le plus spécifique des deux moteurs. Alertes et mutex `B2_*` restent communs |
+| `video_circle.cpp` | 715 | **à scinder** — voir ci-dessous |
+| `cpu_ticks_circle.cpp` | 52 | Basilisk seul (`cpu_do_check_ticks` est un crochet `uae_cpu`) |
+| `src/firmware/` | 7 546 | **tel quel** — pur par construction, aucun moteur n'y entre (AGENTS.md). Il apprend à afficher quel moteur va démarrer, et à laisser le trancher quand le volume ne le dit pas (§19.7), rien d'autre |
+
+**Le seul vrai travail d'architecture est la vidéo, et il est à faire de toute façon.**
+`SheepShaver/src/include/video.h` est un contrat différent : pas de `monitor_desc` ni de `video_mode`, mais
+une table `VModes[]`, un `screen_base` en espace Mac, et un pilote natif (`VideoDoDriverIO`,
+`video_mode_change`, `video_set_palette`, `VideoVBL`). Nos 715 lignes contiennent en réalité deux choses :
+le pilote côté Mac, et **le compositeur** — framebuffer de sortie, grille de 16×16, copie fantôme,
+`memcmp` par tuile, palette, mise à l'échelle entière. Le compositeur ne connaît aucun moteur. Le sortir
+dans un module neutre — à côté de `FwOutputClaim()`, qui détient déjà le framebuffer pour la vie de la
+carte — laisse de chaque côté un adaptateur mince. C'est ce que la phase 12 réclame déjà pour d'autres
+raisons, et SheepShaver **offre en prime** ce que Basilisk oblige à deviner : `video_set_dirty_area(x, y,
+w, h)` (`video.h:149`), c'est-à-dire les régions modifiées données par le moteur au lieu d'être scannées.
+
+**Deux règles de conception, dans la continuité de §3.5 :** garder les tests `#ifdef SHEEPSHAVER` là où
+l'amont en met (22 occurrences dans `SDL/video_sdl2.cpp` — c'est son modèle de partage, pas un accident) ;
+et ne jamais laisser une hypothèse de moteur entrer dans `src/firmware/`.
+
+### 19.3 Deux images noyau, pas deux moteurs dans une image
+
+**Vérifié, et c'est un fait dur :** `InitAll`, `ExitAll`, `EmulOp`, `PatchROM` et `Execute68k` sont définis
+dans les deux arbres (`BasiliskII/src/main.cpp` et `SheepShaver/src/main.cpp`, `emul_op.cpp` des deux
+côtés, `rom_patches.cpp` des deux côtés, `uae_cpu_2021/basilisk_glue.cpp` contre
+`kpx_cpu/sheepshaver_glue.cpp`). Les fichiers *partagés* eux-mêmes se compilent différemment selon
+`-DSHEEPSHAVER` tout en produisant les mêmes symboles. **Un binaire ne peut pas contenir les deux
+moteurs** — sauf à espacer de noms tout un cœur amont, ce que ce projet ne fera pas.
+
+Donc : **sources partagées, deux images**. `src/kernel/Makefile` devient paramétrable
+(`ENGINE=basilisk|sheepshaver`), avec deux répertoires d'objets distincts — les objets diffèrent même pour
+les fichiers communs, et un `obj/` partagé serait exactement le piège des en-têtes non suivies décrit dans
+AGENTS.md. Le budget de taille tient : le noyau actuel fait 2,1 Mo pour 4 Mo autorisés
+(`KERNEL_MAX_SIZE=0x400000`), et l'image SheepShaver perd `uae_cpu_2021` et ses tables générées pour gagner
+les 7 fichiers de `kpx_cpu` (§19.5).
+
+**Reste la bascule d'un moteur à l'autre**, qui est une question ouverte à trancher le moment venu :
+
+1. **Redémarrage complet.** `kernel8.img` est un petit chargeur — le firmware Okapia et rien d'autre — qui
+   lit le volume d'amorçage choisi, en déduit le moteur (§19.7), charge son image depuis la carte et
+   l'enchaîne. Circle sait le faire :
+   `EnableChainBoot(image, taille)` puis retour de `main()` (`circle/lib/chainboot.cpp:61`,
+   `lib/sysinit.cpp:401`). Le retour au menu depuis le Mac se fait par `reboot()`, que la carte relance en
+   une seconde. **Deux réserves à vérifier** : `EnableChainBoot` contient `#ifdef ARM_ALLOW_MULTI_CORE
+   assert (0)` (`chainboot.cpp:64`) — le chargeur devra donc rester monocœur, ce qu'il est ; et le tampon
+   contenant l'image doit être **au-dessus** de sa destination, `ChainBootStub` recopiant vers
+   `MEM_KERNEL_START` sans gérer le recouvrement.
+2. **`config.txt` réécrit puis `reboot()`.** Rejeté : une coupure de courant au mauvais moment rend la
+   carte non amorçable, ce qui contredit frontalement la règle de sûreté des données.
+3. **Une image par carte.** Rejeté : c'est renoncer à l'appliance.
+
+L'option 1 a un effet secondaire agréable — le firmware ne serait plus lié dans les images moteur, qui
+rétréciraient d'autant — et un coût réel : la fenêtre Option au démarrage et le retour de menu changent de
+place. À ne pas engager avant que la mesure du §19.5 soit faite.
+
+### 19.4 Mémoire : la contrainte qui fait mal partout ailleurs tombe en bare-metal
+
+C'est l'obstacle annoncé en §3.5, et il se révèle plus favorable que prévu.
+
+La carte mémoire *invité* exigée, en mode émulé (`cpu_emulation.h:30-39`, `main_unix.cpp:183-189`, et la
+séquence d'allocation `main_unix.cpp:1011-1140`) :
+
+| Zone | Adresse invité | Taille | Fixée par |
+|---|---|---|---|
+| Low Memory | `0x00000000` | 12 Ko | le Mac |
+| RAM | `RAM_BASE` = `0x10000000` | `ramsize` | **nous** (`main_unix.cpp:182-183`, « needs to be >= 0x04000000 ») |
+| ROM | `ROM_BASE` = `0x50000000` | 5 Mo (`ROM_AREA_SIZE`) | **nous** |
+| pile de signal | `ROM_BASE + 0x500000` | 64 Ko | suit la ROM |
+| `SheepMem` | `ROM_BASE + 0x510000` | 512 Ko (`thunks.h:122`) | suit la ROM |
+| Kernel Data | `0x68ffe000`, miroir `0x5fffe000` | 8 Ko | **la ROM** |
+
+Sous un système hôte, obtenir ces adresses-là exige `vm_acquire_fixed`, et c'est ce qui rend SheepShaver
+pénible à porter (macOS x86\_64 et Windows ont chacun dû inventer un contournement). En bare-metal la
+question ne se pose pas de la même façon : il n'y a pas d'espace d'adressage à disputer, il y a de la RAM
+physique à placer. Trois observations, dans l'ordre :
+
+1. **Deux de ces zones peuvent être sorties du mappage.** `vm.hpp:207-218` contient déjà un chemin
+   « bancarisé » : sous `__APPLE__ && __x86_64__` (ou `MEM_BULK`), `vm_do_get_real_address()` renvoie
+   `&gZeroPage[a]` pour `a < 0x3000` et `&gKernelData[a & 0x1fff]` pour les deux adresses de Kernel Data,
+   et le reste seulement passe par `VMBaseDiff + a`. Deux tableaux statiques, 20 Ko, et Low Memory comme
+   Kernel Data cessent d'être un problème d'adresses.
+2. **`VMBaseDiff` peut être une variable.** C'est déjà le cas sous `MEM_BULK` (`vm.hpp:192-197`,
+   `vm_alloc.cpp:186`), au lieu de la constante `NATMEM_OFFSET`.
+3. **`RAM_BASE` et `ROM_BASE` sont à nous** — ils sont déclarés dans `main_unix.cpp`, c'est-à-dire dans le
+   fichier que nous remplaçons. Les seules contraintes vérifiées sont `RAMBase >= 0x04000000`,
+   `RAMBase < ROMBase` et `RAMBase < KernelDataAddr` (`main_unix.cpp:1110` et `:1136`).
+
+**D'où l'approche recommandée** : garder `RAM_BASE = 0x10000000`, poser `ROM_BASE = RAM_BASE + ramsize`
+arrondi au mégaoctet, et allouer **un seul bloc contigu** de `ramsize + 5 Mo + 64 Ko + 512 Ko` — soit
+**261,6 Mo pour 256 Mo de RAM Mac**. C'est trait pour trait le modèle Basilisk (le bloc de 257 Mo alloué
+avant les pilotes, §7.1), avec `VMBaseDiff = hôte − RAM_BASE`. Aucune table de traduction à écrire, aucune
+adresse physique à réserver, et la règle « le gros bloc d'abord » s'applique inchangée.
+
+Le prix : **deux conditions de préprocesseur à ajouter en amont**, dans `vm.hpp` — la bancarisation et la
+variable `VMBaseDiff`. C'est-à-dire deux lignes, isolées, documentées, dans `patches/macemu/`, et de bons
+candidats à une remontée puisqu'elles généralisent un cas que l'amont a déjà écrit deux fois.
+
+**Le seul trou restant** est le gestionnaire `SIGSEGV` de `kpx_cpu/sheepshaver_glue.cpp:768-838`. Son rôle
+en mode émulé est étroit et entièrement listé : ignorer les écritures en ROM et en page zéro, et sauter
+une poignée d'accès matériels connus (`0xf3012000`/`0xf3012002` des pilotes série au démarrage de Mac OS 8,
+8.1 et 8.6 ; `0xf8000000` pendant l'installation de Mac OS 8 et 8.5). Deux réponses possibles, à choisir
+sur mesure : **mapper une page fantôme** aux plages concernées, ce que la MMU rend trivial et qui rend le
+défaut impossible plutôt que rattrapé ; ou **traiter le data abort** dans Circle, ce que AArch64 rend
+propre puisque `ESR_EL1` donne le registre de destination pour une bonne partie des accès. La première est
+plus simple et suffit probablement ; la seconde est celle qui ressemble à l'amont. À trancher devant le
+symptôme, pas avant.
+
+### 19.5 Le CPU : interpréteur seul — et c'est le seul risque qui compte
+
+`kpx_cpu` est le cœur PowerPC de SheepShaver. La liste des sources en mode interprété est exactement celle
+de `Unix/configure.ac:1580-1587` : `mathlib/ieeefp.cpp`, `mathlib/mathlib.cpp`, `cpu/ppc/ppc-cpu.cpp`,
+`ppc-decode.cpp`, `ppc-execute.cpp`, `ppc-translate.cpp`, `utils/utils-cpuinfo.cpp`, plus
+`sheepshaver_glue.cpp` et `ppc-dis.c` (`:1705`). Neuf fichiers, environ 12 500 lignes en tout — bien moins
+que `uae_cpu_2021` et ses tables générées.
+
+Ce qu'il faut savoir avant d'y toucher :
+
+- **Pas de backend AArch64, confirmé au fichier près.** `configure.ac:1595-1618` n'active `dyngen` que pour
+  `powerpc`, `x86_64`, `i?86` et `mips`. Sur Raspberry Pi, SheepShaver tourne donc **en interprété**.
+- **L'interpréteur n'a pas besoin d'un tas exécutable.** Il utilise un *cache de décodage*
+  (`PPC_DECODE_CACHE`, `ppc-cpu.cpp:619-700`) : des blocs d'instructions pré-décodées portant des pointeurs
+  de fonction membre, exécutés par une boucle déroulée. C'est de la donnée, pas du code généré. **`PXN=1`
+  n'est donc pas un obstacle ici**, contrairement au JIT 68k (§9 V3).
+- **Un fichier est généré à la compilation** : `ppc-execute-impl.cpp`, produit par `genexec.pl` à partir de
+  `ppc-decode.cpp` (`Unix/Makefile.in:269-270`). Perl entre dans les prérequis de build, au même titre que
+  `gencpu` pour Basilisk.
+- **Un harnais de validation existe** : `kpx_cpu/src/test/test-powerpc.cpp`, 69,5 Ko, indépendant de
+  SheepShaver. Il se compile sur l'hôte et sur la cible.
+- **Deux points de portabilité à regarder** : `utils-cpuinfo.cpp` est du `cpuid` x86 sous `#if
+  defined(__i386__) || defined(__x86_64__)` — inerte ailleurs, donc sans danger ; et `mathlib/ieeefp.cpp`
+  manipule l'environnement flottant, qu'il faudra confronter à newlib.
+- **`vm.hpp:27` ne déclare pas `VM_CAN_ACCESS_UNALIGNED` pour AArch64**, alors que la mémoire normale
+  d'AArch64 l'autorise : chaque lecture 32 bits invité passe donc par quatre lectures d'octets et un
+  assemblage. Une ligne à ajouter, à mesurer, et un bon candidat amont — mais **attention au type de
+  mémoire** : c'est vrai en *Normal*, pas en *Device*.
+
+**La performance est la question ouverte, et elle se tranche par la mesure, pas par l'argument.** Le seul
+chiffre publié en amont concerne le JIT x86 (« around 1/8-th of native speeds », `NEWS`, instantané du
+2004-06-09) ; il ne dit rien de l'interprété sur ARM. D'où la forme de la phase 19 ci-dessous : **mesurer
+avant d'écrire une ligne de glue Circle**, avec `test-powerpc.cpp` comme charge, sur l'hôte puis sur la
+carte. Un résultat inutilisable clôt la question proprement — et la rouvre sur un backend JIT AArch64,
+c'est-à-dire un projet en soi.
+
+### 19.6 ROM : ce que le code exige, et ce qu'il faut donc chercher
+
+**Exigences vérifiées** (`rom_patches.cpp`, `cpu_emulation.h:30-31`) :
+
+- **4 Mo exactement** (`ROM_SIZE = 0x400000`), ou un fichier `<CHRP-BOOT>` que `DecodeROM()` décompresse
+  vers 4 Mo — LZSS simple, ou format « parcels » (`prcl`) des ROM Mac OS 9.2.x (`rom_patches.cpp:148-199`).
+  C'est ce qui rend un fichier **« Mac OS ROM »** directement utilisable, sans extraction préalable.
+- La zone allouée est de **5 Mo** et non 4 : `PatchROM()` recopie le dernier mégaoctet à la frontière des
+  4 Mo pour l'émulateur 68k (`rom_patches.cpp:728`).
+- **Six ROM acceptées, identifiées par la chaîne du nanokernel à l'offset `0x30d064`**
+  (`rom_patches.cpp:682-694`) : `Boot TNT`, `Boot Alchemy`, `Boot Zanzibar`, `Boot Gazelle`,
+  `Boot Gossamer`, `NewWorld`. Toute autre valeur fait échouer `PatchROM()` — donc le démarrage.
+- **Une ROM NewWorld refuse Mac OS antérieur à 8.1**, explicitement : `OP_CHECK_SYSV`
+  (`emul_op.cpp:426-434`) lit la version du Système et l'invalide si `< 0x0801` ; `NEWS` le confirme
+  (« Properly fail to load MacOS < 8.1 with NewWorld ROMs »).
+- **Le contrôle Basilisk ne s'applique pas.** Le mot `0x067C` à l'offset 8 et la somme de contrôle de tête
+  (§7.11) sont des propriétés des ROM 68k ; côté PowerPC ces champs ne sont qu'affichés
+  (`rom_patches.cpp:674-678`), jamais vérifiés.
+
+**Conséquence directe pour la demande « 7.x, 8.1, 8.5, 9 » : une seule ROM ne couvre pas tout.**
+
+| Cible | ROM |
+|---|---|
+| Mac OS **8.1 → 9.0.4** | **ROM NewWorld** — un fichier `Mac OS ROM`. **C'est la recommandation principale** : c'est le chemin le plus exercé en amont, et il couvre 8.1, 8.5, 8.6, 9.0 et 9.0.4, soit tout ce qui a été demandé sauf 7.x |
+| Mac OS **7.5.2 → 8.x** | une ROM **Old World** 4 Mo, c'est-à-dire l'un des cinq autres types |
+
+La correspondance entre ces noms de nanokernel et les machines réelles (TNT, Gossamer et les autres) est de
+notoriété commune mais **n'est pas vérifiable dans ce dépôt** : ne pas l'écrire ici comme un fait établi
+(voir la mémoire « faits d'époque non vérifiables »). Ce qui est vérifiable, c'est le test lui-même, et il
+tient en une ligne sur un candidat décompressé :
+
+```
+dd if=rom.bin bs=1 skip=3199076 count=16 2>/dev/null | strings
+```
+
+**Deux conséquences pratiques :**
+
+- **`scripts/check-rom.py` doit apprendre les ROM PowerPC** : reconnaître 4 Mo ou `<CHRP-BOOT>`,
+  décompresser en mémoire, lire la chaîne à `0x30d064`, nommer le type et **annoncer la plage de Mac OS
+  qu'il autorise** — en particulier le refus de tout Système antérieur à 8.1 sur une NewWorld. C'est le
+  même service que rend aujourd'hui le contrôle « 32-bit clean » : dire non avant le démarrage plutôt
+  qu'après un écran noir.
+- **La ROM se choisit toute seule, comme le `modelid`.** Exactement comme `modelid` suit le Système
+  installé et non la ROM (§7.11), la ROM suit le moteur et la version du Système lue sur le volume
+  d'amorçage : une carte porte deux ROM et deux Systèmes sans que rien n'ait à être « synchronisé », et
+  sans profil à tenir à jour. Les garde-fous que cela demande sont au point suivant.
+
+### 19.7 Préférences : trois champs par image, dans le format d'amont
+
+**Deux révisions successives ont abouti ici, et c'est une mesure qui a tranché.** La première
+rédaction proposait un format TOML et des profils machine ; la deuxième les supprimait au motif que tout se
+déduit. Le sondage des volumes ci-dessous montre que **tout ne se déduit pas** : un Système gras est
+ambigu par nature, les deux moteurs peuvent le prendre, et ce choix-là doit être retenu quelque part.
+
+Donc **oui, il y a bien un enregistrement par image** — *quelle image, quel moteur, quelle ROM*. Mais il
+faut le nommer correctement : ce n'est pas un profil de machine, c'est un **cache de désambiguïsation**,
+les réponses données par l'utilisateur là où la règle automatique ne conclut pas. Trois champs, écrits par
+l'IHM, jetables : si l'image disparaît, la ligne ne vaut plus rien. **Un tel objet ne justifie pas un
+format** — il tient dans une clé multiple du format d'amont (voir plus bas).
+
+**Ce qui se déduit, et par quoi**
+
+- **`modelid`, `cpu`, `fpu`** — déjà automatiques. `CKernel::ApplyModelId()` (`kernel.cpp:510`) lit la
+  version du Système sur le volume d'amorçage via `HfsSystemVersion()` (`hfs_volume_circle.h:57`, la
+  ressource `vers` du fichier Système dans le dossier béni) et pose la valeur. Rien à changer.
+- **Le moteur** — déductible dans les cas qui comptent, **avec le lecteur qui existe déjà**. Les deux
+  moteurs annoncent leur couverture dans leurs correctifs de ressources : `BasiliskII/src/rsrc_patches.cpp`
+  ne nomme que 7.0.1 → **8.1**, `SheepShaver/src/rsrc_patches.cpp` va de 7.5.2 à **9.0**. D'où une règle
+  simple, tirée du dépôt et non de la mémoire : **à partir de 8.5, SheepShaver et lui seul** ; en dessous
+  de 7.5.2, Basilisk et lui seul ; entre les deux — 7.5.2 à 8.1 — les deux savent faire, et là seulement
+  **l'enregistrement tranche** — proposé par l'IHM, Basilisk en tête puisqu'il est le plus rapide et le
+  centre de gravité du projet.
+
+  **Pourquoi cette bande existe : le Système y est gras, et c'est mesuré sur nos propres images**
+  (2026-09-04, sondage `libhfs` en lecture seule des deux volumes de `qemu/sd-contents/`, en listant les
+  types de ressources du fichier Système du dossier béni).
+
+  | | 7.1 (`boot71.img`) | 7.6 (`machd76.image`) |
+  |---|---|---|
+  | types de ressources | 116 | 189 |
+  | 68k (`ptch`, `PTCH`, `lpch`, `boot`, `DRVR`) | oui | oui |
+  | **PowerPC natif** (`cfrg`, `nlib`, `ntrb`, `ndrv`, `ncmp`, `nsrd`) | **aucun** | `cfrg`×10, `nlib`×10, `ntrb`×8, `ndrv`×7 |
+  | enabler | `System Enabler 040` (`gbly`) dans le dossier Système | replié dans le Système |
+
+  Autrement dit : **à partir de 7.5, c'est un seul Système universel**, dont le fichier Système porte les
+  deux jeux de code — et ce volume 7.6 a été installé pour une machine 68k. Recoupement fort : SheepShaver
+  patche `ntrb` 17 en commentant « (7.6, 7.6.1, 8.0, 8.1) » (`rsrc_patches.cpp:136`), et la ressource est
+  bien là.
+
+  **Un System Enabler ne suffit pas, et ce n'est pas le même axe.** Un enabler (`gbly`) déclare une
+  *machine* à un Système donné ; il n'ajoute pas une architecture. Ce qui fait tourner du PowerPC, c'est le
+  Système gras d'un côté et **la ROM de l'autre** — sur un vrai Power Mac le runtime natif (`InterfaceLib`,
+  `StdCLib`, `MathLib`) vient de la ROM et non du dossier Extensions, ce que le volume 7.6 confirme en ne
+  les contenant pas. C'est exactement la pièce que le moteur apporte, et c'est pourquoi la matrice de
+  compatibilité réelle est **(version du Système × type de ROM)** et non la version seule.
+
+  **Ce qui reste non vérifié**, et qu'il ne faut pas présenter autrement : qu'un volume donné *démarre*
+  effectivement sous l'autre moteur. Un Système gras est une condition nécessaire, pas suffisante — une
+  installation faite pour du 68k peut n'avoir ni les extensions ni les pilotes du côté PowerPC. D'où la
+  règle de conception : le moteur déduit est **une proposition affichée**, pas un verdict.
+- **La ROM** — déductible de la paire (moteur, version du Système) et de ce que la carte porte réellement.
+  L'identification est certaine des deux côtés : 1 Mo, mot `0x067C` à l'offset 8 et somme de tête pour une
+  ROM 68k (§7.11) ; 4 Mo ou `<CHRP-BOOT>` et chaîne de nanokernel à `0x30d064` pour une ROM PowerPC
+  (§19.6), avec la contrainte NewWorld ⇒ Système ≥ 8.1.
+- **`ramsize`** — **globale**, et il n'y a rien à discuter : c'est la même clé, avec le même sens, dans les
+  deux moteurs. Deux détails d'amont à connaître côté SheepShaver : une valeur ≤ 1000 est lue en mégaoctets
+  et le plancher est 16 Mo (`SheepShaver/src/Unix/main_unix.cpp:1046-1053`).
+- **`disk`** — n'est plus vraiment une préférence : le sélecteur de la phase 16 énumère les volumes de la
+  carte et c'est lui qui choisit.
+
+**La détection automatique de ROM est-elle une mauvaise idée ?** Non — à trois conditions, et ce sont
+exactement celles que ce projet a déjà payées une fois (« un test qui choisit son sujet en devinant peut
+passer au vert sur le mauvais volume », AGENTS.md) :
+
+1. **ordre déterministe**, jamais l'ordre du répertoire — `HfsInventory()` rend les volumes dans l'ordre du
+   répertoire et c'est précisément ce qu'il ne faut pas reproduire ici ;
+2. **journalisée** — dire quelle ROM a été retenue et *pourquoi*, comme `ApplyModelId()` le fait déjà ;
+3. **surchargeable** — une clé dans le fichier gagne toujours, sur le modèle de `modelidauto false`.
+
+Sans ces trois conditions ce serait effectivement une mauvaise idée, et le cas n'est pas théorique : cette
+machine porte **deux** ROM Quadra aux noms voisins et aux origines différentes (§7.11).
+
+**Ce que l'IHM propose, et sur quoi elle se fonde**
+
+Le sélecteur de la phase 16 lit le volume et n'offre que ce qui est possible. Trois lectures, toutes
+faisables avec le code déjà écrit :
+
+1. **Le Système est-il gras ?** `FindResource()` (`hfs_volume_circle.cpp:360`) sait déjà parcourir la carte
+   des ressources d'un fichier ; un `HfsSystemFlavour()` à côté de `HfsSystemVersion()` répond en cherchant
+   deux types : un correctif 68k (`ptch`) et un fragment natif (`cfrg`). D'où trois issues **mécaniques**,
+   et non une règle de version :
+   - 68k seul → **Basilisk**, sans question ;
+   - natif seul → **SheepShaver**, sans question ;
+   - les deux → **la question est posée**, et la réponse est l'enregistrement.
+   La version du Système reste le repli quand la ressource n'est pas lisible.
+2. **Quelles ROM sont compatibles ?** Les deux classes s'identifient avec certitude — 1 Mo, mot `0x067C`,
+   somme de tête pour une 68k (§7.11) ; 4 Mo ou `<CHRP-BOOT>` et chaîne de nanokernel pour une PowerPC
+   (§19.6). L'IHM filtre : le moteur choisi fixe la classe, et **une ROM NewWorld disparaît de la liste
+   sous un Système antérieur à 8.1**, puisque le moteur la refuserait de toute façon
+   (`emul_op.cpp:426-434`). Une seule candidate → prise, et journalisée.
+3. **Le `modelid`** ne se demande jamais : il suit le Système, comme aujourd'hui.
+
+**Le format : une clé multiple, pas un nouveau format**
+
+Le format d'amont porte déjà des listes — `disk`, `cdrom`, `scsi0`… sont des `TYPE_STRING` avec
+`multiple = true`, et le parseur prend **tout ce qui suit le mot-clé** comme valeur
+(`prefs.cpp:405-413`), espaces compris, puis `write_prefs()` réécrit chaque occurrence
+(`prefs.cpp:455-456`). Une clé `machine` déclarée dans notre table suffit donc :
+
+```
+machine /machd76.image | basilisk | /okapia.rom
+machine /macos9.image | sheepshaver | /macosrom
+```
+
+Zéro parseur, zéro écrivain, aller-retour correct dans les deux noyaux puisque la clé est déclarée dans
+`platform_prefs_items[]`, qui est le même source des deux côtés. Le découpage sur `|` tient une trentaine
+de lignes et survit aux espaces dans les noms de fichiers, ce qu'un découpage sur l'espace ne ferait pas.
+
+**TOML est donc surdimensionné ici — et la raison n'est pas la taille de la bibliothèque.** Vérifié le
+2026-09-04 sur le wiki `toml-lang/toml` : les deux implémentations C listées, `cktan/tomlc17` (MIT, une
+paire `.c`/`.h`, malloc et stdio, sans autre dépendance) et `arp242/toml-c`, **ne font que lire**. Or
+l'IHM *écrit* les préférences. Une bibliothèque nous épargnerait donc la moitié lecture d'un problème que
+le format d'amont résout déjà en entier, et nous laisserait quand même écrire le sérialiseur — plus un
+sous-module épinglé, une licence, des règles de build et son comportement à vérifier sous newlib. §3.1
+tranche sans hésiter.
+
+**Ce qui ferait basculer**, et qu'il faut donc surveiller : le jour où l'enregistrement par image dépasse
+trois ou quatre champs plats, ou réclame de l'imbriqué, la clé multiple devient illisible et TOML devient
+le bon outil. Le critère à exiger de la bibliothèque, ce jour-là : fichier unique, licence permissive,
+allocation au démarrage seulement — et accepter d'écrire le sérialiseur, aucune des deux ne l'offre.
+
+**Ce qui reste par moteur : la PRAM**
+
+`xpram_circle.cpp:31` nomme aujourd'hui un fichier unique. Une PRAM écrite par un Mac 68k rendue à un
+PowerMac déplacerait le disque de démarrage — AGENTS.md documente déjà ce que coûte ce décalage. **Un
+fichier de PRAM par moteur**, et ce n'est pas un réglage mais une règle de sûreté.
+
+**Les deux points mécaniques qui rendent le fichier unique sûr**
+
+1. **`SavePrefs()` doit préserver les lignes qu'il ne reconnaît pas.** C'est le seul vrai piège du partage,
+   et il est silencieux : `write_prefs()` n'écrit que les mots-clés déclarés (`prefs.cpp:448-476`) et
+   `LoadPrefsFromStream()` jette les inconnus avec un avertissement (`:417-419`). Un noyau SheepShaver qui
+   enregistre un fichier écrit sous Basilisk **effacerait** `modelid`, `cpu` et `fpu`. Une trentaine de
+   lignes dans `prefs_circle.cpp` — relire le fichier, garder les lignes dont le mot-clé est inconnu, les
+   réécrire à la suite — règlent le cas génériquement, y compris pour un moteur qui n'existe pas encore.
+2. **Ce qui doit être éditable des deux côtés se déclare dans *notre* table.** `platform_prefs_items[]`
+   (`prefs_circle.cpp:51`) est le même source dans les deux noyaux, et `find_prefs_desc()` regarde
+   `common_prefs_items` puis la nôtre (`prefs.cpp:220-225`). Corollaire à ne pas rater : **ne pas y
+   redéclarer une clé qui existe déjà dans la table commune d'un moteur**, sinon `write_prefs()` l'écrit
+   deux fois dans ce noyau-là.
+
+Reste la seule collision de sens réelle, `rom` — 1 Mo côté 68k, 4 Mo côté PowerPC. Elle disparaît avec la
+clé `machine` : ce qui est persisté est notre enregistrement, et `PrefsReplaceString("rom", …)` est posée
+juste avant le démarrage du moteur, ce que `main_circle.cpp` fait déjà pour d'autres valeurs.
+
+### 19.8 Ce qui ne bouge pas — et c'est le plus long à avoir été gagné
+
+**Toute la couche de stockage est partagée.** `disk.cpp`, `sony.cpp`, `cdrom.cpp`, `scsi.cpp`, `extfs.cpp`
+et `sys_unix.cpp` sont des liens symboliques : le chemin d'écriture du Mac vers la carte est **le même
+code**, et les garanties de la section « Data safety » d'AGENTS.md — écriture directe sans cache
+d'écriture, secteurs complets, `--wrap=Sys_write` pour compter — s'appliquent inchangées. Le travail le
+plus long de ce projet se transporte gratuitement.
+
+Idem pour ce qui n'est pas encore écrit : `ether_unix.cpp` et `serial_unix.cpp` sont partagés, donc un
+`ether_circle.cpp` écrit pour la phase 13 servira les deux moteurs sans retouche.
+
+**Un point à identifier, en revanche** : la PRAM est écrite depuis `VideoInterrupt()` parce que c'est le
+seul appel périodique tournant dans le fil 68k, où bloquer sur la carte SD est permis (AGENTS.md). Amont
+utilise pour cela un fil `nvram_thread` que nous ne pouvons pas reprendre. Il faudra son équivalent côté
+SheepShaver — `VideoVBL()` est le candidat naturel — et la **contrainte est la même** : jamais depuis le
+gestionnaire de tick, jamais au niveau IRQ.
+
+### 19.9 Phases
+
+Elles viennent **après** M13, et la première est une porte : elle peut fermer les suivantes.
+
+#### Phase 19 — Mesurer l'interpréteur PowerPC (porte)
+
+- [ ] compiler `kpx_cpu` en interprété pour AArch64, hors Circle, sur l'hôte ; faire tourner
+      `test-powerpc.cpp` et exiger un passage propre
+- [ ] même chose sur la carte, en bare-metal minimal : pas de glue SheepShaver, une boucle et un compteur
+- [ ] mesurer les MIPS PowerPC obtenus, avec et sans `VM_CAN_ACCESS_UNALIGNED`
+- [ ] rapporter le résultat à ce qu'exige Mac OS 8.6 / 9 et **décider** : continuer, ou clore et rouvrir la
+      question sur le JIT AArch64
+
+#### Phase 20 — Mémoire, ROM, nanokernel
+
+- [ ] `main_circle.cpp` variante SheepShaver : un bloc contigu, `RAM_BASE`/`ROM_BASE` choisis, `VMBaseDiff`
+- [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification
+- [ ] `check-rom.py` étendu ; chargement d'une ROM `<CHRP-BOOT>`
+- [ ] `PatchROM()` passe, le nanokernel démarre — jalon : quelque chose s'affiche
+
+#### Phase 21 — La couche plateforme sert les deux moteurs
+
+- [ ] compositeur extrait de `video_circle.cpp` dans un module neutre ; adaptateur par moteur
+- [ ] `video_set_dirty_area()` branché sur les tuiles
+- [ ] tick, entrées, son, PRAM, préférences : tables et `#ifdef`, rien de neuf
+- [ ] Finder de Mac OS 9 atteint
+
+#### Phase 22 — Deux images et le choix du moteur
+
+- [ ] `Makefile` paramétré par `ENGINE`, deux répertoires d'objets, deux images
+- [ ] bascule par chargeur et `EnableChainBoot`, retour au menu par `reboot()`
+- [ ] le firmware annonce le moteur déduit du volume, et le laisse trancher dans la bande 7.5.2 → 8.1
+
+Les deux corrections de préférences (§19.7) **ne dépendent d'aucune de ces phases** et valent d'être faites
+tout de suite : la préservation des lignes inconnues par `SavePrefs()` est un correctif de sûreté qui n'a
+rien à voir avec SheepShaver, et la détection automatique de la ROM est le prolongement direct de
+`ApplyModelId()`, déjà écrit.
+
+### 19.10 Risques et questions ouvertes
+
+| | Risque | Ce qui le lève |
+|---|---|---|
+| **1** | **La vitesse de l'interprété PowerPC.** C'est le risque dominant, et le seul qui puisse tout arrêter | phase 19, avant toute glue |
+| 2 | Le gestionnaire `SIGSEGV` réduit n'a pas d'équivalent Circle immédiat | page fantôme ou data abort, §19.4 |
+| 3 | `mathlib/ieeefp.cpp` face à newlib | compilation, puis `test-powerpc.cpp` |
+| 4 | Bascule de moteur : `EnableChainBoot` est incompatible avec `ARM_ALLOW_MULTI_CORE` et ne gère pas le recouvrement | chargeur monocœur, tampon en mémoire haute |
+| 5 | La correspondance nanokernel ↔ machine réelle n'est pas vérifiable ici | la chaîne à `0x30d064`, sur une ROM en main |
+| 6 | Mac OS 9 sur 256 Mo, avec le disque virtuel désactivé par l'amont (`rsrc_patches.cpp:212-233`) | mesure, une fois le Finder atteint |
+
+**Ce qui n'est pas un risque, et qu'il ne faut pas re-craindre** : les adresses fixes (§19.4), le tas non
+exécutable (l'interpréteur n'en a pas besoin), la duplication de la couche plateforme (l'amont l'a déjà
+partagée), et la sûreté des données (même code de stockage).
 
 ---
 

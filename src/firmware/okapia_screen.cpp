@@ -7,9 +7,9 @@
 
 #include "okapia_screen.h"
 
-static TScreenReply Reply (TScreenResult Result, int nIndex)
+static TScreenReply Reply (TScreenResult Result, int nIndex, unsigned nCell = 0)
 {
-    TScreenReply r = { Result, nIndex };
+    TScreenReply r = { Result, nIndex, nCell };
     return r;
 }
 
@@ -703,6 +703,28 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
             return Reply (ScreenChanged, -1);
         }
 
+    case OkKeyLeft:
+    case OkKeyRight:
+        // Across the columns of a list, and nowhere else — a field's caret is
+        // handled before this, inside the field. Without it a list of tick
+        // boxes would be a thing only a mouse can operate, and the three
+        // controls this replaced were reachable by Tab.
+        if (nFocused >= 0 && p->Type == WidgetList && p->nColumns != 0)
+        {
+            const int nWas = (int) p->nCell;
+            int nNow = nWas + (pEvent->nKey == OkKeyRight ? +1 : -1);
+            if (nNow < 0) nNow = 0;
+            if (nNow > (int) p->nColumns) nNow = (int) p->nColumns;
+            if (nNow == nWas)
+            {
+                return Reply (ScreenIdle, -1);
+            }
+            p->nCell = (unsigned) nNow;
+            ScreenTouch (pScreen, nFocused);
+            return Reply (ScreenChanged, -1);
+        }
+        return Reply (ScreenIdle, -1);
+
     case OkKeyUp:
     case OkKeyDown:
     case OkKeyPageUp:
@@ -742,6 +764,18 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
         {
             MenuOpen (pScreen, nFocused);
             return Reply (ScreenChanged, -1);
+        }
+        // A list's mark, when the keyboard is standing on one. The screen above
+        // is told which, and does the same thing it does for a click on it.
+        if (p != 0 && p->Type == WidgetList && p->nCell != 0 && p->nChoice >= 0)
+        {
+            const TListItem *pItem = &p->pItems[p->nChoice];
+            if (pItem->nCell[p->nCell - 1] & StateDisabled)
+            {
+                return Reply (ScreenIdle, -1);
+            }
+            ScreenTouch (pScreen, nFocused);
+            return Reply (ScreenActivated, nFocused, p->nCell);
         }
         ScreenOperate (pScreen, pScreen->nFocus);
         return Reply (ScreenActivated, pScreen->nFocus);
@@ -858,9 +892,30 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
                     pScreen->nPressed = nHit;
                     return Reply (ScreenChanged, -1);
                 }
-                ListChoose (pScreen, nHit,
-                            WidgetListItemAt (&pScreen->pWidgets[nHit], pScreen->pTheme,
-                                              pEvent->nX, pEvent->nY));
+                TWidget *pList = &pScreen->pWidgets[nHit];
+                const int nItem = WidgetListItemAt (pList, pScreen->pTheme,
+                                                    pEvent->nX, pEvent->nY);
+                ListChoose (pScreen, nHit, nItem);
+
+                // A click on one of the marks operates it, and puts the
+                // keyboard on the column it landed in — so a hand that starts
+                // on the mouse and carries on with the keys carries on where it
+                // was, rather than back at the beginning of the row.
+                const unsigned nCol = WidgetListColumnAt (pList, pScreen->pTheme,
+                                                          pEvent->nX);
+                if (nCol != 0 && nItem >= 0)
+                {
+                    pList->nCell = nCol;
+                    ScreenTouch (pScreen, nHit);
+                    if (pList->pItems[nItem].nCell[nCol - 1] & StateDisabled)
+                    {
+                        pScreen->nPressed = -1;
+                        return Reply (ScreenChanged, -1);
+                    }
+                    pScreen->nPressed = -1;
+                    return Reply (ScreenActivated, nHit, nCol);
+                }
+                pList->nCell = 0;
             }
             // A click on a pop-up opens its menu, which then has every event
             // until it is done with.

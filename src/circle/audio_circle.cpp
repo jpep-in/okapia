@@ -19,8 +19,13 @@
 
 #include "sysdeps.h"
 #include "okapia_circle.h"
+#include <circle/sound/hdmisoundbasedevice.h>
 #include <circle/sound/pwmsoundbasedevice.h>
+#if RASPPI >= 4
+#include <circle/sound/usbsoundbasedevice.h>
+#endif
 #include <circle/interrupt.h>
+#include <string.h>
 
 #include "cpu_emulation.h"
 #include "main.h"
@@ -36,7 +41,7 @@ static const unsigned SAMPLE_RATE  = 44100;
 static const unsigned FRAMES_BLOCK = 1024;      // per Mac block
 static const unsigned QUEUE_MSECS  = 100;
 
-static CPWMSoundBaseDevice *s_pSound;
+static CSoundBaseDevice *s_pSound;
 static bool     s_bOpen;
 static unsigned s_nBlocks;
 static unsigned s_nUnderruns;
@@ -60,20 +65,57 @@ void AudioInit (void)
     audio_open             = false;
     audio_frames_per_block = FRAMES_BLOCK;
 
-    if (PrefsFindBool ("nosound"))
+    // Where it comes out, and not merely whether. The jack used to be hard-coded
+    // here, which a Pi 5 does not have and which is the wrong socket on a
+    // television — so the firmware offers four states and this reads the one it
+    // wrote. An unknown value is silence, deliberately: a device claimed and
+    // not working is what froze the guest once already, and cost a card.
+    const char *pWhere = PrefsFindString ("soundoutput");
+    if (pWhere == 0)
+    {
+        // A card written before this setting existed still says what it wants.
+        pWhere = PrefsFindBool ("nosound") ? "off" : "jack";
+    }
+
+    // nosound wins wherever the two disagree, which they only can on a card
+    // edited by hand: the quieter reading of a contradiction is the safe one.
+    if (strcmp (pWhere, "off") == 0 || PrefsFindBool ("nosound"))
     {
         CLogger::Get ()->Write (FROM, LogNotice, "Sound disabled by preference");
         return;
     }
 
     // A failure here must not stop the Mac from booting (AGENTS.md): warn and
-    // carry on silent.
-    s_pSound = new CPWMSoundBaseDevice (CInterruptSystem::Get (), SAMPLE_RATE);
+    // carry on silent. Every one of these is checked with Start() and
+    // IsActive() below, so a socket the board does not have leaves the Mac
+    // silent rather than waiting for a completion that never comes.
+    if (strcmp (pWhere, "hdmi") == 0)
+    {
+        s_pSound = new CHDMISoundBaseDevice (CInterruptSystem::Get (), SAMPLE_RATE);
+    }
+    else if (strcmp (pWhere, "usb") == 0)
+    {
+#if RASPPI >= 4
+        s_pSound = new CUSBSoundBaseDevice (SAMPLE_RATE);
+#else
+        // Circle builds USB audio for a Pi 4 and a Pi 5 only
+        // (lib/sound/Makefile:37). Say so and stay silent rather than reach for
+        // a socket this board's stack cannot drive.
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "USB sound needs a Pi 4 or 5; staying silent");
+        return;
+#endif
+    }
+    else
+    {
+        s_pSound = new CPWMSoundBaseDevice (CInterruptSystem::Get (), SAMPLE_RATE);
+    }
     if (s_pSound == 0)
     {
         CLogger::Get ()->Write (FROM, LogWarning, "No sound device; staying silent");
         return;
     }
+    CLogger::Get ()->Write (FROM, LogNotice, "Sound output: %s", pWhere);
 
     s_pSound->SetWriteFormat (SoundFormatSigned16, 2);
     if (!s_pSound->AllocateQueue (QUEUE_MSECS))

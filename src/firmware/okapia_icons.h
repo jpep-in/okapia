@@ -28,11 +28,34 @@ void OkapiaPaintSettings (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor)
 void OkapiaPaintPram (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 void OkapiaPaintPower (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 
-// The mark an alert wears. A triangle and an exclamation, which is what has
-// said "read this before you answer" since long before the Macintosh — and the
-// one icon of the chrome that has to be legible at a glance, since an alert is
-// read in the second before someone clicks past it.
+// A circled letter, for the pane that says what Okapia found. Its "i" comes
+// from the typeface for the same reason the caution mark's exclamation does:
+// a letter drawn with rectangles is a letter that stops looking like one as
+// soon as the interface is scaled.
+void OkapiaPaintInfo (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+
+/*
+ *  The three marks an alert may wear
+ *
+ *  The Macintosh had three levels and they are worth keeping, because they are
+ *  a promise about consequences and not a decoration: a note says something
+ *  happened, a caution says this may cost you something, a stop says it cannot
+ *  go on. Answering with the wrong one teaches people to click past all three.
+ *
+ *  The drawings are ours. Apple's note was a face in profile beside a speech
+ *  balloon and its stop a raised hand in an octagon; §7.12 says the chrome
+ *  quotes no system, so what is kept is the shape that carries the meaning —
+ *  the balloon, the triangle, the octagon — and not the artwork.
+ */
+void OkapiaPaintNote (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+
+// A triangle and an exclamation, which is what has said "read this before you
+// answer" since long before the Macintosh — and the one mark that has to be
+// legible at a glance, since an alert is read in the second before someone
+// clicks past it.
 void OkapiaPaintCaution (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+
+void OkapiaPaintStop (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 
 // Content icons: the era belongs to these, not to the chrome around them.
 extern const TGlyphImage OkapiaIconSystem6;

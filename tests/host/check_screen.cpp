@@ -55,13 +55,13 @@ static TTheme s_Theme;
 // entirely proves nothing about the one the chooser will show.
 static const TListItem s_Items[] =
 {
-    { "Système 7.1.2",   0, StateNormal   },
-    { "Mac OS 8.1",      0, StateNormal   },
-    { "Système 6.0.8",   0, StateNormal   },
-    { "Mac OS 9.1",      0, StateNormal   },
-    { "Sauvegarde",      0, StateNormal   },
-    { "Données",         0, StateDisabled },
-    { "Travaux",         0, StateNormal   }
+    { "Système 7.1.2",   0, StateNormal, {0} },
+    { "Mac OS 8.1",      0, StateNormal, {0} },
+    { "Système 6.0.8",   0, StateNormal, {0} },
+    { "Mac OS 9.1",      0, StateNormal, {0} },
+    { "Sauvegarde",      0, StateNormal, {0} },
+    { "Données",         0, StateDisabled, {0} },
+    { "Travaux",         0, StateNormal, {0} }
 };
 static const unsigned ITEMS = sizeof s_Items / sizeof s_Items[0];
 static const unsigned VISIBLE = 3;
@@ -72,10 +72,10 @@ static char s_Edit[16];
 // the refusal are exercised.
 static const TListItem s_Rates[] =
 {
-    { "Dynamique",   0, StateNormal   },
-    { "60 images/s", 0, StateNormal   },
-    { "30 images/s", 0, StateDisabled },
-    { "15 images/s", 0, StateNormal   }
+    { "Dynamique",   0, StateNormal, {0} },
+    { "60 images/s", 0, StateNormal, {0} },
+    { "30 images/s", 0, StateDisabled, {0} },
+    { "15 images/s", 0, StateNormal, {0} }
 };
 
 static void Build (TWidget *pW)

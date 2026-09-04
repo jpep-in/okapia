@@ -50,3 +50,36 @@ TLanguage StringsFromCode (const char *pCode)
     }
     return (TLanguage) 0;
 }
+
+unsigned StrAppend (char *pOut, unsigned nSize, unsigned nAt, const char *pWhat)
+{
+    if (pWhat == 0)
+    {
+        return nAt;
+    }
+    while (*pWhat != '\0' && nAt + 1 < nSize)
+    {
+        pOut[nAt++] = *pWhat++;
+    }
+    pOut[nAt] = '\0';
+    return nAt;
+}
+
+unsigned StrAppendNumber (char *pOut, unsigned nSize, unsigned nAt, unsigned long nValue)
+{
+    char Digits[12];
+    unsigned n = 0;
+    do
+    {
+        Digits[n++] = (char) ('0' + (nValue % 10));
+        nValue /= 10;
+    }
+    while (nValue != 0 && n < sizeof Digits);
+
+    while (n-- > 0 && nAt + 1 < nSize)
+    {
+        pOut[nAt++] = Digits[n];
+    }
+    pOut[nAt] = '\0';
+    return nAt;
+}

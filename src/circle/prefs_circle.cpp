@@ -55,6 +55,11 @@ prefs_desc platform_prefs_items[] = {
 	{"hfsrepair", TYPE_BOOLEAN, false, "scavenge a volume left in use by an interrupted session"},
 	{"hfsinventory", TYPE_BOOLEAN, false, "list the HFS volumes found on the card at startup"},
 	{"language", TYPE_STRING, false, "the boot firmware's language: a two-letter code, en or fr"},
+	// Four states and not a boolean: audio_circle.cpp used to hard-code the
+	// jack, which a Pi 5 does not have and which is the wrong socket on a
+	// television. "off" is the value an unreadable one falls back to, because a
+	// device claimed and not working is what froze the guest once already.
+	{"soundoutput", TYPE_STRING, false, "where sound comes out: off, hdmi, jack or usb"},
 	// Declared, not endorsed: rsrc_patches.cpp acts on it, but the patched idle
 	// loop has never been measured here. Declaring it keeps the parser from
 	// rejecting a prefs file brought over from a desktop Basilisk II.

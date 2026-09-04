@@ -321,6 +321,19 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   `CKeyboardBehaviour`. Doing that to "give the keyboard back" after the firmware's window stopped the
   kernel dead — no further log at all, and the Macintosh never started. There is nothing to give back:
   Circle keeps one raw handler, so `InputInit()` replacing it in `StartMacintosh()` *is* the handover.
+- **An argument is evaluated before the call it is an argument to**, and a screen that records "the
+  index the next component will have" on the line above is recording the wrong one as soon as the
+  rectangle it passes adds a component of its own. `Row()` in `okapia_settings.cpp` places a label and
+  answers the space left for the control, so `s_nMemory = nCount; PageAdd (..., Row (...), ...)` named
+  the *label*: every menu on the page then answered for its neighbour, and fifteen measurements went red
+  at once with nothing in the layout to see. **The rectangle first, the index second, the component
+  last.**
+- **The firmware's screens are pure, and that is what makes them measurable.** A screen is handed values
+  and answers values; everything that knows what a preferences file, an HFS volume or a frame buffer
+  looks like stays in `src/firmware/circle/`. `tests/host/check_pages.cpp` and `check_chooser.cpp` then
+  drive them with synthetic events on this machine — geometry in every language at every scale, and
+  behaviour — with no card, no emulator and no screen. Adding a screen that reads a preference directly
+  would end that, so don't.
 - **The Macintosh goes round more than once, so "once per boot" is not "once per start".** A restart
   from Mac OS re-enters the ROM's reset path, where Basilisk's own `M68K_EMUL_OP_RESET` sits
   (`rom_patches.cpp:1069`, handler at `emul_op.cpp:87`), so `CKernel::Run()` unwinds the emulator and

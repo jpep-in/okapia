@@ -26,6 +26,9 @@ void WidgetClear (TWidget *pWidget)
     pWidget->nEditSize = 0;
     pWidget->nCaret    = 0;
     pWidget->nAnchor   = 0;
+    pWidget->pColumns  = 0;
+    pWidget->nColumns  = 0;
+    pWidget->nCell     = 0;
 }
 
 /*
@@ -45,10 +48,55 @@ static unsigned RowHeight (const TWidget *pWidget, const TTheme *pTheme)
     return pWidget->Type == WidgetMenu ? pTheme->M.nMenuRow : pTheme->M.nRowHeight;
 }
 
+// A column is as wide as its heading or its mark, whichever is the broader, with
+// a gutter on each side. Measured rather than chosen, because these headings are
+// translated and French runs longer than English almost everywhere.
+static unsigned ColumnWidth (const TTheme *pTheme, const TListColumn *pColumn)
+{
+    const unsigned nText = pColumn->pHeader != 0
+                         ? GfxTextWidth (pTheme->pBodyFont, pColumn->pHeader) : 0;
+    const unsigned nWide = nText > pTheme->M.nCheckSize ? nText : pTheme->M.nCheckSize;
+    return nWide + 2 * pTheme->M.nGap;
+}
+
+static unsigned ColumnsWidth (const TWidget *pWidget, const TTheme *pTheme)
+{
+    unsigned n = 0;
+    for (unsigned i = 0; i < pWidget->nColumns; i++)
+    {
+        n += ColumnWidth (pTheme, &pWidget->pColumns[i]);
+    }
+    return n;
+}
+
+// The heading band, and a rule's worth of air under it.
+static unsigned HeaderHeight (const TWidget *pWidget, const TTheme *pTheme)
+{
+    return pWidget->nColumns == 0 ? 0 : pTheme->M.nLineHeight + pTheme->M.nStroke;
+}
+
+// The band of column headings inside the frame, empty when there are none. The
+// rows start under it, which is why every other measurement goes through here.
+static TRect WidgetListHeader (const TWidget *pWidget, const TTheme *pTheme)
+{
+    const unsigned nHigh = HeaderHeight (pWidget, pTheme);
+    if (nHigh == 0)
+    {
+        return Rect (0, 0, 0, 0);
+    }
+    const TRect Inner = ListInner (pWidget);
+    return Rect (Inner.nX, Inner.nY, Inner.nWidth, nHigh);
+}
+
 unsigned WidgetListVisible (const TWidget *pWidget, const TTheme *pTheme)
 {
     const unsigned nRow = RowHeight (pWidget, pTheme);
-    return nRow == 0 ? 0 : ListInner (pWidget).nHeight / nRow;
+    if (nRow == 0)
+    {
+        return 0;
+    }
+    const unsigned nHigh = ListInner (pWidget).nHeight - HeaderHeight (pWidget, pTheme);
+    return nHigh / nRow;
 }
 
 TRect WidgetListScroller (const TWidget *pWidget, const TTheme *pTheme)
@@ -60,19 +108,68 @@ TRect WidgetListScroller (const TWidget *pWidget, const TTheme *pTheme)
     }
     const TRect Inner = ListInner (pWidget);
     const unsigned nBar = pTheme->M.nScrollbarWidth;
-    return Rect (Inner.nX + (int) Inner.nWidth - (int) nBar, Inner.nY, nBar, Inner.nHeight);
+    // Beside the rows and not beside the headings: a scroller that reached up
+    // into the heading band would be scrolling the column names too.
+    const unsigned nHead = HeaderHeight (pWidget, pTheme);
+    return Rect (Inner.nX + (int) Inner.nWidth - (int) nBar, Inner.nY + (int) nHead,
+                 nBar, Inner.nHeight - nHead);
 }
 
-// What the rows may use, once the scroller has taken its column.
+// What the rows may use, once the heading band and the scroller have taken
+// theirs.
 static TRect ListRows (const TWidget *pWidget, const TTheme *pTheme)
 {
     TRect Inner = ListInner (pWidget);
+    const unsigned nHead = HeaderHeight (pWidget, pTheme);
+    Inner = Rect (Inner.nX, Inner.nY + (int) nHead, Inner.nWidth, Inner.nHeight - nHead);
     const TRect Bar = WidgetListScroller (pWidget, pTheme);
     if (Bar.nWidth != 0)
     {
         Inner.nWidth -= Bar.nWidth;
     }
     return Inner;
+}
+
+// The left edge of column nColumn (1-based), inside the row band.
+static int ColumnLeft (const TWidget *pWidget, const TTheme *pTheme, unsigned nColumn)
+{
+    const TRect Rows = ListRows (pWidget, pTheme);
+    int nX = Rows.nX + (int) Rows.nWidth - (int) ColumnsWidth (pWidget, pTheme);
+    for (unsigned i = 0; i + 1 < nColumn; i++)
+    {
+        nX += (int) ColumnWidth (pTheme, &pWidget->pColumns[i]);
+    }
+    return nX;
+}
+
+unsigned WidgetListColumnAt (const TWidget *pWidget, const TTheme *pTheme, int nX)
+{
+    for (unsigned i = pWidget->nColumns; i >= 1; i--)
+    {
+        if (nX >= ColumnLeft (pWidget, pTheme, i))
+        {
+            return i;
+        }
+    }
+    return 0;
+}
+
+// Where one cell is drawn. nItem is an index into the items, not a row on the
+// screen.
+static TRect WidgetListCell (const TWidget *pWidget, const TTheme *pTheme, int nItem,
+                             unsigned nColumn)
+{
+    if (nColumn == 0 || nColumn > pWidget->nColumns || nItem < 0)
+    {
+        return Rect (0, 0, 0, 0);
+    }
+    const TRect Rows = ListRows (pWidget, pTheme);
+    const unsigned nRow = RowHeight (pWidget, pTheme);
+    const int nY = Rows.nY + (int) ((unsigned) nItem - pWidget->nTop) * (int) nRow;
+    const unsigned nWide = ColumnWidth (pTheme, &pWidget->pColumns[nColumn - 1]);
+    const unsigned nSize = pTheme->M.nCheckSize;
+    return Rect (ColumnLeft (pWidget, pTheme, nColumn) + (int) (nWide - nSize) / 2,
+                 nY + ((int) nRow - (int) nSize) / 2, nSize, nSize);
 }
 
 int WidgetListItemAt (const TWidget *pWidget, const TTheme *pTheme, int nX, int nY)
@@ -115,6 +212,23 @@ static void DrawList (TSurface *pSurface, const TTheme *pTheme, const TWidget *p
 {
     pTheme->DrawListFrame (pSurface, pWidget->Rect, pTheme);
 
+    // The headings, once, above the rows and outside what scrolls.
+    const TRect Head = WidgetListHeader (pWidget, pTheme);
+    if (Head.nHeight != 0)
+    {
+        for (unsigned i = 0; i < pWidget->nColumns; i++)
+        {
+            const unsigned nWide = ColumnWidth (pTheme, &pWidget->pColumns[i]);
+            const TRect Box = Rect (ColumnLeft (pWidget, pTheme, i + 1), Head.nY, nWide,
+                                    pTheme->M.nLineHeight);
+            GfxTextBox (pSurface, pTheme->pBodyFont, Box, pWidget->pColumns[i].pHeader,
+                        ColorBlack, TextAlignCenter);
+        }
+        GfxFill (pSurface,
+                 Rect (Head.nX, Head.nY + (int) Head.nHeight - (int) pTheme->M.nStroke,
+                       Head.nWidth, pTheme->M.nStroke), ColorBlack);
+    }
+
     const TRect    Rows     = ListRows (pWidget, pTheme);
     const unsigned nRow     = RowHeight (pWidget, pTheme);
     const unsigned nVisible = WidgetListVisible (pWidget, pTheme);
@@ -149,7 +263,33 @@ static void DrawList (TSurface *pSurface, const TTheme *pTheme, const TWidget *p
         // than a weight, because the ladder has no third face and a row is not
         // a place to invent one.
         int nRight = Row.nX + (int) Row.nWidth - (int) pTheme->M.nGap;
-        if (pItem->nState & StateChecked)
+
+        // The marks first, so the name knows where it has to stop. Each is
+        // drawn on its own with no label beside it: the heading above says what
+        // it means, which is the whole point of a column.
+        if (pWidget->nColumns != 0)
+        {
+            nRight = ColumnLeft (pWidget, pTheme, 1) - (int) pTheme->M.nGap;
+            for (unsigned c = 1; c <= pWidget->nColumns; c++)
+            {
+                const TRect Cell = WidgetListCell (pWidget, pTheme, (int) nIndex, c);
+                unsigned nCellState = pItem->nCell[c - 1];
+                if ((pWidget->nState & StateFocused) && pWidget->nCell == c && bChosen)
+                {
+                    nCellState |= StateFocused;
+                }
+                if (pWidget->pColumns[c - 1].bRadio)
+                {
+                    pTheme->DrawRadio (pSurface, Cell, "", nCellState, pTheme);
+                }
+                else
+                {
+                    pTheme->DrawCheckbox (pSurface, Cell, "", nCellState, pTheme);
+                }
+            }
+        }
+
+        if ((pItem->nState & StateChecked) && pWidget->nColumns == 0)
         {
             const unsigned nDot = pTheme->M.nCheckSize / 3 < 3 ? 3
                                                                : pTheme->M.nCheckSize / 3;

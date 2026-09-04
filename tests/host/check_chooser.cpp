@@ -68,7 +68,7 @@ static TScreenReply Send (const TEvent &rEvent)
 // chooser is asked what it meant.
 static TChooserAction Operate (int nIndex)
 {
-    return ChooserOperate (&s_Model, nIndex);
+    return ChooserOperate (&s_Model, nIndex, 0);
 }
 
 // The component of this type carrying this label, or -1.
@@ -98,6 +98,25 @@ static int FindList (void)
         }
     }
     return -1;
+}
+
+// The columns, named as the chooser names them.
+enum { ColStartup = 1, ColReadOnly = 2, ColMounted = 3 };
+
+// One of the list's marks, the way the loop reports a click on it.
+static TChooserAction Cell (unsigned nColumn)
+{
+    return ChooserOperate (&s_Model, FindList (), nColumn);
+}
+
+// The rows as the screen now holds them: each carries its own three answers,
+// which is the change — they used to be three controls that spoke about
+// whichever row happened to be selected.
+static const TListItem *s_Items (void)
+{
+    TWidget *pW = 0;
+    ChooserWidgets (&pW);
+    return pW[FindList ()].pItems;
 }
 
 static void Select (int nItem)
@@ -138,44 +157,47 @@ int main (void)
     Expect (strcmp (Out[0], "/boot71.img") == 0, "le volume de démarrage vient en premier");
     Expect (strcmp (Out[2], "*/os81.img") == 0, "un volume en lecture seule porte son étoile");
 
-    // Changer de volume de démarrage.
-    const int nStartup = Find (WidgetCheckbox, Str (StrStartupDisk));
-    const int nReadOnly = Find (WidgetCheckbox, Str (StrReadOnly));
-    const int nMounted = Find (WidgetCheckbox, Str (StrMounted));
-    Expect (nStartup >= 0 && nReadOnly >= 0 && nMounted >= 0,
-            "les trois cases sont sur l'écran");
+    // Les trois réponses sont dans la ligne, une colonne chacune : les lire sous
+    // la liste demandait de retenir de quelle ligne elles parlaient.
+    TWidget *pW = 0;
+    ChooserWidgets (&pW);
+    const TWidget &List = pW[FindList ()];
+    Expect (List.nColumns == 3, "la liste porte trois colonnes");
+    Expect (List.pColumns != 0
+            && strcmp (List.pColumns[0].pHeader, Str (StrStartupDisk)) == 0
+            && strcmp (List.pColumns[1].pHeader, Str (StrReadOnly)) == 0
+            && strcmp (List.pColumns[2].pHeader, Str (StrMounted)) == 0,
+            "et chacune son en-tête");
+    Expect (List.pColumns[0].bRadio && !List.pColumns[1].bRadio,
+            "le démarrage est un choix unique, la lecture seule une bascule");
 
     Select (1);
-    Expect (Operate (nStartup) == ChooserNothing, "cocher « disque de démarrage » ne quitte pas");
+    Expect (Cell (ColStartup) == ChooserNothing, "cocher « disque de démarrage » ne quitte pas");
     Expect (s_Model.nStartup == 1, "et le volume de démarrage a changé");
     n = Lines (Out);
     Expect (strcmp (Out[0], "/machd76.image") == 0, "le nouveau vient en premier");
     Expect (strcmp (Out[1], "/boot71.img") == 0, "l'ancien garde sa place dans le reste");
 
-    // Un volume sans Système ne peut pas démarrer, et la case le dit.
-    Select (4);
-    TWidget *pW = 0;
-    ChooserWidgets (&pW);
-    Expect ((pW[nStartup].nState & StateDisabled) != 0,
+    // Un volume sans Système ne peut pas démarrer, et sa case le dit — sur sa
+    // propre ligne, donc sans qu'il faille l'avoir sélectionné pour le voir.
+    Expect ((s_Items ()[4].nCell[ColStartup - 1] & StateDisabled) != 0,
             "un volume sans Système ne peut pas être le disque de démarrage");
 
     // Démonter en retire le volume des lignes écrites.
     Select (0);
-    Operate (nMounted);
+    Cell (ColMounted);
     Expect (!s_Model.Volumes[0].bMounted, "on peut démonter un volume");
     n = Lines (Out);
     Expect (n == 3, "et il quitte les lignes écrites");
 
     // Le volume de démarrage, lui, ne peut pas être démonté sous ses propres pieds.
-    Select (1);
-    ChooserWidgets (&pW);
-    Expect ((pW[nMounted].nState & StateDisabled) != 0,
+    Expect ((s_Items ()[1].nCell[ColMounted - 1] & StateDisabled) != 0,
             "le volume de démarrage ne peut pas être démonté");
 
     // Lecture seule : le geste de sûreté du projet, un caractère dans une ligne.
     Select (3);
-    Operate (nMounted);                 // il était démonté
-    Operate (nReadOnly);
+    Cell (ColMounted);                  // il était démonté
+    Cell (ColReadOnly);
     Expect (s_Model.Volumes[3].bReadOnly, "on peut passer un volume en lecture seule");
     n = Lines (Out);
     bool bStarred = false;
@@ -190,7 +212,7 @@ int main (void)
 
     // Sans volume de démarrage, le bouton qui ne peut pas marcher le dit avant.
     Select (1);
-    Operate (nMounted);                 // démonte le volume de démarrage… refusé
+    Cell (ColMounted);                  // démonte le volume de démarrage… refusé
     s_Model.nStartup = -1;
     ChooserSync (&s_Model);
     ChooserWidgets (&pW);
@@ -202,6 +224,41 @@ int main (void)
     s_Model.nStartup = 1;
     ChooserSync (&s_Model);
     Expect (Operate (nStart) == ChooserStart, "Démarrer démarre");
+
+    // Le clavier traverse les colonnes : sans cela, une liste de cases serait
+    // une chose que seule la souris actionne, alors que les trois contrôles
+    // qu'elle remplace étaient atteignables par Tab.
+    Open ();
+    {
+        TWidget *pL = 0;
+        ChooserWidgets (&pL);
+        const int nList = FindList ();
+        s_Screen.nFocus = nList;
+        Expect (pL[nList].nCell == 0, "le clavier part du nom");
+        Send (Key (OkKeyRight, 0));
+        Expect (pL[nList].nCell == ColStartup, "droite entre dans la première colonne");
+        Send (Key (OkKeyRight, 0));
+        Send (Key (OkKeyRight, 0));
+        Expect (pL[nList].nCell == ColMounted, "et va jusqu'à la dernière");
+        Send (Key (OkKeyRight, 0));
+        Expect (pL[nList].nCell == ColMounted, "sans sortir par la droite");
+        Send (Key (OkKeyLeft, 0));
+        Expect (pL[nList].nCell == ColReadOnly, "gauche revient");
+
+        // Espace actionne la case où le clavier se trouve, et la réponse dit
+        // laquelle — c'est ce que la boucle passe au sélecteur.
+        pL[nList].nChoice = 2;
+        pL[nList].nCell   = ColReadOnly;
+        const TScreenReply R = Send (Key (OkKeySpace, 0));
+        Expect (R.Result == ScreenActivated && R.nIndex == nList && R.nCell == ColReadOnly,
+                "espace actionne la case sous le clavier");
+
+        // Une case grisée ne s'actionne pas plus au clavier qu'à la souris.
+        pL[nList].nChoice = 4;           // le volume sans Système
+        pL[nList].nCell   = ColStartup;
+        Expect (Send (Key (OkKeySpace, 0)).Result == ScreenIdle,
+                "et une case inactive ne répond pas");
+    }
 
     // Le clavier atteint tout, et Échap ne détruit rien.
     Open ();
@@ -222,6 +279,32 @@ int main (void)
         Send (Key (OkKeyTab, 0));
     }
     Expect (s_Screen.nFocus == nWas, "Tab fait le tour");
+
+    // The four glyph buttons of the footer, each answering for itself. The
+    // information one lives here and not behind the settings: a machine that
+    // will not start is not a machine whose owner wants to go two clicks deep
+    // to find out why.
+    {
+        TWidget *pW = 0;
+        const unsigned n = ChooserWidgets (&pW);
+        unsigned nIcons = 0;
+        unsigned nSeen = 0;
+        for (unsigned i = 0; i < n; i++)
+        {
+            if (pW[i].Type != WidgetIconButton) continue;
+            nIcons++;
+            switch (Operate ((int) i))
+            {
+            case ChooserSettings:    nSeen |= 1; break;
+            case ChooserInformation: nSeen |= 2; break;
+            case ChooserForgetPram:  nSeen |= 4; break;
+            case ChooserShutDown:    nSeen |= 8; break;
+            default: break;
+            }
+        }
+        Expect (nIcons == 4, "le pied de page porte quatre marques");
+        Expect (nSeen == 15, "réglages, informations, PRAM et arrêt, chacune la sienne");
+    }
 
     printf ("\n%u écart(s)\n", s_nFailures);
     free (s_pPixels);

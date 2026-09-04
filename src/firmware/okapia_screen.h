@@ -91,6 +91,10 @@ struct TScreenReply
 {
     TScreenResult Result;
     int           nIndex;               // meaningful for ScreenActivated
+    // Which column of a list was operated: 0 for the row itself, 1..nColumns
+    // for one of its marks. A list with no columns always answers 0, so a
+    // screen that has never heard of columns reads exactly as it did.
+    unsigned      nCell;
 };
 
 // Takes the focus from the screen if it declares one, and otherwise puts it on

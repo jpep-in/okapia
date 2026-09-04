@@ -19,7 +19,7 @@ settings	Settings	Réglages
 back	Back	Retour
 save	Save	Enregistrer
 save_restart	Save and restart	Enregistrer et redémarrer
-restart_required	Okapia restart required after changing this	Redémarrage d’Okapia requis après modification
+restart_required	* Okapia restart required after changing this	* Redémarrage d’Okapia requis après modification
 restarting	Restarting Okapia…	Redémarrage d’Okapia…
 shut_down	Shut down	Éteindre
 forget_pram	Forget the parameter RAM	Oublier la PRAM
@@ -44,6 +44,32 @@ volume_clean	ready	prête
 mb_free	MB free	Mo libres
 no_volume	No volume on the card	Aucun volume sur la carte
 not_mounted	not mounted	non montée
+language_name	English	Français
+memory	Memory	Mémoire vive
+cancel	Cancel	Annuler
+information	Information	Informations
+sound_hdmi	HDMI	HDMI
+sound_jack	Headphone jack	Prise casque
+sound_usb	USB	USB
+unit_hz	Hz	Hz
+unit_mb	MB	Mo
+settings_title	Settings	Réglages
+info_version	Okapia	Okapia
+info_machine	Board	Carte mère
+info_display	Display	Écran
+info_rom	ROM	ROM
+info_model	Macintosh model	Modèle de Macintosh
+info_model_auto	from the system installed	d’après le système installé
+info_model_pref	from the preferences	d’après les préférences
+info_card	SD card	Carte SD
+info_startup	Startup volume	Volume de démarrage
+info_none	none	aucun
+info_credits	Components and licences	Composants et licences
+info_author	Author	Auteur
+shut_down_title	Shut down?	Éteindre ?
+shut_down_body	The Macintosh has not started, so nothing is open and nothing can be lost. Okapia will stop, and the screen will go dark before you switch the power off.	Le Macintosh n’a pas démarré : rien n’est ouvert, rien ne peut être perdu. Okapia va s’arrêter, et l’écran s’éteindra avant que vous coupiez l’alimentation.
+forget_pram_title	Forget the parameter RAM?	Oublier la PRAM ?
+forget_pram_body	The parameter RAM holds what the Macintosh remembers about itself — its startup disk, its sound level, the depth of its screen. Forgetting it restores the factory values and touches none of your files.	La PRAM contient ce que le Macintosh retient de lui-même : son disque de démarrage, son niveau sonore, la profondeur de son écran. L’oublier rétablit les valeurs d’usine et ne touche à aucun de vos fichiers.
 spec_title	Specimen — the component system	Échantillon — le système de composants
 spec_buttons	Buttons	Boutons
 spec_choices	Tick boxes and radio buttons	Cases et boutons radio

@@ -180,15 +180,168 @@ void OkapiaPaintPower (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
  *  of the words beside it; the face already has the character, and the ladder
  *  has it at several sizes so nothing is magnified.
  */
+void OkapiaPaintInfo (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
+                      TOkapiaColor)
+{
+    // The letter and nothing else. A ring around it was tried and it only added
+    // weight: the mark already sits in a button, and a button inside a circle
+    // inside a button is two frames doing one frame's work.
+    //
+    // The largest face that fits the height with a little air, asked for
+    // largest first — the same rule the caution mark uses, for the same reason:
+    // a letter chosen by a fraction of the height reads well at one size and
+    // badly at the next.
+    const int nRoom = (int) rRect.nHeight - (int) rRect.nHeight / 5;
+    const TOkapiaFont *pFace = 0;
+    for (int i = (int) OkapiaFaceCount - 1; i >= 0; i--)
+    {
+        if ((int) OkapiaFaces[i].pBold->nCapHeight <= nRoom)
+        {
+            pFace = OkapiaFaces[i].pBold;
+            break;
+        }
+    }
+    if (pFace == 0)
+    {
+        pFace = OkapiaFaces[0].pBold;   // the smallest there is, rather than nothing
+    }
+
+    // On the cap height, so it sits where the other marks sit: an "i" has a dot
+    // above its cap and centring the whole ascent would push the stem low.
+    const TRect Box = Rect (rRect.nX,
+                            rRect.nY + ((int) rRect.nHeight - (int) pFace->nCapHeight) / 2,
+                            rRect.nWidth, (unsigned) pFace->nCapHeight);
+    GfxTextBox (pSurface, pFace, Box, "i", Ink, TextAlignCenter);
+}
+
+/*
+ *  One weight for the three alert marks
+ *
+ *  They appear in the same place, one at a time, and a reader who sees them in
+ *  turn sees the weight change rather than the shape. The triangle was drawn at
+ *  a hairline and the balloon a third heavier; this is between them, and it is
+ *  one number so that it cannot drift apart again.
+ *
+ *  The footer's marks are a family of their own — smaller, and never beside one
+ *  of these — and keep their own weight.
+ */
+static int MarkStroke (int N)
+{
+    return N / 14 < 2 ? 2 : N / 14;
+}
+
+void OkapiaPaintNote (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
+                      TOkapiaColor)
+{
+    // A speech balloon with lines of writing in it. The face beside it in the
+    // original is what does not survive sixteen pixels — and it is also the
+    // part that would be quoting somebody else's drawing. The balloon alone
+    // reads as "something is being said to you", which is the whole message.
+    const int N = (int) rRect.nWidth;
+    const int t = MarkStroke (N);
+    const int nTail = N / 5 < 3 ? 3 : N / 5;
+
+    // The balloon takes everything but the room its tail needs below.
+    const TRect Balloon = Rect (rRect.nX, rRect.nY, rRect.nWidth,
+                                (unsigned) ((int) rRect.nHeight - nTail));
+    const int r = (int) Balloon.nHeight / 3;
+    GfxRoundFrame (pSurface, Balloon, (unsigned) r, Ink, (unsigned) t);
+
+    // The tail, drawn row by row from the balloon's lower edge: a wedge that
+    // narrows as it goes down and leans left, the way a spoken one does.
+    const int nBase = Balloon.nY + (int) Balloon.nHeight - t;
+    const int nLeft = Balloon.nX + (int) Balloon.nWidth / 4;
+    for (int i = 0; i <= nTail; i++)
+    {
+        const int nWide = nTail - i;
+        if (nWide <= 0)
+        {
+            break;
+        }
+        GfxHLine (pSurface, nLeft, nBase + i, (unsigned) nWide, Ink);
+    }
+
+    // Three lines of writing, lighter than the balloon that holds them: writing
+    // as heavy as its container is a black block, not a page.
+    const int w = t / 2 < 1 ? 1 : t / 2;
+    const TRect In = RectInset (Balloon, 3 * t, 2 * t);
+    if (In.nWidth == 0 || (int) In.nHeight < 3 * w)
+    {
+        return;                         // too small to hold writing: the balloon says enough
+    }
+    for (int i = 0; i < 3; i++)
+    {
+        const int nY = In.nY + (int) In.nHeight * (2 * i + 1) / 6 - w / 2;
+        const unsigned nLen = i == 2 ? In.nWidth * 3 / 5 : In.nWidth;
+        GfxFill (pSurface, Rect (In.nX, nY, nLen, (unsigned) w), Ink);
+    }
+}
+
+// An octagon, filled, row by row: a square whose four corners are cut away at
+// forty-five degrees. There is no primitive for it and it does not want one —
+// this is the only shape in the interface with eight sides.
+static void FillOctagon (TSurface *pSurface, const TRect &rRect, int nCut,
+                         TOkapiaColor Color)
+{
+    const int H = (int) rRect.nHeight;
+    const int W = (int) rRect.nWidth;
+    for (int y = 0; y < H; y++)
+    {
+        int nInset = 0;
+        if (y < nCut)
+        {
+            nInset = nCut - y;
+        }
+        else if (y >= H - nCut)
+        {
+            nInset = y - (H - 1 - nCut);
+        }
+        if (2 * nInset >= W)
+        {
+            continue;
+        }
+        GfxHLine (pSurface, rRect.nX + nInset, rRect.nY + y,
+                  (unsigned) (W - 2 * nInset), Color);
+    }
+}
+
+void OkapiaPaintStop (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
+                      TOkapiaColor Back)
+{
+    // An octagon with a bar across it. The raised hand inside one is Apple's;
+    // the octagon is everybody's, and it is the half that says "this does not
+    // go on" without a word.
+    const int N = (int) rRect.nWidth < (int) rRect.nHeight
+                ? (int) rRect.nWidth : (int) rRect.nHeight;
+    const int t = MarkStroke (N);
+    const TRect Box = Rect (rRect.nX + ((int) rRect.nWidth - N) / 2,
+                            rRect.nY + ((int) rRect.nHeight - N) / 2,
+                            (unsigned) N, (unsigned) N);
+
+    // The corners are taken off at the proportion that makes the eight sides
+    // equal, which is what an octagon is — a rounded rectangle at that radius
+    // is a lozenge, and reads as one.
+    const int nCut = N * 29 / 100;
+    FillOctagon (pSurface, Box, nCut, Ink);
+    FillOctagon (pSurface, RectInset (Box, t, t), nCut - t < 0 ? 0 : nCut - t, Back);
+
+    // The bar, across the interior and stopping inside the sides: a bar that
+    // runs into the frame reads as a shape cut in two.
+    const int nBarW = N - 2 * nCut;
+    GfxFill (pSurface, Rect (Box.nX + (N - nBarW) / 2, Box.nY + (N - t) / 2,
+                             (unsigned) nBarW, (unsigned) t), Ink);
+}
+
 void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
                          TOkapiaColor Back)
 {
     (void) Back;
     const int N = (int) rRect.nWidth;
-    // Thin, and barely rounded. The panel this follows is drawn with a hairline
-    // and a corner you notice only when you look for it; a heavy outline with a
-    // generous radius reads as a shape rather than as a warning.
-    const int t = N / 18 < 2 ? 2 : N / 18;
+    // Barely rounded still — a generous radius reads as a shape rather than as
+    // a warning — but at the weight the three marks share: this one was a
+    // hairline beside a balloon a third heavier, and what one saw when they
+    // followed each other was the weight changing.
+    const int t = MarkStroke (N);
     const int r = N / 12 < 2 ? 2 : N / 12;
 
     GfxTriangleFrame (pSurface, rRect, (unsigned) r, Ink, (unsigned) t);

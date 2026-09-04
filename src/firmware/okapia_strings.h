@@ -45,4 +45,19 @@ TLanguage StringsLanguage (void);
 const char *StringsCode (TLanguage Language);
 TLanguage   StringsFromCode (const char *pCode);
 
+/*
+ *  Putting a line together, without a format string
+ *
+ *  The firmware has no printf anywhere and there is no reason to acquire one:
+ *  three appends say what one format would, and they cannot run off the end of
+ *  the buffer while doing it. Each answers where it stopped, so the next one
+ *  carries on from there, and the result is always terminated.
+ *
+ *  They live here because three screens now build text — the chooser's rows,
+ *  the settings' menus, the information pane's every line — and the third copy
+ *  of a routine is the one that starts to differ from the first two.
+ */
+unsigned StrAppend (char *pOut, unsigned nSize, unsigned nAt, const char *pWhat);
+unsigned StrAppendNumber (char *pOut, unsigned nSize, unsigned nAt, unsigned long nValue);
+
 #endif

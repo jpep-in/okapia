@@ -38,6 +38,18 @@ enum TWidgetType
     WidgetSeparator
 };
 
+// The columns a list may carry beyond its name, and how many there can be. Three
+// is what the chooser needs — startup, read-only, mounted — and a list of
+// columns is a table, which is a different component; when a fourth is wanted,
+// that is the conversation to have rather than raising this number.
+static const unsigned LIST_COLUMNS = 3;
+
+struct TListColumn
+{
+    const char *pHeader;
+    bool        bRadio;                 // one of a set; otherwise a tick box
+};
+
 // What a list holds. Rows are not components of their own: a list that scrolls
 // cannot be an array of row components, because every scroll would mean
 // rebuilding them and the screen above would have to be told when. The Mac's
@@ -47,6 +59,10 @@ struct TListItem
     const char        *pText;
     const TGlyphImage *pIcon;
     unsigned           nState;          // StateDisabled, and later a chosen mark
+    // One state per column: StateChecked and StateDisabled, per row. A cell
+    // that cannot be operated on this row says so by going grey, which is what
+    // the three tick boxes under the list used to do from a distance.
+    unsigned           nCell[LIST_COLUMNS];
 };
 
 struct TWidget
@@ -71,6 +87,13 @@ struct TWidget
     unsigned            nItems;
     unsigned            nTop;           // first row shown
     int                 nChoice;        // item picked, or -1
+    const TListColumn  *pColumns;       // 0 for a plain list
+    unsigned            nColumns;
+    // Which column the keyboard is on; 0 is the name. Left and right walk it,
+    // so a list of tick boxes is operable without a mouse — which the three
+    // controls under the chooser's list used to provide by being components of
+    // their own.
+    unsigned            nCell;
 
     // A field's own storage. A field without it is read-only, which is what
     // every other control is.
@@ -109,6 +132,12 @@ unsigned WidgetButtonWidth (const TTheme *pTheme, const char *pText, unsigned nS
  */
 unsigned WidgetListVisible (const TWidget *pWidget, const TTheme *pTheme);
 int      WidgetListItemAt (const TWidget *pWidget, const TTheme *pTheme, int nX, int nY);
+
+// Which column a point is in: 0 for the name, 1..nColumns for the marks. It
+// answers a column even for a point in the heading, so a caller that wants a
+// row must ask WidgetListItemAt as well.
+unsigned WidgetListColumnAt (const TWidget *pWidget, const TTheme *pTheme, int nX);
+
 
 // The scroller inside the frame, or an empty rectangle when everything fits.
 TRect    WidgetListScroller (const TWidget *pWidget, const TTheme *pTheme);

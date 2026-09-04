@@ -77,27 +77,36 @@ render_chooser: $(LIBOBJS) render_chooser.o chooser_sample.o
 check_chooser: $(LIBOBJS) check_chooser.o chooser_sample.o
 	$(CXX) -o $@ $^
 
+render_pages: $(LIBOBJS) render_pages.o pages_sample.o
+	$(CXX) -o $@ $^
+
+check_pages: $(LIBOBJS) check_pages.o pages_sample.o
+	$(CXX) -o $@ $^
+
 # The measurements are part of the build, not something to remember to run: an
 # asymmetry of one pixel is invisible on a screenshot and obvious at three. The
 # behaviour joins them: what the focus does under a sequence of keys is decidable
 # on a machine with no keyboard, so there is no reason to go and look.
-check: check_geometry check_screen check_chooser
+check: check_geometry check_screen check_chooser check_pages
 	./check_geometry
 	./check_screen
 	./check_chooser
+	./check_pages
 
 # Every page, the count being the flow's to decide: naming them here again is
 # how the second page went stale the day a third appeared.
-specimen.ppm: render_specimen render_chooser
+specimen.ppm: render_specimen render_chooser render_pages
 	./render_specimen specimen.ppm 1
 	./render_chooser chooser.ppm 1
+	./render_pages page 1
 
 view: render_specimen
 	./render_specimen specimen-2x.ppm 2 0
 	@command -v open >/dev/null && open specimen-2x.ppm || echo "wrote specimen-2x.ppm"
 
 clean:
-	rm -f *.o *.d render_specimen render_chooser check_geometry check_screen check_chooser \
+	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
+	      check_chooser check_pages \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean

@@ -51,6 +51,10 @@ enum TChooserAction
     ChooserNothing,                     // the model changed; repaint and carry on
     ChooserStart,
     ChooserSettings,
+    // On the main screen rather than behind the settings: what Okapia found is
+    // the first thing wanted when a machine will not start, and a page reached
+    // in two clicks is a page nobody opens at that moment.
+    ChooserInformation,
     ChooserForgetPram,
     ChooserShutDown
 };
@@ -72,7 +76,10 @@ void ChooserSync (TChooser *pChooser);
 // What the control at nIndex means. The model is brought up to date first, so a
 // control that only changes the model answers ChooserNothing and the caller has
 // nothing to do but repaint.
-TChooserAction ChooserOperate (TChooser *pChooser, int nIndex);
+// nCell is which column of the list was operated, as the screen loop reports
+// it: 0 for the row itself, 1 for the startup mark, 2 for read-only, 3 for
+// mounted. Anything that is not the list ignores it.
+TChooserAction ChooserOperate (TChooser *pChooser, int nIndex, unsigned nCell);
 
 // The `disk` lines this model asks for, in order, and how many. The startup
 // volume comes first because Basilisk offers them to the ROM in the order

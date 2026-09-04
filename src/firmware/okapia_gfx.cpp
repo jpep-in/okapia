@@ -970,6 +970,11 @@ static unsigned s_Under[CURSOR_MAX_W * CURSOR_MAX_H];
 static TRect    s_UnderRect;
 static bool     s_bCursorShown;
 
+void GfxCursorForget (void)
+{
+    s_bCursorShown = false;
+}
+
 TRect GfxCursorHide (TSurface *pSurface)
 {
     if (!s_bCursorShown)

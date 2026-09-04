@@ -215,6 +215,15 @@ TRect GfxCursorShow (TSurface *pSurface, int nX, int nY, unsigned nScale,
                      TGfxCursor Shape);
 TRect GfxCursorHide (TSurface *pSurface);
 
+// Drop what is saved under the pointer without putting it back.
+//
+// The patch belongs to the surface it was taken from. When a screen is replaced
+// wholesale — the settings opening over the chooser — the next Hide would paint
+// a piece of the old page onto the new one, at the very place the eye is
+// already looking because that is where the pointer is. It did: a fragment of
+// the button just clicked stayed on the screen afterwards.
+void GfxCursorForget (void);
+
 // The one place that knows what a role is worth, in 0x00RRGGBB.
 unsigned GfxPaletteEntry (TOkapiaColor Color);
 
