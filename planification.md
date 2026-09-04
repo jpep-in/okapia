@@ -3566,8 +3566,18 @@ bouchons pour ce que l'interpréteur appelle en dehors de lui-même : `PVR`, `Ti
 §19 reste de la théorie ; le chemin le plus court jusqu'à un premier écran en apprend plus que n'importe
 quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre.
 
-- [ ] `Makefile` paramétré par `ENGINE`, deux répertoires d'objets — c'est le préalable de tout le reste
-      et il est petit (§19.3)
+- [x] **le cœur SheepShaver compile pour la carte — vérifié le 2026-09-05, et c'est mieux qu'espéré.**
+      Les 23 fichiers du cœur listés par `Unix/Makefile.in` plus les 6 de `kpx_cpu` en interprété passent
+      le compilateur AArch64 contre circle-stdlib **sans une seule retouche**. Il a suffi d'un
+      `src/circle/sheepshaver/config.h`, presque identique à celui de Basilisk : trois lignes à ajouter
+      (`EMULATED_PPC`, `HAVE_FENV_H`, `NATMEM_OFFSET`) et deux à retirer — `VERSION_MAJOR`/`VERSION_MINOR`,
+      que le `version.h` de SheepShaver déclare en `const int` et qu'une macro du même nom transforme en
+      erreur de syntaxe. Il vit dans un répertoire à lui parce que l'amont l'inclut comme un simple
+      `"config.h"` des deux côtés : le build met ce répertoire devant, chaque moteur trouve le sien.
+
+      `scripts/check-engine.sh` refait le tour en une commande, pour que la réponse ne pourrisse pas
+      pendant que le reste s'écrit.
+- [ ] `Makefile` paramétré par `ENGINE`, deux répertoires d'objets (§19.3)
 - [ ] `main_circle.cpp` variante SheepShaver : un bloc contigu, `RAM_BASE`/`ROM_BASE` choisis, `VMBaseDiff`
 - [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification (§19.4)
 - [x] `check-rom.py` étendu — fait, et deux ROM vérifiées (§19.6)
