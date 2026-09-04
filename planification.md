@@ -3067,6 +3067,19 @@ carte — laisse de chaque côté un adaptateur mince. C'est ce que la phase 12 
 raisons, et SheepShaver **offre en prime** ce que Basilisk oblige à deviner : `video_set_dirty_area(x, y,
 w, h)` (`video.h:149`), c'est-à-dire les régions modifiées données par le moteur au lieu d'être scannées.
 
+**Et SheepShaver apporte une accélération 2D que Basilisk n'a pas.** `gfxaccel.cpp` n'existe que de son
+côté — `BasiliskII/src/gfxaccel.cpp` n'existe pas — et `gfxaccel` est vrai par défaut
+(`prefs_items.cpp:93`). Ce n'est pas du GPU : `NQD_bitblt()` est un `memmove` par ligne
+(`gfxaccel.cpp:321-364`). Le gain est ailleurs, et il est énorme — c'est l'**hôte** qui fait la copie au
+lieu du processeur émulé qui déroulerait la boucle de pixels de QuickDraw instruction par instruction.
+Pour le défilement d'une fenêtre, un `memcpy` contre des millions d'instructions interprétées.
+
+Il ne se déclenche pas partout : `srcCopy` seulement, au moins 8 bits par pixel, même profondeur des deux
+côtés, `rowBytes` de même signe (`gfxaccel.cpp:390-396`). C'est le blit opaque courant, pas le cas
+général. Mais **il se transporte tel quel en bare-metal** puisqu'il ne demande aucun matériel, et le
+crochet appelle `NQD_set_dirty_area()` même quand il refuse d'accélérer — donc les régions modifiées
+arrivent de toute façon (§19.2).
+
 **Deux règles de conception, dans la continuité de §3.5 :** garder les tests `#ifdef SHEEPSHAVER` là où
 l'amont en met (22 occurrences dans `SDL/video_sdl2.cpp` — c'est son modèle de partage, pas un accident) ;
 et ne jamais laisser une hypothèse de moteur entrer dans `src/firmware/`.
