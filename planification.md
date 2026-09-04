@@ -2112,7 +2112,22 @@ sans autre mécanisme.
 
 ### Phase 16 — Firmware Okapia
 
-- [ ] `hal_circle` consolidé et utilisable hors émulateur
+- [x] **`hal_circle` consolidé et utilisable hors émulateur — fait le 2026-09-05.** `COkapiaBoard`
+      (`src/circle/hal_circle.{h,cpp}`) met la carte en route : port série, journal, interruptions,
+      minuterie et son horloge, console, USB, carte SD. Les deux noyaux — le Macintosh et le spécimen —
+      partagent désormais le même objet, et le spécimen **est** la preuve du « hors émulateur » : il
+      démarre sans une ligne de Basilisk et rend une image identique au pixel près à celle de l'hôte.
+
+      Ce n'était pas de la mise en forme. Les deux noyaux répétaient la même séquence avec les mêmes
+      commentaires **et avaient divergé** : le spécimen construisait l'hôte USB avec `new` — la forme
+      qu'AGENTS.md documente comme la seule correcte, un constructeur membre s'exécutant avant le port
+      série et pendant donc en silence — tandis que le noyau Macintosh était revenu à un membre. Une
+      seule mise en route, un seul endroit où ces leçons vivent.
+
+      Ce que la couche ne prend délibérément pas : le framebuffer, la souris et le créneau de minuterie
+      périodique. Ceux-là se réclament une fois pour la vie de la carte et se transmettent ensuite
+      (`FwOutputClaim`, `okapia_input.cpp`, `TickInit`), parce que le Macintosh repasse plusieurs fois —
+      les faire entrer ici dirait le contraire.
 - [x] pas LVGL. Le tampon est réclamé par `CBcmFrameBuffer (0, 0, 32)` comme le fait le compositeur.
       Noir, blanc et **gris pleins** à la profondeur de sortie. L'interface bouge désormais, et le double
       tampon est venu — mais de nous : tout est tracé dans une surface d'ombre et seule la partie changée

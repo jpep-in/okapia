@@ -17,16 +17,11 @@
 #ifndef _okapia_specimen_kernel_h
 #define _okapia_specimen_kernel_h
 
-#include <circle/actled.h>
-#include <circle/koptions.h>
-#include <circle/devicenameservice.h>
-#include <circle/exceptionhandler.h>
-#include <circle/interrupt.h>
-#include <circle/serial.h>
-#include <circle/timer.h>
 #include <circle/logger.h>
+#include <circle/timer.h>
 #include <circle/types.h>
-#include <circle/usb/usbhcidevice.h>
+
+#include "hal_circle.h"
 
 enum TShutdownMode
 {
@@ -44,19 +39,9 @@ public:
     TShutdownMode Run (void);
 
 private:
-    CActLED            m_ActLED;
-    CKernelOptions     m_Options;
-    CDeviceNameService m_DeviceNameService;
-    CExceptionHandler  m_ExceptionHandler;
-    CInterruptSystem   m_Interrupt;
-    CSerialDevice      m_Serial;
-    CTimer             m_Timer;
-    CLogger            m_Logger;
-    // A pointer and not a member, so that it is built *after* the log exists.
-    // A failed assertion in a member constructor runs before serial and is
-    // therefore a silent hang with no output at all — which is exactly what
-    // this cost when it was written the obvious way (AGENTS.md).
-    CUSBHCIDevice     *m_pUSBHCI;
+    // The same board the Macintosh kernel brings up, and the reason this one
+    // exists: the firmware has to be shown to run with no emulator behind it.
+    COkapiaBoard       m_Board;
 };
 
 #endif

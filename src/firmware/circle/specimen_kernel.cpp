@@ -27,36 +27,20 @@ static const unsigned SLICE_MS = 10;
 static const unsigned CARET_MS = 500;
 
 CSpecimenKernel::CSpecimenKernel (void)
-:   m_Timer (&m_Interrupt),
-    m_Logger (m_Options.GetLogLevel (), &m_Timer),
-    m_pUSBHCI (0)
 {
-    m_ActLED.Blink (2);
 }
 
 bool CSpecimenKernel::Initialize (void)
 {
-    // Serial first, always: a failure before the log exists cannot be told from
-    // a hang (AGENTS.md).
-    if (!m_Serial.Initialize (115200))
+    if (!m_Board.Start (FROM))
     {
-        return false;
-    }
-    if (!m_Logger.Initialize (&m_Serial))
-    {
-        return false;
-    }
-    if (!m_Interrupt.Initialize () || !m_Timer.Initialize ())
-    {
-        m_Logger.Write (FROM, LogError, "Interrupts or timer would not start");
         return false;
     }
     // A specimen with no input is still worth looking at, so this warns rather
     // than failing: the pages can be read without a keyboard, only not walked.
-    m_pUSBHCI = new CUSBHCIDevice (&m_Interrupt, &m_Timer, TRUE);
-    if (m_pUSBHCI == 0 || !m_pUSBHCI->Initialize ())
+    if (!m_Board.StartUSB ())
     {
-        m_Logger.Write (FROM, LogWarning, "No USB; the specimen will not answer");
+        CLogger::Get ()->Write (FROM, LogWarning, "No USB; the specimen will not answer");
     }
     return true;
 }
@@ -80,7 +64,7 @@ static const char *WidgetName (const TWidget *pWidget)
 
 TShutdownMode CSpecimenKernel::Run (void)
 {
-    m_Logger.Write (FROM, LogNotice, "Okapia theme specimen");
+    CLogger::Get ()->Write (FROM, LogNotice, "Okapia theme specimen");
 
     // 0, 0 asks the firmware for the display's own size. What it grants is
     // reported rather than assumed: on a Pi 5 the request is ignored outright,
@@ -88,7 +72,7 @@ TShutdownMode CSpecimenKernel::Run (void)
     CBcmFrameBuffer *pOutput = new CBcmFrameBuffer (0, 0, 32);
     if (pOutput == 0 || !pOutput->Initialize ())
     {
-        m_Logger.Write (FROM, LogError, "No frame buffer");
+        CLogger::Get ()->Write (FROM, LogError, "No frame buffer");
         return ShutdownHalt;
     }
 
@@ -97,12 +81,12 @@ TShutdownMode CSpecimenKernel::Run (void)
     const unsigned nDepth  = pOutput->GetDepth ();
     const unsigned nPitch  = pOutput->GetPitch ();
 
-    m_Logger.Write (FROM, LogNotice, "Output: %ux%u, %u bpp, pitch %u",
+    CLogger::Get ()->Write (FROM, LogNotice, "Output: %ux%u, %u bpp, pitch %u",
                     nWidth, nHeight, nDepth, nPitch);
 
     if (nDepth != 32)
     {
-        m_Logger.Write (FROM, LogError, "Expected a 32 bpp output, got %u", nDepth);
+        CLogger::Get ()->Write (FROM, LogError, "Expected a 32 bpp output, got %u", nDepth);
         return ShutdownHalt;
     }
 
@@ -127,12 +111,12 @@ TShutdownMode CSpecimenKernel::Run (void)
     Surface.pPixels = new unsigned char[(size_t) Surface.nPitch * nHeight];
     if (Surface.pPixels == 0)
     {
-        m_Logger.Write (FROM, LogError, "No room for a shadow surface");
+        CLogger::Get ()->Write (FROM, LogError, "No room for a shadow surface");
         return ShutdownHalt;
     }
 
     const unsigned nScale16 = ThemeScaleFor (nWidth, nHeight);
-    m_Logger.Write (FROM, LogNotice, "Theme scale %u/16 for a %ux%u output",
+    CLogger::Get ()->Write (FROM, LogNotice, "Theme scale %u/16 for a %ux%u output",
                     nScale16, nWidth, nHeight);
 
     // The specimen answers now, so nothing here chooses on a clock. Tab walks
@@ -172,7 +156,7 @@ TShutdownMode CSpecimenKernel::Run (void)
     int  nX = 0, nY = 0;
     bool bPointer = false;
 
-    m_Logger.Write (FROM, LogNotice,
+    CLogger::Get ()->Write (FROM, LogNotice,
                     "Page %u sur %u [%s] ; Tab, Espace, Retour, flèches, "
                     "Gauche/Droite pour la page, L pour la langue",
                     nPage, nPages, StringsCode (StringsLanguage ()));
@@ -201,7 +185,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                     const char *pWhat = pW->pItems != 0 && pW->nChoice >= 0
                                             ? pW->pItems[pW->nChoice].pText
                                             : (pW->pText != 0 ? pW->pText : "");
-                    m_Logger.Write (FROM, LogNotice, "Actionné : %s \"%s\"",
+                    CLogger::Get ()->Write (FROM, LogNotice, "Actionné : %s \"%s\"",
                                     WidgetName (pW), pWhat);
                 }
                 bRepaint = true;
@@ -212,7 +196,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                 break;
 
             case ScreenCancelled:
-                m_Logger.Write (FROM, LogNotice, "Échap");
+                CLogger::Get ()->Write (FROM, LogNotice, "Échap");
                 break;
 
             case ScreenIdle:
@@ -233,7 +217,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                     ScreenInit (&Screen, &Theme, pWidgets, nCount);
                     Screen.Background = ColorWhite;
                     Screen.Bounds     = Rect (0, 0, nWidth, nHeight);
-                    m_Logger.Write (FROM, LogNotice, "Langue %s",
+                    CLogger::Get ()->Write (FROM, LogNotice, "Langue %s",
                                     StringsCode (StringsLanguage ()));
                     bRepaint = true;
                     break;
@@ -247,7 +231,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                     ScreenInit (&Screen, &Theme, pWidgets, nCount);
                     Screen.Background = ColorWhite;
                     Screen.Bounds     = Rect (0, 0, nWidth, nHeight);
-                    m_Logger.Write (FROM, LogNotice, "Page %u", nPage);
+                    CLogger::Get ()->Write (FROM, LogNotice, "Page %u", nPage);
                     bRepaint = true;
                 }
                 break;

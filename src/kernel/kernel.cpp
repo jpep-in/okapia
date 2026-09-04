@@ -53,11 +53,6 @@ static const uint32 MIN_MAC_RAM = 4 * 1024 * 1024;
 static int s_nTimeZoneMinutes = 0;
 
 CKernel::CKernel (void)
-:   m_Timer (&m_Interrupt),
-    m_Logger (m_Options.GetLogLevel (), &m_Timer),
-    m_USBHCI (&m_Interrupt, &m_Timer, TRUE),
-    m_EMMC (&m_Interrupt, &m_Timer, &m_ActLED),
-    m_Console (&m_Serial, &m_Serial)     // both non-null: see AGENTS.md
 {
 }
 
@@ -67,59 +62,23 @@ CKernel::~CKernel (void)
 
 bool CKernel::Initialize (void)
 {
-    // 1. Serial first. A failure before this point is indistinguishable from a hang.
-    if (!m_Serial.Initialize (115200))
+    // 1. The board: serial, the log, interrupts, the timer and its clock. Every
+    //    reason this order matters is in hal_circle.cpp, once.
+    if (!m_Board.Start (FROM))
     {
         return false;
     }
-    if (!m_Logger.Initialize (&m_Serial))
-    {
-        return false;
-    }
 
-    m_Logger.Write (FROM, LogNotice, "Okapia, built " __DATE__ " " __TIME__);
-
-    if (!m_Interrupt.Initialize () || !m_Timer.Initialize ())
-    {
-        m_Logger.Write (FROM, LogError, "Interrupt or timer failed");
-        return false;
-    }
-
-    // The one place the clock is set. Everything that asks the time afterwards
-    // reads Circle's — the Mac through TimerDateTime(), FatFs through
-    // get_fattime() — so there is a single source and no second opinion.
-    //
-    // That source is the build time, because there is no other yet: a Pi has no
-    // RTC and NTP needs the network (phase 10). Left at zero, Circle counts
-    // from 1970 and FatFs stamps every file 1980-00-00, which is not even a
-    // valid date; the Mac stamps volumes with 1904 dates, leaving drLsMod
-    // earlier than drCrDate and an MDB fsck_hfs calls damaged. So the clock is
-    // wrong by however long ago this was built, but it is ordered and plausible,
-    // which is what file systems care about.
-    if (!m_Timer.SetTime (OKAPIA_BUILD_TIME, FALSE))
-    {
-        m_Logger.Write (FROM, LogWarning, "Could not set the clock; dates will start at 1970");
-    }
-
-    // 2. The console, on the serial port — the screen belongs to the Mac. It is
-    //    here rather than at the end because CGlueStdioInit is what claims file
-    //    descriptors 0 to 2; open a file before it and the first one lands on
-    //    stdin's slot.
-    if (m_Console.Initialize ())
-    {
-        CGlueStdioInit (m_Console);
-    }
+    // 2. The console, on the serial port. Before any file is opened — see
+    //    COkapiaBoard::StartConsole.
+    m_Board.StartConsole ();
 
     // 3. The card, then the preferences on it. They decide how much Mac RAM to
     //    allocate, so they have to be read before the allocation — which is the
     //    one thing allowed to come before it.
-    if (!m_EMMC.Initialize ())
+    if (!m_Board.StartCard ())
     {
-        m_Logger.Write (FROM, LogError, "No SD card");
-        return false;
-    }
-    if (!MountStorage ())
-    {
+        CLogger::Get ()->Write (FROM, LogError, "No SD card, or it will not mount");
         return false;
     }
 
@@ -130,14 +89,14 @@ bool CKernel::Initialize (void)
     //    large blocks by walking forward through free space. The card driver is
     //    ahead of it now, so log what it cost rather than assuming it cost
     //    nothing.
-    m_Logger.Write (FROM, LogNotice, "Free before Mac RAM: %u MB low, %u MB high",
+    CLogger::Get ()->Write (FROM, LogNotice, "Free before Mac RAM: %u MB low, %u MB high",
                     (unsigned) (CMemorySystem::Get ()->GetHeapFreeSpace (HEAP_LOW) / (1024*1024)),
                     (unsigned) (CMemorySystem::Get ()->GetHeapFreeSpace (HEAP_ANY) / (1024*1024)));
 
     uint32 nRAMSize = (uint32) PrefsFindInt32 ("ramsize");
     if (nRAMSize < MIN_MAC_RAM)
     {
-        m_Logger.Write (FROM, LogError, "ramsize %u is below the %u MB floor",
+        CLogger::Get ()->Write (FROM, LogError, "ramsize %u is below the %u MB floor",
                         (unsigned) nRAMSize, (unsigned) (MIN_MAC_RAM / (1024*1024)));
         return false;
     }
@@ -147,9 +106,9 @@ bool CKernel::Initialize (void)
     }
 
     // 5. Everything else.
-    if (!m_USBHCI.Initialize ())
+    if (!m_Board.StartUSB ())
     {
-        m_Logger.Write (FROM, LogWarning, "No USB: keyboard and mouse unavailable");
+        CLogger::Get ()->Write (FROM, LogWarning, "No USB: keyboard and mouse unavailable");
     }
 
     // The firmware starts listening here rather than when its window opens. A
@@ -160,16 +119,6 @@ bool CKernel::Initialize (void)
     // something changes and never what is down.
     FwInputWatch ();
 
-    return true;
-}
-
-bool CKernel::MountStorage (void)
-{
-    if (f_mount (&m_FileSystem, "SD:", 1) != FR_OK)
-    {
-        m_Logger.Write (FROM, LogError, "Cannot mount the SD card");
-        return false;
-    }
     return true;
 }
 
@@ -188,7 +137,7 @@ void CKernel::LoadPreferences (void)
     char **argv = 0;
     PrefsInit (0, argc, argv);
 
-    m_Logger.Write (FROM, LogNotice,
+    CLogger::Get ()->Write (FROM, LogNotice,
                     "%u MB RAM, model %d, CPU 680%d0, FPU %s, sound %s, frameskip %d",
                     (unsigned) (PrefsFindInt32 ("ramsize") / (1024 * 1024)),
                     (int) PrefsFindInt32 ("modelid"),
@@ -216,10 +165,10 @@ void CKernel::ApplyTimeZone (void)
     int nMinutes = (int) PrefsFindInt32 ("timezone");
     if (nMinutes != 0)
     {
-        if (   !m_Timer.SetTimeZone (nMinutes)
-            || !m_Timer.SetTime (OKAPIA_BUILD_TIME, FALSE))
+        if (   !CTimer::Get ()->SetTimeZone (nMinutes)
+            || !CTimer::Get ()->SetTime (OKAPIA_BUILD_TIME, FALSE))
         {
-            m_Logger.Write (FROM, LogWarning, "timezone %d is out of range, staying on UTC",
+            CLogger::Get ()->Write (FROM, LogWarning, "timezone %d is out of range, staying on UTC",
                             nMinutes);
             nMinutes = 0;
         }
@@ -232,9 +181,9 @@ void CKernel::ApplyTimeZone (void)
 
     // Circle's formatter has no %+d, so the sign is spelled out.
     const unsigned nAbs = (unsigned) (nMinutes < 0 ? -nMinutes : nMinutes);
-    m_Logger.Write (FROM, LogNotice,
+    CLogger::Get ()->Write (FROM, LogNotice,
                     "Clock: %s (UTC%s%u:%02u), from the build time — no RTC and no NTP yet",
-                    (const char *) *m_Timer.GetTimeString (),
+                    (const char *) *CTimer::Get ()->GetTimeString (),
                     nMinutes < 0 ? "-" : "+", nAbs / 60, nAbs % 60);
 }
 
@@ -266,7 +215,7 @@ void CKernel::ReportCardContents (void)
 
     if (s_nVolumes == 0)
     {
-        m_Logger.Write (FROM, LogWarning, "No HFS volume found on the card");
+        CLogger::Get ()->Write (FROM, LogWarning, "No HFS volume found on the card");
         return;
     }
     if (!PrefsFindBool ("hfsinventory"))
@@ -277,7 +226,7 @@ void CKernel::ReportCardContents (void)
     for (unsigned i = 0; i < s_nVolumes; i++)
     {
         const THfsVolumeInfo *pInfo = &s_Volumes[i];
-        m_Logger.Write (FROM, LogNotice,
+        CLogger::Get ()->Write (FROM, LogNotice,
                         "%s: \"%s\", %lu MB, %lu MB free, %lu files, %lu folders, %s, %s",
                         pInfo->Path, pInfo->Name,
                         pInfo->TotalKB / 1024, pInfo->FreeKB / 1024,
@@ -321,7 +270,7 @@ void CKernel::RefineClock (void)
     // a restart from Mac OS, minutes into the session, and a floor made only of
     // the build time would wind it back — which is precisely the drLsMod before
     // drCrDate that fsck_hfs reports as "MDB needs minor repair".
-    const long nNow = (long) m_Timer.GetLocalTime ();
+    const long nNow = (long) CTimer::Get ()->GetLocalTime ();
     if (nNow > nBest)
     {
         nBest = nNow;
@@ -332,7 +281,7 @@ void CKernel::RefineClock (void)
         const long nWhen = s_Volumes[i].nLastModified;
         if (nWhen > HFS_LAST_DATE)
         {
-            m_Logger.Write (FROM, LogWarning, "%s: last-modified date is out of range, ignored",
+            CLogger::Get ()->Write (FROM, LogWarning, "%s: last-modified date is out of range, ignored",
                             s_Volumes[i].Path);
             continue;
         }
@@ -349,14 +298,14 @@ void CKernel::RefineClock (void)
     }
 
     // TRUE: nBest is local seconds, which is what SetTime stores.
-    if (!m_Timer.SetTime ((unsigned) nBest, TRUE))
+    if (!CTimer::Get ()->SetTime ((unsigned) nBest, TRUE))
     {
-        m_Logger.Write (FROM, LogWarning, "Could not move the clock forward");
+        CLogger::Get ()->Write (FROM, LogWarning, "Could not move the clock forward");
         return;
     }
 
-    m_Logger.Write (FROM, LogNotice, "Clock: %s, from %s — later than the build time",
-                    (const char *) *m_Timer.GetTimeString (), pFrom);
+    CLogger::Get ()->Write (FROM, LogNotice, "Clock: %s, from %s — later than the build time",
+                    (const char *) *CTimer::Get ()->GetTimeString (), pFrom);
 }
 
 /*
@@ -410,7 +359,7 @@ bool CKernel::PrepareVolumes (void)
         FILE *pFile = fopen (pPath, "rb");
         if (pFile == 0)
         {
-            m_Logger.Write (FROM, LogError, "disk %s: not on the card", pPath);
+            CLogger::Get ()->Write (FROM, LogError, "disk %s: not on the card", pPath);
             continue;
         }
         fclose (pFile);
@@ -435,7 +384,7 @@ bool CKernel::PrepareVolumes (void)
         }
         if (!bRepair)
         {
-            m_Logger.Write (FROM, LogWarning,
+            CLogger::Get ()->Write (FROM, LogWarning,
                             "%s: left as it is (hfsrepair false); the Mac will refuse it",
                             pPath);
             continue;
@@ -459,11 +408,11 @@ bool CKernel::PrepareVolumes (void)
             // Nothing the inventory could open as a bootable volume. Say so
             // rather than pass the first drive off as the boot one.
             snprintf (s_BootVolume, sizeof s_BootVolume, "%s", FirstPresent);
-            m_Logger.Write (FROM, LogWarning,
+            CLogger::Get ()->Write (FROM, LogWarning,
                             "No configured disk carries a System; assuming %s",
                             s_BootVolume);
         }
-        m_Logger.Write (FROM, LogNotice, "Boot volume: %s", s_BootVolume);
+        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s", s_BootVolume);
         return true;
     }
 
@@ -476,10 +425,10 @@ bool CKernel::PrepareVolumes (void)
         {
             continue;
         }
-        m_Logger.Write (FROM, LogWarning,
+        CLogger::Get ()->Write (FROM, LogWarning,
                         "No configured disk exists; falling back to %s (\"%s\")",
                         s_Volumes[i].Path, s_Volumes[i].Name);
-        m_Logger.Write (FROM, LogNotice, "Boot volume: %s", s_Volumes[i].Path);
+        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s", s_Volumes[i].Path);
         PrefsAddString ("disk", s_Volumes[i].Path);
         snprintf (s_BootVolume, sizeof s_BootVolume, "%s", s_Volumes[i].Path);
         if (!s_Volumes[i].bClean && bRepair)
@@ -489,7 +438,7 @@ bool CKernel::PrepareVolumes (void)
         return true;
     }
 
-    m_Logger.Write (FROM, LogError, "No bootable volume on the card");
+    CLogger::Get ()->Write (FROM, LogError, "No bootable volume on the card");
     return false;
 }
 
@@ -511,7 +460,7 @@ void CKernel::ApplyModelId (void)
 {
     if (!PrefsFindBool ("modelidauto"))
     {
-        m_Logger.Write (FROM, LogNotice, "Model %d, from the preferences (modelidauto false)",
+        CLogger::Get ()->Write (FROM, LogNotice, "Model %d, from the preferences (modelidauto false)",
                         (int) PrefsFindInt32 ("modelid"));
         return;
     }
@@ -523,7 +472,7 @@ void CKernel::ApplyModelId (void)
     THfsSystemVersion Version;
     if (!HfsSystemVersion (s_BootVolume, &Version))
     {
-        m_Logger.Write (FROM, LogWarning,
+        CLogger::Get ()->Write (FROM, LogWarning,
                         "%s: no System version found, keeping model %d",
                         s_BootVolume, (int) PrefsFindInt32 ("modelid"));
         return;
@@ -539,7 +488,7 @@ void CKernel::ApplyModelId (void)
     static const char *const FlavourName[] =
         { "unreadable", "68k", "PowerPC", "universal" };
 
-    m_Logger.Write (FROM, LogNotice,
+    CLogger::Get ()->Write (FROM, LogNotice,
                     "%s: \"%s\" says System %u.%u.%u (%s), %s — model %d%s",
                     s_BootVolume, Version.File,
                     Version.nMajor, Version.nMinor, Version.nBugfix,
@@ -568,7 +517,7 @@ void CKernel::PrepareSharedFolder (void)
     const char *pPath = PrefsFindString ("extfs");
     if (pPath == 0 || *pPath == '\0')
     {
-        m_Logger.Write (FROM, LogNotice, "No shared folder (extfs unset)");
+        CLogger::Get ()->Write (FROM, LogNotice, "No shared folder (extfs unset)");
         return;
     }
 
@@ -579,18 +528,18 @@ void CKernel::PrepareSharedFolder (void)
     {
         if (mkdir (pPath, 0777) != 0)
         {
-            m_Logger.Write (FROM, LogWarning, "Shared folder %s: cannot create it", pPath);
+            CLogger::Get ()->Write (FROM, LogWarning, "Shared folder %s: cannot create it", pPath);
             return;
         }
-        m_Logger.Write (FROM, LogNotice, "Shared folder %s: created", pPath);
+        CLogger::Get ()->Write (FROM, LogNotice, "Shared folder %s: created", pPath);
         return;
     }
     if (!S_ISDIR (Stat.st_mode))
     {
-        m_Logger.Write (FROM, LogWarning, "Shared folder %s: not a directory", pPath);
+        CLogger::Get ()->Write (FROM, LogWarning, "Shared folder %s: not a directory", pPath);
         return;
     }
-    m_Logger.Write (FROM, LogNotice,
+    CLogger::Get ()->Write (FROM, LogNotice,
                     "Shared folder %s as \"%s\" (System 7.0 and 7.1 need the "
                     "File System Manager 1.2 extension)",
                     pPath, PrefsFindString ("extfsname"));
@@ -620,7 +569,7 @@ void CKernel::LoadKeycodes (void)
     if (!KeycodesLoad (pPath))
     {
         // Absent is the normal case, not a fault: the built-in table stands.
-        m_Logger.Write (FROM, LogNotice, "No keyboard override at %s", pPath);
+        CLogger::Get ()->Write (FROM, LogNotice, "No keyboard override at %s", pPath);
     }
 }
 
@@ -658,21 +607,21 @@ bool CKernel::StartMacintosh (void)
     if (pMarker != 0)
     {
         fclose (pMarker);
-        m_Logger.Write (FROM, LogNotice, "Repair-only card: stopping here");
+        CLogger::Get ()->Write (FROM, LogNotice, "Repair-only card: stopping here");
         return false;
     }
 
-    m_Logger.Write (FROM, LogNotice, "Initialising the emulator");
+    CLogger::Get ()->Write (FROM, LogNotice, "Initialising the emulator");
     if (!InitAll (0))
     {
-        m_Logger.Write (FROM, LogError, "InitAll failed");
+        CLogger::Get ()->Write (FROM, LogError, "InitAll failed");
         return false;
     }
 
-    m_Logger.Write (FROM, LogNotice, "Mac RAM at %p (Mac 0x%08X), ROM at %p (Mac 0x%08X)",
+    CLogger::Get ()->Write (FROM, LogNotice, "Mac RAM at %p (Mac 0x%08X), ROM at %p (Mac 0x%08X)",
                     RAMBaseHost, (unsigned) RAMBaseMac,
                     ROMBaseHost, (unsigned) ROMBaseMac);
-    m_Logger.Write (FROM, LogNotice, "CPU type %d, FPU %d, 24-bit addressing %s",
+    CLogger::Get ()->Write (FROM, LogNotice, "CPU type %d, FPU %d, 24-bit addressing %s",
                     CPUType, FPUType, TwentyFourBitAddressing ? "on" : "off");
 
     // USB devices are attached once, before the 68k loop takes over. Circle's
@@ -684,12 +633,12 @@ bool CKernel::StartMacintosh (void)
     TickInit ();
     TickStart ();
 
-    m_Logger.Write (FROM, LogNotice, "Entering 68k execution");
+    CLogger::Get ()->Write (FROM, LogNotice, "Entering 68k execution");
     MacRestartArm ();
     Start680x0 ();
     TickStop ();                          // does not return until the Mac stops
 
-    m_Logger.Write (FROM, LogNotice, "68k execution ended");
+    CLogger::Get ()->Write (FROM, LogNotice, "68k execution ended");
     return true;
 }
 
@@ -726,11 +675,11 @@ TShutdownMode CKernel::Run (void)
         switch (FirmwareRun ())
         {
         case FirmwareHalt:
-            m_Logger.Write (FROM, LogNotice, "Powered off from the firmware");
+            CLogger::Get ()->Write (FROM, LogNotice, "Powered off from the firmware");
             return ShutdownHalt;
 
         case FirmwareReboot:
-            m_Logger.Write (FROM, LogNotice, "Restarting Okapia at the firmware's request");
+            CLogger::Get ()->Write (FROM, LogNotice, "Restarting Okapia at the firmware's request");
             return ShutdownReboot;
 
         case FirmwareBoot:
@@ -742,7 +691,7 @@ TShutdownMode CKernel::Run (void)
 
         if (!StartMacintosh ())
         {
-            m_Logger.Write (FROM, LogError, "The Macintosh did not start");
+            CLogger::Get ()->Write (FROM, LogError, "The Macintosh did not start");
             // Stay alive rather than reboot: the serial log is the only diagnosis.
             for (unsigned i = 0; i < 10; i++)
             {
@@ -769,7 +718,7 @@ TShutdownMode CKernel::Run (void)
 
         if (QuitRequested ())
         {
-            m_Logger.Write (FROM, LogNotice, "Shut down cleanly, disk closed");
+            CLogger::Get ()->Write (FROM, LogNotice, "Shut down cleanly, disk closed");
             return ShutdownHalt;
         }
 
@@ -777,7 +726,7 @@ TShutdownMode CKernel::Run (void)
         {
             // The interpreter left for a reason nobody named. Say so rather
             // than looping on it.
-            m_Logger.Write (FROM, LogNotice, "68k execution ended, disk closed");
+            CLogger::Get ()->Write (FROM, LogNotice, "68k execution ended, disk closed");
             return ShutdownReboot;
         }
 
@@ -792,7 +741,7 @@ TShutdownMode CKernel::Run (void)
         // number that does not move is the cheapest proof that nothing is being
         // left behind. The seconds say whether the Macintosh was used or came
         // straight back, which is what a runaway restart would look like.
-        m_Logger.Write (FROM, LogNotice,
+        CLogger::Get ()->Write (FROM, LogNotice,
                         "Restarted after %u s: disk closed, %u KB free,"
                         " the firmware has its say again",
                         (CTimer::Get ()->GetTicks () - nStarted) / HZ,

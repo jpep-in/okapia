@@ -17,20 +17,11 @@
 #ifndef _okapia_kernel_h
 #define _okapia_kernel_h
 
-#include <circle/actled.h>
-#include <circle/koptions.h>
-#include <circle/devicenameservice.h>
-#include <circle/nulldevice.h>
-#include <circle/exceptionhandler.h>
-#include <circle/interrupt.h>
-#include <circle/serial.h>
-#include <circle/timer.h>
 #include <circle/logger.h>
-#include <circle/usb/usbhcidevice.h>
-#include <circle/input/console.h>
-#include <SDCard/emmc.h>
-#include <wrap_fatfs.h>
+#include <circle/timer.h>
 #include <circle/types.h>
+
+#include "hal_circle.h"
 
 enum TShutdownMode
 {
@@ -49,7 +40,6 @@ public:
     TShutdownMode Run (void);
 
 private:
-    bool MountStorage (void);
     void LoadPreferences (void);
     void ApplyTimeZone (void);
     void RefineClock (void);
@@ -60,19 +50,9 @@ private:
     void LoadKeycodes (void);
     bool StartMacintosh (void);
 
-    CActLED            m_ActLED;
-    CKernelOptions     m_Options;
-    CDeviceNameService m_DeviceNameService;
-    CNullDevice        m_NullDevice;
-    CExceptionHandler  m_ExceptionHandler;
-    CInterruptSystem   m_Interrupt;
-    CSerialDevice      m_Serial;
-    CTimer             m_Timer;
-    CLogger            m_Logger;
-    CUSBHCIDevice      m_USBHCI;
-    CEMMCDevice        m_EMMC;
-    FATFS              m_FileSystem;
-    CConsole           m_Console;
+    // The Raspberry Pi itself, brought up once and in the right order, shared
+    // with the specimen kernel and with whatever engine comes next.
+    COkapiaBoard       m_Board;
 };
 
 #endif

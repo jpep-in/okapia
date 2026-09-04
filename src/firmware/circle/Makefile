@@ -9,6 +9,7 @@
 include ../../../external/circle-stdlib/Config.mk
 
 FIRMWARE = ../../../src/firmware
+CIRCLE   = ../../../src/circle
 GEN      = ../../../build/generated
 FONTDIR  = ../../../assets/fonts
 BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR12-75.bdf $(FONTDIR)/helvB12-75.bdf $(FONTDIR)/helvR14-75.bdf $(FONTDIR)/helvB14-75.bdf $(FONTDIR)/helvR24-75.bdf $(FONTDIR)/helvB24-75.bdf $(FONTDIR)/helvR14-100.bdf $(FONTDIR)/helvB14-100.bdf $(FONTDIR)/helvR24-100.bdf $(FONTDIR)/helvB24-100.bdf
@@ -20,12 +21,16 @@ FIRMWARE_OBJS = $(addprefix obj/,$(notdir $(FIRMWARE_SRCS:.cpp=.o)))
 # Circle's own rule they carry no -MMD, so they track no header — and a struct
 # that gained a field left one object on the old layout while the link
 # succeeded. The symptom was an arrow key arriving as Escape.
-OBJS = obj/specimen_main.o obj/specimen_kernel.o obj/okapia_input.o $(FIRMWARE_OBJS) \
+# hal_circle brings the board up, and it is the same file the Macintosh kernel
+# uses: that is the whole point of the specimen, which has to prove the firmware
+# runs with no emulator behind it and not merely a copy of the firmware.
+OBJS = obj/specimen_main.o obj/specimen_kernel.o obj/okapia_input.o obj/hal_circle.o \
+       $(FIRMWARE_OBJS) \
        obj/okapia_font_data.o obj/okapia_icons_data.o obj/okapia_strings_data.o
 
 include $(CIRCLEHOME)/Rules.mk
 
-INCLUDE := -I$(FIRMWARE) -I$(GEN) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
+INCLUDE := -I$(FIRMWARE) -I$(CIRCLE) -I$(GEN) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
 LIBS := $(CIRCLE_STDLIB_LIBS)
 
 # The fonts are converted from Circle's own console faces rather than typed out,
@@ -62,6 +67,10 @@ obj/%.o: $(FIRMWARE)/%.cpp | obj
 
 obj/%.o: $(FIRMWARE)/circle/%.cpp | obj
 	@printf '  CPP   firmware/circle/%s\n' "$(notdir $<)"
+	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
+
+obj/%.o: $(CIRCLE)/%.cpp | obj
+	@printf '  CPP   circle/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 
 obj/%.o: %.cpp | obj
