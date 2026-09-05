@@ -1,10 +1,11 @@
 /*
- * check_platform.cpp — the two platform answers that cost data when wrong.
+ * check_platform.cpp — the platform answers nobody sees going wrong.
  *
- * Both are decidable without a card, an emulator or a screen, and both are the
- * kind of mistake nobody sees until it matters: a preferences line that
- * disappears is noticed the day the setting was needed, and a System read as
- * the wrong sort is noticed after the boot menu has offered the wrong emulator.
+ * All three are decidable without a card, an emulator or a screen, and all
+ * three fail quietly: a preferences line that disappears is noticed the day the
+ * setting was needed, a System read as the wrong sort after the boot menu has
+ * offered the wrong emulator, and a memory plan that is out by a megabyte gives
+ * a Macintosh reading someone else's bytes rather than an error.
  *
  * The preferences half runs against the *real* keyword tables — upstream's
  * common_prefs_items and our platform_prefs_items are linked in, not mocked —
@@ -20,6 +21,7 @@
 #include <fcntl.h>
 
 #include "hfs_volume_circle.h"
+#include "mac_layout.h"
 
 // prefs_circle.cpp. Declared here rather than in a header of its own: it has
 // exactly one caller in the kernel, SavePrefs(), a few lines below it.
@@ -175,10 +177,57 @@ static void CheckFlavour (void)
             "pas de version lisible : la règle ne conclut pas");
 }
 
+/*
+ *  Where SheepShaver's Macintosh lands in memory
+ */
+
+static void CheckLayout (void)
+{
+    printf ("\nle plan mémoire de SheepShaver\n");
+
+    TMacLayout L;
+    Expect (MacLayoutPlan (256 * 1024 * 1024, &L), "256 Mo tiennent");
+
+    Expect (L.nRAMBase == 0x10000000, "la RAM commence là où l'amont la met");
+    Expect (L.nROMBase == L.nRAMBase + L.nRAMSize,
+            "la ROM suit la RAM immédiatement — c'est tout le §19.4");
+    Expect ((L.nROMBase & 0xFFFFF) == 0, "et sur une frontière de mégaoctet");
+    Expect (L.nSigStack == L.nROMBase + OKAPIA_ROM_AREA_SIZE,
+            "la pile de signal suit la zone ROM, cinq mégaoctets et non quatre");
+    Expect (L.nSheepBase == L.nSigStack + OKAPIA_SIG_STACK_SIZE,
+            "puis le bloc propre à SheepShaver");
+    Expect (L.nHostBytes == (size_t) (L.nEnd - L.nRAMBase),
+            "le bloc hôte couvre exactement l'invité, sans trou");
+
+    // 256 Mo + 5 + 0,0625 + 0,5 : la valeur écrite dans le plan.
+    Expect (L.nHostBytes == 256u * 1024 * 1024 + 0x500000 + 0x10000 + 0x80000,
+            "soit 261,6 Mo pour 256 Mo de RAM Mac");
+
+    // Un alignement qui ne fait rien quand il n'a rien à faire.
+    TMacLayout M;
+    Expect (MacLayoutPlan (255 * 1024 * 1024 + 1, &M)
+            && M.nROMBase == 0x10000000 + 256u * 1024 * 1024,
+            "une taille non alignée pousse la ROM au mégaoctet suivant");
+
+    // Les trois refus. Ils disent non au démarrage, ce qui est le seul moment
+    // où un plan mémoire faux peut encore être expliqué.
+    Expect (!MacLayoutPlan (0, &M), "zéro octet de RAM est refusé");
+    Expect (!MacLayoutPlan (0xF0000000u, &M),
+            "une taille qui ferait déborder l'espace 32 bits aussi");
+
+    // La Kernel Data est à 0x68ffe000 et c'est la ROM qui la place, pas nous :
+    // le bloc doit finir en dessous, pas seulement commencer en dessous.
+    Expect (!MacLayoutPlan (0x58ffe000u, &M),
+            "et une RAM qui atteindrait la Kernel Data de la ROM");
+    Expect (MacLayoutPlan (0x58000000u, &M) && M.nEnd < 0x68ffe000u,
+            "juste en dessous, cela passe encore");
+}
+
 int main (void)
 {
     CheckUnknownLines ();
     CheckFlavour ();
+    CheckLayout ();
     unlink (TMP);
 
     printf ("\n%u écart(s)\n", s_nFailures);

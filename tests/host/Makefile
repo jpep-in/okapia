@@ -39,10 +39,11 @@ MACEMU   = $(ROOT)/external/macemu/BasiliskII/src
 LIBHFS   = $(ROOT)/external/hfsutils/libhfs
 
 PLATFORM_CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c++14 \
-    -include shims/okapia_circle.h -I$(CIRCLE) -I$(MACEMU)/include \
+    -include shims/okapia_circle.h -I$(CIRCLE) -I$(CIRCLE)/sheepshaver -I$(MACEMU)/include \
     -I$(MACEMU)/Unix -I$(MACEMU)/uae_cpu_2021 -I$(LIBHFS) \
     -DDIRECT_ADDRESSING -DFPU_UAE
-PLATFORM_OBJS = p_prefs_circle.o p_hfs_volume_circle.o p_prefs.o p_prefs_items.o
+PLATFORM_OBJS = p_prefs_circle.o p_hfs_volume_circle.o p_prefs.o p_prefs_items.o \
+                p_mac_layout.o
 HFS_SRCS      = $(wildcard $(LIBHFS)/*.c)
 HFS_OBJS      = $(addprefix hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
@@ -106,6 +107,12 @@ check_pages: $(LIBOBJS) check_pages.o pages_sample.o
 # prefs.cpp from upstream and prefs_circle.cpp from here would both want to be
 # prefs.o, and the second would quietly win.
 p_%.o: $(CIRCLE)/%.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+# The engine-specific half of the platform layer. mac_layout is pure arithmetic
+# and touches neither Circle nor macemu, which is exactly why it is checked here
+# rather than discovered on a card.
+p_%.o: $(CIRCLE)/sheepshaver/%.cpp
 	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 p_%.o: $(MACEMU)/%.cpp

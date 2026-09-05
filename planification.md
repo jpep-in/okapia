@@ -3588,7 +3588,17 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
       l'autre — en réussissant. Côté `sheepshaver` le Makefile ne nomme aujourd'hui que des chemins : le
       cœur compile, mais il n'a pas de couche plateforme, donc il n'y a rien à lier. C'est écrit dans le
       fichier plutôt que laissé à découvrir.
-- [ ] `main_circle.cpp` variante SheepShaver : un bloc contigu, `RAM_BASE`/`ROM_BASE` choisis, `VMBaseDiff`
+- [x] **le plan mémoire, écrit et vérifié sur l'hôte** (2026-09-05). `MacLayoutPlan()`
+      (`src/circle/sheepshaver/mac_layout.{h,cpp}`) est l'arithmétique de ce §19.4, tenue à l'écart de
+      toute allocation pour être contrôlable sur cette machine — parce qu'un plan faux ne produit pas
+      une erreur mais un Macintosh qui lit les octets d'un autre. Treize contrôles dans
+      `tests/host/check_platform.cpp`, dont les trois refus : zéro octet, un débordement de l'espace
+      32 bits, et une RAM qui atteindrait la Kernel Data que la ROM place à `0x68ffe000`.
+
+      Le gain du §19.4 s'y voit en une ligne : l'amont laisse 1 Go entre la RAM et la ROM parce qu'un
+      hôte Unix doit demander les deux séparément ; ici le bloc est à nous, la ROM suit la RAM
+      immédiatement, et **261,6 Mo suffisent pour 256 Mo de RAM Mac**.
+- [ ] `main_circle.cpp` variante SheepShaver : allouer ce bloc et poser `VMBaseDiff`
 - [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification (§19.4)
 - [x] `check-rom.py` étendu — fait, et deux ROM vérifiées (§19.6)
 - [ ] chargement d'une ROM `<CHRP-BOOT>` par le noyau : le décodeur est à porter en C++, l'étalon est la
