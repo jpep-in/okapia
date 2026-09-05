@@ -3621,15 +3621,20 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
       croire — les deux premières appartiennent à `video.cpp`, la troisième à `gfxaccel.cpp`. C'est
       exactement pour ça qu'on va vite jusqu'à un lien.
 
-- [ ] **le Macintosh démarre.** État au 2026-09-05 : tout le chemin fonctionne — carte montée,
-      préférences lues, 256 Mo alloués (hôte `0x80c640`, invité `0x10000000`, ROM invité `0x20000000`),
-      **ROM `<CHRP-BOOT>` décodée dans le noyau, 1 945 746 octets vers 4 Mo**, `PatchROM()` accepté donc
-      le nanokernel reconnu, `InitAll()` passé, écran initialisé, tick armé, et « Entering PowerPC
-      execution » suivi de la bannière de `kpx_cpu`.
+- [x] **le Macintosh démarre — 2026-09-05.** Bureau gris, pointeur, et l'icône de disquette au centre :
+      l'écran « pas de disque de démarrage », qui est exactement ce qu'une carte sans image disque doit
+      donner. **Jalon de la phase 20 atteint.**
 
-      Puis **le guest exécute quelques instructions et s'arrête** : le compteur de lectures du timebase
-      monte à 3 et n'en bouge plus, les Ticks du Mac restent à 0, l'écran est noir. Ce n'est ni un
-      plantage ni une lenteur — c'est un arrêt. La piste à suivre est là, et pas ailleurs.
+      Ce qui manquait tenait en un appel : **`SheepMem::Init()` n'était jamais fait.** L'amont l'appelle
+      trois lignes avant de charger la ROM (`main_unix.cpp:1142`) et il faut le lire pour le savoir —
+      c'est `ThunksInit()`, *à l'intérieur* de `InitAll()`, qui alloue dans cette zone. Avec `base` resté
+      à zéro, les thunks natifs que la ROM appelle étaient placés dans Low Memory, en silence : aucune
+      erreur, aucun refus, le nanokernel partait et se perdait au bout de trois instructions.
+
+      Le compteur de lectures du timebase est ce qui a rendu la panne lisible. Il disait 3 et ne bougeait
+      plus — donc un arrêt et non une lenteur, ce qui écartait d'un coup la moitié des hypothèses. Après
+      le correctif : 3, puis 9, puis les Ticks du Mac qui montent. **2 482 ticks en 48 secondes sous
+      QEMU, soit 52/s pour 60 nominaux — 86 %**, et QEMU émule déjà l'ARM.
 - [x] **les deux conditions de préprocesseur — faites le 2026-09-05**, et ce sont bien deux mots ajoutés.
       `patches/macemu/0001-vm-let-a-port-place-the-guest-itself.patch` ouvre une troisième porte dans
       `vm.hpp` à côté de celles que l'amont écrit déjà pour deux autres hôtes : `VM_PORT_PLACES_GUEST`

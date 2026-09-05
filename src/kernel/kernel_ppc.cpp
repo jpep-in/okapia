@@ -21,6 +21,7 @@
 #include "cpu_emulation.h"
 #include "main.h"
 #include "prefs.h"
+#include "thunks.h"
 
 #define FROM "okapia-ppc"
 
@@ -101,6 +102,16 @@ bool CKernelPPC::Initialize (void)
 
 TShutdownMode CKernelPPC::Run (void)
 {
+    // Before the ROM and before InitAll, in that order, because ThunksInit()
+    // inside InitAll allocates out of this area — and with base left at zero it
+    // allocates out of Low Memory instead, silently. Upstream does it at
+    // main_unix.cpp:1142, three lines before loading the ROM.
+    if (!SheepMem::Init ())
+    {
+        CLogger::Get ()->Write (FROM, LogError, "SheepMem would not initialise");
+        return ShutdownHalt;
+    }
+
     const char *pROM = PrefsFindString ("rom");
     if (pROM == 0 || !MacROMLoad (pROM))
     {
