@@ -3626,8 +3626,19 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
 - [x] `check-rom.py` étendu — fait, et deux ROM vérifiées (§19.6)
 - [ ] chargement d'une ROM `<CHRP-BOOT>` par le noyau : le décodeur est à porter en C++, l'étalon est la
       sortie de `check-rom.py` sur `macosrom16.rom`
-- [ ] la sortie de secours des accès matériels (§19.4) : page fantôme d'abord, *data abort* si elle ne
-      suffit pas
+- [x] **le processeur compile — 33 fichiers, le 2026-09-05.** `ppc-execute.cpp`, le gros fichier de
+      gabarits, avec sa table `ppc-execute-impl.cpp` produite par `scripts/gen-ppc-exec.sh` — même
+      famille que `gen-cpu.sh` pour le 68k, mais préprocessée par le compilateur *cible* pour que la
+      liste corresponde à ce que la compilation demandera. Et `sheepshaver_glue.cpp`, qui butait sur le
+      seul obstacle annoncé : `#error "you don't have the capability to skip instruction"`.
+
+      `patches/macemu/0002` le lève, et la manière compte. Le refus de l'amont est justifié — un port
+      qui piège doit pouvoir enjamber l'instruction fautive — mais il arrête aussi un port qui **ne
+      piège pas du tout**, ce qui est notre cas : les accès matériels du Mac iront vers de la mémoire.
+      Deux déclarations remontent au-dessus de la condition et l'`#error` devient le chemin qui existait
+      déjà en dessous. Aucun hôte actuel ne change de branche.
+- [ ] la sortie de secours des accès matériels (§19.4), moitié exécution : router l'espace périphérique
+      vers une page fantôme, dans la même bancarisation que Low Memory
 - [ ] vidéo au strict minimum — le framebuffer, aucune optimisation
 - [ ] **jalon : `PatchROM()` passe, le nanokernel démarre, quelque chose s'affiche**
 

@@ -1,0 +1,58 @@
+glue: a port that does not trap can still compile
+
+sigsegv_handler() refuses to build without HAVE_SIGSEGV_SKIP_INSTRUCTION,
+with an #error in the middle of the function. The intent is sound — a
+port that traps has to be able to step over the faulting instruction, and
+silently doing nothing would be worse — but it also stops a port that
+does not trap at all.
+
+That is Okapia's case. It routes the Macintosh's device accesses to
+memory rather than letting them fault, so there is no fault to recover
+from and nothing to skip. Anything that did reach this handler would be
+real, and the report below the #if is exactly the right answer to it.
+
+Two declarations move above the conditional so the fall-through has the
+program counter it prints, and the #error becomes that fall-through. No
+existing build changes: every host that defines the capability still
+takes the same path it did.
+
+Okapia (planification.md §19.4). Offered upstream: an #error inside a
+function is hostile to a port whose answer is "this cannot happen".
+
+---
+diff --git a/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp b/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp
+index 7f857920..e6ec8b56 100755
+--- a/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp
++++ b/SheepShaver/src/kpx_cpu/sheepshaver_glue.cpp
+@@ -775,14 +775,15 @@ sigsegv_return_t sigsegv_handler(sigsegv_info_t *sip)
+ #endif
+ 
+ 	const uintptr addr = (uintptr)sigsegv_get_fault_address(sip);
+-#if HAVE_SIGSEGV_SKIP_INSTRUCTION
+-	// Ignore writes to ROM
+-	if ((addr - (uintptr)ROMBaseHost) < ROM_SIZE)
+-		return SIGSEGV_RETURN_SKIP_INSTRUCTION;
+ 
+ 	// Get program counter of target CPU
+ 	sheepshaver_cpu * const cpu = ppc_cpu;
+ 	const uint32 pc = cpu->pc();
++
++#if HAVE_SIGSEGV_SKIP_INSTRUCTION
++	// Ignore writes to ROM
++	if ((addr - (uintptr)ROMBaseHost) < ROM_SIZE)
++		return SIGSEGV_RETURN_SKIP_INSTRUCTION;
+ 	
+ 	// Fault in Mac ROM or RAM?
+ 	bool mac_fault = (pc >= ROMBase && pc < (ROMBase + ROM_AREA_SIZE)) || (pc >= RAMBase && pc < (RAMBase + RAMSize)) || (pc >= DR_CACHE_BASE && pc < (DR_CACHE_BASE + DR_CACHE_SIZE));
+@@ -821,7 +822,10 @@ sigsegv_return_t sigsegv_handler(sigsegv_info_t *sip)
+ 			return SIGSEGV_RETURN_SKIP_INSTRUCTION;
+ 	}
+ #else
+-#error "FIXME: You don't have the capability to skip instruction within signal handlers"
++	// Nothing to skip with. A port that routes device accesses to memory
++	// instead of trapping on them has no faults to recover from either, so
++	// anything arriving here is real: fall through to the report below.
++	(void)addr;
+ #endif
+ 
+ 	fprintf(stderr, "SIGSEGV\n");

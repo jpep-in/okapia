@@ -67,8 +67,16 @@ SOURCES=(
     adb audio cdrom disk scsi sony timer xpram extfs
     kpx_cpu/src/mathlib/ieeefp kpx_cpu/src/mathlib/mathlib
     kpx_cpu/src/cpu/ppc/ppc-cpu kpx_cpu/src/cpu/ppc/ppc-decode
-    kpx_cpu/src/cpu/ppc/ppc-translate kpx_cpu/src/utils/utils-cpuinfo
+    kpx_cpu/src/cpu/ppc/ppc-execute kpx_cpu/src/cpu/ppc/ppc-translate
+    kpx_cpu/src/utils/utils-cpuinfo kpx_cpu/sheepshaver_glue
 )
+
+# ppc-execute.cpp includes a table generated from the decode file, so it has to
+# exist before anything asks whether that file compiles.
+if [ ! -s "${REPO_ROOT}/build/generated/ppc-execute-impl.cpp" ]; then
+    "${REPO_ROOT}/scripts/gen-ppc-exec.sh"
+fi
+FLAGS+=(-I"${REPO_ROOT}/build/generated")
 
 # And our own half, which is the part that will actually be wrong. It needs the
 # platform's include paths on top of the engine's.
