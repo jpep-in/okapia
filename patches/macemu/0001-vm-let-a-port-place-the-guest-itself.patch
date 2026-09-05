@@ -1,0 +1,44 @@
+vm: let a port place the guest itself
+
+Two hosts already cannot put the Macintosh where SheepShaver's fixed
+addresses ask for it, and upstream has an answer for each: MEM_BULK makes
+VMBaseDiff a variable so the block can land anywhere, and the Apple
+x86_64 build banks Low Memory and the Kernel Data into two static arrays
+so their addresses — 1.6 GB apart — need not be covered by the mapping at
+all.
+
+A bare-metal port needs both at once, and neither of the existing symbols
+fits: MEM_BULK also selects a Windows-shaped allocator with a 1.5 GB
+reservation, and the Apple condition is a processor test. So this adds a
+third way in, named for what it means rather than for who uses it.
+
+With VM_PORT_PLACES_GUEST defined, VMBaseDiff is a variable the port sets
+and both regions are banked. Everything else is unchanged; no existing
+build sees any difference.
+
+Okapia (planification.md §19.4). Offered upstream as it stands: it
+generalises a case the tree already answers twice.
+
+---
+diff --git a/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp b/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
+index e60bc85d..ff46d5ab 100755
+--- a/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
++++ b/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
+@@ -190,7 +190,7 @@ typedef uintptr vm_addr_t;
+ #if REAL_ADDRESSING
+ const uintptr VMBaseDiff = 0;
+ #elif DIRECT_ADDRESSING
+-#ifdef MEM_BULK
++#if defined(MEM_BULK) || defined(VM_PORT_PLACES_GUEST)
+ extern uintptr VMBaseDiff;
+ #elif defined(NATMEM_OFFSET)
+ const uintptr VMBaseDiff = NATMEM_OFFSET;
+@@ -208,7 +208,7 @@ const uintptr VMBaseDiff = NATMEM_OFFSET;
+ static inline uint8 * vm_do_get_real_address(vm_addr_t addr)
+ {
+ 	uintptr a = vm_wrap_address(addr);
+-#if defined(__APPLE__) && defined(__x86_64__) || defined(MEM_BULK)
++#if defined(__APPLE__) && defined(__x86_64__) || defined(MEM_BULK) || defined(VM_PORT_PLACES_GUEST)
+ 	extern uint8 gZeroPage[0x3000], gKernelData[0x2000];
+ #ifndef MEM_BULK
+ 	if (a < 0x3000) return &gZeroPage[a];

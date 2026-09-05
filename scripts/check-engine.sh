@@ -19,6 +19,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 source "${REPO_ROOT}/scripts/env.sh"
 
+# The core reads vm.hpp, and our two conditions are in it. Compiling against an
+# unpatched tree would succeed and mean nothing: VMBaseDiff would silently
+# become a constant again.
+if ! "${REPO_ROOT}/scripts/apply-patches.sh" --check >/dev/null 2>&1; then
+    echo "Patches are not applied; run scripts/apply-patches.sh first." >&2
+    exit 1
+fi
+
 ENGINE="${1:-sheepshaver}"
 if [ "${ENGINE}" != "sheepshaver" ]; then
     echo "usage: check-engine.sh [sheepshaver]" >&2

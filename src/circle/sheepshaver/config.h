@@ -97,9 +97,17 @@ struct hostent *gethostbyname (const char *name);
    cannot find FE_TONEAREST. */
 #define HAVE_FENV_H 1
 
-/* Direct addressing: host = NATMEM_OFFSET + guest. A placeholder value here —
-   the real one is a variable set at startup, which is what planification.md
-   §19.4 asks for and what the two upstream conditions provide. */
-#define NATMEM_OFFSET 0x40000000UL
+/* Direct addressing, with the guest placed by us rather than by the address
+   it asks for: host = VMBaseDiff + guest, VMBaseDiff being a variable set once
+   the block has been allocated. It also banks Low Memory and the Kernel Data
+   out of that block — the ROM fixes those two 1.6 GB apart, and covering them
+   with one offset would mean reserving 1.6 GB to use 20 KB of it.
+
+   Both come from patches/macemu/0001, two words added to conditions upstream
+   already writes for two other hosts. NATMEM_OFFSET is what selects direct
+   addressing in sysdeps.h; its value is never read once VMBaseDiff is a
+   variable. */
+#define VM_PORT_PLACES_GUEST 1
+#define NATMEM_OFFSET 0
 
 #endif

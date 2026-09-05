@@ -3599,7 +3599,17 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
       hôte Unix doit demander les deux séparément ; ici le bloc est à nous, la ROM suit la RAM
       immédiatement, et **261,6 Mo suffisent pour 256 Mo de RAM Mac**.
 - [ ] `main_circle.cpp` variante SheepShaver : allouer ce bloc et poser `VMBaseDiff`
-- [ ] les deux conditions de préprocesseur dans `patches/macemu/`, avec leur justification (§19.4)
+- [x] **les deux conditions de préprocesseur — faites le 2026-09-05**, et ce sont bien deux mots ajoutés.
+      `patches/macemu/0001-vm-let-a-port-place-the-guest-itself.patch` ouvre une troisième porte dans
+      `vm.hpp` à côté de celles que l'amont écrit déjà pour deux autres hôtes : `VM_PORT_PLACES_GUEST`
+      rend `VMBaseDiff` variable **et** bancarise Low Memory et la Kernel Data. Ni `MEM_BULK` ni la
+      condition Apple ne convenaient — le premier sélectionne aussi un allocateur de forme Windows avec
+      sa réservation de 1,5 Go, la seconde est un test de processeur.
+
+      La mécanique arrive avec : `scripts/apply-patches.sh`, idempotent, appelé par `bootstrap.sh`, et
+      `--check` pour les scripts. `check-engine.sh` refuse désormais de tourner sur un arbre non
+      rustiné — il compilerait, et ne voudrait rien dire, `VMBaseDiff` étant redevenu une constante en
+      silence.
 - [x] `check-rom.py` étendu — fait, et deux ROM vérifiées (§19.6)
 - [ ] chargement d'une ROM `<CHRP-BOOT>` par le noyau : le décodeur est à porter en C++, l'étalon est la
       sortie de `check-rom.py` sur `macosrom16.rom`

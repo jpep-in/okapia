@@ -45,6 +45,11 @@ git -C external/circle-stdlib/libs/circle submodule update --init --force $CIRCL
 
 add "$MACEMU_URL" external/macemu "$MACEMU_REF"
 
+# The exceptions to "never edit external/", each explaining itself in its own
+# header. Idempotent, so running bootstrap again is safe.
+say "Patches"
+"$(dirname "${BASH_SOURCE[0]}")/apply-patches.sh"
+
 say "Checks"
 check() { [ -e "$1" ] && printf '  ok    %s\n' "$2" || fail "missing $1 ($2)"; }
 check external/circle-stdlib/libs/circle/lib                      "Circle sources"
