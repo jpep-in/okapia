@@ -83,9 +83,11 @@ FLAGS+=(-I"${REPO_ROOT}/build/generated")
 OURS=(
     "${REPO_ROOT}/src/circle/sheepshaver/mac_layout.cpp"
     "${REPO_ROOT}/src/circle/sheepshaver/main_circle.cpp"
+    "${REPO_ROOT}/src/circle/sheepshaver/video_circle.cpp"
 )
 OUR_FLAGS=(
     -I"${REPO_ROOT}/src/circle" -I"${REPO_ROOT}/src/circle/compat"
+    -I"${REPO_ROOT}/src/firmware/circle"
     -isystem "${STDLIB}/libs/circle/include"
     -isystem "${STDLIB}/libs/circle/addon"
     -DAARCH=64 -DRASPPI=3 -D__circle__=510000 -DSTDLIB_SUPPORT=3

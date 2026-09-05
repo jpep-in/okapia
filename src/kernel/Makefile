@@ -25,14 +25,18 @@ ifeq ($(ENGINE),basilisk)
   MACEMU         = ../../external/macemu/BasiliskII/src
   ENGINE_CONFIG  = $(OKAPIA)
   ENGINE_DEFINES = -DDIRECT_ADDRESSING -DFPU_UAE
+  ENGINE_VPATH   =
 else ifeq ($(ENGINE),sheepshaver)
   MACEMU         = ../../external/macemu/SheepShaver/src
   # Its own config.h, ahead of Basilisk's on the include path: upstream includes
   # the file by that plain name from both trees.
   ENGINE_CONFIG  = $(OKAPIA)/sheepshaver
   # Direct addressing comes from NATMEM_OFFSET in that config.h, and there is no
-  # UAE FPU on this side — the PowerPC brings its own.
-  ENGINE_DEFINES =
+  # UAE FPU on this side — the PowerPC brings its own. HAVE_CONFIG_H is
+  # autoconf's own convention, and vm_alloc.cpp is the one file that reads the
+  # config through it rather than through sysdeps.h.
+  ENGINE_DEFINES = -DHAVE_CONFIG_H -DSHEEPSHAVER
+  ENGINE_VPATH   = $(OKAPIA)/sheepshaver:
 else
   $(error ENGINE must be basilisk or sheepshaver, not "$(ENGINE)")
 endif
@@ -44,10 +48,23 @@ OBJ = emu-$(ENGINE)
 
 # bincue.cpp needs SDL and is an upstream option, off by default.
 CORE_SRCS   = $(filter-out $(MACEMU)/bincue.cpp,$(wildcard $(MACEMU)/*.cpp))
+
+ifeq ($(ENGINE),basilisk)
 CPU_SRCS    = $(wildcard $(MACEMU)/uae_cpu_2021/*.cpp) \
               $(MACEMU)/uae_cpu_2021/fpu/fpu_uae.cpp \
               $(MACEMU)/CrossPlatform/video_blit.cpp
 GEN_SRCS    = $(GEN)/cpudefs.cpp $(GEN)/cpustbl.cpp $(GEN)/cpufunctbl.cpp
+else
+# The interpreted list, exactly as configure.ac:1580-1587 and :1705 build it
+# when the host has no JIT backend — which AArch64 has not.
+KPX         = $(MACEMU)/kpx_cpu
+CPU_SRCS    = $(KPX)/src/mathlib/ieeefp.cpp $(KPX)/src/mathlib/mathlib.cpp \
+              $(KPX)/src/cpu/ppc/ppc-cpu.cpp $(KPX)/src/cpu/ppc/ppc-decode.cpp \
+              $(KPX)/src/cpu/ppc/ppc-execute.cpp $(KPX)/src/cpu/ppc/ppc-translate.cpp \
+              $(KPX)/src/utils/utils-cpuinfo.cpp $(KPX)/sheepshaver_glue.cpp \
+              $(MACEMU)/CrossPlatform/vm_alloc.cpp
+GEN_SRCS    =
+endif
 # audio_dummy.cpp, prefs_dummy.cpp and user_strings_dummy.cpp are replaced by
 # src/circle/*_circle.cpp; the others stay. prefs_dummy looks for its file
 # relative to a current directory the kernel never sets, so it never found one
@@ -65,9 +82,23 @@ COMPAT_SRCS = $(wildcard $(OKAPIA)/compat/*.cpp)
 # block below.
 TRACE_SRCS  = $(OKAPIA)/trace_disk_circle.cpp $(OKAPIA)/exception_trace.cpp \
               $(OKAPIA)/trace_traps_circle.cpp
+ifeq ($(ENGINE),basilisk)
 PLATFORM_SRCS = $(filter-out $(TRACE_SRCS),$(wildcard $(OKAPIA)/*.cpp))
 ifeq ($(OKAPIA_TRACE),1)
 PLATFORM_SRCS += $(TRACE_SRCS)
+endif
+else
+# Only what this engine actually has. The shared platform files are the ones
+# whose upstream header is a symbolic link between the two trees — prefs, xpram,
+# timer, adb — and the rest is under sheepshaver/. Globbing src/circle would
+# drag in the other engine's video and main.
+PLATFORM_SRCS = $(OKAPIA)/hal_circle.cpp \
+                $(OKAPIA)/prefs_circle.cpp $(OKAPIA)/xpram_circle.cpp \
+                $(OKAPIA)/timer_circle.cpp $(OKAPIA)/tick_circle.cpp \
+                $(OKAPIA)/input_circle.cpp $(OKAPIA)/audio_circle.cpp \
+                $(OKAPIA)/user_strings_circle.cpp $(OKAPIA)/extfs_sync_circle.cpp \
+                $(OKAPIA)/hfs_volume_circle.cpp \
+                $(wildcard $(OKAPIA)/sheepshaver/*.cpp)
 endif
 # Upstream Unix files reused unchanged.
 REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
@@ -103,11 +134,15 @@ HFS_OBJS = $(addprefix $(OBJ)/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
 EMU_OBJS = $(addprefix $(OBJ)/,$(notdir $(EMU_SRCS:.cpp=.o))) \
            $(OBJ)/okapia_font_data.o $(OBJ)/okapia_icons_data.o $(OBJ)/okapia_strings_data.o \
-           $(addprefix $(OBJ)/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
+           $(if $(GEN_SRCS),$(addprefix $(OBJ)/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8)))
 
-# Our entry point is okapia_main.cpp, not main.cpp: VPATH also finds the core's
+# Our entry point is okapia_main*.cpp, not main.cpp: VPATH also finds the core's
 # main.cpp, and identical names silently resolve to the wrong file.
+ifeq ($(ENGINE),basilisk)
 OBJS = okapia_main.o kernel.o $(EMU_OBJS) $(HFS_OBJS)
+else
+OBJS = okapia_main_ppc.o kernel_ppc.o $(EMU_OBJS) $(HFS_OBJS)
+endif
 
 include $(CIRCLEHOME)/Rules.mk
 
@@ -121,7 +156,7 @@ EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD
 EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) -I$(HFS) \
                -I$(FIRMWARE) -I$(FIRMWARE)/circle -I$(OKAPIA)/circle \
                -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
-               -I$(MACEMU)/CrossPlatform
+               -I$(MACEMU)/CrossPlatform -I$(MACEMU)/kpx_cpu/include -I$(MACEMU)/kpx_cpu/src
 
 INCLUDE := $(EMU_INCLUDES) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
 
@@ -155,7 +190,13 @@ endif
 # -fno-exceptions, and later flags win.
 EMU_FLAGS = $(EMU_DEFINES) -fexceptions -Wno-narrowing -Wno-write-strings
 
-VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(GEN)
+# The engine's own directory goes on the path only for that engine, and ahead
+# of the shared one. Both halves matter: sheepshaver/main_circle.cpp has the
+# same name as the other engine's on purpose — it is the same role — and VPATH
+# resolves a name to the first directory that has it. Ahead, and a SheepShaver
+# kernel would compile Basilisk's platform; unconditionally, and the Basilisk
+# kernel compiles SheepShaver's. Both were seen, in that order.
+VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(GEN)
 
 # The USB HID -> ADB key table, derived from Basilisk's own keycodes file rather
 # than typed out: SDL2 scancodes are HID usage IDs, so its "sdl cocoa" section

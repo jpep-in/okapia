@@ -69,7 +69,25 @@ static void OneSecond (void)
                                 (unsigned long) (us / 1000000));
     }
 
+    // The two engines number their flags differently, and SheepShaver has no
+    // one-second interrupt at all: its ROM drives the disk from the 60 Hz one.
+    // Keeping the test rather than pruning it is what §3.5 asks for.
+#ifndef SHEEPSHAVER
     SetInterruptFlag (INTFLAG_1HZ);
+#else
+    // Bring-up diagnostic, and the cheapest one there is: the nanokernel reads
+    // the timebase constantly, so a count that stops moving says the guest has
+    // stopped executing rather than executed something wrong. Silent once it
+    // settles, so it costs nothing on a machine that works.
+    extern volatile unsigned g_nTimebaseReads;
+    static unsigned s_nLastReads = 0;
+    if (g_nTimebaseReads != s_nLastReads)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice, "guest timebase reads: %u",
+                                g_nTimebaseReads);
+        s_nLastReads = g_nTimebaseReads;
+    }
+#endif
 
     // Sound only says anything once the Mac has a source playing, which is
     // exactly when you want to see whether blocks are getting through.
@@ -90,7 +108,11 @@ static void OneTick (void)
         OneSecond ();
     }
 
+#ifdef SHEEPSHAVER
+    SetInterruptFlag (INTFLAG_VIA);
+#else
     SetInterruptFlag (INTFLAG_60HZ);
+#endif
     TriggerInterrupt ();
 
     AudioPump ();

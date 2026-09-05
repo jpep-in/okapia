@@ -3611,7 +3611,25 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
 
       Ce qu'il ne contient pas est aussi délibéré : la plomberie des interruptions et du processeur
       arrive avec le processeur.
-- [ ] la vidéo au strict minimum et le reste de la couche plateforme
+- [x] **la vidéo au strict minimum, le noyau, et l'édition de liens** — 2026-09-05. Un pilote SheepShaver
+      d'un seul mode (640x480, 256 couleurs, écran entier à chaque trame), un `CKernelPPC` qui ne fait que
+      le nécessaire, et `platform_bits_circle.cpp` pour la dizaine de petites choses que l'amont range
+      dans `main_unix.cpp` au milieu de son appareillage de signaux.
+
+      L'édition de liens a corrigé deux suppositions tirées des en-têtes : `VideoActivated`,
+      `VideoSnapshot` et `VideoInstallAccel` ne sont pas à la plateforme malgré ce que `video.h` laisse
+      croire — les deux premières appartiennent à `video.cpp`, la troisième à `gfxaccel.cpp`. C'est
+      exactement pour ça qu'on va vite jusqu'à un lien.
+
+- [ ] **le Macintosh démarre.** État au 2026-09-05 : tout le chemin fonctionne — carte montée,
+      préférences lues, 256 Mo alloués (hôte `0x80c640`, invité `0x10000000`, ROM invité `0x20000000`),
+      **ROM `<CHRP-BOOT>` décodée dans le noyau, 1 945 746 octets vers 4 Mo**, `PatchROM()` accepté donc
+      le nanokernel reconnu, `InitAll()` passé, écran initialisé, tick armé, et « Entering PowerPC
+      execution » suivi de la bannière de `kpx_cpu`.
+
+      Puis **le guest exécute quelques instructions et s'arrête** : le compteur de lectures du timebase
+      monte à 3 et n'en bouge plus, les Ticks du Mac restent à 0, l'écran est noir. Ce n'est ni un
+      plantage ni une lenteur — c'est un arrêt. La piste à suivre est là, et pas ailleurs.
 - [x] **les deux conditions de préprocesseur — faites le 2026-09-05**, et ce sont bien deux mots ajoutés.
       `patches/macemu/0001-vm-let-a-port-place-the-guest-itself.patch` ouvre une troisième porte dans
       `vm.hpp` à côté de celles que l'amont écrit déjà pour deux autres hôtes : `VM_PORT_PLACES_GUEST`

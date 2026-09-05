@@ -42,6 +42,9 @@ bool MacLayoutPlan (uint32_t nRAMSize, TMacLayout *pOut)
     pOut->nSheepBase = (uint32_t) nCursor;
     nCursor += OKAPIA_SHEEP_SIZE;
 
+    pOut->nFrameBase = (uint32_t) nCursor;
+    nCursor += OKAPIA_FRAME_SIZE;
+
     pOut->nEnd = (uint32_t) nCursor;
 
     // 1. Below the floor upstream states, the ROM's own code misbehaves in ways

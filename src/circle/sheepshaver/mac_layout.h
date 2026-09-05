@@ -39,7 +39,13 @@ enum
     // the ROM area (main_unix.cpp:2322).
     OKAPIA_SIG_STACK_SIZE = 0x10000,
     // SheepShaver's own 32-bit addressable scratch (thunks.h:122).
-    OKAPIA_SHEEP_SIZE     = 0x80000
+    OKAPIA_SHEEP_SIZE     = 0x80000,
+    // The Macintosh's frame buffer. It has to be at a Mac address, because
+    // screen_base is one and QuickDraw writes pixels through it — so it is part
+    // of the block and not something allocated beside it. A megabyte covers
+    // 640x480 at any depth this port will offer, and 800x600 in 256 colours,
+    // without the plan having to be redone to try one.
+    OKAPIA_FRAME_SIZE     = 0x100000
 };
 
 // Fixed by the ROM, not by us, and the reason the block has a ceiling.
@@ -56,6 +62,7 @@ struct TMacLayout
     uint32_t nROMBase;      // guest, aligned; the ROM area starts here
     uint32_t nSigStack;     // guest, just past the ROM area
     uint32_t nSheepBase;    // guest, just past that
+    uint32_t nFrameBase;    // guest, the Mac's frame buffer
     uint32_t nEnd;          // guest, one past the last byte the block covers
     size_t   nHostBytes;    // what has to be allocated, in one piece
 };

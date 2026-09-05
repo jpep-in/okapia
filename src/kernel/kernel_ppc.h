@@ -1,0 +1,37 @@
+//
+// kernel_ppc.h — the SheepShaver kernel.
+//
+// Copyright (C) 2026  Okapia contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+#ifndef _kernel_ppc_h
+#define _kernel_ppc_h
+
+#include <circle/logger.h>
+#include <circle/timer.h>
+#include <circle/types.h>
+
+#include "hal_circle.h"
+
+enum TShutdownMode
+{
+    ShutdownNone,
+    ShutdownHalt,
+    ShutdownReboot
+};
+
+class CKernelPPC
+{
+public:
+    CKernelPPC (void);
+    ~CKernelPPC (void);
+
+    bool Initialize (void);
+    TShutdownMode Run (void);
+
+private:
+    // The same board the other kernel and the specimen bring up.
+    COkapiaBoard m_Board;
+};
+
+#endif

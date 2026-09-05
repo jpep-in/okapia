@@ -45,6 +45,14 @@ unsigned sleep (unsigned seconds)
 }
 
 /* Only ether.cpp's UDP tunnel wants this, and Okapia never takes that path. */
+// SheepShaver's vm_alloc.cpp asks the host how big a page is. A real answer,
+// not a report: it uses it to round allocations, and Circle's tables are built
+// on 4 KB pages like everything else on AArch64 here.
+int getpagesize (void)
+{
+    return 4096;
+}
+
 int gethostname (char *name, size_t len)
 {
     static const char Name[] = "okapia";

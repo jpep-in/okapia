@@ -55,6 +55,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* vm_alloc.cpp calls it and newlib does not declare it; src/circle/compat
+   answers 4096. Declared here for the same reason htons is: config.h is what
+   states what this target has. */
+int getpagesize (void);
+
 unsigned short htons (unsigned short);
 unsigned short ntohs (unsigned short);
 unsigned int   htonl (unsigned int);

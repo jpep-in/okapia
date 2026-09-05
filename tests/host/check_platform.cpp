@@ -196,12 +196,14 @@ static void CheckLayout (void)
             "la pile de signal suit la zone ROM, cinq mégaoctets et non quatre");
     Expect (L.nSheepBase == L.nSigStack + OKAPIA_SIG_STACK_SIZE,
             "puis le bloc propre à SheepShaver");
+    Expect (L.nFrameBase == L.nSheepBase + OKAPIA_SHEEP_SIZE,
+            "et l'écran, qui doit être à une adresse Mac comme le reste");
     Expect (L.nHostBytes == (size_t) (L.nEnd - L.nRAMBase),
             "le bloc hôte couvre exactement l'invité, sans trou");
 
     // 256 Mo + 5 + 0,0625 + 0,5 : la valeur écrite dans le plan.
-    Expect (L.nHostBytes == 256u * 1024 * 1024 + 0x500000 + 0x10000 + 0x80000,
-            "soit 261,6 Mo pour 256 Mo de RAM Mac");
+    Expect (L.nHostBytes == 256u * 1024 * 1024 + 0x500000 + 0x10000 + 0x80000 + 0x100000,
+            "soit 262,6 Mo pour 256 Mo de RAM Mac");
 
     // Un alignement qui ne fait rien quand il n'a rien à faire.
     TMacLayout M;

@@ -19,13 +19,17 @@
 #include <stdio.h>
 #include <string.h>
 
+// okapia_circle.h first, always: it is what defines ASSERT_STATIC, and every
+// Circle header fails to parse without it (see that file).
 #include "okapia_circle.h"
+#include <circle/startup.h>
 
 #include "cpu_emulation.h"
 #include "main.h"
 #include "prefs.h"
 #include "rom_patches.h"
 #include "thunks.h"
+#include "xlowmem.h"
 #include "mac_layout.h"
 
 #define FROM "okapia-ppc"
@@ -177,6 +181,13 @@ void SheepMem::Exit (void)
     // Nothing to give back: the block is claimed for the life of the board.
 }
 
+// Where the Macintosh's screen lives, for video_circle.cpp. A Mac address,
+// because screen_base is one; zero before the block is allocated.
+uint32 MacFrameBufferGuest (void)
+{
+    return s_pMacMemory != 0 ? s_Layout.nFrameBase : 0;
+}
+
 uintptr SignalStackBase (void)
 {
     return s_Layout.nSigStack + OKAPIA_SIG_STACK_SIZE;
@@ -229,6 +240,45 @@ bool MacROMLoad (const char *pFileName)
 }
 
 /*
+ *  Interrupts
+ *
+ *  TriggerInterrupt() is not here: the CPU glue owns it, because raising an
+ *  interrupt means poking the emulated processor. These four are the flags it
+ *  reads, and the nesting count the ROM keeps in its own low memory.
+ *
+ *  A spin lock rather than the atomics upstream uses: the flags are set from
+ *  the tick handler, which runs at IRQ level, and read from the 68k thread.
+ */
+
+static CSpinLock s_IntFlagsLock;
+
+void SetInterruptFlag (uint32 nFlag)
+{
+    s_IntFlagsLock.Acquire ();
+    InterruptFlags |= nFlag;
+    s_IntFlagsLock.Release ();
+}
+
+void ClearInterruptFlag (uint32 nFlag)
+{
+    s_IntFlagsLock.Acquire ();
+    InterruptFlags &= ~nFlag;
+    s_IntFlagsLock.Release ();
+}
+
+// The nesting count lives in the Mac's own low memory, where the nanokernel
+// reads it (xlowmem.h). Signed on purpose: the ROM takes it below zero.
+void DisableInterrupt (void)
+{
+    WriteMacInt32 (XLM_IRQ_NEST, int32 (ReadMacInt32 (XLM_IRQ_NEST)) + 1);
+}
+
+void EnableInterrupt (void)
+{
+    WriteMacInt32 (XLM_IRQ_NEST, int32 (ReadMacInt32 (XLM_IRQ_NEST)) - 1);
+}
+
+/*
  *  What the core says, and where it goes
  */
 
@@ -248,6 +298,21 @@ bool ChoiceAlert (const char *text, const char *pos, const char *neg)
     // Taking the negative answer means a refusal stays a refusal.
     CLogger::Get ()->Write (FROM, LogWarning, "%s — answering \"%s\"", text, neg);
     return false;
+}
+
+/*
+ *  Stopping
+ *
+ *  Upstream unwinds an emulator thread here. There is no thread and no shell to
+ *  return to: the board has one job. So the Macintosh stopping stops the
+ *  machine, and the log says why — which is the whole of what a person watching
+ *  a serial port needs. Phase 22 will make this go round again instead.
+ */
+
+void QuitEmulator (void)
+{
+    CLogger::Get ()->Write (FROM, LogNotice, "The Macintosh asked to stop");
+    halt ();
 }
 
 /*
