@@ -70,6 +70,19 @@ SOURCES=(
     kpx_cpu/src/cpu/ppc/ppc-translate kpx_cpu/src/utils/utils-cpuinfo
 )
 
+# And our own half, which is the part that will actually be wrong. It needs the
+# platform's include paths on top of the engine's.
+OURS=(
+    "${REPO_ROOT}/src/circle/sheepshaver/mac_layout.cpp"
+    "${REPO_ROOT}/src/circle/sheepshaver/main_circle.cpp"
+)
+OUR_FLAGS=(
+    -I"${REPO_ROOT}/src/circle" -I"${REPO_ROOT}/src/circle/compat"
+    -isystem "${STDLIB}/libs/circle/include"
+    -isystem "${STDLIB}/libs/circle/addon"
+    -DAARCH=64 -DRASPPI=3 -D__circle__=510000 -DSTDLIB_SUPPORT=3
+)
+
 echo "Compiling the ${ENGINE} core for AArch64, ${#SOURCES[@]} files."
 failed=0
 for name in "${SOURCES[@]}"; do
@@ -80,9 +93,17 @@ for name in "${SOURCES[@]}"; do
     fi
 done
 
+for path in "${OURS[@]}"; do
+    if ! err="$("${GXX}" "${FLAGS[@]}" "${OUR_FLAGS[@]}" "${path}" 2>&1)"; then
+        printf '  FAIL  %-28s %s\n' "$(basename "${path}")" \
+               "$(printf '%s' "${err}" | grep -m1 'error:' | sed 's|.*/||')"
+        failed=$((failed + 1))
+    fi
+done
+
 if [ "${failed}" -eq 0 ]; then
-    echo "All ${#SOURCES[@]} compile. Nothing in this core objects to the board."
+    echo "All $(( ${#SOURCES[@]} + ${#OURS[@]} )) compile, ours included."
 else
-    echo "${failed} of ${#SOURCES[@]} do not compile."
+    echo "${failed} of $(( ${#SOURCES[@]} + ${#OURS[@]} )) do not compile."
 fi
 exit $(( failed == 0 ? 0 : 1 ))

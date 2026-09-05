@@ -3598,7 +3598,20 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
       Le gain du §19.4 s'y voit en une ligne : l'amont laisse 1 Go entre la RAM et la ROM parce qu'un
       hôte Unix doit demander les deux séparément ; ici le bloc est à nous, la ROM suit la RAM
       immédiatement, et **261,6 Mo suffisent pour 256 Mo de RAM Mac**.
-- [ ] `main_circle.cpp` variante SheepShaver : allouer ce bloc et poser `VMBaseDiff`
+- [x] **`main_circle.cpp` variante SheepShaver — écrit le 2026-09-05.** Il alloue le bloc que
+      `MacLayoutPlan()` décrit, pose `VMBaseDiff`, et déclare les deux tableaux que la bancarisation
+      attend — `gZeroPage` et `gKernelData`, remis à zéro, parce que ce que le Mac n'a jamais écrit il ne
+      doit pas le lire en restes. Il apporte aussi `SheepMem::Init()`, qui redevient de l'arithmétique
+      dans le bloc au lieu d'une deuxième adresse à demander à l'hôte, le chargement de ROM par
+      `DecodeROM()` — donc les deux formes, image de 4 Mo et fichier `<CHRP-BOOT>` — les alertes et les
+      mutex.
+
+      Trois `static_assert` lient nos constantes à celles de l'amont : `mac_layout.h` les répète pour
+      pouvoir être testé sans arbre macemu, et c'est ici que les deux sont obligées de coïncider.
+
+      Ce qu'il ne contient pas est aussi délibéré : la plomberie des interruptions et du processeur
+      arrive avec le processeur.
+- [ ] la vidéo au strict minimum et le reste de la couche plateforme
 - [x] **les deux conditions de préprocesseur — faites le 2026-09-05**, et ce sont bien deux mots ajoutés.
       `patches/macemu/0001-vm-let-a-port-place-the-guest-itself.patch` ouvre une troisième porte dans
       `vm.hpp` à côté de celles que l'amont écrit déjà pour deux autres hôtes : `VM_PORT_PLACES_GUEST`
