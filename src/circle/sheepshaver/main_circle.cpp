@@ -69,6 +69,13 @@ uintptr VMBaseDiff;
 uint8 gZeroPage[0x3000];
 uint8 gKernelData[0x2000];
 
+// And the Macintosh's device space, which nothing here emulates. The ROM pokes
+// the serial and power registers on its way up — main_unix.cpp lists the exact
+// instructions it has to step over — and a port that cannot trap has to give
+// those accesses somewhere to land. Reads come back as whatever was last
+// written, which is what a register nobody drives would do.
+uint8 gDevicePage[0x1000];
+
 // SheepShaver's 32-bit addressable scratch, whose statics upstream defines in
 // its own main_*.cpp.
 uint32  SheepMem::page_size;
@@ -132,6 +139,7 @@ bool MacMemoryAllocate (uint32 nRAMSize)
     // globals there; what it never wrote it must not read as leftovers.
     memset (gZeroPage, 0, sizeof gZeroPage);
     memset (gKernelData, 0, sizeof gKernelData);
+    memset (gDevicePage, 0, sizeof gDevicePage);
 
     CLogger::Get ()->Write (FROM, LogNotice,
                             "Mac memory: %u MB at %p, guest 0x%08X, ROM guest 0x%08X, "

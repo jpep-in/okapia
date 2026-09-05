@@ -13,15 +13,20 @@ reservation, and the Apple condition is a processor test. So this adds a
 third way in, named for what it means rather than for who uses it.
 
 With VM_PORT_PLACES_GUEST defined, VMBaseDiff is a variable the port sets
-and both regions are banked. Everything else is unchanged; no existing
-build sees any difference.
+and both regions are banked. It also routes the Macintosh's device space
+to a page of its own, which is the same problem once more: a port that
+cannot trap has to send those accesses somewhere, and past the end of the
+block is not somewhere. Only that range — a stray access anywhere else
+should still show itself rather than be absorbed in silence.
+
+Everything else is unchanged; no existing build sees any difference.
 
 Okapia (planification.md §19.4). Offered upstream as it stands: it
 generalises a case the tree already answers twice.
 
 ---
 diff --git a/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp b/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
-index e60bc85d..ff46d5ab 100755
+index e60bc85d..31a8679d 100755
 --- a/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
 +++ b/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
 @@ -190,7 +190,7 @@ typedef uintptr vm_addr_t;
@@ -33,7 +38,7 @@ index e60bc85d..ff46d5ab 100755
  extern uintptr VMBaseDiff;
  #elif defined(NATMEM_OFFSET)
  const uintptr VMBaseDiff = NATMEM_OFFSET;
-@@ -208,7 +208,7 @@ const uintptr VMBaseDiff = NATMEM_OFFSET;
+@@ -208,12 +208,21 @@ const uintptr VMBaseDiff = NATMEM_OFFSET;
  static inline uint8 * vm_do_get_real_address(vm_addr_t addr)
  {
  	uintptr a = vm_wrap_address(addr);
@@ -42,3 +47,17 @@ index e60bc85d..ff46d5ab 100755
  	extern uint8 gZeroPage[0x3000], gKernelData[0x2000];
  #ifndef MEM_BULK
  	if (a < 0x3000) return &gZeroPage[a];
+ #endif
+ 	if ((a & ~0x1fff) == 0x68ffe000 || (a & ~0x1fff) == 0x5fffe000) return &gKernelData[a & 0x1fff];
++#endif
++#ifdef VM_PORT_PLACES_GUEST
++	// The Macintosh's device space, which nothing here emulates. A port that
++	// traps sends these to the SIGSEGV handler and skips the instruction; one
++	// that cannot trap has to send them somewhere, and off the end of the block
++	// is not somewhere. Only this range: a stray access anywhere else should
++	// still show itself rather than be quietly absorbed.
++	extern uint8 gDevicePage[0x1000];
++	if (a >= 0xf0000000) return &gDevicePage[a & 0xfff];
+ #endif
+ 	return (uint8 *)(VMBaseDiff + a);
+ }

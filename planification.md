@@ -3637,8 +3637,15 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
       piège pas du tout**, ce qui est notre cas : les accès matériels du Mac iront vers de la mémoire.
       Deux déclarations remontent au-dessus de la condition et l'`#error` devient le chemin qui existait
       déjà en dessous. Aucun hôte actuel ne change de branche.
-- [ ] la sortie de secours des accès matériels (§19.4), moitié exécution : router l'espace périphérique
-      vers une page fantôme, dans la même bancarisation que Low Memory
+- [x] **la sortie de secours des accès matériels — faite le 2026-09-05**, et c'est bien la page fantôme
+      qui a gagné, pas le *data abort*. L'espace périphérique du Mac — `0xf0000000` et au-dessus, où
+      vivent les registres série et d'alimentation que la ROM tripote en montant — est routé vers une
+      page de 4 Ko, dans la même bancarisation que Low Memory et la Kernel Data (`patches/macemu/0001`).
+      Une lecture rend ce qui y a été écrit en dernier, ce que ferait un registre que personne ne pilote.
+
+      **Cette plage-là seulement**, et c'est le choix qui compte : absorber tout ce qui sort du bloc
+      cacherait les vrais accès égarés au moment précis où on en aura le plus besoin. Ailleurs, une faute
+      reste une faute.
 - [ ] vidéo au strict minimum — le framebuffer, aucune optimisation
 - [ ] **jalon : `PatchROM()` passe, le nanokernel démarre, quelque chose s'affiche**
 
