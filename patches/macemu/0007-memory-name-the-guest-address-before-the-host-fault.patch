@@ -1,0 +1,56 @@
+memory: name the guest address before the host fault
+
+Under DIRECT_ADDRESSING a guest pointer becomes a host pointer by adding
+an offset, so a guest address that has gone wrong reads host memory
+belonging to something else. On Linux that is a SIGSEGV with a
+backtrace. On a bare-metal port it is a data abort whose registers hold
+only the host address, and the guest address — the one that would say
+which piece of Mac code is at fault — is gone by then. Sometimes there is
+no fault at all and a byte quietly changes.
+
+do_get_real_address() is the single place the translation happens and the
+last place the guest address exists. One compare, against a limit the
+port sets, calling a reporter the port defines; the access still goes
+ahead afterwards, so nothing is hidden and nothing behaves differently.
+DIRECT_ADDRESSING_GUARD undefined — which is every existing build —
+compiles the whole thing away.
+
+mihaip/macemu puts an equivalent test in sysdeps.h's do_get_mem_*
+instead (branch infinite-mac-kanjitalk755). That is four functions in six
+variants, it prints from the hot path, and by then the address it has is
+the host one.
+
+diff --git a/BasiliskII/src/uae_cpu_2021/memory.h b/BasiliskII/src/uae_cpu_2021/memory.h
+index f7bab41d..c30c0794 100644
+--- a/BasiliskII/src/uae_cpu_2021/memory.h
++++ b/BasiliskII/src/uae_cpu_2021/memory.h
+@@ -56,8 +56,29 @@ extern void Exception (int, uaecptr);
+ #endif /* EXCEPTIONS_VIA_LONGJMP */
+ 
+ #if DIRECT_ADDRESSING
++
++#if DIRECT_ADDRESSING_GUARD
++/* Direct addressing turns any guest address into a host one by adding an
++   offset, so a guest pointer that has gone wrong reads or writes host memory
++   that belongs to something else. On a hosted platform that is a SIGSEGV with a
++   backtrace; on a bare-metal one it is a data abort whose registers say nothing
++   about which *guest* address caused it, or — worse — no fault at all.
++
++   This is the one place where the translation happens, and the only place that
++   still has the guest address in hand. The port defines the two symbols below:
++   the size of the block it mapped, and what to say about an address outside it.
++   The access still goes ahead, so nothing is masked; the fault is merely named
++   before it happens. Costs one compare, and is compiled out otherwise. */
++extern uae_u32 direct_addressing_limit;
++extern void direct_addressing_fault(uaecptr addr);
++#endif
++
+ static __inline__ uae_u8 *do_get_real_address(uaecptr addr)
+ {
++#if DIRECT_ADDRESSING_GUARD
++	if (direct_addressing_limit && addr >= direct_addressing_limit)
++		direct_addressing_fault(addr);
++#endif
+ 	return (uae_u8 *)MEMBaseDiff + addr;
+ }
+ static __inline__ uae_u32 do_get_virtual_address(uae_u8 *addr)

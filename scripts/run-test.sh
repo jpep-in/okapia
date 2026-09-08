@@ -78,6 +78,21 @@ tr -d '\r' < "$LOG" > "${LOG}.txt" && mv "${LOG}.txt" "$LOG"
 printf '\nserial log: %s (%s lines)\n' "$LOG" "$(wc -l < "$LOG" | tr -d ' ')"
 grep -E "okapia-68k: running|okapia-video:" "$LOG" | tail -2 || true
 
+# Did the Macintosh ever finish starting?
+#
+# The duration is deliberately not shortened when it does: killing an idle Mac
+# is the gentle case, and this test exists for the harsh one. What matters is
+# that a green verdict cannot come from a run that never booted — the byte count
+# below already guards one half of that, and this guards the other, because a
+# Mac can write its way through a boot it never completes.
+if grep -q "Macintosh idle" "$LOG"; then
+    printf 'boot      : the Mac reported itself idle, so it did finish starting\n'
+elif grep -q "no idle patch" "$LOG"; then
+    printf 'boot      : this System has no idle patch, so the boot cannot be timed\n'
+else
+    printf 'boot      : WARNING, the Mac never reported itself idle in %s s\n' "$SECONDS_TO_RUN"
+fi
+
 # --- did the guest write at all? ---
 # Without this, a green verdict below could simply mean nothing was exercised.
 if [ -n "$IMAGE" ]; then
@@ -186,6 +201,14 @@ printf 'after repair: flag %s, fsck says %s\n' "$VOL_FLAG" "$VOL_FSCK"
 
 if [ "$VOL_FSCK" = "bad" ]; then
     echo "VERDICT   : FAILED — the volume is still damaged after repair" >&2
+    RESULT=1
+elif [ -z "$BOOT_VOLUME" ]; then
+    # The kernel did not name what it started from, so the volume inspected
+    # above was chosen by sorting order. It may be one the run never touched,
+    # and a clean bill on it says nothing at all. AGENTS.md: anything that
+    # judges "did this survive" must name what it judged.
+    echo "VERDICT   : INCONCLUSIVE — the log names no boot volume, so the" >&2
+    echo "            volume inspected was a guess. Nothing is proved." >&2
     RESULT=1
 elif [ "$RESULT" -eq 0 ]; then
     echo "VERDICT   : OK — a hard kill costs nothing the repair cannot undo"

@@ -65,7 +65,23 @@ prefs_desc platform_prefs_items[] = {
 	// loop has never been measured here. Declaring it keeps the parser from
 	// rejecting a prefs file brought over from a desktop Basilisk II.
 	{"modelidauto", TYPE_BOOLEAN, false, "set modelid from the System installed on the boot volume"},
-	{"idlewait", TYPE_BOOLEAN, false, "let the Mac's idle loop sleep (untested here)"},
+	{"idlewait", TYPE_BOOLEAN, false, "let the Mac's idle loop sleep"},
+	// Option held at power-on opens the boot menu, and a board with no keyboard
+	// attached — or somebody who would rather not race a two-second window —
+	// has no way to ask for it. This is that way, and it is a preference
+	// because it is a habit: whoever changes System every day wants the menu
+	// every day, and whoever changes it twice a year does not.
+	{"bootmenu", TYPE_BOOLEAN, false, "always open the boot menu, without holding Option"},
+	// One line per volume whose System is universal: "<path> 68k" or
+	// "<path> powerpc". Only those — a System built for one processor settles
+	// the question itself, and a stored answer would one day contradict it.
+	// Declared "multiple" for the same reason `disk` is: a card holds several.
+	{"engine", TYPE_STRING, true, "which emulator starts a universal System: <path> 68k|powerpc"},
+	// One card, two Macintoshes, and they do not take the same ROM: SheepShaver
+	// runs a real PowerMac ROM where Basilisk replaces the Toolbox. Falls back
+	// to `rom` when absent, so a card written before this keyword existed still
+	// starts the engine it was written for.
+	{"romppc", TYPE_STRING, false, "the PowerMac ROM, for the PowerPC engine"},
 	{NULL, TYPE_END, false, NULL}	// End of list
 };
 
@@ -152,7 +168,14 @@ void AddPlatformPrefsDefaults(void)
 	PrefsReplaceBool("hfsrepair", true);
 	PrefsReplaceBool("hfsinventory", true);
 
-	PrefsReplaceBool("idlewait", false);
+	// Upstream's own default (prefs_unix.cpp:368), and it earns its keep twice
+	// here: the emulation core stops spinning while the Mac has nothing to do,
+	// and the first idle is the only trustworthy sign that the boot finished —
+	// see idle_wait() in main_circle.cpp.
+	PrefsReplaceBool("idlewait", true);
+
+	// False: the Macintosh is what one came for, and the menu is the detour.
+	PrefsReplaceBool("bootmenu", false);
 }
 
 /*

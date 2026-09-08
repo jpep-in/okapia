@@ -1,0 +1,55 @@
+rsrc_patches: say whether the idle patch went in
+
+idle_wait() is only ever called if patch_idle_time() found its pattern in
+the System being booted, and that can fail for two reasons a host cannot
+distinguish: the preference is off, or the System has no SynchIdleTime to
+patch. A host that then waits on the Mac's idle signal waits for ever,
+and looks hung rather than wrong.
+
+One bool and one accessor. mihaip/macemu carries the same pair for the
+same reason (branch infinite-mac-kanjitalk755).
+
+diff --git a/BasiliskII/src/include/rsrc_patches.h b/BasiliskII/src/include/rsrc_patches.h
+index 72788644..d29e67da 100644
+--- a/BasiliskII/src/include/rsrc_patches.h
++++ b/BasiliskII/src/include/rsrc_patches.h
+@@ -23,4 +23,8 @@
+ 
+ extern void CheckLoad(uint32 type, int16 id, uint8 *p, uint32 size);
+ 
++// True once the SynchIdleTime() patch has found its pattern and been installed,
++// which is what makes idle_wait() reachable at all.
++extern bool HasIdleTime(void);
++
+ #endif
+diff --git a/BasiliskII/src/rsrc_patches.cpp b/BasiliskII/src/rsrc_patches.cpp
+index cdff157e..27ff8f64 100644
+--- a/BasiliskII/src/rsrc_patches.cpp
++++ b/BasiliskII/src/rsrc_patches.cpp
+@@ -57,6 +57,18 @@ static uint32 find_rsrc_data(const uint8 *rsrc, uint32 max, const uint8 *search,
+  *  Install SynchIdleTime() patch
+  */
+ 
++// Whether the patch above ever found its pattern. A host that idles on the
++// Mac's word needs to know that the Mac is in a position to give it: the
++// preference can be on and the System still carry no SynchIdleTime to patch,
++// in which case idle_wait() is never called and waiting for it is waiting for
++// ever.
++static bool has_idle_time = false;
++
++bool HasIdleTime(void)
++{
++	return has_idle_time;
++}
++
+ static void patch_idle_time(uint8 *p, uint32 size, int n = 1)
+ {
+ 	if (!PrefsFindBool("idlewait"))
+@@ -73,6 +85,7 @@ static void patch_idle_time(uint8 *p, uint32 size, int n = 1)
+ 			*p16++ = htons(M68K_EMUL_OP_IDLE_TIME);
+ 			*p16 = htons(M68K_NOP);
+ 			FlushCodeCache(pbase + base, 4);
++			has_idle_time = true;
+ 			D(bug("  patch %d applied\n", n));
+ 		}
+ 	}

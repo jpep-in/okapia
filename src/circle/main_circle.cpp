@@ -19,6 +19,7 @@
 #include "sysdeps.h"
 
 #include "okapia_circle.h"
+#include "mac_ram_circle.h"
 #include <stdio.h>
 
 #include "cpu_emulation.h"
@@ -70,24 +71,70 @@ static CSpinLock s_IntFlagsLock;
  *  even though the memory exists.
  */
 
+#if DIRECT_ADDRESSING_GUARD
+/*
+ *  Guest addresses outside the block (patches/macemu/0007, OKAPIA_TRACE only)
+ *
+ *  Called from the interpreter's translation step, so it may not block, may not
+ *  allocate and may not log: a runaway would fill the serial port faster than
+ *  the port can empty it, and the first address is the one that matters anyway.
+ *  It counts, remembers the first, and lets the access proceed — the fault that
+ *  follows is then attributable.
+ */
+
+uae_u32 direct_addressing_limit;
+
+static uae_u32 s_nFirstStray;
+static unsigned s_nStrayCount;
+
+void direct_addressing_fault (uaecptr addr)
+{
+    if (s_nStrayCount++ == 0)
+    {
+        s_nFirstStray = addr;
+    }
+}
+
+void GuestBoundsReport (void)
+{
+    static unsigned s_nReported;
+    if (s_nStrayCount != s_nReported)
+    {
+        s_nReported = s_nStrayCount;
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "guest address out of the block: %u so far, "
+                                "first at %08lx (limit %08lx)",
+                                s_nStrayCount,
+                                (unsigned long) s_nFirstStray,
+                                (unsigned long) direct_addressing_limit);
+    }
+}
+#endif
+
 bool MacMemoryAllocate (uint32 nRAMSize)
 {
     RAMSize = nRAMSize;
-    s_nMacMemorySize = RAMSize + ROM_MAX_SIZE + SCRATCH_MEM_SIZE;
+    // Claimed at the size the *other* engine would need as well, so whichever
+    // Macintosh runs first the block is taken once: the image carries both and
+    // a second quarter-gigabyte is not there to be had (mac_ram_circle.h).
+    s_nMacMemorySize = RAMSize + OKAPIA_MAC_BLOCK_OVERHEAD;
 
-    // HEAP_ANY: above 1 GB when the board has it, low memory otherwise. Not the
-    // "new" operator — a raw block, and no constructors to run over 257 MB.
-    s_pMacMemory = (uint8 *) CMemorySystem::HeapAllocate (s_nMacMemorySize, HEAP_ANY);
+    s_pMacMemory = (uint8 *) MacRamClaim (s_nMacMemorySize);
     if (s_pMacMemory == 0)
     {
-        CLogger::Get ()->Write (FROM, LogError,
-                                "Cannot allocate %u MB for the Mac",
-                                (unsigned) (s_nMacMemorySize / (1024 * 1024)));
         return false;
     }
 
     RAMBaseHost = s_pMacMemory;
     ROMBaseHost = RAMBaseHost + RAMSize;
+#if DIRECT_ADDRESSING_GUARD
+    // Everything the Macintosh may legitimately touch is inside this block, so
+    // its size is the whole of the rule. Set here rather than in a trace file
+    // of its own because this is where the number is known, and because an
+    // address is only unguarded until this line runs — which is before the
+    // processor exists.
+    direct_addressing_limit = s_nMacMemorySize;
+#endif
     ScratchMem  = ROMBaseHost + ROM_MAX_SIZE + SCRATCH_MEM_SIZE / 2;
 
 #if DIRECT_ADDRESSING
@@ -282,17 +329,48 @@ void FlushCodeCache (void *start, uint32 size)
 /*
  *  Idle handling. The Mac calls these when it has nothing to do. Yielding lets
  *  the other cores breathe; Circle has no preemption to rely on.
+ *
+ *  The first call is worth more than the yield. It is the Macintosh saying it
+ *  has finished starting — a fact no proxy metric recovers, and one this
+ *  project has twice tried to guess: a high opcode rate and a non-empty guest
+ *  buffer are equally true of the question-mark floppy. screenshot.sh and
+ *  run-test.sh read the line below instead of counting seconds.
+ *
+ *  It only arrives if patch_idle_time() found its pattern, which is what
+ *  HasIdleTime() answers; a System with no SynchIdleTime never idles and the
+ *  line never comes, so the scripts fall back on their timeout.
  */
 
-static bool s_bIdle = false;
+static bool     s_bIdle = false;
+static bool     s_bIdleSeen = false;
+static unsigned s_nIdleCalls = 0;
 
 void idle_wait (void)
 {
     s_bIdle = true;
+
+    if (!s_bIdleSeen)
+    {
+        s_bIdleSeen = true;
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "Macintosh idle: it has finished starting (%u ms)",
+                                CTimer::Get ()->GetClockTicks () / 1000);
+    }
+    s_nIdleCalls++;
+
     CTimer::SimpleusDelay (100);
 }
 
 void idle_resume (void)
 {
     s_bIdle = false;
+}
+
+/*
+ *  Whether the Macintosh has ever been idle, for anything that wants to know
+ *  the boot is over without watching the screen.
+ */
+bool MacHasBeenIdle (void)
+{
+    return s_bIdleSeen;
 }
