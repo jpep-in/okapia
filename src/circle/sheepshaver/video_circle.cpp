@@ -8,12 +8,19 @@
  * video.cpp owns the globals — screen_base, cur_mode, VModes, the palette —
  * and this file fills them in.
  *
- * Deliberately the smallest thing that can put pixels on a screen: one mode,
- * 640x480 in 256 colours, no cursor acceleration, no mode changes. Enough to
- * find out whether the Macintosh boots at all, which is what phase 20 is for.
- * The compositor and the dirty-region work belong to phase 21, and this file is
- * where they will land — video_set_dirty_area() is already the hook, and
- * SheepShaver calls it whether or not it accelerates.
+ * That contract is all this file is. Which modes fit the output, which
+ * converter a depth needs, how the palette becomes a lookup table, how often a
+ * frame is worth compositing and what to say about it: all of that is the same
+ * question asked of the same compositor, and it lives in
+ * video_shared_circle.cpp. It used to live here as well, and the two copies had
+ * drifted — this one repeated the palette across 256 entries and, for a while,
+ * did not, which drew 4 and 16 colours as coloured noise while 256 was perfect.
+ *
+ * What is genuinely this engine's: the mode table and its Apple identifiers,
+ * the driver's mode change, video_set_dirty_area() — the Macintosh saying what
+ * it changed, which the 68k side has no equivalent of — and a frame buffer that
+ * lives inside the Mac's own address space, because screen_base is a Mac
+ * address and QuickDraw writes through it.
  *
  * Copyright (C) 2026  Okapia contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -24,32 +31,93 @@
 #include <string.h>
 
 #include "okapia_circle.h"
-#include "okapia_output.h"
+#include "video_shared_circle.h"
 
 #include "cpu_emulation.h"
 #include "main.h"
-#include "prefs.h"
 #include "video.h"
 #include "video_defs.h"
 #include "mac_layout.h"
 
 #define FROM "okapia-ppc-video"
 
-// One mode, and the one every Macintosh of this era can be told about.
-static const uint16 MAC_WIDTH  = 640;
-static const uint16 MAC_HEIGHT = 480;
-
-// From mac_layout: the frame buffer is inside the Mac's own address space,
-// because screen_base is a Mac address and QuickDraw writes through it.
+// mac_layout.cpp: one buffer for every mode, taken at the largest, because a
+// mode change must not allocate — the Macintosh changes depth whenever a dialog
+// wants more colours.
 extern uint32 MacFrameBufferGuest (void);
 
-static bool             s_bReady;
-static uint8           *s_pMacPixels;   // host view of what the Mac draws into
-static unsigned         s_nDirty;       // regions the driver announced since the last VBL
-static CBcmFrameBuffer *s_pOutput;
-static uint8           *s_pOutputPixels;
-static unsigned         s_nOutputWidth, s_nOutputHeight, s_nOutputPitch;
-static uint32           s_Palette[256]; // the Mac's colours, in the output's form
+// The sizes this engine offers. No 512x384: that is a Classic resolution and
+// SheepShaver has no Apple identifier for it.
+static const TVideoScreenSize SIZES[] =
+{
+    {  640, 480, APPLE_640x480  },
+    {  800, 600, APPLE_800x600  },
+    { 1024, 768, APPLE_1024x768 },
+};
+
+static bool     s_bReady;
+static uint32   s_nGuestBase;       // the Mac address of the frame buffer
+static uint32   s_nBufferBytes;     // what the frame area holds
+static unsigned s_nModes;
+
+// How many entries the Macintosh actually fills for a mode. Upstream's own
+// table (video_x.cpp:259), repeated here because it lives in a platform file
+// there and this is that platform file.
+static int PaletteSizeOf (uint32 nAppleMode)
+{
+    switch (nAppleMode)
+    {
+    case APPLE_1_BIT:  return 2;
+    case APPLE_2_BIT:  return 4;
+    case APPLE_4_BIT:  return 16;
+    case APPLE_8_BIT:  return 256;
+    case APPLE_16_BIT: return 32;
+    case APPLE_32_BIT: return 256;
+    default:           return 0;
+    }
+}
+
+static unsigned DepthBitsOf (uint32 nAppleMode)
+{
+    switch (nAppleMode)
+    {
+    case APPLE_1_BIT:  return 1;
+    case APPLE_2_BIT:  return 2;
+    case APPLE_4_BIT:  return 4;
+    case APPLE_8_BIT:  return 8;
+    case APPLE_16_BIT: return 16;
+    case APPLE_32_BIT: return 32;
+    default:           return 8;
+    }
+}
+
+/*
+ *  Put one mode into effect
+ *
+ *  Everything a mode change touches on this side is here, so the driver's entry
+ *  point below and VideoInit() ask for it the same way and cannot drift apart.
+ */
+
+static bool SwitchTo (unsigned nMode)
+{
+    const VideoInfo &Mode = VModes[nMode];
+
+    cur_mode     = nMode;
+    display_type = Mode.viType;
+    screen_base  = s_nGuestBase;
+
+    uint8 *pPixels = Mac2HostAddr (s_nGuestBase);
+    memset (pPixels, 0, (size_t) Mode.viRowBytes * Mode.viYsize);
+
+    if (!VideoScreenApply (pPixels, Mode.viXsize, Mode.viYsize, Mode.viRowBytes,
+                           DepthBitsOf (Mode.viAppleMode)))
+    {
+        s_bReady = false;
+        return false;
+    }
+    s_bReady = true;
+    return true;
+}
 
 /*
  *  Bring the screen up
@@ -58,67 +126,89 @@ static uint32           s_Palette[256]; // the Mac's colours, in the output's fo
  *  ends it. cur_mode indexes it.
  */
 
+static void AddMode (void *pContext, const TVideoScreenSize *pSize,
+                     unsigned nBits, unsigned nBytesPerRow)
+{
+    (void) pContext;
+    VideoInfo &M  = VModes[s_nModes++];
+    M.viType      = DIS_SCREEN;
+    M.viXsize     = pSize->nWidth;
+    M.viYsize     = pSize->nHeight;
+    M.viRowBytes  = nBytesPerRow;
+    M.viAppleMode = DepthModeForPixelDepth (nBits);
+    M.viAppleID   = pSize->nId;
+}
+
 bool VideoInit (void)
 {
-    const uint32 nGuest = MacFrameBufferGuest ();
-    if (nGuest == 0)
+    s_nGuestBase = MacFrameBufferGuest ();
+    if (s_nGuestBase == 0)
     {
         CLogger::Get ()->Write (FROM, LogError, "No frame buffer in the Mac's memory");
         return false;
     }
+    s_nBufferBytes = OKAPIA_FRAME_SIZE;
 
-    VModes[0].viType       = DIS_SCREEN;
-    VModes[0].viXsize      = MAC_WIDTH;
-    VModes[0].viYsize      = MAC_HEIGHT;
-    VModes[0].viRowBytes   = MAC_WIDTH;          // 8 bits per pixel, no padding
-    VModes[0].viAppleMode  = APPLE_8_BIT;
-    VModes[0].viAppleID    = APPLE_640x480;
-    VModes[1].viType       = DIS_INVALID;        // end of table
-
-    cur_mode     = 0;
-    display_type = DIS_SCREEN;
-    screen_base  = nGuest;
-    s_pMacPixels = Mac2HostAddr (nGuest);
-
-    memset (s_pMacPixels, 0, (size_t) MAC_WIDTH * MAC_HEIGHT);
-
-    // The output is claimed once for the life of the board, like the other
-    // engine's — the Macintosh may go round more than once and a claim per
-    // start leaks a frame buffer each time (AGENTS.md).
-    s_pOutput = FwOutputClaim ();
-    if (s_pOutput == 0)
+    if (!VideoScreenOpen () || !VideoScreenShadow (s_nBufferBytes))
     {
-        CLogger::Get ()->Write (FROM, LogError, "No frame buffer from Circle");
         return false;
     }
-    s_nOutputWidth  = s_pOutput->GetWidth ();
-    s_nOutputHeight = s_pOutput->GetHeight ();
-    s_nOutputPitch  = s_pOutput->GetPitch ();
-    s_pOutputPixels = (uint8 *) (uintptr) s_pOutput->GetBuffer ();
+    VideoScreenReadPrefs ();
+
+    s_nModes = 0;
+    VideoScreenEnumerate (SIZES, sizeof SIZES / sizeof SIZES[0], s_nBufferBytes,
+                          AddMode, 0);
+    VModes[s_nModes].viType = DIS_INVALID;   // end of table
+
+    if (s_nModes == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "This output fits no Macintosh mode");
+        return false;
+    }
+
+    // Open in 640x480 in 256 colours, whatever position that ended up at in the
+    // table: it is the mode every Macintosh of this era can be started in, and
+    // the driver opens on cur_mode. Opening on VModes[0] instead meant opening
+    // in black and white, because the depths are listed smallest first — the
+    // Mac corrected itself a few seconds later from its PRAM, but a screen that
+    // starts wrong and fixes itself is a screen somebody will report.
+    unsigned nDefault = 0;
+    for (unsigned i = 0; i < s_nModes; i++)
+    {
+        if (VModes[i].viXsize == 640 && VModes[i].viYsize == 480
+            && VModes[i].viAppleMode == APPLE_8_BIT)
+        {
+            nDefault = i;
+            break;
+        }
+    }
+
+    if (!SwitchTo (nDefault))
+    {
+        return false;
+    }
 
     video_activated = true;
-    s_bReady = true;
 
     CLogger::Get ()->Write (FROM, LogNotice,
-                            "Screen: %ux%u, 256 colours, Mac buffer at 0x%08X",
-                            (unsigned) MAC_WIDTH, (unsigned) MAC_HEIGHT,
-                            (unsigned) nGuest);
+                            "%u modes offered, %u KB frame buffer at 0x%08X",
+                            s_nModes, (unsigned) (s_nBufferBytes / 1024),
+                            (unsigned) s_nGuestBase);
     return true;
 }
 
 void VideoExit (void)
 {
-    // The output is not given back: see FwOutputClaim.
     video_activated = false;
     s_bReady = false;
+    VideoScreenClose ();
 }
 
 /*
- *  Once per frame, from the tick
+ *  Once per frame, from the Macintosh's own VBL
  *
- *  Phase 20 draws the whole screen every time. That is the wasteful answer and
- *  it is the right one for now: measuring a compositor before the Macintosh
- *  boots would be measuring nothing.
+ *  Called through NATIVE_VIDEO_VBL, which the Mac's interrupt path invokes
+ *  (emul_op.cpp:321) — so this is the guest's frame, not ours.
  */
 
 void VideoVBL (void)
@@ -127,21 +217,22 @@ void VideoVBL (void)
     {
         return;
     }
-    // The whole screen, every frame, through the palette. Wasteful and correct;
-    // what makes it affordable is phase 21's business, and measuring it before
-    // the Macintosh boots would be measuring nothing.
-    const unsigned nRows = MAC_HEIGHT < s_nOutputHeight ? MAC_HEIGHT : s_nOutputHeight;
-    const unsigned nCols = MAC_WIDTH  < s_nOutputWidth  ? MAC_WIDTH  : s_nOutputWidth;
-    for (unsigned y = 0; y < nRows; y++)
+
+    VideoScreenVBL ();
+
+    // And then tell Mac OS that a frame went by. This is not decoration: the
+    // Macintosh's own video driver registered a VBL service when it opened
+    // (video.cpp:187), and the Cursor Device Manager's work is queued behind
+    // it. Every upstream platform ends VideoVBL() with exactly these two lines
+    // — video_x.cpp:2192, video_beos.cpp:410 — and leaving them out is why the
+    // pointer would not move here: the position reached the cursor device and
+    // then waited for a service call that never came, so Mouse and RawMouse
+    // stayed where they were. The keyboard and the mouse buttons were fine
+    // throughout, because neither goes this way.
+    if (private_data != 0 && private_data->interruptsEnabled)
     {
-        const uint8 *pSrc = s_pMacPixels + (size_t) y * MAC_WIDTH;
-        uint32 *pDst = (uint32 *) (s_pOutputPixels + (size_t) y * s_nOutputPitch);
-        for (unsigned x = 0; x < nCols; x++)
-        {
-            pDst[x] = s_Palette[pSrc[x]];
-        }
+        VSLDoInterruptService (private_data->vslServiceID);
     }
-    s_nDirty = 0;
 }
 
 /*
@@ -154,40 +245,87 @@ void video_set_palette (void)
     {
         return;
     }
-    // mac_pal is what the Mac asked for. The output is 32 bits per pixel, so
-    // the palette becomes a lookup table rather than something the hardware
-    // holds — the same choice the other engine makes, and for the same reason:
-    // a Pi 5 has no indexed mode to offer.
-    for (unsigned i = 0; i < 256; i++)
+
+    // mac_pal is an array of structs and the shared layer wants triplets, which
+    // is also the shape Basilisk's core hands over — so the conversion is here,
+    // where the difference is, and nowhere else.
+    const int nIn = PaletteSizeOf (VModes[cur_mode].viAppleMode);
+    uint8 Palette[256 * 3];
+    for (int c = 0; c < nIn && c < 256; c++)
     {
-        s_Palette[i] =   ((uint32) mac_pal[i].red   << 16)
-                       | ((uint32) mac_pal[i].green << 8)
-                       |  (uint32) mac_pal[i].blue;
+        Palette[c * 3 + 0] = mac_pal[c].red;
+        Palette[c * 3 + 1] = mac_pal[c].green;
+        Palette[c * 3 + 2] = mac_pal[c].blue;
     }
+    VideoScreenPalette (Palette, (unsigned) nIn);
 }
 
 void video_set_gamma (int n_colors)
 {
-    // No gamma ramp: the output is what the Mac drew. A ramp would have to set
-    // s_bFullRedraw in the compositor that phase 21 brings, since it changes
-    // what the screen shows without changing a single guest byte.
+    // The core applies gamma to the palette before calling video_set_palette,
+    // so indexed modes are already handled. A direct mode would need a
+    // per-pixel table, and it would have to invalidate the screen as well: it
+    // changes what is shown without changing a single guest byte.
     (void) n_colors;
 }
 
 void video_set_dirty_area (int x, int y, int w, int h)
 {
-    // Recorded and not yet used. This is the call Basilisk never makes and the
-    // reason phase 21's dirty-region work is cheaper on this engine than on the
-    // other: the Macintosh says what it changed instead of being scanned.
-    (void) x; (void) y; (void) w; (void) h;
-    s_nDirty++;
+    // The Macintosh saying what it changed, which is better information than a
+    // comparison can recover — and the reason the dirty-tile work is cheaper on
+    // this engine than on the other. Announced tiles are redrawn without being
+    // compared; the rest are still compared, because this is called from the
+    // accelerated paths only (gfxaccel.cpp:63) and is a hint rather than the
+    // whole story.
+    VideoScreenAnnounce (x, y, w, h);
 }
 
 int16 video_mode_change (VidLocals *csSave, uint32 ParamPtr)
 {
-    // One mode. Refusing plainly beats accepting and drawing nothing.
-    (void) csSave; (void) ParamPtr;
-    CLogger::Get ()->Write (FROM, LogWarning, "Mode change refused: one mode only");
+    // Nothing to do if it is the mode already in effect. Upstream tests this
+    // first for the same reason: the driver asks whenever a window opens.
+    if (csSave->saveData == ReadMacInt32 (ParamPtr + csData)
+        && csSave->saveMode == ReadMacInt16 (ParamPtr + csMode))
+    {
+        return noErr;
+    }
+
+    for (unsigned i = 0; VModes[i].viType != DIS_INVALID; i++)
+    {
+        if (ReadMacInt16 (ParamPtr + csMode) != VModes[i].viAppleMode
+            || ReadMacInt32 (ParamPtr + csData) != VModes[i].viAppleID)
+        {
+            continue;
+        }
+
+        // The Macintosh must not take an interrupt while the mode is half
+        // changed: the tick would call VideoVBL and composite a buffer whose
+        // size no longer matches the one the compositor was planned for.
+        DisableInterrupt ();
+        const bool bOK = SwitchTo (i);
+        EnableInterrupt ();
+
+        if (!bOK)
+        {
+            return paramErr;
+        }
+
+        csSave->saveMode     = ReadMacInt16 (ParamPtr + csMode);
+        csSave->saveData     = ReadMacInt32 (ParamPtr + csData);
+        csSave->savePage     = ReadMacInt16 (ParamPtr + csPage);
+        csSave->saveBaseAddr = screen_base;
+        WriteMacInt32 (ParamPtr + csBaseAddr, screen_base);
+        return noErr;
+    }
+
+    // A mode we do not offer. paramErr is what the driver expects and what
+    // makes the Monitors control panel leave the setting alone. Said out loud,
+    // because a refusal here is how a Macintosh ends up drawing at a size the
+    // screen is not showing, and that reads as a compositor fault.
+    CLogger::Get ()->Write (FROM, LogWarning,
+                            "Mode change refused: the Mac asked for mode %04x, id %08x",
+                            (unsigned) ReadMacInt16 (ParamPtr + csMode),
+                            (unsigned) ReadMacInt32 (ParamPtr + csData));
     return paramErr;
 }
 
@@ -208,6 +346,23 @@ void video_set_cursor (void)
 
 void VideoQuitFullScreen (void)
 {
+}
+
+/*
+ *  What the input bridge needs to know
+ *
+ *  This engine feeds the Macintosh an absolute pointer position rather than the
+ *  deltas the other one sends, so the bridge has to know how far the pointer
+ *  may go. Answered here because the mode is this file's business, and it moves
+ *  with the mode.
+ */
+void VideoMacScreenSize (unsigned *pWidth, unsigned *pHeight)
+{
+    if (s_bReady)
+    {
+        *pWidth  = VModes[cur_mode].viXsize;
+        *pHeight = VModes[cur_mode].viYsize;
+    }
 }
 
 // VideoActivated() and VideoSnapshot() are video.cpp's own, not the platform's,
