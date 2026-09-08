@@ -1,0 +1,70 @@
+video_blit: the 1-bit expanders ignore the palette
+
+Every other indexed expander reads ExpandMap, which set_palette() fills
+with the Mac's colours repeated across all 256 entries so the low bits
+need no masking. The two 1-bit ones instead write -(bit): black for 0 and
+all-ones for 1, whatever the Mac asked for.
+
+So a 1-bit screen is rendered in hardcoded black and white. A Macintosh
+that inverts its two-entry palette — which is a normal thing for a
+System 6 desktop, a screen saver, or an application drawing in inverse —
+is drawn the right way up, and gamma never reaches it at all.
+
+The fix is the line the neighbouring routines already use. Unmasked, like
+Blit_Expand_2_To_32 above it: ExpandMap[c >> 6] is 0..3 and the map
+repeats every 2 entries in a 1-bit mode, so it resolves to bit 6 of c.
+
+Found by comparing with mihaip/macemu, which carries the same fix for the
+32-bit case (branch infinite-mac-kanjitalk755). The 16-bit one is still
+wrong there.
+
+diff --git a/BasiliskII/src/CrossPlatform/video_blit.cpp b/BasiliskII/src/CrossPlatform/video_blit.cpp
+index a20e09b4..24dd0f1d 100755
+--- a/BasiliskII/src/CrossPlatform/video_blit.cpp
++++ b/BasiliskII/src/CrossPlatform/video_blit.cpp
+@@ -379,14 +379,14 @@ static void Blit_Expand_1_To_16(uint8 * dest, const uint8 * p, uint32 length)
+ 	uint16 *q = (uint16 *)dest;
+ 	for (uint32 i=0; i<length; i++) {
+ 		uint8 c = *p++;
+-		*q++ = -(c >> 7);
+-		*q++ = -((c >> 6) & 1);
+-		*q++ = -((c >> 5) & 1);
+-		*q++ = -((c >> 4) & 1);
+-		*q++ = -((c >> 3) & 1);
+-		*q++ = -((c >> 2) & 1);
+-		*q++ = -((c >> 1) & 1);
+-		*q++ = -(c & 1);
++		*q++ = ExpandMap[c >> 7];
++		*q++ = ExpandMap[c >> 6];
++		*q++ = ExpandMap[c >> 5];
++		*q++ = ExpandMap[c >> 4];
++		*q++ = ExpandMap[c >> 3];
++		*q++ = ExpandMap[c >> 2];
++		*q++ = ExpandMap[c >> 1];
++		*q++ = ExpandMap[c];
+ 	}
+ }
+ 
+@@ -428,14 +428,14 @@ static void Blit_Expand_1_To_32(uint8 * dest, const uint8 * p, uint32 length)
+ 	uint32 *q = (uint32 *)dest;
+ 	for (uint32 i=0; i<length; i++) {
+ 		uint8 c = *p++;
+-		*q++ = -(c >> 7);
+-		*q++ = -((c >> 6) & 1);
+-		*q++ = -((c >> 5) & 1);
+-		*q++ = -((c >> 4) & 1);
+-		*q++ = -((c >> 3) & 1);
+-		*q++ = -((c >> 2) & 1);
+-		*q++ = -((c >> 1) & 1);
+-		*q++ = -(c & 1);
++		*q++ = ExpandMap[c >> 7];
++		*q++ = ExpandMap[c >> 6];
++		*q++ = ExpandMap[c >> 5];
++		*q++ = ExpandMap[c >> 4];
++		*q++ = ExpandMap[c >> 3];
++		*q++ = ExpandMap[c >> 2];
++		*q++ = ExpandMap[c >> 1];
++		*q++ = ExpandMap[c];
+ 	}
+ }
+ 

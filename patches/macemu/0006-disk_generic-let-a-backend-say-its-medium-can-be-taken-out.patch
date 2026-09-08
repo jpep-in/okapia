@@ -1,0 +1,98 @@
+disk_generic: let a backend say its medium can be taken out
+
+A disk_generic is answered for by three Sys_ routines that never ask it:
+SysIsFixedDisk() and SysIsDiskInserted() return true outright and
+SysEject() ignores it, so every backend is a fixed disk with its medium
+welded in. That was true of the ones that existed — sparse bundles and
+VHDs are files — but it is not a property of the interface, and it is why
+a backend cannot be a CD-ROM drive or a floppy drive.
+
+Three virtuals with the old answers as their defaults, so nothing existing
+changes, and the four call sites that were answering on the backend's
+behalf now ask it. SysGetFileSize() goes the same way: it was returning a
+size cached at open time, which is wrong for anything whose medium can be
+swapped for a different one.
+
+mihaip/macemu carries this (branch infinite-mac-kanjitalk755), where the
+backend is the browser and the user really does swap disks.
+
+diff --git a/BasiliskII/src/Unix/disk_unix.h b/BasiliskII/src/Unix/disk_unix.h
+index 6c427881..838cc1d4 100644
+--- a/BasiliskII/src/Unix/disk_unix.h
++++ b/BasiliskII/src/Unix/disk_unix.h
+@@ -37,6 +37,15 @@ struct disk_generic {
+ 	virtual size_t read(void *buf, loff_t offset, size_t length) = 0;
+ 	virtual size_t write(void *buf, loff_t offset, size_t length) = 0;
+ 	virtual loff_t size() = 0;
++
++	// A generic disk is a fixed one with its medium in it unless it says
++	// otherwise. Every existing backend is exactly that, so the defaults keep
++	// them working unchanged; a backend that is a CD-ROM drive, a floppy drive
++	// or anything the user can swap overrides them, and the Mac then gets a
++	// truthful answer through SysIsFixedDisk() and SysIsDiskInserted().
++	virtual bool is_media_present() { return true; }
++	virtual bool is_fixed_disk() { return true; }
++	virtual void eject() { }
+ };
+ 
+ typedef disk_generic::status (disk_factory)(const char *path, bool read_only,
+diff --git a/BasiliskII/src/Unix/sys_unix.cpp b/BasiliskII/src/Unix/sys_unix.cpp
+index 683c45a8..c129043e 100755
+--- a/BasiliskII/src/Unix/sys_unix.cpp
++++ b/BasiliskII/src/Unix/sys_unix.cpp
+@@ -617,9 +617,11 @@ void *Sys_open(const char *name, bool read_only, bool is_cdrom)
+ 		if (st == disk_generic::DISK_VALID) {
+ 			mac_file_handle *fh = open_filehandle(name);
+ 			fh->generic_disk = generic;
+-			fh->file_size = generic->size();
+ 			fh->read_only = generic->is_read_only();
+-			fh->is_media_present = true;
++			fh->is_media_present = generic->is_media_present();
++			// An empty drive has no size to ask for.
++			if (fh->is_media_present)
++				fh->file_size = generic->size();
+ 			sys_add_mac_file_handle(fh);
+ 			return fh;
+ 		}
+@@ -811,7 +813,7 @@ loff_t SysGetFileSize(void *arg)
+ #endif 
+ 
+ 	if (fh->generic_disk)
+-		return fh->file_size;
++		return fh->generic_disk->size();
+ 
+ 	if (fh->is_file)
+ 		return fh->file_size;
+@@ -849,6 +851,12 @@ void SysEject(void *arg)
+ 	if (!fh)
+ 		return;
+ 
++	if (fh->generic_disk) {
++		if (fh->generic_disk->is_media_present())
++			fh->generic_disk->eject();
++		return;
++	}
++
+ #if defined(__linux__)
+ 	if (fh->is_floppy) {
+ 		if (fh->fd >= 0) {
+@@ -949,7 +957,7 @@ bool SysIsFixedDisk(void *arg)
+ 		return true;
+ 
+ 	if (fh->generic_disk)
+-		return true;
++		return fh->generic_disk->is_fixed_disk();
+ 
+ 	if (fh->is_file)
+ 		return true;
+@@ -971,8 +979,8 @@ bool SysIsDiskInserted(void *arg)
+ 		return false;
+ 
+ 	if (fh->generic_disk)
+-		return true;
+-	
++		return fh->generic_disk->is_media_present();
++
+ 	if (fh->is_file) {
+ 		return true;
+ 

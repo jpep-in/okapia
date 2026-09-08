@@ -1,0 +1,298 @@
+fpu: give the 68881 a register that can hold it
+
+On a host whose widest IEEE type is a double, a 68881 register does not
+fit. The UAE core says so plainly — fpu/types.h makes fpu_register a
+uae_f64 — and the C99 core says it by omission: its 80-bit case needs an
+x87 long double, its quad case is switched off, and everything else falls
+through to a double as well. So eleven of the Macintosh's sixty-four
+mantissa bits are dropped on the way in, and its exponent, which reaches
+1e4932, is clamped to a double's 1e308.
+
+configure has been answering this on ARM by choosing MPFR, which is
+correct and costs a malloc and a free per floating-point instruction
+(fpuop_general). There is a third answer on any host whose long double is
+IEEE binary128 — AArch64, RISC-V, s390x, PowerPC ELFv2 — and it is exact:
+a 15-bit exponent with the Macintosh's own bias of 16383, and 112
+fraction bits for the Macintosh's 63. Nothing is lost and nothing is
+allocated.
+
+That case exists in the tree already, as USE_QUAD_DOUBLE, disabled with
+two objections. The second — that no CPU handles the format natively with
+conformance to IEEE — has expired: AArch64 does it through libgcc, and
+its libm carries real long-double kernels rather than aliases to double.
+The first — that the emulator implementation is not correct — was true,
+and this fixes it:
+
+  * make_extended() was not the inverse of extract_extended(). It copied
+    wrd2 down from bit 31, integer bit included, where binary128 keeps
+    the leading bit implicitly; every significand came out shifted one
+    place. Measured on a Raspberry Pi: 1.0 went in as 3fff0000 80000000
+    00000000 and came back as 3fff0000 c0000000 00000000, which is 1.5,
+    and nine of twelve test patterns were lost.
+
+  * make_nan() and make_inf() shared the long-double branch, which sets
+    an `empty` padding field binary128's shape does not have — so it did
+    not compile — and set the x87's explicit integer bit, which in
+    binary128 turns an infinity into a NaN.
+
+  * Unnormalised operands, which the 68881 can produce and binary128
+    cannot spell, are now normalised on the way in. Exact: there are 49
+    spare fraction bits to shift into.
+
+fpu_selftest_extended(), under FPU_SELFTEST, is what measured all of the
+above and what a port can call to find out where it stands in one line.
+It is the only property of this file decidable without a Macintosh, and
+it is the one that fails silently: System 7.1 reaches the Finder in four
+floating-point instructions, so a boot proves nothing about any of this.
+
+diff --git a/BasiliskII/src/uae_cpu_2021/fpu/fpu_ieee.cpp b/BasiliskII/src/uae_cpu_2021/fpu/fpu_ieee.cpp
+index e70f7679..e3af3121 100644
+--- a/BasiliskII/src/uae_cpu_2021/fpu/fpu_ieee.cpp
++++ b/BasiliskII/src/uae_cpu_2021/fpu/fpu_ieee.cpp
+@@ -322,13 +322,35 @@ PRIVATE inline fpu_register FFPU make_extended(uae_u32 wrd1, uae_u32 wrd2, uae_u
+ 		make_inf(result, (wrd1 & 0x80000000) != 0);
+ 		return result;
+ 	}
++	/* The 68881 keeps its integer bit explicitly, at bit 31 of wrd2, and
++	   binary128 keeps it implicitly — so the 63 fraction bits move to the top
++	   of a 112-bit field and the integer bit is dropped. This has to be the
++	   exact inverse of extract_extended() below, and for many years it was not:
++	   it copied wrd2 down from bit 31, integer bit included, which shifted
++	   every significand one place and made the round trip lossy in a way that
++	   looked like rounding.
++
++	   An unnormalised operand — integer bit clear with a non-zero exponent,
++	   which the 68881 can produce — has no binary128 spelling, so it is
++	   normalised first. That is exact here: there are 49 spare fraction bits
++	   to shift into.  */
+ 	fp_declare_init_shape(srp, extended);
+-	srp.ieee.negative  = (wrd1 >> 31) & 1;
+-	srp.ieee.exponent  = (wrd1 >> 16) & FP_EXTENDED_EXP_MAX;
+-	srp.ieee.mantissa0 = (wrd2 >> 16) & 0xffff;
+-	srp.ieee.mantissa1 = ((wrd2 & 0xffff) << 16) | ((wrd3 >> 16) & 0xffff);
+-	srp.ieee.mantissa2 = (wrd3 & 0xffff) << 16;
+-	srp.ieee.mantissa3 = 0;
++	{
++		uae_u32 exp = (wrd1 >> 16) & FP_EXTENDED_EXP_MAX;
++		uae_u64 man = ((uae_u64)wrd2 << 32) | wrd3;
++		while (exp > 0 && (man & UVAL64(0x8000000000000000)) == 0) {
++			man <<= 1;
++			exp--;
++		}
++		const uae_u64 frac = man & UVAL64(0x7fffffffffffffff);	/* 63 bits */
++
++		srp.ieee.negative  = (wrd1 >> 31) & 1;
++		srp.ieee.exponent  = exp;
++		srp.ieee.mantissa0 = (uae_u32)(frac >> 47) & 0xffff;
++		srp.ieee.mantissa1 = (uae_u32)(frac >> 15);
++		srp.ieee.mantissa2 = (uae_u32)(frac << 17);
++		srp.ieee.mantissa3 = 0;
++	}
+ #elif defined(USE_LONG_DOUBLE)
+ 	fp_declare_init_shape(srp, extended);
+ 	srp.ieee.negative	= (wrd1 >> 31) & 1;
+@@ -401,13 +423,35 @@ PRIVATE inline void FFPU make_extended_no_normalize(
+ 		make_inf(result, (wrd1 & 0x80000000) != 0);
+ 		return;
+ 	}
++	/* The 68881 keeps its integer bit explicitly, at bit 31 of wrd2, and
++	   binary128 keeps it implicitly — so the 63 fraction bits move to the top
++	   of a 112-bit field and the integer bit is dropped. This has to be the
++	   exact inverse of extract_extended() below, and for many years it was not:
++	   it copied wrd2 down from bit 31, integer bit included, which shifted
++	   every significand one place and made the round trip lossy in a way that
++	   looked like rounding.
++
++	   An unnormalised operand — integer bit clear with a non-zero exponent,
++	   which the 68881 can produce — has no binary128 spelling, so it is
++	   normalised first. That is exact here: there are 49 spare fraction bits
++	   to shift into.  */
+ 	fp_declare_init_shape(srp, extended);
+-	srp.ieee.negative  = (wrd1 >> 31) & 1;
+-	srp.ieee.exponent  = (wrd1 >> 16) & FP_EXTENDED_EXP_MAX;
+-	srp.ieee.mantissa0 = (wrd2 >> 16) & 0xffff;
+-	srp.ieee.mantissa1 = ((wrd2 & 0xffff) << 16) | ((wrd3 >> 16) & 0xffff);
+-	srp.ieee.mantissa2 = (wrd3 & 0xffff) << 16;
+-	srp.ieee.mantissa3 = 0;
++	{
++		uae_u32 exp = (wrd1 >> 16) & FP_EXTENDED_EXP_MAX;
++		uae_u64 man = ((uae_u64)wrd2 << 32) | wrd3;
++		while (exp > 0 && (man & UVAL64(0x8000000000000000)) == 0) {
++			man <<= 1;
++			exp--;
++		}
++		const uae_u64 frac = man & UVAL64(0x7fffffffffffffff);	/* 63 bits */
++
++		srp.ieee.negative  = (wrd1 >> 31) & 1;
++		srp.ieee.exponent  = exp;
++		srp.ieee.mantissa0 = (uae_u32)(frac >> 47) & 0xffff;
++		srp.ieee.mantissa1 = (uae_u32)(frac >> 15);
++		srp.ieee.mantissa2 = (uae_u32)(frac << 17);
++		srp.ieee.mantissa3 = 0;
++	}
+ #elif defined(USE_LONG_DOUBLE)
+ 	fp_declare_init_shape(srp, extended);
+ 	srp.ieee.negative	= (wrd1 >> 31) & 1;
+@@ -2475,4 +2519,59 @@ PUBLIC void FFPU fpu_reset (void)
+ 	fpu_init(FPU is_integral);
+ }
+ 
++#ifdef FPU_SELFTEST
++/*
++ *  Does a 68881 extended value survive a trip through an fpu_register?
++ *
++ *  It is the one property of this file that can be checked without a Macintosh,
++ *  and the one that used to fail: make_extended() and extract_extended() are
++ *  supposed to be inverses, and on a host whose fpu_register is narrower than
++ *  80 bits they cannot be. Saying so out loud beats discovering it inside a
++ *  spreadsheet.
++ *
++ *  Returns the number of patterns that did not come back unchanged, and leaves
++ *  the first one that did not in *first, so a caller can print it. A host that
++ *  keeps the register in a double is expected to fail most of these; that is
++ *  the measurement, not a bug in the test.
++ */
++extern "C" int fpu_selftest_extended(uae_u32 *first)
++{
++	static const uae_u32 patterns[][3] = {
++		/* one, and one with every fraction bit that a double would drop */
++		{ 0x3fff0000, 0x80000000, 0x00000000 },
++		{ 0x3fff0000, 0x80000000, 0x00000001 },
++		{ 0x3fff0000, 0x80000000, 0x000007ff },
++		{ 0x3fff0000, 0xffffffff, 0xffffffff },
++		{ 0xbfff0000, 0xffffffff, 0xffffffff },
++		/* pi to 64 bits, which is what FMOVECR #0 hands over */
++		{ 0x40000000, 0xc90fdaa2, 0x2168c235 },
++		/* the exponent range a double cannot reach, both ends */
++		{ 0x00010000, 0x80000000, 0x00000000 },
++		{ 0x7ffe0000, 0xffffffff, 0xffffffff },
++		{ 0x10000000, 0x80000000, 0x00000000 },
++		{ 0x6fff0000, 0x80000000, 0x00000000 },
++		/* smallest and largest normal a double *can* reach, for contrast */
++		{ 0x3c010000, 0x80000000, 0x00000000 },
++		{ 0x43fe0000, 0xffffffff, 0xf8000000 },
++	};
++
++	int failures = 0;
++	for (unsigned i = 0; i < sizeof patterns / sizeof patterns[0]; i++) {
++		uae_u32 w1 = 0, w2 = 0, w3 = 0;
++		fpu_register r = make_extended(patterns[i][0], patterns[i][1], patterns[i][2]);
++		extract_extended(r, &w1, &w2, &w3);
++
++		if (w1 == patterns[i][0] && w2 == patterns[i][1] && w3 == patterns[i][2])
++			continue;
++
++		if (failures == 0 && first != 0) {
++			first[0] = patterns[i][0]; first[1] = patterns[i][1]; first[2] = patterns[i][2];
++			first[3] = w1;             first[4] = w2;             first[5] = w3;
++		}
++		failures++;
++	}
++	return failures;
++}
++#endif
++
+ #endif
+diff --git a/BasiliskII/src/uae_cpu_2021/fpu/mathlib.h b/BasiliskII/src/uae_cpu_2021/fpu/mathlib.h
+index 8b03dd2a..3b18aed9 100644
+--- a/BasiliskII/src/uae_cpu_2021/fpu/mathlib.h
++++ b/BasiliskII/src/uae_cpu_2021/fpu/mathlib.h
+@@ -537,20 +537,28 @@ PRIVATE inline void FFPU get_source_flags(fpu_register const & r)
+ 
+ PRIVATE inline void FFPU make_nan(fpu_register & r, bool negative)
+ {
+-#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
++	/* Three layouts, not two. The x87 double-extended has an explicit integer
++	   bit and sixteen bits of padding that binary128 has neither of, so the
++	   quad case cannot share the long-double one: its mantissa0 is sixteen
++	   bits wide and its shape has no `empty` member at all.  */
++#if defined(USE_QUAD_DOUBLE)
++	fp_declare_init_shape(sxp, extended);
++	sxp.ieee.exponent	= FP_EXTENDED_EXP_MAX;
++	sxp.ieee.mantissa0	= 0xffff;
++	sxp.ieee.mantissa1	= 0xffffffff;
++	sxp.ieee.mantissa2	= 0xffffffff;
++	sxp.ieee.mantissa3	= 0xffffffff;
++#elif defined(USE_LONG_DOUBLE)
+ 	fp_declare_init_shape(sxp, extended);
+ 	sxp.ieee.exponent	= FP_EXTENDED_EXP_MAX;
+ 	sxp.ieee.empty		= 0;
+ 	sxp.ieee.mantissa0	= 0xffffffff;
++	sxp.ieee.mantissa1	= 0xffffffff;
+ #else
+ 	fp_declare_init_shape(sxp, double);
+ 	sxp.ieee.exponent	= FP_DOUBLE_EXP_MAX;
+ 	sxp.ieee.mantissa0	= 0xfffff;
+-#endif
+ 	sxp.ieee.mantissa1	= 0xffffffff;
+-#ifdef USE_QUAD_DOUBLE
+-	sxp.ieee.mantissa2	= 0xffffffff;
+-	sxp.ieee.mantissa3	= 0xffffffff;
+ #endif
+ 	sxp.ieee.negative   = negative;
+ 	r = sxp.value;
+@@ -581,22 +589,29 @@ PRIVATE inline void FFPU make_zero(fpu_register & r, bool negative)
+ 
+ PRIVATE inline void FFPU make_inf(fpu_register & r, bool negative)
+ {
+-#if defined(USE_LONG_DOUBLE) || defined(USE_QUAD_DOUBLE)
++	/* The 0x80000000 in the long-double case is the x87's explicit integer
++	   bit, which infinity carries. binary128 has no such bit, and an infinity
++	   with any fraction bit set is a NaN — so the quad case sets none.  */
++#if defined(USE_QUAD_DOUBLE)
++	fp_declare_init_shape(sxp, extended);
++	sxp.ieee.exponent	= FP_EXTENDED_EXP_MAX;
++	sxp.ieee.mantissa0	= 0;
++	sxp.ieee.mantissa1	= 0;
++	sxp.ieee.mantissa2	= 0;
++	sxp.ieee.mantissa3	= 0;
++#elif defined(USE_LONG_DOUBLE)
+ 	fp_declare_init_shape(sxp, extended);
+ 	sxp.ieee.exponent	= FP_EXTENDED_EXP_MAX;
+ 	sxp.ieee.mantissa0	= 0x80000000;
+ 	sxp.ieee.empty		= 0;
++	sxp.ieee.mantissa1	= 0;
+ #else
+ 	fp_declare_init_shape(sxp, double);
+ 	sxp.ieee.exponent	= FP_DOUBLE_EXP_MAX;
+ 	sxp.ieee.mantissa0	= 0;
+-#endif
+-	sxp.ieee.negative	= negative;
+ 	sxp.ieee.mantissa1	= 0;
+-#ifdef USE_QUAD_DOUBLE
+-	sxp.ieee.mantissa2 = 0;
+-	sxp.ieee.mantissa3 = 0;
+ #endif
++	sxp.ieee.negative	= negative;
+ 	r = sxp.value;
+ }
+ 
+diff --git a/BasiliskII/src/uae_cpu_2021/fpu/types.h b/BasiliskII/src/uae_cpu_2021/fpu/types.h
+index 50e07ec2..141eb628 100644
+--- a/BasiliskII/src/uae_cpu_2021/fpu/types.h
++++ b/BasiliskII/src/uae_cpu_2021/fpu/types.h
+@@ -145,10 +145,20 @@ typedef uae_f96 fpu_register;
+ typedef long double uae_f128;
+ typedef uae_f128 fpu_register;
+ #define USE_LONG_DOUBLE 1
+-#elif 0
+-/* Disable for now and probably for good as (i) the emulator
+-   implementation is not correct, (ii) I don't know of any CPU which
+-   handles this kind of format *natively* with conformance to IEEE.  */
++#elif __LDBL_MANT_DIG__ == 113
++/* IEEE binary128, which AArch64 and a few others make `long double`. Both
++   objections in the comment this replaces have expired: (ii) said no CPU
++   handled the format natively with conformance to IEEE, and AArch64 does — in
++   software, through libgcc, but conformantly, and its libm carries real
++   long-double kernels rather than aliases to double; (i) said the emulator
++   implementation was not correct, and it was not — make_extended() was not the
++   inverse of extract_extended(), which is fixed in the same patch as this.
++
++   It is the only format on such a host that holds a 68881 register without
++   losing anything: the exponent field is 15 bits with bias 16383, exactly the
++   Macintosh's, and 112 fraction bits hold the 68881's 63 with room to spare.
++   The alternative, which upstream's configure picks on ARM, is MPFR — correct
++   too, and a malloc and a free per floating-point instruction.  */
+ typedef long double uae_f128;
+ typedef uae_f128 fpu_register;
+ #define USE_QUAD_DOUBLE 1

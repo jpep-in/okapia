@@ -43,6 +43,12 @@ extern void TickStop (void);
 // From src/circle/input_circle.cpp
 extern void InputInit (void);
 
+#ifdef FPU_SELFTEST
+// fpu_ieee.cpp (patches/macemu/0008). Declared here rather than in a header:
+// it exists only in a traced build and has exactly one caller.
+extern "C" int fpu_selftest_extended (uint32 *first);
+#endif
+
 // Everything that used to be a constant here now comes from the preferences
 // file on the card (see src/circle/prefs_circle.cpp and README.md). What is
 // left is the floor below which a Mac cannot start at all, so that a typo in
@@ -64,19 +70,19 @@ bool CKernel::Initialize (void)
 {
     // 1. The board: serial, the log, interrupts, the timer and its clock. Every
     //    reason this order matters is in hal_circle.cpp, once.
-    if (!m_Board.Start (FROM))
+    if (!OkapiaBoard ().Start (FROM))
     {
         return false;
     }
 
     // 2. The console, on the serial port. Before any file is opened — see
     //    COkapiaBoard::StartConsole.
-    m_Board.StartConsole ();
+    OkapiaBoard ().StartConsole ();
 
     // 3. The card, then the preferences on it. They decide how much Mac RAM to
     //    allocate, so they have to be read before the allocation — which is the
     //    one thing allowed to come before it.
-    if (!m_Board.StartCard ())
+    if (!OkapiaBoard ().StartCard ())
     {
         CLogger::Get ()->Write (FROM, LogError, "No SD card, or it will not mount");
         return false;
@@ -106,7 +112,7 @@ bool CKernel::Initialize (void)
     }
 
     // 5. Everything else.
-    if (!m_Board.StartUSB ())
+    if (!OkapiaBoard ().StartUSB ())
     {
         CLogger::Get ()->Write (FROM, LogWarning, "No USB: keyboard and mouse unavailable");
     }
@@ -333,6 +339,31 @@ static bool VolumeIsBootable (const char *pPath)
     return false;
 }
 
+// CDROMRefNum (cdrom.h:24), as the `bootdriver` preference states it. Not
+// included from there: this file is built for both engines and each has its own
+// cdrom.h, while the number is the Macintosh's and the same in both.
+static const int BOOT_DRIVER_CDROM = -62;
+
+// Is this path in the `cdrom` list? A volume can be in one list or the other,
+// never both, and the fallback below has to know: adding a `disk` line for an
+// image already opened as a CD-ROM would hand the same file to the Mac twice,
+// through two drivers, which is a mounted-twice volume and not a spare drive.
+static bool VolumeIsCdrom (const char *pPath)
+{
+    for (int i = 0; ; i++)
+    {
+        const char *pCd = PrefsFindString ("cdrom", i);
+        if (pCd == 0)
+        {
+            return false;
+        }
+        if (strcmp (pCd, pPath) == 0)
+        {
+            return true;
+        }
+    }
+}
+
 bool CKernel::PrepareVolumes (void)
 {
     const bool bRepair = PrefsFindBool ("hfsrepair");
@@ -392,6 +423,49 @@ bool CKernel::PrepareVolumes (void)
         HfsRepair (pPath);
     }
 
+    // The CD-ROM drives are checked but never touched. CDROMInit() opens them
+    // read-only whatever anybody asks (cdrom.cpp:324), so a repair could not
+    // write to one, and offering to repair what cannot be written is the kind
+    // of promise this firmware does not make.
+    char FirstCd[sizeof s_BootVolume] = "";
+    for (int i = 0; ; i++)
+    {
+        const char *pCd = PrefsFindString ("cdrom", i);
+        if (pCd == 0)
+        {
+            break;
+        }
+        if (*pCd == '\0')
+        {
+            continue;
+        }
+        FILE *pFile = fopen (pCd, "rb");
+        if (pFile == 0)
+        {
+            CLogger::Get ()->Write (FROM, LogError, "cdrom %s: not on the card", pCd);
+            continue;
+        }
+        fclose (pFile);
+        if (FirstCd[0] == '\0')
+        {
+            snprintf (FirstCd, sizeof FirstCd, "%s", pCd);
+        }
+        CLogger::Get ()->Write (FROM, LogNotice, "cdrom %s", pCd);
+    }
+
+    // A Macintosh told to start from the CD driver starts from the first disc
+    // that driver offers, so that is the volume this session is about — and
+    // naming it is not decoration: run-test.sh judges what this line names, and
+    // ApplyModelId() reads its System. Answering with a disk here would judge a
+    // volume the session never wrote. `bootdriver` is CDROMRefNum, -62
+    // (cdrom.h:24), written into the parameter RAM at 0x7a by main.cpp:139.
+    if (PrefsFindInt32 ("bootdriver") == BOOT_DRIVER_CDROM && FirstCd[0] != '\0')
+    {
+        snprintf (s_BootVolume, sizeof s_BootVolume, "%s", FirstCd);
+        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s (CD-ROM)", s_BootVolume);
+        return true;
+    }
+
     if (nUsable > 0)
     {
         // Named explicitly because it is not deducible from the card: with two
@@ -421,7 +495,7 @@ bool CKernel::PrepareVolumes (void)
     // one rather than stopping at a question-mark floppy over a stale path.
     for (unsigned i = 0; i < s_nVolumes; i++)
     {
-        if (s_Volumes[i].Blessed == 0)
+        if (s_Volumes[i].Blessed == 0 || VolumeIsCdrom (s_Volumes[i].Path))
         {
             continue;
         }
@@ -612,6 +686,31 @@ bool CKernel::StartMacintosh (void)
     }
 
     CLogger::Get ()->Write (FROM, LogNotice, "Initialising the emulator");
+#ifdef FPU_SELFTEST
+    // Does a 68881 extended value survive a trip through an fpu_register?
+    // The FPU's one property decidable without a Macintosh, and the one that
+    // fails when the register is a double: eleven bits of mantissa go missing
+    // and anything past 1e308 is clamped. Off unless OKAPIA_TRACE=1, because it
+    // is a fact about the build and not about this boot.
+    {
+        uint32 First[6] = { 0 };
+        const int nBad = fpu_selftest_extended (First);
+        if (nBad == 0)
+        {
+            CLogger::Get ()->Write (FROM, LogNotice,
+                                    "FPU: every extended pattern came back unchanged");
+        }
+        else
+        {
+            CLogger::Get ()->Write (FROM, LogWarning,
+                                    "FPU: %d extended pattern(s) lost; "
+                                    "%08x %08x %08x came back %08x %08x %08x",
+                                    nBad, First[0], First[1], First[2],
+                                    First[3], First[4], First[5]);
+        }
+    }
+#endif
+
     if (!InitAll (0))
     {
         CLogger::Get ()->Write (FROM, LogError, "InitAll failed");
@@ -642,7 +741,7 @@ bool CKernel::StartMacintosh (void)
     return true;
 }
 
-TShutdownMode CKernel::Run (void)
+TOkapiaExit CKernel::Run (bool bSwitched)
 {
     // The Macintosh may go round more than once. A restart from Mac OS is a
     // reset of the 68000, and Basilisk's own opcode sits on that path
@@ -672,19 +771,38 @@ TShutdownMode CKernel::Run (void)
         // read, the Mac's memory is allocated and USB is up — Initialize() sees
         // to all four, and InputInit() only takes the keyboard for the Macintosh
         // later on.
-        switch (FirmwareRun ())
+        // Skipped only on the pass that follows a hand-over: the other engine's
+        // window is the one that answered, and the firmware is shared, so it
+        // still holds that answer. Cleared straight away, so a restart from
+        // Mac OS opens the window as it always did.
+        const TFirmwareResult Result = bSwitched ? FirmwareBoot
+                                                 : FirmwareRun (FirmwareEngine68k);
+        bSwitched = false;
+
+        switch (Result)
         {
         case FirmwareHalt:
             CLogger::Get ()->Write (FROM, LogNotice, "Powered off from the firmware");
-            return ShutdownHalt;
+            return OkapiaHalt;
 
         case FirmwareReboot:
             CLogger::Get ()->Write (FROM, LogNotice, "Restarting Okapia at the firmware's request");
-            return ShutdownReboot;
+            return OkapiaReboot;
 
         case FirmwareBoot:
         default:
             break;
+        }
+
+        // The startup volume may ask for the other emulator, and this image
+        // carries it. Saying so and returning is the whole of the hand-over:
+        // okapia_boot.cpp calls the other engine, the board stays up, and
+        // nothing is read off the card or reset. It used to be a chain boot —
+        // a second kernel image, four megabytes read back, and a reboot — and
+        // that is the cost the merged image removes.
+        if (FirmwareWantedEngine () != FirmwareEngine68k)
+        {
+            return OkapiaSwitchToPowerPC;
         }
 
         const unsigned nStarted = CTimer::Get ()->GetTicks ();
@@ -697,7 +815,7 @@ TShutdownMode CKernel::Run (void)
             {
                 CTimer::Get ()->MsDelay (1000);
             }
-            return ShutdownHalt;
+            return OkapiaHalt;
         }
 
         // ExitAll() closes the drivers in order — DiskExit() is what finally
@@ -719,7 +837,7 @@ TShutdownMode CKernel::Run (void)
         if (QuitRequested ())
         {
             CLogger::Get ()->Write (FROM, LogNotice, "Shut down cleanly, disk closed");
-            return ShutdownHalt;
+            return OkapiaHalt;
         }
 
         if (!MacRestarted ())
@@ -727,7 +845,7 @@ TShutdownMode CKernel::Run (void)
             // The interpreter left for a reason nobody named. Say so rather
             // than looping on it.
             CLogger::Get ()->Write (FROM, LogNotice, "68k execution ended, disk closed");
-            return ShutdownReboot;
+            return OkapiaReboot;
         }
 
         // The Macintosh had them; the firmware needs them back, and needs the

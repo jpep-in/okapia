@@ -5,7 +5,7 @@ roms/
 *.image
 *.dsk
 *.hfv
-# Local SD contents: disk images and ROMs staged for QEMU
+# Local SD contents: disk images, ROMs and kernel images staged for QEMU
 qemu/sd-contents/
 
 # Reference clones, fetched by script
@@ -39,6 +39,8 @@ tests/host/check_chooser
 tests/host/check_pages
 tests/host/check_platform
 tests/host/check_platform.tmp
+tests/host/check_blit
+tests/host/check_encoding
 tests/host/render_chooser
 tests/host/render_pages
 tests/host/*.ppm
@@ -48,6 +50,7 @@ src/kernel/emu-*/
 src/kernel/*.o
 src/kernel/*.d
 src/kernel/kernel8.*
+src/kernel/.engine
 qemu/serial.log
 src/kernel/kernel8.lst
 .idea/

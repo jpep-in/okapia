@@ -39,10 +39,11 @@ MACEMU   = $(ROOT)/external/macemu/BasiliskII/src
 LIBHFS   = $(ROOT)/external/hfsutils/libhfs
 
 PLATFORM_CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c++14 \
-    -include shims/okapia_circle.h -I$(CIRCLE) -I$(CIRCLE)/sheepshaver -I$(MACEMU)/include \
+    -include shims/okapia_circle.h -Ishims -I$(CIRCLE) -I$(CIRCLE)/sheepshaver -I$(MACEMU)/include \
     -I$(MACEMU)/Unix -I$(MACEMU)/uae_cpu_2021 -I$(LIBHFS) \
     -DDIRECT_ADDRESSING -DFPU_UAE
 PLATFORM_OBJS = p_prefs_circle.o p_hfs_volume_circle.o p_prefs.o p_prefs_items.o \
+                p_compositor_circle.o \
                 p_mac_layout.o
 HFS_SRCS      = $(wildcard $(LIBHFS)/*.c)
 HFS_OBJS      = $(addprefix hfs_,$(notdir $(HFS_SRCS:.c=.o)))
@@ -53,10 +54,12 @@ $(FONT_SRC): $(ROOT)/scripts/gen-font.py $(BDF)
 	@mkdir -p $(GEN)
 	$(ROOT)/scripts/gen-font.py $@ $(BDF)
 
-$(ICON_SRC): $(ROOT)/scripts/gen-icons.py $(ROOT)/assets/icons/system-icons.c
+$(ICON_SRC): $(ROOT)/scripts/gen-icons.py $(ROOT)/assets/icons/system-icons.c \
+              $(ROOT)/assets/icons/cdrom-icon.c
 	@mkdir -p $(GEN)
 	$(ROOT)/scripts/gen-icons.py $@ \
-	    $(ROOT)/assets/icons/system-icons.c
+	    $(ROOT)/assets/icons/system-icons.c \
+	    $(ROOT)/assets/icons/cdrom-icon.c
 
 $(STR_SRC) $(STR_IDS): $(ROOT)/scripts/gen-strings.py $(ROOT)/assets/strings.tsv
 	@mkdir -p $(GEN)
@@ -129,16 +132,49 @@ check_platform.o: check_platform.cpp
 check_platform: check_platform.o $(PLATFORM_OBJS) $(HFS_OBJS)
 	$(CXX) -o $@ $^
 
+# video_blit.cpp is upstream's and lives one directory deeper than the p_ rule
+# above can name, so it gets its own. It is the only display code Okapia does
+# not write, and patches/macemu/0003 is why it is measured.
+p_video_blit.o: $(MACEMU)/CrossPlatform/video_blit.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+# video_blit.h sits beside its .cpp rather than in include/, so the test needs
+# that directory on the path where the .cpp did not.
+check_blit.o: check_blit.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -I$(MACEMU)/CrossPlatform -MMD -MP -c -o $@ $<
+
+check_blit: check_blit.o p_video_blit.o
+	$(CXX) -o $@ $^
+
+# The file-name converters. They need the generated MacRoman table, which the
+# kernel build also makes — the rule is here too so this directory stands alone.
+MACROMAN_H = $(GEN)/macroman_table.h
+$(MACROMAN_H): $(ROOT)/scripts/gen-macroman.py
+	@mkdir -p $(GEN)
+	$(ROOT)/scripts/gen-macroman.py $@
+
+p_mac_encoding_circle.o: $(MACROMAN_H) $(CIRCLE)/mac_encoding_circle.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -I$(GEN) -MMD -MP -c -o $@ $(CIRCLE)/mac_encoding_circle.cpp
+
+check_encoding.o: check_encoding.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+check_encoding: check_encoding.o p_mac_encoding_circle.o
+	$(CXX) -o $@ $^
+
 # The measurements are part of the build, not something to remember to run: an
 # asymmetry of one pixel is invisible on a screenshot and obvious at three. The
 # behaviour joins them: what the focus does under a sequence of keys is decidable
 # on a machine with no keyboard, so there is no reason to go and look.
-check: check_geometry check_screen check_chooser check_pages check_platform
+check: check_geometry check_screen check_chooser check_pages check_platform check_blit \
+       check_encoding
 	./check_geometry
 	./check_screen
 	./check_chooser
 	./check_pages
 	./check_platform
+	./check_blit
+	./check_encoding
 
 # Every page, the count being the flow's to decide: naming them here again is
 # how the second page went stale the day a third appeared.
@@ -153,7 +189,8 @@ view: render_specimen
 
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
-	      check_chooser check_pages check_platform check_platform.tmp \
+	      check_chooser check_pages check_platform check_platform.tmp check_blit \
+	      check_encoding \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean
