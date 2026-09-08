@@ -1,0 +1,110 @@
+ppc-cpu: a seam for a port with no thread to spare
+
+kpx_cpu's interpreter, once entered, does not come back until the
+Macintosh stops. Every existing host is fine with that because every
+existing host has a spare thread: SheepShaver's 60 Hz tick, its PRAM
+writer and its input all live in one, beside the emulator.
+
+A host that has none — a browser, a bare-metal board — has nowhere to
+stand. Its timer is an interrupt handler, where blocking on a disk is not
+allowed, and the emulation core never yields. So it cannot write the PRAM
+when the PRAM changes, and it cannot hand input to the ADB code from the
+thread that reads it.
+
+This adds the seam, as a knob rather than a platform test:
+PPC_CHECK_TICKS is the number of interpreted instructions between two
+calls to powerpc_check_ticks(), which the port defines, and 0 — the
+default — compiles the whole thing away. Both interpreter loops carry the
+count, since which one runs depends on PPC_DECODE_CACHE.
+
+mihaip/macemu (branch infinite-mac-kanjitalk755) carries the same seam for
+WebAssembly, hardcoded to 50000 and to its own #ifdef; this is the same
+idea named for what it does.
+
+diff --git a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-config.hpp b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-config.hpp
+index 7563fd02..891b5631 100644
+--- a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-config.hpp
++++ b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-config.hpp
+@@ -49,6 +49,26 @@
+ #endif
+ 
+ 
++/**
++ *	PPC_CHECK_TICKS
++ *
++ *		Number of interpreted instructions between two calls to
++ *		powerpc_check_ticks(), which the port defines. 0 disables the
++ *		check altogether, which is what a host with a spare thread
++ *		wants: it has somewhere better to do periodic work.
++ *
++ *		A host without threads has nowhere else at all. Its timer runs
++ *		in an interrupt handler, where it may not block on a disk; the
++ *		interpreter, once entered, does not come back. This is the seam
++ *		that gives such a port a place to stand — inside the loop,
++ *		between two instructions, on the emulation thread.
++ **/
++
++#ifndef PPC_CHECK_TICKS
++#define PPC_CHECK_TICKS 0
++#endif
++
++
+ /**
+  *	PPC_DECODE_CACHE
+  *
+diff --git a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
+index 39a31ecb..7e4686d9 100644
+--- a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
++++ b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
+@@ -578,6 +578,9 @@ void powerpc_cpu::execute(uint32 entry)
+ 	pc() = entry;
+ #if PPC_EXECUTE_DUMP_STATE
+ 	const bool dump_state = true;
++#endif
++#if PPC_CHECK_TICKS
++	uint32 check_ticks_counter = 0;
+ #endif
+ 	execute_depth++;
+ #if PPC_DECODE_CACHE || PPC_ENABLE_JIT
+@@ -698,6 +701,13 @@ void powerpc_cpu::execute(uint32 entry)
+ 					} while (--n > 0);
+ 				}
+ 
++#if PPC_CHECK_TICKS
++				if (++check_ticks_counter >= PPC_CHECK_TICKS) {
++					check_ticks_counter = 0;
++					powerpc_check_ticks();
++				}
++#endif
++
+ 				if (!spcflags().empty()) {
+ 					if (!check_spcflags())
+ 						goto return_site;
+@@ -740,6 +750,12 @@ void powerpc_cpu::execute(uint32 entry)
+ #if PPC_EXECUTE_DUMP_STATE
+ 		if (dump_state)
+ 			dump_registers();
++#endif
++#if PPC_CHECK_TICKS
++		if (++check_ticks_counter >= PPC_CHECK_TICKS) {
++			check_ticks_counter = 0;
++			powerpc_check_ticks();
++		}
+ #endif
+ 		if (!spcflags().empty() && !check_spcflags())
+ 			goto return_site;
+diff --git a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
+index f1739a5f..b4a969e3 100644
+--- a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
++++ b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
+@@ -515,4 +515,10 @@ inline void powerpc_cpu::trigger_interrupt()
+ extern void HandleInterrupt(powerpc_registers *r);
+ #endif
+ 
++#if PPC_CHECK_TICKS
++// Defined by the port. Called from the interpreter every PPC_CHECK_TICKS
++// instructions, on the emulation thread, with the CPU between two instructions.
++extern void powerpc_check_ticks();
++#endif
++
+ #endif /* PPC_CPU_H */

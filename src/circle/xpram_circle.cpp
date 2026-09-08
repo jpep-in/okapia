@@ -28,7 +28,18 @@
 #define FROM "okapia-pram"
 
 // At the root of the card, beside the preferences and the disk images.
+//
+// One name per engine, because the two Macintosh do not share a parameter RAM:
+// SheepShaver's is 8192 bytes and Basilisk's is 256, and the fields inside them
+// are at different offsets. One file would be read back by the other machine as
+// its own settings — and the shorter read succeeds, so it would be taken for
+// good ones. The preferences are engine-agnostic on purpose (plan §19.7); a
+// Mac's PRAM is the Mac's, and a PowerMac and a Quadra each keep their own.
+#ifdef SHEEPSHAVER
+static const char XPRAM_FILE_NAME[] = "/SheepShaver_XPRAM";
+#else
 static const char XPRAM_FILE_NAME[] = "/BasiliskII_XPRAM";
+#endif
 
 // What is currently on the card, so a write only happens on a real change.
 static uint8 s_Saved[XPRAM_SIZE];
@@ -47,8 +58,18 @@ void LoadXPRAM (const char *vmdir)
         return;
     }
 
-    size_t nRead = fread (XPRAM, 1, XPRAM_SIZE, f);
+    // One byte more than wanted: a file of exactly the right length reads
+    // XPRAM_SIZE and no more. Without this a *longer* file would read as a
+    // perfectly good PRAM, which is how the wrong machine's settings get in.
+    // Static: SheepShaver's PRAM is 8 KB and Circle's stacks are not generous.
+    static uint8 Buffer[XPRAM_SIZE + 1];
+    size_t nRead = fread (Buffer, 1, sizeof Buffer, f);
     fclose (f);
+
+    if (nRead == XPRAM_SIZE)
+    {
+        memcpy (XPRAM, Buffer, XPRAM_SIZE);
+    }
 
     if (nRead != XPRAM_SIZE)
     {
@@ -56,8 +77,10 @@ void LoadXPRAM (const char *vmdir)
         // Starting from zero is what a Mac does with a dead PRAM battery, and
         // it is honest; pretending a partial file is settings is not.
         CLogger::Get ()->Write (FROM, LogWarning,
-                                "%s is %u bytes, not %u — starting from an empty PRAM",
-                                XPRAM_FILE_NAME, (unsigned) nRead, XPRAM_SIZE);
+                                "%s is %s than %u bytes — starting from an empty PRAM",
+                                XPRAM_FILE_NAME,
+                                nRead > XPRAM_SIZE ? "longer" : "shorter",
+                                XPRAM_SIZE);
         memset (XPRAM, 0, XPRAM_SIZE);
     }
     else
@@ -106,15 +129,20 @@ void ZapPRAM (void)
 /*
  *  Write the PRAM back as soon as it changes.
  *
- *  Driven by the event, not by a timer: every read and write of the Mac's
- *  clock/PRAM chip arrives as M68K_EMUL_OP_CLKNOMEM, and that is the only path
- *  by which XPRAM changes once the Mac is running (emul_op.cpp:159 and :170).
- *  emul_op_hook_circle.cpp watches for it, so the comparison happens exactly when
- *  something could have changed and never otherwise.
+ *  On the 68k engine this is driven by the event, not by a timer: every read and
+ *  write of the Mac's clock/PRAM chip arrives as M68K_EMUL_OP_CLKNOMEM, and that
+ *  is the only path by which XPRAM changes once the Mac is running
+ *  (emul_op.cpp:159 and :170). emul_op_hook_circle.cpp watches for it, so the
+ *  comparison happens exactly when something could have changed and never
+ *  otherwise.
  *
- *  It runs in the 68k thread, the same context as Sys_write, so writing to the
- *  card here is allowed — which it would not be from the tick handler, that one
- *  running at IRQ level.
+ *  The PowerPC engine has no such opcode, so there it is polled instead, from
+ *  the periodic seam (sheepshaver/cpu_ticks_circle.cpp) — later and dumber, but
+ *  it is the only moment that engine has.
+ *
+ *  Either way it runs in the emulation thread, the same context as Sys_write, so
+ *  writing to the card here is allowed — which it would not be from the tick
+ *  handler, that one running at IRQ level.
  */
 
 void XPRAMWatchdog (void)

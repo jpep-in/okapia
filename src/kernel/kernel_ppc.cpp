@@ -14,6 +14,7 @@
 //
 #include "kernel_ppc.h"
 #include "okapia_input.h"
+#include "okapia_firmware.h"
 
 #include <stdio.h>
 
@@ -57,13 +58,13 @@ CKernelPPC::~CKernelPPC (void)
 
 bool CKernelPPC::Initialize (void)
 {
-    if (!m_Board.Start (FROM))
+    if (!OkapiaBoard ().Start (FROM))
     {
         return false;
     }
-    m_Board.StartConsole ();
+    OkapiaBoard ().StartConsole ();
 
-    if (!m_Board.StartCard ())
+    if (!OkapiaBoard ().StartCard ())
     {
         CLogger::Get ()->Write (FROM, LogError, "No SD card, or it will not mount");
         return false;
@@ -91,7 +92,7 @@ bool CKernelPPC::Initialize (void)
         return false;
     }
 
-    if (!m_Board.StartUSB ())
+    if (!OkapiaBoard ().StartUSB ())
     {
         CLogger::Get ()->Write (FROM, LogWarning, "No USB: keyboard and mouse unavailable");
     }
@@ -100,8 +101,34 @@ bool CKernelPPC::Initialize (void)
     return true;
 }
 
-TShutdownMode CKernelPPC::Run (void)
+TOkapiaExit CKernelPPC::Run (bool bSwitched)
 {
+    // The firmware has its say first, exactly as on the other engine: the card
+    // is mounted, the preferences are read and USB is up. It is also what reads
+    // the card's answer to "which emulator", and this image carries one — so a
+    // startup volume asking for the other one is handed over to it.
+    // Skipped on the pass that follows a hand-over: see CKernel::Run.
+    const TFirmwareResult Result = bSwitched ? FirmwareBoot
+                                             : FirmwareRun (FirmwareEnginePowerPC);
+    switch (Result)
+    {
+    case FirmwareHalt:
+        CLogger::Get ()->Write (FROM, LogNotice, "Powered off from the firmware");
+        return OkapiaHalt;
+
+    case FirmwareReboot:
+        return OkapiaReboot;
+
+    case FirmwareBoot:
+    default:
+        break;
+    }
+
+    if (FirmwareWantedEngine () != FirmwareEnginePowerPC)
+    {
+        return OkapiaSwitchTo68k;
+    }
+
     // Before the ROM and before InitAll, in that order, because ThunksInit()
     // inside InitAll allocates out of this area — and with base left at zero it
     // allocates out of Low Memory instead, silently. Upstream does it at
@@ -109,20 +136,62 @@ TShutdownMode CKernelPPC::Run (void)
     if (!SheepMem::Init ())
     {
         CLogger::Get ()->Write (FROM, LogError, "SheepMem would not initialise");
-        return ShutdownHalt;
+        return OkapiaHalt;
     }
 
-    const char *pROM = PrefsFindString ("rom");
+    // This engine's own ROM, falling back to the other's keyword: a card holds
+    // both Macintoshes now, and they do not take the same ROM — SheepShaver
+    // runs a real PowerMac one where Basilisk replaces the Toolbox.
+    const char *pROM = PrefsFindString ("romppc");
+    if (pROM == 0 || pROM[0] == '\0')
+    {
+        pROM = PrefsFindString ("rom");
+    }
     if (pROM == 0 || !MacROMLoad (pROM))
     {
-        return ShutdownHalt;
+        return OkapiaHalt;
+    }
+
+    // CDROMRefNum (cdrom.h:24), as the `bootdriver` preference states it.
+    static const int BOOT_DRIVER_CDROM = -62;
+
+    // Name the volume this Macintosh is about to start from.
+    //
+    // Not a nicety: run-test.sh judges whether a hard stop damaged a volume, and
+    // a test that picks its subject by guessing goes green on the wrong one
+    // (AGENTS.md). This engine does not choose — it has no inventory, unlike the
+    // 68k kernel — so what it can honestly report is what the preferences point
+    // the ROM at.
+    //
+    // The CD driver first, when that is what the machine is set to start from:
+    // `bootdriver` carries CDROMRefNum, -62 (cdrom.h:24), and SheepShaver reads
+    // it exactly as Basilisk does (SheepShaver/src/main.cpp:113). Asking the
+    // `disk` list here would name a disk the Mac never starts from — and
+    // LoadPrefs adds a default one when the card names none, so on a card that
+    // carries only a disc it named a file that is not even there.
+    const char *pFirstCd = PrefsFindString ("cdrom", 0);
+    const char *pFirstDisk = PrefsFindString ("disk", 0);
+    if (PrefsFindInt32 ("bootdriver") == BOOT_DRIVER_CDROM
+        && pFirstCd != 0 && pFirstCd[0] != '\0')
+    {
+        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s (CD-ROM)", pFirstCd);
+    }
+    else if (pFirstDisk != 0 && pFirstDisk[0] != '\0')
+    {
+        // A leading '*' means "mount read-only" and is not part of the path.
+        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s",
+                                pFirstDisk[0] == '*' ? pFirstDisk + 1 : pFirstDisk);
+    }
+    else
+    {
+        CLogger::Get ()->Write (FROM, LogWarning, "No disk configured to start from");
     }
 
     CLogger::Get ()->Write (FROM, LogNotice, "Initialising the emulator");
     if (!InitAll (0))
     {
         CLogger::Get ()->Write (FROM, LogError, "InitAll failed");
-        return ShutdownHalt;
+        return OkapiaHalt;
     }
 
     CLogger::Get ()->Write (FROM, LogNotice,
@@ -142,5 +211,18 @@ TShutdownMode CKernelPPC::Run (void)
 
     CLogger::Get ()->Write (FROM, LogNotice, "PowerPC execution ended");
     ExitAll ();
-    return ShutdownHalt;
+
+    // Back to the firmware, by way of the board rather than by going round.
+    // Reaching here is not a shut down — that goes through QuitEmulator(),
+    // which closes the drivers and halts without ever returning — so it is a
+    // restart or a stop nobody named, and both want the menu.
+    //
+    // The other engine loops instead: Basilisk's reset opcode unwinds the
+    // interpreter and InitAll() can be paired with ExitAll(). This one cannot
+    // yet — SheepShaver has no restart path upstream, it exits the process — so
+    // a second InitAll() over a torn-down nanokernel is untested and would fail
+    // in a way nobody could read. A reset costs a second and brings the window
+    // back, which is what a person restarting wants; halting left them with no
+    // way to change System at all.
+    return OkapiaReboot;
 }
