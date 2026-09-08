@@ -58,7 +58,7 @@ que propose *Infinite Mac*. Voir §3.5 et §18.
 | RAM Mac | **256 Mo**. Basilisk plafonne à 1023 Mo ; lever notre limite est laissé à la communauté. |
 | Adressage | **`DIRECT_ADDRESSING`** |
 | Cœur CPU | **`uae_cpu_2021`** — c'est celui que macemu compile sur ARM/AArch64 |
-| Cœur FPU | **`fpu_uae`** (aucune dépendance externe) |
+| Cœur FPU | **`fpu_ieee`** en binary128 (aucune dépendance externe) — voir §2 bis |
 | Bibliothèque C/C++ | **circle-stdlib, `STDLIB_SUPPORT=3`** (newlib + libstdc++) |
 | Vidéo | **framebuffer de sortie fixe + compositeur logiciel**, sur tous les modèles |
 | Multicœur | **S1** : émulation 68k sur un cœur secondaire, cœur 0 aux IRQ et aux I/O |
@@ -71,6 +71,42 @@ que propose *Infinite Mac*. Voir §3.5 et §18.
 | JIT | hors périmètre initial |
 | Licence | **GPLv3** |
 | Nom du projet | **Okapia** — nom de la plateforme ; les moteurs gardent le leur (Basilisk II, SheepShaver) |
+
+### 2 bis. Le cœur FPU, et pourquoi il a changé
+
+`fpu_uae` a tenu la ligne ci-dessus jusqu'à ce que la preuve arrive. Il garde un
+registre 68881 dans un **`double`** (`uae_cpu_2021/fpu/types.h:67`) : onze des
+soixante-quatre bits de mantisse du Macintosh sont jetés à l'entrée, et son
+exposant, qui va jusqu'à 1e4932, est ramené aux 1e308 d'un `double`. Un
+`FMOVE.X` écrit puis relu ne revient pas identique.
+
+Il n'existe pas de voie moyenne sur AArch64. `fpu_ieee` ne donne l'étendu 80 bits
+que sur x86, où `long double` est le format du x87 ; la variante quad était dans
+le fichier et **désactivée**, sur deux objections. Amont répond à la même
+question sur ARM en choisissant **MPFR** — correct, et un `malloc` plus un `free`
+par instruction flottante (`fpuop_general`), ce que la règle de ressources de ce
+projet interdit.
+
+La troisième réponse est exacte et ne coûte rien de tout cela : sur AArch64,
+`long double` **est** l'IEEE binary128 — exposant de 15 bits avec le biais 16383
+du Macintosh lui-même, 112 bits de fraction pour les 63 du Macintosh. Rien n'est
+perdu, aucune bibliothèque n'est ajoutée, aucune allocation n'a lieu.
+
+Les deux objections ont été vérifiées plutôt que crues. La seconde — « aucun
+processeur ne traite ce format nativement en conformité IEEE » — a expiré :
+AArch64 le fait par libgcc, et sa libm porte de vrais noyaux `long double`
+(`sinl` appelle `__kernel_sinl`, pas `sin`). La première — « l'implémentation de
+l'émulateur n'est pas correcte » — était vraie, et mesurée :
+`make_extended()` n'était pas l'inverse de `extract_extended()`, si bien que
+**1.0 entrait et 1.5 ressortait**, neuf motifs sur douze perdus.
+`patches/macemu/0008` corrige cela, plus `make_nan()`/`make_inf()` qui
+partageaient la branche x87, plus les opérandes dénormalisés.
+
+Coût mesuré sous QEMU : +62 Ko d'image, et 12 417 ms jusqu'au repos de System 7.1
+contre 11 933 — 3,5 %, dont presque rien n'est du calcul flottant : ce démarrage
+n'exécute que **quatre** instructions FPU (`trace_fpu_circle.cpp`). C'est aussi
+pourquoi un démarrage réussi ne prouve rien ici, et pourquoi le verdict est
+`fpu_selftest_extended()`.
 
 ---
 
@@ -1815,8 +1851,22 @@ Doom. Point de comparaison connu : M5Tab atteint 2-3 MIPS sur un RISC-V à 400 M
    (`Unix/video_x.cpp:2343`), le mode « Dynamic » du menu Window Refresh Rate, soit `frameskip = 0`.
    Il découpe l'écran en grille 16×16, garde une copie d'ombre, compare par `memcmp` boîte par boîte
    en étalant le balayage sur 8 ticks, ne pousse que les boîtes modifiées et fusionne les boîtes
-   voisines en bandes. Le comparer coûte bien moins que convertir : la cible est 60 Hz sous les 3 %
-   de temps mural, contre 8,5 % aujourd'hui à 55 Hz
+   voisines en bandes.
+
+   **Les deux dernières sont faites, et la cible est atteinte — mais pas comme l'amont les fait.** Les
+   tuiles voisines modifiées sont dessinées en une seule bande : convertir 640 pixels une fois plutôt que
+   40 pixels seize fois. Pour le balayage, étaler sur huit trames et dessiner ce que cette huitième a
+   trouvé — ce que fait l'amont — a été essayé, mesuré meilleur et **jugé mauvais à l'œil** : un
+   changement qui couvre beaucoup de tuiles est alors *aperçu* quelques tuiles à la fois, donc *dessiné*
+   quelques tuiles à la fois, et un menu descend en mosaïque. La règle est donc : **on ne dessine jamais
+   à partir d'un balayage partiel.** Une trame regarde d'abord l'ensemble bon marché — là où l'écran
+   bougeait, plus une tuile de marge, plus un huitième du reste par rotation — et si elle n'y trouve
+   rien, rien n'est dessiné et rien ne peut se déchirer ; dès qu'elle trouve quoi que ce soit, une
+   seconde passe compare tout le reste avant qu'un seul pixel ne sorte. Relevé sous QEMU, System 7.1 au
+   Finder en 640×480 : composition **1 225 → ~200 µs**, **7,3 % → 1,1 %** du mural au repos, écran à 60
+   images/s, invité 2 880 → 3 031 k opcodes/s. Une trame où quelque chose bouge repaie la comparaison
+   entière, comme avant, et montre le changement d'un seul tenant. `nFullScans` dit combien de trames ont
+   pris la seconde passe
 3. double tampon si le modèle le permet
 4. composition sur le cœur 2 (**S2**) si les mesures le justifient
 5. modes 16 et 32 bits (Thousands, Millions)
@@ -2901,7 +2951,7 @@ framebuffer, tas Circle, `MEMBaseDiff`) · `video.md` (modes, compositeur, palet
 | R5 | Corruption disque | vidage toutes les 2 s, arrêt propre, images de référence en lecture seule, sauvegardes |
 | R6 | ROM incompatibles | une seule ROM (Q650) tant que le système n'est pas stable |
 | R7 | Optimisation prématurée | mesurer d'abord (phase 11) ; S2/S3 et suivi des zones modifiées seulement sur preuve |
-| R8 | Fidélité du FPU (`fpu_uae`) | acceptable : peu d'applications d'époque en dépendent finement ; MPFR reste possible plus tard |
+| R8 | Fidélité du FPU | **levé.** `fpu_uae` gardait un registre 68881 dans un `double` — onze bits de mantisse perdus, exposant ramené de 1e4932 à 1e308. Le noyau C99 en binary128 le tient exactement (`patches/macemu/0008`), sans bibliothèque et sans allocation. Coût mesuré : +62 Ko d'image, 3,5 % sur le démarrage sous QEMU, dont l'essentiel n'est pas du calcul flottant — un démarrage de System 7.1 n'exécute que **quatre** instructions FPU |
 
 ---
 
@@ -3666,16 +3716,141 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
       page de 4 Ko, dans la même bancarisation que Low Memory et la Kernel Data (`patches/macemu/0001`).
       Une lecture rend ce qui y a été écrit en dernier, ce que ferait un registre que personne ne pilote.
 
-      **Cette plage-là seulement**, et c'est le choix qui compte : absorber tout ce qui sort du bloc
-      cacherait les vrais accès égarés au moment précis où on en aura le plus besoin. Ailleurs, une faute
-      reste une faute.
-- [ ] vidéo au strict minimum — le framebuffer, aucune optimisation
-- [ ] **jalon : `PatchROM()` passe, le nanokernel démarre, quelque chose s'affiche**
+      Le routage a été **élargi à tout ce qui sort du bloc**, après vérification : `ignoresegv` vaut
+      `true` par défaut dans les deux émulateurs (`prefs_items.cpp:99`), donc absorber est le
+      comportement de l'amont sur un hôte qui piège, et pas un raccourci qu'on s'accorde. Ce qui rachète
+      l'élargissement est le compte : `gStrayCount`, et `gStrayFirst` qui retient la **première** adresse
+      atteinte — un compte dit combien de fois le Mac est parti ailleurs, seule la première dit où.
+      Le tick les journalise quand ils bougent. Sur un démarrage 7.6 complet ils valent **zéro**.
+- [x] vidéo au strict minimum — le framebuffer, aucune optimisation
+- [x] **jalon : `PatchROM()` passe, le nanokernel démarre, quelque chose s'affiche**
+- [x] **Mac OS 7.6 (fat) démarre jusqu'au Finder — 2026-09-05.** Bureau, barre de menus, pointeur,
+      « Mac HD 7.6 » monté, la corbeille et les documents du volume. ROM TNT (`powermac9600v1.rom`), qui
+      est obligatoire ici : une ROM New World refuse tout Système antérieur à 8.1 (`emul_op.cpp:426`).
+      Sous QEMU, environ 90 s jusqu'au bureau et 4 467 ticks Mac en 80 s — 56/s pour 60 nominaux.
+
+      **La panne tenait, encore, à un appel manquant, et le raisonnement qui l'a écartée était faux.**
+      `MakeExecutable()` était vide, avec un commentaire expliquant qu'il n'y avait rien à vider sous un
+      interpréteur. C'est exact pour un cache d'instructions et faux pour ce qui compte : kpx_cpu tient
+      un **cache de décodage indexé par adresse**, et il est exactement aussi périmé qu'un icache non
+      vidé. L'amont fait l'appel (`main_unix.cpp:1473`), ROM exceptée.
+
+      Le symptôme était précisément celui-là, et il se lit à l'envers : la même ROM tourne 33 secondes
+      sans disque, parce qu'un Mac sur l'écran « pas de disque » ne charge aucun code ; elle se disloque
+      une quinzaine de secondes après le début du démarrage d'un Système, parce que démarrer un Système
+      n'est *que* charger du code à des adresses où autre chose a déjà été décodé. Ce qui s'exécutait
+      alors était l'occupant précédent de ces octets.
+
+      Le diagnostic a demandé trois sondes temporaires dans `ppc-execute.cpp`, retirées depuis, et
+      chacune a rétréci la question : la première a donné le PC du premier opcode illégal (`0x5c`, en
+      Low Memory) ; la deuxième a attrapé le **branchement** qui y menait, un `bctr` avec `CTR = 0` ;
+      la troisième a désassemblé le code autour et montré une glue CFM classique — `lwz r12,8(r11)` puis
+      `lwz r0,0(r12)` — dont le `r11` valait une adresse de *code*. Un pointeur de trampoline lu dans du
+      code : le Mac n'appelait pas une importation non résolue, il exécutait une fonction qui n'était
+      plus là.
+
+      **Ce que ça vaut pour la suite** : sous cette famille d'interpréteurs, toute écriture de code par
+      l'invité doit passer par `MakeExecutable()`, et un port qui laisse ce point d'entrée vide obtient
+      un émulateur qui marche jusqu'au jour où l'invité charge quelque chose. Noté dans `AGENTS.md`.
+- [x] **l'essayer soi-même — 2026-09-05.** `OKAPIA_ENGINE` choisit le moteur *et* la carte :
+      `scripts/engine.sh` envoie `make-sd-image.sh`, `run-live.sh` et `run-qemu.sh` vers
+      `qemu/sd-contents-ppc/` et `qemu/sd-ppc.img`, avec `qemu/SheepShaver_Prefs.default` comme
+      préférences de départ. Le nom du fichier sur la carte reste `BasiliskII_Prefs` : les préférences
+      sont agnostiques par construction (§19.7), seul le contenu change.
+
+      Deux refus valent mieux qu'un démarrage qui ment. `run-live.sh` compare le moteur du noyau — une
+      chaîne que seul le cœur SheepShaver porte — à celui de la carte et s'arrête si les deux
+      divergent ; et le Makefile tient un jeton `.engine`, parce qu'il n'y a qu'un `kernel8.elf` pour
+      deux noyaux : changer `ENGINE` laissait un `.elf` plus récent que les objets dont il n'était **pas**
+      issu, donc make ne réédifiait rien et on lançait l'autre Macintosh. Même famille que le piège des
+      drapeaux déjà décrit dans `AGENTS.md`, et il s'est produit dès la première tentative.
+
+      Piège de shell au passage, noté parce qu'il est silencieux : sous `set -o pipefail`,
+      `strings f | grep -q motif` répond « non » même quand le motif est là — `grep -q` sort tôt,
+      `strings` meurt d'un SIGPIPE et c'est le code du pipeline. `grep -qa` directement sur le fichier.
+
+#### Phase 20 bis — Une seule image porte les deux Macintosh
+
+Décidé et fait le 2026-09-07, après un spike jetable qui a répondu à la seule question qui bloquait :
+est-ce que les deux cœurs peuvent partager une image ? **Oui**, et le prix est un renommage de symboles
+sur les *objets*, après compilation — `external/` n'est pas touché, aucune rustine de sources à
+maintenir, la liste est régénérée à chaque construction par `nm --defined-only`.
+
+**Ce que le spike a mesuré**, avant d'écrire une ligne de production :
+
+| | |
+|---|---|
+| lien | passe, quel que soit le moteur qui garde ses noms |
+| image | **2 799 Ko** — sous le plafond de 4 Mo sans y toucher |
+| symboles renommés | 1 034, préfixe `ppc__` |
+| démarrage 68k | System 7.1 au Finder, 12 786 k opcodes/s contre 12 082 pour l'image simple |
+| démarrage PPC | Mac OS 7.6 au Finder, 54 ticks/s, identique à l'image simple |
+| instructions illégales, assertions | 0 |
+
+Et la mesure qui a renversé mon estimation : **la surface d'aiguillage est nulle**. L'intersection entre
+ce que le code commun référence et ce qu'un moteur définit vaut un symbole, `memcmp`, qui vient de
+newlib. Le firmware ne dépend d'aucun moteur — il reçoit des valeurs et rend des valeurs, et
+`FwInputPassMouseTo()` prend un pointeur de fonction. La discipline du §3.5 paie ici sans avoir été
+écrite pour ça. J'annonçais une table de vingt-cinq pointeurs ; il n'en fallait aucun.
+
+**Ce qui a été fait ensuite**, et qui est la vraie part de conception :
+
+- `src/kernel/okapia_boot.{h,cpp}` prend `main()`. La couture est **deux fonctions**,
+  `OkapiaRun68k()` et `OkapiaRunPowerPC()`, à liaison C, les seules exclues du renommage — un nom
+  simple est un nom qu'une règle de construction peut protéger sans savoir mangler.
+- Changer de moteur devient un **appel**. `chain_circle.cpp` disparaît avec les trois images : plus de
+  seconde image de 4 Mo relue sur la carte, plus de `ShutdownReboot`, plus de `kernel8.img` qui est la
+  copie d'un autre fichier. Zéro redémarrage, et la carte porte un noyau au lieu de trois.
+- **Ce qui doit exister une fois existe une fois** (`SHARED_SRCS`) : le plateau, le bloc de RAM Mac, le
+  point d'entrée, tout le firmware. Dupliquer l'un d'eux dupliquerait de l'**état** — un deuxième
+  gestionnaire périodique, une deuxième revendication de souris, un deuxième framebuffer, un deuxième
+  bloc de 256 Mo — et Circle n'en rend aucun. `COkapiaBoard` devient donc un singleton dont les quatre
+  `Start*()` sont idempotents, et `MacRamClaim()` rend le même bloc au second moteur. Le reste est
+  compilé deux fois exprès : ça coûte de la taille et aucune correction.
+- Le bloc partagé est réclamé à `ramsize + OKAPIA_MAC_BLOCK_OVERHEAD` (8 Mo), taille qui couvre les deux
+  dispositions. Avant ce correctif la bascule allouait **deux fois 256 Mo** — ça passait sous QEMU en
+  1 Go et n'aurait pas passé grand-chose d'autre.
+
+**Deux pièges, tous deux dans `--wrap`, tous deux notés dans `AGENTS.md`** : le préfixe va *dans* le
+`__wrap_` et non devant, parce que le lieur cherche `__wrap_<nom>` pour le `<nom>` qu'on lui donne ; et
+`__real_<nom>` n'est jamais défini — le lieur le fabrique — donc il n'est pas dans
+`nm --defined-only` et doit être attrapé parmi les indéfinis, faute de quoi le crochet renommé appelle
+l'original de l'autre moteur, en liant sans broncher.
+
+**Ce que ça ferme** : le débat §19.3 sur « un moteur par image ». La contrainte était réelle — les deux
+cœurs exportent `InitAll`, `ExitAll`, `PatchROM`, `Execute68k` — mais elle portait sur le *lien*, pas
+sur la taille, et j'ai eu tort de l'argumenter avec les 4 Mo. `KERNEL_MAX_SIZE` est une valeur par
+défaut de circle-stdlib (`configure:69`), pas une limite matérielle : c'est le trou réservé entre
+l'adresse de chargement et les piles, la table de pages et le tas (`memorymap.h:47`).
 
 #### Phase 21 — La couche plateforme sert les deux moteurs
 
-- [ ] compositeur extrait de `video_circle.cpp` dans un module neutre ; adaptateur par moteur
-- [ ] `video_set_dirty_area()` branché sur les tuiles, et l'accélération QuickDraw activée (§19.2)
+- [x] **compositeur extrait — 2026-09-07.** `src/circle/compositor_circle.{h,cpp}` : l'échelle entière,
+      le centrage, la grille 16x16, la copie fantôme. Les deux moteurs l'appellent, chacun fournissant
+      son convertisseur de ligne — et c'est `video_blit.cpp` de l'amont dans les deux cas, le même
+      fichier vu par les deux arbres. Gain mesuré côté PowerPC sous fenêtre : 19 ticks/s avant, 57 après.
+- [x] **la vidéo PowerPC au niveau de celle de Basilisk — 2026-09-07.**
+      - **Résolutions et profondeurs** : la table `VModes` est construite au démarrage à partir de ce que
+        la sortie offre. 640x480, 800x600, 1024x768 x 8, 16 et 32 bits, chacune retenue seulement si elle
+        tient dans la sortie à l'échelle 1 et dans les 4 Mo de la zone écran. Neuf modes sur une sortie
+        1280x960, trois sur une 640x480 — vérifié dans les deux cas.
+      - **`video_mode_change()` fait son travail** au lieu de refuser. Il cherche le mode demandé, coupe
+        les interruptions le temps de la bascule — sinon le tick composerait un tampon dont la taille ne
+        correspond plus au plan — réinitialise le convertisseur, replanifie le compositeur et rend
+        `csBaseAddr`. Le refus, lui, se journalise maintenant : une demande refusée laisse le Macintosh
+        dessiner à une taille que l'écran ne montre pas, et ça se lit comme une faute du compositeur.
+      - **La cadence** : `frameskip` est honoré, 0 valant Dynamique — le même réglage, le même calcul et
+        le même plafond de 12 VBL que sur le 68k, parce que c'est la même question posée au même
+        compositeur.
+      - **`video_set_dirty_area()` est branché.** `CompositorAnnounce()` marque les tuiles annoncées, qui
+        sont redessinées sans être comparées ; les autres le sont toujours. C'est une *indication* et
+        jamais l'histoire complète — SheepShaver ne l'appelle que depuis ses chemins accélérés — et s'y
+        fier seul laisserait la moitié de l'écran périmée. L'arithmétique des tuiles est testée sur
+        l'hôte (`tests/host/check_platform.cpp`, sept vérifications), parce qu'une tuile oubliée
+        ressemble à du déchirement et pas à un calcul faux.
+      - La zone écran passe de 1 à 4 Mo et le supplément partagé de 8 à 16, ce qui laisse 1024x768 en
+        millions de couleurs. Prise une fois : un changement de mode ne doit rien allouer.
+- [ ] accélération QuickDraw : `gfxaccel.cpp` est lié, reste à vérifier qu'elle s'engage (§19.2)
 - [ ] tick, entrées, son, PRAM, préférences : tables et `#ifdef`, rien de neuf
 - [ ] **jalon : Mac OS 8.6 s'installe depuis le CD sur un volume vide.** C'est le meilleur jalon
       disponible — il exerce d'un coup l'écriture disque, la vidéo, les entrées et le CD, et c'est une
@@ -3684,17 +3859,47 @@ quel remaniement préalable. Donc le minimum de chaque couche, et rien de propre
 
 #### Phase 22 — Deux images et le choix du moteur
 
-- [ ] bascule par chargeur et `EnableChainBoot`, retour au menu par `reboot()` (§19.3)
-- [ ] l'enregistrement `machine` (§19.7), écrit par le sélecteur
-- [ ] le sélecteur grise ce que le noyau courant ne sait pas démarrer, et tranche dans la bande
-      7.5.2 → 8.1
+> **Remplacée le 2026-09-07 par la phase 20 bis** : une seule image porte les deux moteurs et la bascule
+> est un appel de fonction. Ce qui suit est le chemin qui a été parcouru — le chargement d'une seconde
+> image et `EnableChainBoot` ont marché dans les deux sens avant d'être retirés — et il est gardé parce
+> que la préférence `engine` et l'IHM du sélecteur, elles, sont restées telles quelles.
+
+
+- [x] **bascule par chargeur et `EnableChainBoot` — 2026-09-05.** `src/circle/chain_circle.cpp` lit
+      l'autre image sur la carte et arme la bascule ; le noyau rend `ShutdownReboot` et Circle fait le
+      reste. Vérifié dans les deux sens sous QEMU : 68k → PowerPC (Mac OS 7.6 arrive au Finder) et
+      PowerPC → 68k (System 7.1, 11 591 k opcodes/s).
+
+      **Le piège tenait en un appel.** Notre `main()` appelait `reboot()` au lieu de rendre
+      `EXIT_REBOOT`. Or toute la bascule de Circle pend à ce retour : `sysinit.cpp:399` teste
+      `IsChainBootEnabled()` quand `MAINPROC` rend `EXIT_REBOOT`, et ne recopie l'image qu'à ce
+      moment-là. `reboot()` est une remise à zéro par chien de garde et saute la branche — la carte
+      réclamait l'autre moteur, la machine repartait dans le même, et redemandait, indéfiniment. Le
+      journal montrait six tours en quarante secondes ; rien d'autre ne le disait. Le noyau est donc
+      construit par `new` et jamais détruit, pour que le retour n'exécute pas des destructeurs qui
+      n'ont jamais été prévus pour tourner.
+
+      Une carte et non deux, et c'est le point : le choix appartient à la carte. `stage-kernels.sh`
+      pose `okapia-68k.img` et `okapia-ppc.img` à côté du `kernel8.img` que charge le firmware du Pi.
+- [x] **l'enregistrement du moteur — 2026-09-05**, sous une forme plus simple que l'enregistrement
+      `machine` de §19.7 : une ligne `engine <chemin> 68k|powerpc` par volume dont le Système est
+      universel, et **rien** pour les autres. Une préférence qui répète ce que le Système dit déjà est
+      une préférence qui finira par le contredire. `romppc` s'ajoute pour la même raison : une carte,
+      deux Macintosh, et ils ne prennent pas la même ROM.
+- [x] **le sélecteur tranche dans la bande 7.5.2 → 8.1 — 2026-09-05.** Le menu déroulant « Émulateur »
+      sous la liste est actif pour un Système universel et grisé sinon — grisé et non caché : quel
+      émulateur va démarrer se lit même quand ce n'était pas un choix. Quatorze vérifications dans
+      `tests/host/check_chooser.cpp`, sur l'hôte, sans carte ni émulateur.
+- [ ] le sélecteur grise ce que le noyau courant ne sait pas démarrer — sans objet depuis que la
+      bascule marche : il n'y a plus rien qu'il ne sache pas démarrer
 
 **Hors phase, et à faire dès maintenant** — rien de tout cela n'attend SheepShaver :
 
 - [x] `SavePrefs()` préserve les lignes inconnues — correctif de sûreté, sans rapport avec le moteur
 - [x] le sélecteur annonce le processeur du Système (`HfsFlavourOf`)
-- [ ] **le moteur passé au firmware comme une donnée**, pas une constante de compilation : c'est ce qui
-      permet de griser un volume PowerPC sous un noyau Basilisk sans salir la pureté du firmware
+- [x] **le moteur passé au firmware comme une donnée — 2026-09-05** : `FirmwareRun (TFirmwareEngine)`,
+      et `FirmwareWantedEngine()` en retour. Le firmware ne sait toujours pas que Basilisk et
+      SheepShaver existent ; il reçoit un fait sur l'image et rend ce que la carte demande
 - [ ] `VM_CAN_ACCESS_UNALIGNED` pour AArch64 dans `vm.hpp` : les 24 % mesurés en phase 19 sont à
       reprendre avec, et c'est un bon candidat à une remontée amont
 - [ ] la détection automatique de la ROM, prolongement direct de `ApplyModelId()`
@@ -3708,6 +3913,7 @@ s'appuie, donc la finir n'est pas un détour.
 | | Risque | Ce qui le lève |
 |---|---|---|
 | **1** | ~~La vitesse de l'interprété PowerPC~~ — **levé le 2026-09-05** : `kpx_cpu` bat `uae_cpu` de 1,5 à 2 par instruction, et des tiers publient 8,86 au Speedometer sur Pi 5 en interprété contre 14,3 pour un bureau x86 avec JIT (phase 19) | confirmer sur notre carte, pas décider |
+| **0** | **Le pointeur ne bouge pas sous SheepShaver — ouvert le 2026-09-05.** Le clavier passe, les *boutons* de la souris passent (MBState bascule), la *position* non : `MTemp`, `RawMouse` et `Mouse` restent figés à 15,15. Écarté par la mesure : les rapports USB arrivent (12 mouvements comptés), `INTFLAG_ADB` est bien consommé, `ADBBase` est valide, et `Execute68k` sur une procédure bâtie dans SheepMem marche (une écriture de test revient juste). Ce qui échoue est le **trap** : `CursorDeviceDispatch` (`0xAADB`), le chemin que `adb.cpp:401` prend sous `POWERPC_ROM`, rend `d0 = 0x0C` pour tout sélecteur et tout pointeur d'appareil, zéro compris ; et `_TickCount` rend 0 alors que `Ticks` vaut 7 209. Les boutons marchent parce qu'ils passent par un **appel direct** à la routine ADB de la ROM, pas par un trap. Écrire les globales bas de mémoire à la main déplace `RawMouse` et jamais `Mouse`, et `CrsrNew` n'est jamais remis à zéro — la tâche curseur classique ne tourne pas non plus | trouver pourquoi un trap lancé depuis `Execute68k` n'aboutit pas ; l'hypothèse à vérifier est le passage en code natif par le Mixed Mode Manager, que les traps utilisés par SheepShaver lui-même (montage de volume) ne traversent pas |
 | **1bis** | **Le chemin 68k**, et c'est là que le risque s'est déplacé. Mac OS fait tourner du 68k sur l'émulateur de la ROM, lui-même en PowerPC — deux couches. Un rapport d'usage décrit la souris qui « rame sans JIT » parce que le sondage ADB passe par des interruptions 68k doublement émulées | mesurer ce chemin en particulier ; et il existe un levier nommé, `jit68k`, le recompilateur dynamique de la ROM, éteint par défaut |
 | 2 | Le gestionnaire `SIGSEGV` réduit n'a pas d'équivalent Circle immédiat | page fantôme ou data abort, §19.4 |
 | 3 | ~~`mathlib/ieeefp.cpp` face à newlib~~ — **levé côté compilateur** : il ne demande que `HAVE_FENV_H` et les constantes de `<fenv.h>` | reste à confronter à newlib, pas à la libc de l'hôte |

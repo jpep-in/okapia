@@ -98,10 +98,14 @@ investigations.
   `drCrDate`, which is exactly what `fsck_hfs` calls "MDB needs minor repair" — so any source added later
   (RTC, NTP) goes through the same floor. Beware the frames: `drLsMod` is **local** time and
   `OKAPIA_BUILD_TIME` is **UTC**; comparing them raw is an hour or two out.
-- **The PRAM is written the moment it changes** (`xpram_circle.cpp`), from `VideoInterrupt()` — not from
-  the tick handler, which runs at IRQ level where blocking on the SD card is not allowed. That hook is the
-  only periodic call running in the 68k thread, the same context as `Sys_write`. Anything else that needs
-  to touch the card periodically belongs there too, not in the tick.
+- **The PRAM is written the moment it changes** (`xpram_circle.cpp`) — not from the tick handler, which
+  runs at IRQ level where blocking on the SD card is not allowed. On the 68k engine the moment is an event:
+  `M68K_EMUL_OP_CLKNOMEM` is the one opcode by which XPRAM changes, and `emul_op_hook_circle.cpp` listens
+  to it. **Anything periodic that has to touch the card, or to touch state the emulator reads, belongs in
+  the engine's own seam and never in the tick**: `cpu_do_check_ticks()` for the 68k
+  (`cpu_ticks_circle.cpp`, every 65 536 opcodes, about 4 ms) and `powerpc_check_ticks()` for the PowerPC
+  (`sheepshaver/cpu_ticks_circle.cpp`, every `PPC_CHECK_TICKS` instructions — a seam kpx_cpu did not have,
+  added by `patches/macemu/0004`, because upstream always had a spare thread and we have none).
 - **The shared folder writes through** (`extfs_sync_circle.cpp`). FatFs keeps the tail of a write in the
   file object and only records the new size at `f_sync`/`f_close`, so a pulled plug would leave a
   directory entry saying zero bytes for a file whose clusters are already on the card — a loss that looks
@@ -126,14 +130,26 @@ After `scripts/bootstrap.sh`, no network needed:
 ## Invariants
 
 Settled (`planification.md` §2). Don't reopen without new evidence: 256 MB Mac RAM · `DIRECT_ADDRESSING` ·
-`uae_cpu_2021` · `fpu_uae` · circle-stdlib `STDLIB_SUPPORT=3` · Quadra 650 ROM · fixed output framebuffer +
-compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3.
+`uae_cpu_2021` · `fpu_ieee` in binary128 · circle-stdlib `STDLIB_SUPPORT=3` · Quadra 650 ROM · fixed output
+framebuffer + compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3.
+
+`fpu_uae` was on that list until the evidence arrived. It keeps a 68881 register in a **`double`**
+(`uae_cpu_2021/fpu/types.h:67`), so eleven of the Macintosh's sixty-four mantissa bits are dropped and its
+exponent, which reaches 1e4932, is clamped to 1e308. On AArch64 `long double` *is* IEEE binary128 — a
+15-bit exponent with the Mac's own bias of 16383, 112 fraction bits for the Mac's 63 — so the C99 core
+holds the register exactly, with no library and no allocation. `patches/macemu/0008` enables it and fixes
+what upstream had disabled it for. The alternative upstream's own configure picks on ARM is MPFR: correct
+too, and a `malloc` and a `free` per floating-point instruction, which this project does not do.
 
 ## Pitfalls
 
 - **IRQs run on core 0** only, and so does the cooperative scheduler. Hence S1: emulation on a secondary core.
 - **Heap is not executable**: Circle sets `PXN=1` past `_etext`. Blocks any JIT.
-- **Kernel size**: 2 MB default in Circle, 4 MB via circle-stdlib `--kernel-max-size`. Overflow shows as an
+- **Kernel size**: 2 MB default in Circle, 4 MB via circle-stdlib `--kernel-max-size` — which is what
+  circle-stdlib's own `configure` passes, not something this project chose. It is not a hardware limit:
+  `KERNEL_MAX_SIZE` (`sysconfig.h:38`) is the hole reserved between the load address and the stacks, the
+  page table and the heap (`memorymap.h:47`), so raising it is a flag and a rebuild of the libraries.
+  The merged image carrying both emulators measures 2 799 KB, so the 4 MB stands. Overflow shows as an
   obscure link error.
 - **Pi 5**: display resolution **cannot be set by the application**, and `config.txt` won't configure it.
   Never assume a mode was granted — print what the firmware actually returned.
@@ -150,6 +166,21 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   Gestalt and an extension answers as well as a built-in. The FSM is **not** File Sharing: that is
   AppleShare over the network and does not provide it. ExtFS is also single-volume by construction — one
   `RootPath`, one VCB — so several shared folders would mean rewriting a file in `external/`.
+- **File names cross an alphabet on the way to the shared folder.** FatFs gives long names as UTF-8 and
+  a Macintosh names its files in MacRoman; upstream's `extfs_unix.cpp` returns the pointer it was given,
+  which is right between two UTF-8 systems and wrong here. `mac_encoding_circle.cpp` converts, hooked with
+  `--wrap` rather than by patching `external/`, and the 128-entry table is **generated** by
+  `scripts/gen-macroman.py` from Python's own `mac_roman` codec — one mistyped code point is one accented
+  letter, in one language, wrong for years. A name it cannot convert comes back **whole and unconverted**:
+  a name the Mac cannot read is a nuisance, half a name is a bug. It also asks the guest which script it
+  writes in, through a 68k stub calling `ScriptUtil()` — which means it may only ask once a processor is
+  running, and `MacIsExecuting()` is what says so.
+- **The two Macintosh do not share a parameter RAM.** SheepShaver's is 8192 bytes, Basilisk's is 256, and
+  the fields inside are at different offsets — so `xpram_circle.cpp` keeps `/BasiliskII_XPRAM` and
+  `/SheepShaver_XPRAM` apart, and reads one byte more than it wants so that a *longer* file is refused
+  rather than accepted as a short read. One file would have let each machine boot with the other's
+  settings, silently, in the direction where the read succeeds. The *preferences* stay engine-agnostic
+  (plan §19.7): that is a choice about Okapia, this is a fact about the Macintosh.
 - **The interface's text is generated, never typed twice.** `assets/strings.tsv` holds every label in
   every language, and `scripts/gen-strings.py` turns it into both the tables and the `TStringId`
   enumeration — so a key renamed or removed stops the build instead of leaving an empty label on a screen
@@ -188,6 +219,11 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   inspect the first `*.image` on the card; once a second System was staged, that was no longer the volume
   the Mac had booted, and the verdict meant nothing. The kernel now logs `Boot volume: <path>` and the
   test reads it from the log. Anything that judges "did this survive" must name what it judged.
+  **Both kernels have to log it**, and for a while only one did: `kernel.cpp` names the volume its
+  inventory chose, while `kernel_ppc.cpp` has no inventory and said nothing at all — so a card that
+  starts the PowerPC Macintosh sent `run-test.sh` back to guessing, and it printed OK. It now names the
+  first configured disk, which is the one `disk.cpp:161` hands the Mac first, and the test reports
+  INCONCLUSIVE rather than OK when no volume is named.
 - **A script that replaces a file must build beside it and move it into place.** `make-sd-image.sh`
   defaulted to a 64 MB card long after the disk images moved into `qemu/sd-contents/`, and it deleted the
   old card before writing the new one — so an argument-less run destroyed a working 1 GB card and left a
@@ -198,10 +234,23 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   afterwards it looks exactly like random corruption — which is most of what the boot "non-determinism"
   really was. `run-live.sh` now refuses to start when the image is already open; `run-test.sh` and
   `screenshot.sh` work on copies and are always safe to run alongside anything.
+- **The Macintosh says when it has finished starting, and it is the only one who knows.** The
+  `idlewait` preference — upstream's default, and now ours — makes `patch_idle_time()` replace
+  `SynchIdleTime` in the System being booted, so the first call to `idle_wait()` is the guest announcing
+  that it has run out of work. `main_circle.cpp` logs it once; `screenshot.sh` captures a second later
+  instead of after a number of seconds guessed from a different System, and `run-test.sh` refuses to
+  call a run green without it. `HasIdleTime()` (`patches/macemu/0005`) says whether the patch went in
+  at all, because a System with no `SynchIdleTime` never idles and waiting for it would hang the script.
+  **SheepShaver has no such patch**, so the PowerPC engine has no boot signal — judge it by the screen.
 - **Judge the boot by the screen, not by proxy metrics.** A high opcode rate and "guest buffer has
   content" are equally true of the question-mark floppy, so neither can tell a booted Finder from a
   stalled Mac — reading them as success cost this project a long detour. `scripts/screenshot.sh
   [seconds] [width height]` boots a throwaway copy and captures what is actually on the Mac's screen.
+- **Damage to a System shows up as the wrong fonts long before it shows up as a boot failure.** A 7.1
+  volume that had been through a few killed sessions drew its menu bar correctly and every icon label in
+  a huge serif face, clipped at the right — which reads exactly like a compositor or a scaling bug and is
+  not one. The same card with the volume restaged from `qemu/sd-contents/` was perfect. Before suspecting
+  the video path, restage the volume: it costs one `mcopy` and it settles the question.
 - **Killing QEMU corrupts the disk image**, because killing it is pulling the plug on a running Mac:
   MacOS caches HFS blocks in RAM and only sets the "unmounted cleanly" bit (MDB `drAtrb` bit 8, at image
   offset 1034) when it unmounts during Shut Down. The damage accumulates run after run until the Mac
@@ -230,6 +279,32 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 - **A guest that reads its disk and still won't boot is a volume problem, not a driver problem.** The
   trace to run first is `OKAPIA_TRACE=1` (`src/kernel/Makefile`): successful reads with no short reads,
   followed by a catalogue scan and then a second driver init, means the file layer is fine.
+- **An interpreter has a decode cache, and it goes stale exactly like an icache.** `MakeExecutable()`
+  looks like nothing to do under an interpreter — there is no instruction cache to flush — and leaving
+  it empty is a bug: kpx_cpu keys its decoded instructions by address, so code the guest loads over
+  addresses something else was decoded at runs as its predecessor. Upstream makes the call
+  (`main_unix.cpp:1473`, `FlushCodeCache`), ROM excepted. The symptom reads backwards and cost a day:
+  the Macintosh idles perfectly on the question-mark floppy — it loads no code — and comes apart about
+  fifteen seconds into starting a System from disk, which is nothing but loading code. Anything that
+  ever caches a translation of guest memory owes an invalidation on the same change.
+- **`ld -r` kills `--wrap`, and silently.** The flag only redirects references the linker still has to
+  resolve, and a partial link resolves everything inside the set it is given — so once the merged build
+  collapsed 76 translation units into one object per engine, both product hooks linked, exported their
+  symbols and were never called. `MacRestarted()` and `QuitRequested()` then stayed false for ever: a
+  Restart from the Finder became a hard reset with no boot menu, and Shut Down never closed the disk
+  image. The wraps therefore go on each engine's **partial** link (`ENGINE_WRAPS`), not on the final one.
+  `objdump -d engine-68k.o | grep __wrap_` says in a second whether a hook is alive.
+- **`ExitAll()` cannot be called from inside the emulator once the CPU is gone.** It closes thirteen
+  drivers and several of them go through the Macintosh; after `exit_emul_ppc()` there is no Macintosh to
+  go through, and it hangs — measured, with the board silent afterwards. Upstream survives the same order
+  because it calls `exit()` next and nothing has to work after that. A port that must reach `halt()` or
+  `reboot()` calls `XPRAMExit()` and `DiskExit()` and stops there: those two are what data safety is
+  about, and they complete from that context. The rest is tidying for a program about to stop existing.
+- **A PowerPC restart is only visible through `ether_reset()`.** SheepShaver has no equivalent of
+  Basilisk's reset opcode, so a Restart from the Finder resets the nanokernel *inside* the emulator and
+  reloads the same System without ever returning. `OP_RESET` (`emul_op.cpp:286`) calls `ether_reset()`,
+  which is ours, and that is the whole hook. An ordinary 7.6 boot produces exactly **one** reset —
+  measured — so the first is the cold start and every later one is the guest going round.
 - **Trace upstream with the linker, not with a patch.** `--wrap=<mangled symbol>` hooks a Basilisk
   function without touching `external/` — see `trace_disk_circle.cpp` and `exception_trace.cpp`. Circle
   invokes `ld` directly, so it is bare `--wrap`, never `-Wl,--wrap`. Only calls crossing a translation
@@ -260,10 +335,45 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   crawling. **Never tune the compositor headless and assume it holds with a window**; that mistake sent
   this project bisecting code that was never at fault. `scripts/run-live.sh` now opens a monitor socket,
   so a live session can be captured: `echo "screendump /tmp/x.ppm" | nc -U /tmp/okapia-monitor.sock`.
+- **One screen, two Macintosh, one set of rules.** The two engines present the display to their cores in
+  genuinely different ways — Basilisk hands the platform a `monitor_desc`, SheepShaver runs the Mac's own
+  video driver and wants a `VModes` table — but everything between those contracts and the compositor is
+  the same question asked twice. It *was* written twice, and the copies drifted: only one of them repeated
+  the palette across all 256 entries, and the one that did not drew 4 and 16 colours as coloured noise
+  while 256 was perfect. `video_shared_circle.cpp` now states each rule once — which modes fit, which
+  converter a depth needs, the palette, the refresh rate, the reporting — and each `video_circle.cpp` is
+  its engine's contract and nothing else. **A display fix goes in the shared file unless it is about one
+  core's vocabulary.**
+- **The output frame buffer is Device memory, and vectorised copies fault on it.**
+  `translationtable64.cpp:145` gives `ATTRINDX_DEVICE` to every page at or above the ARM's share of RAM,
+  and the GPU's frame buffer is exactly there. Device memory requires every access to be naturally
+  aligned, so a wide NEON store at an arbitrary offset is an alignment fault — `EC 0x25`, `DFSC 0x21`,
+  and a board that dies about a second after the boot menu appears. That is what `-O3` produced:
+  it vectorised `GfxBlit()` (`okapia_gfx.cpp:113`), whose copy starts at whatever offset the damage
+  rectangle gives it. **Anything new that writes the frame buffer must be alignment-safe**, and the
+  compositor's `memcpy` per row is only safe because rows start aligned and are whole. `src/kernel/Makefile`
+  keeps `-O2` and says why; -O3 also measured *slower*, so there is nothing to recover by trying again.
 - **The compositor only redraws what changed** (16x16 grid, shadow copy, `memcmp` per tile). That is what
   makes a window affordable: 452 us instead of 74 637 under `-display cocoa`. Anything that changes what
-  the output should show **without changing the guest bytes** must set `s_bFullRedraw` — a mode switch and
+  the output should show **without changing the guest bytes** must set `bFullRedraw` — a mode switch and
   a palette change already do; a gamma ramp for direct modes would too.
+- **A screen at rest used to cost the whole comparison and produce nothing**: 0/256 boxes and 1 225 us a
+  frame, seven per cent of wall time for no pixels. It is now about 200 us and 1.1 %, and the guest got
+  the difference — 2 880 to 3 031 k opcodes/s. Neither change costs anything in the emulation loop.
+  **A row of adjacent dirty tiles is drawn as one span**, because converting 640 pixels once beats
+  converting 40 of them sixteen times.
+- **Never draw the screen from a partial scan.** Upstream spreads the comparison over eight ticks
+  (`update_display_dynamic`, `video_x.cpp:2343`) and draws whatever that eighth found. Doing the same
+  here was measurably faster and **visibly wrong**: a change covering many tiles is then noticed a few
+  tiles at a time and therefore drawn a few tiles at a time, so a menu comes down as a mosaic and a
+  window opens in scattered blocks — an iMovie wipe nobody asked for. It was reported by eye, not by any
+  number, which is the whole lesson: a compositor is judged on the screen. So `CompositorRun()` does two
+  passes. The first looks only at the cheap set — wherever the screen was moving last frame plus a
+  one-tile margin, and a rotating eighth of the rest — and if it finds nothing, **nothing is drawn and
+  nothing can tear**. The moment it finds anything at all, the second pass compares every remaining tile
+  before a single pixel goes out. A still screen therefore costs an eighth; a frame in which anything
+  moves pays the full comparison, exactly as it always did, and shows the change whole. `nFullScans` in
+  the video report is how many frames took the second pass.
 - **`frameskip 0` is Dynamic and now works**: the compositor holds itself to about an eighth of wall time,
   re-measured every second, capped at one refresh per 12 VBLs. That is the default. It settles on every
   VBL headless and on 3 Hz under a cocoa window — a slideshow, but the guest runs. The fix for the rate
@@ -280,6 +390,12 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   at 512**: the emulator reads it correctly only because `find_hfs_partition()` assumes 512 throughout
   (`cdrom.cpp:194`, `disk.cpp:120`), and a reader that trusts the descriptor finds nothing. Verified on
   `installppc86fr.toast`, whose HFS volume starts at byte 170 496 = block 333 x 512.
+- **A Macintosh boot proves nothing about the FPU.** Measured with `--wrap=_Z16fpuop_arithmeticjj`
+  (`trace_fpu_circle.cpp`, `OKAPIA_TRACE=1`): System 7.1 reaches the Finder in **four** floating-point
+  instructions. So the whole path can be wrong and every boot still green — which is how upstream's
+  binary128 case sat broken for twenty years with 1.0 coming back as 1.5. Anything that touches the FPU
+  is judged by `fpu_selftest_extended()` (`patches/macemu/0008`, logged at startup under `OKAPIA_TRACE`),
+  never by a boot.
 - **`gencpu`/`gencomp`** are built **for the host** and run during the build.
 - **`config.h` declares, it never includes.** It is pulled in ahead of everything else; adding a system
   header there breaks the include order across the whole core.
@@ -377,7 +493,16 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
   working keyboard alongside a dead mouse says nothing about USB, ADB or interrupts. Okapia wants raw
   deltas anyway: `RegisterStatusHandler()` hands over `dx/dy` for `ADBMouseMoved()`, whereas the cooked
   `RegisterEventHandler()` reports absolute coordinates that must not be passed as relative motion
-  (`input_circle.cpp`). The ADB button and move calls set the interrupt flag themselves — don't double it.
+  (`input_circle.cpp`).
+- **Nothing calls `adb.cpp` from core 0.** `ADBKeyDown()` writes `key_buffer[]` and then `key_write_ptr`
+  with no lock at all (`adb.cpp:302`); upstream survives it because x86 publishes stores in order, and
+  AArch64 does not, so the Mac can read a key code that has not been written yet. Circle's USB handlers
+  run on core 0 and the emulator does not, so the handlers only record — a ring for keys and buttons,
+  an accumulator for motion, published with a release store — and `InputDrain()` hands everything to
+  `adb.cpp` from the emulation core. The mouse is the exception that proves it: `ADBMouseMoved()` does
+  take `mouse_lock`, which is why it never misbehaved and why the keyboard's silence was not evidence.
+  And every `ADB*()` call raises `INTFLAG_ADB` and triggers the interrupt on its own — the drain adds
+  neither, which is the same "don't double it" the cooked-mouse note above was already about.
 - **macOS build frictions**, all handled by `scripts/install-tools.sh`: BSD `getopt` ignores `--long`,
   Bash 3.2 has no `mapfile`, BSD `sed` has no `\b`, and zsh aborts a command when a glob matches nothing.
 
@@ -400,10 +525,54 @@ compositor · multicore S1 · network by sharing the Pi's MAC · no JIT · GPLv3
 
 <!-- filled in at bootstrap; don't invent commands that don't exist yet -->
 
-One engine per kernel image, chosen at build time: `make -C src/kernel` builds
-Basilisk II, `ENGINE=sheepshaver` names the other tree. The two cores define the
-same symbols and cannot be linked together; objects therefore live in
-`emu-<engine>/`, and `make okapia-clean` removes both.
+**One image, both Macintosh.** `make -C src/kernel` builds Basilisk II and
+SheepShaver, partial-links each into one object, renames every symbol the
+PowerPC half *defines* (prefix `ppc__`, list generated at each build), and links
+them together. The two cores export the same `InitAll`, `ExitAll`, `PatchROM`
+and `Execute68k`, which is why one of them has to be renamed; nothing in
+`external/` is touched — the surgery is on the objects, after compilation.
+
+- **The seam is two functions**, `OkapiaRun68k()` and `OkapiaRunPowerPC()`
+  (`src/kernel/okapia_boot.h`), and they are the only names left out of the
+  rename list. They have C linkage so a build rule can name them without
+  knowing how this compiler mangles.
+- **The engine handed to does not open the window again.** The firmware is shared and has just run, so
+  asking a second time reads as a reboot back to the menu — pick PowerPC, watch the menu come up again,
+  pick again. `OkapiaRun*(bSwitched)` skips that one pass and every later time round opens as usual,
+  which is the only way back to the menu after a restart from Mac OS.
+- **The PowerPC Macintosh returns `OkapiaReboot` when it stops**, not `OkapiaHalt`: reaching there is a
+  restart or an unnamed stop, never a shut down — that goes through `QuitEmulator()`, which closes the
+  drivers and halts without returning. Halting there left no way to change System at all. The 68k engine
+  loops in place instead, because Basilisk's reset opcode unwinds the interpreter and `InitAll()` pairs
+  with `ExitAll()`; SheepShaver has no restart path upstream (it exits the process), so a second
+  `InitAll()` over a torn-down nanokernel is untested.
+- **Switching engines is a call, not a reboot.** `okapia_boot.cpp` owns `main()`;
+  a kernel whose startup volume asks for the other emulator returns
+  `OkapiaSwitchTo*` and the other one is entered with the board still up. The
+  chain boot this replaced read a second 4 MB image off the card and reset.
+- **What must exist once, exists once** (`SHARED_SRCS` in the Makefile): the
+  board (`hal_circle.cpp`), the Mac RAM block (`mac_ram_circle.cpp`), the entry
+  point, and the whole firmware. Duplicating any of them would duplicate
+  *state* — a second periodic timer handler, a second mouse claim, a second
+  frame buffer, a second 256 MB block — and Circle gives none of those back.
+  `COkapiaBoard` is therefore a singleton whose four `Start*()` are idempotent,
+  and `MacRamClaim()` answers the same block to the second engine.
+  Everything else is compiled twice on purpose: it costs image size and no
+  correctness.
+- **`--wrap` does not survive a blanket prefix.** The linker looks for
+  `__wrap_<name>` for the `<name>` it is given, so the prefix goes *inside* the
+  `__wrap_`. And `__real_<name>` is never *defined* — the linker fabricates it —
+  so it does not appear in `nm --defined-only` and has to be caught among the
+  undefined symbols, or the renamed hook calls the other engine's original.
+- `ENGINE=basilisk|sheepshaver` still selects one tree, for the sub-builds and
+  for `objects`; it no longer picks what runs.
+- Objects live in `emu-<engine>/` and the shared ones in `obj-shared/`;
+  `make okapia-clean` removes all three and the merge intermediates.
+
+The preferences file is called `BasiliskII_Prefs` whichever Macintosh runs —
+engine-agnostic by design (plan §19.7) — and carries `rom` for the 68k engine
+and `romppc` for the PowerPC one. The chooser writes an `engine` line per
+universal volume.
 
 ```
 ./scripts/bootstrap.sh      # tools, submodules, references
