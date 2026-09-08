@@ -245,13 +245,37 @@ void AudioInterrupt (void)
 /*
  *  Called from the tick: ask the Mac for another block while the queue has room
  *  for one. Nothing here runs 68k code — it only raises the flag.
+ *
+ *  The grace period is why a sound does not lose its tail. The Mac's mixer
+ *  reports num_sources == 0 the moment the last source has *finished feeding*,
+ *  not when the last sample has been fetched, so stopping there leaves whatever
+ *  it still holds unasked for — an alert cut a fraction short, which sounds
+ *  like a click rather than like a missing block. Ten more asks at 60 Hz is a
+ *  sixth of a second, and they cost nothing once the mixer has genuinely
+ *  finished: it answers with no stream and AudioInterrupt() returns.
  */
+
+static const unsigned AUDIO_GRACE_TICKS = 10;
 
 void AudioPump (void)
 {
-    if (!s_bOpen || AudioStatus.num_sources == 0 || !s_pSound->IsActive ())
+    if (!s_bOpen || !s_pSound->IsActive ())
     {
         return;
+    }
+
+    static unsigned s_nGrace;
+    if (AudioStatus.num_sources != 0)
+    {
+        s_nGrace = AUDIO_GRACE_TICKS;
+    }
+    else if (s_nGrace == 0)
+    {
+        return;
+    }
+    else
+    {
+        s_nGrace--;
     }
 
     if (s_pSound->GetQueueFramesAvail () >= FRAMES_BLOCK)
