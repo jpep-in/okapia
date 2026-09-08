@@ -15,9 +15,11 @@ macemu-jit|https://github.com/rcarmo/macemu-jit.git||68k->AArch64 JIT backend, a
 snow|https://github.com/twvd/snow.git||Macintosh II emulator and possible System 6 engine; compare its machine model and platform boundary with Mini vMac.
 minivmac|https://github.com/minivmac/minivmac.git|extras|Compact Macintosh emulator and candidate System 6 engine; study its generated core and platform interface for a Circle port. Cloned without extras/ (ROMs and Apple disk images).
 amiberry|https://github.com/BlitterStudio/amiberry.git||Upstream of the ARM/ARM64 JIT backend that macemu-jit imported.
-infinite-mac|https://github.com/mihaip/infinite-mac.git|Images|Disk-image provisioning and system-version catalogue. Cloned without Images/ (hundreds of MB).
+infinite-mac|https://github.com/mihaip/infinite-mac.git|Images|Basilisk II and SheepShaver ported to WebAssembly, plus disk-image provisioning and a system-version catalogue. The other port facing the same constraints as ours (no threads, no SIGSEGV, no fixed mmap, no JIT): see etude-infinite-mac.md. Its macemu fork is a submodule, cloned separately. Cloned without Images/ (hundreds of MB).
 BlueSCSI-v2|https://github.com/BlueSCSI/BlueSCSI-v2.git||SCSI device emulation from disk images on an RP2040. The durability model Okapia targets, and a Macintosh image sanity check worth copying. GPLv3, same as us.
 hfsutils|https://github.com/JotaRandom/hfsutils.git||HFS volume access (libhfs) and repair (hfsck), Robert Leslie 1996-1998, fork maintained by Pablo Lezaeta. GPLv2-or-later, so usable. libhfs scavenges a volume that was not unmounted cleanly, which is exactly the repair Okapia needs.
+supermario|https://github.com/elliotnunn/supermario.git||Macintosh ROM sources (the SuperMario dump of 1994-02-09) plus Elliot Nunn'"'"'s buildable patchsets. What the Mac actually does, in StartMgr, HFS, ADB, ShutDownMgr and Color QuickDraw. NO LICENCE DECLARED, Apple code: read it to understand behaviour, never copy a line of it into Okapia.
+executor|https://github.com/autc04/executor.git||Executor (ARDI), a clean-room reimplementation of the Macintosh Toolbox in C++, MIT licensed and so GPLv3-compatible. src/quickdraw/ is where code may legitimately come from when a routine is moved to native ARM.
 '
 
 list() {
@@ -52,6 +54,20 @@ if [ -n "$exclude" ]; then
     git -C "$dest" sparse-checkout set --no-cone '/*' "!/${exclude}/"
 else
     git clone --depth 1 "$url" "$dest"
+fi
+
+# infinite-mac keeps the interesting half — the emulators themselves — in a
+# submodule, and it is a fork of the same upstream as external/macemu, so the
+# whole port reads as one diff against the common base. Cloning the site without
+# it would leave nothing to study.
+if [ "$name" = "infinite-mac" ]; then
+    printf 'Cloning its macemu fork (the port itself)\n'
+    git clone --depth 50 -b infinite-mac-kanjitalk755 \
+        https://github.com/mihaip/macemu "${dest}/macemu"
+    git -C "${dest}/macemu" remote add ours "${REPO_ROOT}/external/macemu"
+    git -C "${dest}/macemu" fetch --quiet ours --depth 200
+    printf 'Common base with ours: %s\n' \
+        "$(git -C "${dest}/macemu" merge-base HEAD ours/master)"
 fi
 
 printf 'Done: %s (%s)\n' "$dest" "$(du -sh "$dest" | cut -f1)"
