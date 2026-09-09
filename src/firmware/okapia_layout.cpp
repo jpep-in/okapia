@@ -68,9 +68,22 @@ void LayoutSectionGap (TLayout *pLayout)
     LayoutSkip (pLayout, pLayout->pTheme->M.nSectionGap);
 }
 
+TRect LayoutRowBottom (TLayout *pLayout, unsigned nHeight, unsigned nState)
+{
+    const unsigned nReach = ThemeReach (pLayout->pTheme, nState);
+    const TRect Band = LayoutBottom (pLayout, nHeight + 2 * nReach);
+    return Rect (Band.nX, Band.nY + (int) nReach, Band.nWidth,
+                 Band.nHeight > 2 * nReach ? Band.nHeight - 2 * nReach : 0);
+}
+
 void LayoutSkipBottom (TLayout *pLayout, unsigned nAmount)
 {
     LayoutBottom (pLayout, nAmount);
+}
+
+void LayoutRowGapBottom (TLayout *pLayout)
+{
+    LayoutSkipBottom (pLayout, pLayout->pTheme->M.nRowGap);
 }
 
 void LayoutSectionGapBottom (TLayout *pLayout)
@@ -83,6 +96,7 @@ void RowBegin (TRow *pRow, const TTheme *pTheme, const TRect &rBand)
     pRow->pTheme    = pTheme;
     pRow->Free      = rBand;
     pRow->bFirst    = true;
+    pRow->bLast     = true;
     pRow->bOverflow = false;
 }
 
@@ -139,6 +153,11 @@ TRect RowLast (TRow *pRow, unsigned nWidth, unsigned nState)
     // placed flush against a margin pushes whatever it wears into it, and that
     // is the failure that only ever showed up on the right and the bottom.
     const unsigned nReach = ThemeReach (pRow->pTheme, nState);
+    if (!pRow->bLast)
+    {
+        RowClaimRight (pRow, pRow->pTheme->M.nGap);
+    }
+    pRow->bLast = false;
     RowClaimRight (pRow, nReach);
 
     if (nWidth > pRow->Free.nWidth)

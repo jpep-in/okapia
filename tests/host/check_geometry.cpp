@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "okapia_gfx.h"
+#include "okapia_layout.h"
 #include "okapia_theme.h"
 #include "okapia_screen.h"
 #include "okapia_strings.h"
@@ -398,6 +399,14 @@ static void CheckTruncation (unsigned nScale16)
         { "étiquette",  T.DrawLabel,    StateNormal  },
         { "bouton",     T.DrawButton,   StateNormal  },
         { "bouton par défaut", T.DrawButton, StateDefault },
+        // Les deux à la fois : le bouton par défaut garde son gros anneau noir
+        // et reçoit en plus la fine ligne grise du focus, posée *dehors*. Au
+        // gré du focus ordinaire elle tombait entre 3 et 4 pixels, c'est-à-dire
+        // dans la bande du noir, et les deux se recouvraient. Ce que ce cas
+        // vérifie, c'est que le calcul de la réserve suit le dessin : sinon la
+        // ligne grise part dans la marge, que rien ne repeint.
+        { "bouton par défaut au focus", T.DrawButton, StateDefault | StateFocused },
+        { "bouton au focus", T.DrawButton, StateFocused },
         { "case",       T.DrawCheckbox, StateNormal  },
         { "radio",      T.DrawRadio,    StateNormal  },
         { "déroulante", T.DrawPopup,    StateNormal  }
@@ -455,6 +464,37 @@ int main (void)
     {
         CheckScale (Scales[i]);
         CheckTruncation (Scales[i]);
+    }
+
+    // L'écart entre deux voisins se mesure entre ce qui est *dessiné*, pas
+    // entre les rectangles : ce que porte un contrôle vient s'ajouter de chaque
+    // côté, et la constante d'écart est de l'air par-dessus. Deux trous en
+    // faisaient mentir la règle — une bande remplie par la droite n'insérait
+    // aucune gouttière entre ses boutons, et une bande prise en bas ne
+    // réservait pas ce que ses contrôles portent.
+    {
+        printf ("\n=== l'écart entre voisins tient compte de ce qu'ils portent ===\n");
+        TTheme T;
+        ThemeMake (16, &T);
+
+        TRow R;
+        RowBegin (&R, &T, Rect (0, 0, 600, T.M.nButtonHeight));
+        const TRect A = RowLast (&R, 80, StateDefault | StateFocused);
+        const TRect B = RowLast (&R, 80, StateFocused);
+        const int nAir = A.nX - (B.nX + (int) B.nWidth);
+        const unsigned nOwed = T.M.nGap + ThemeReach (&T, StateDefault | StateFocused)
+                             + ThemeReach (&T, StateFocused);
+        Expect ("deux boutons du pied ont leur gouttière en plus de leurs anneaux",
+                nAir >= (int) nOwed, 1);
+
+        TLayout L;
+        LayoutBegin (&L, &T, Rect (0, 0, 600, 400));
+        const TRect Low  = LayoutRowBottom (&L, T.M.nButtonHeight, StateFocused);
+        LayoutRowGapBottom (&L);
+        const TRect High = LayoutRowBottom (&L, T.M.nButtonHeight, StateFocused);
+        const int nGapV = Low.nY - (High.nY + (int) High.nHeight);
+        Expect ("et deux bandes prises en bas gardent la leur",
+                nGapV >= (int) (T.M.nRowGap + 2 * ThemeReach (&T, StateFocused)), 1);
     }
 
     // Every page, at both sizes, **in every language**. That last one is the

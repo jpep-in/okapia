@@ -74,7 +74,10 @@ void InfoDraw (TSurface *pSurface, TInfo *pInfo)
     TLayout &Layout = s_Page.Layout;
 
     PageFooter (&s_Page);
-    s_nBack = PageLast (&s_Page, Str (StrBack), StateDefault);
+    // No focus on it, as in an alert: a page with one button has nothing to
+    // navigate, and the ring that says "the keyboard is here" then sits on top
+    // of the ring that says "Return does this" and repeats it.
+    s_nBack = PageLast (&s_Page, Str (StrBack), StateDefault | StateNoFocus);
 
     // One label column for both sections, measured over both: two columns of
     // two widths on one page read as two tables that happen to be stacked.

@@ -38,11 +38,15 @@ enum TWidgetType
     WidgetSeparator
 };
 
-// The columns a list may carry beyond its name, and how many there can be. Three
-// is what the chooser needs — startup, read-only, mounted — and a list of
-// columns is a table, which is a different component; when a fourth is wanted,
-// that is the conversation to have rather than raising this number.
-static const unsigned LIST_COLUMNS = 3;
+// The columns a list may carry beyond its name, and how many there can be. Two
+// is what the chooser needs — startup and mounted — because a cell can only be
+// ticked, and *how* a volume is mounted is a choice of three (hard disk, hard
+// disk read-only, CD-ROM) that a tick box cannot hold. That one went to a popup
+// under the list rather than becoming a cell type: a menu opening over a list
+// that scrolls is a different component, and a list of columns is a table,
+// which is another one again. When a third column is wanted, that is the
+// conversation to have rather than raising this number.
+static const unsigned LIST_COLUMNS = 2;
 
 struct TListColumn
 {
@@ -63,6 +67,13 @@ struct TListItem
     // that cannot be operated on this row says so by going grey, which is what
     // the three tick boxes under the list used to do from a distance.
     unsigned           nCell[LIST_COLUMNS];
+    // A row that is a command rather than a subject: "New volume…" among the
+    // volumes. It has no answers, so it draws no marks and the keyboard cannot
+    // walk into a column on it, and it activates on a single click where an
+    // ordinary row only becomes the selection — because there is nothing else
+    // clicking it could mean. It lives in the list rather than beside it
+    // because what it makes appears in the list.
+    bool               bAction;
 };
 
 struct TWidget
@@ -107,6 +118,18 @@ struct TWidget
 // this: a field left uninitialised in a struct this wide is a pointer nobody
 // wrote, and it would be read the first time somebody scrolled.
 void WidgetClear (TWidget *pWidget);
+
+// States a screen restates from its model, keeping the ones that are not its to
+// give. The focus and the caret belong to the loop, not to the page: a screen
+// that assigns a whole state wipes the ring the loop has just set — and since
+// the loop asks the page to restate itself on every change, the ring was gone
+// before it was ever drawn. That is exactly how the main screen's Start button
+// could never be seen to hold the keyboard.
+//
+// One function rather than the idiom repeated at each site: it was already
+// written by hand in three places on the settings page and nowhere else, which
+// is what a rule looks like just before it stops being kept.
+void WidgetSetState (TWidget *pWidget, unsigned nState);
 
 void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidget);
 void WidgetDrawAll (TSurface *pSurface, const TTheme *pTheme, const TWidget *pList,

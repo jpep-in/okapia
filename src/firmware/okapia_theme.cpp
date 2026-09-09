@@ -107,10 +107,29 @@ static void DrawParagraph (TSurface *pSurface, const TRect &rRect, const char *p
 // Grey and one pixel: the focus has to be findable, not shouted. In black it
 // competed with the default button's ring, and the two together read as a
 // mistake rather than as two different things.
+//
+// The gap is asked for rather than taken from the metrics, because on a default
+// button the ring has somewhere else to go: see FocusGapFor.
 static void DrawFocusRing (TSurface *pSurface, const TRect &rRect, unsigned nRadius,
-                           const TTheme *pTheme)
+                           unsigned nGap, const TTheme *pTheme)
 {
-    RingAround (pSurface, rRect, nRadius, pTheme->M.nFocusGap, pTheme->M.nStroke, ColorGray);
+    RingAround (pSurface, rRect, nRadius, nGap, pTheme->M.nStroke, ColorGray);
+}
+
+// Where the focus ring sits. Ordinarily close in, at nFocusGap. On the default
+// button it goes *outside* the black ring instead, with one stroke of air: at
+// nFocusGap it landed between 3 and 4 pixels out, which is inside the black
+// ring's own band of 2 to 5, so the grey line was drawn over the black one and
+// the pair read as a printing fault.
+//
+// What is left is the default button as it always looked — the heavy black ring
+// — plus the same faint outer line every other focused control wears. One
+// meaning, one mark, and the two do not overlap.
+static unsigned FocusGapFor (unsigned nState, const TTheme *pTheme)
+{
+    return (nState & StateDefault)
+         ? pTheme->M.nRingGap + pTheme->M.nRingWidth + pTheme->M.nStroke
+         : pTheme->M.nFocusGap;
 }
 
 static void DrawButton (TSurface *pSurface, const TRect &rRect, const char *pText,
@@ -139,7 +158,7 @@ static void DrawButton (TSurface *pSurface, const TRect &rRect, const char *pTex
     }
     if (nState & StateFocused)
     {
-        DrawFocusRing (pSurface, rRect, nRadius, pTheme);
+        DrawFocusRing (pSurface, rRect, nRadius, FocusGapFor (nState, pTheme), pTheme);
     }
 }
 
@@ -164,7 +183,7 @@ static void DrawIconButton (TSurface *pSurface, const TRect &rRect, TIconPainter
 
     if (nState & StateFocused)
     {
-        DrawFocusRing (pSurface, rRect, nRadius, pTheme);
+        DrawFocusRing (pSurface, rRect, nRadius, pTheme->M.nFocusGap, pTheme);
     }
 }
 
@@ -248,7 +267,7 @@ static void DrawCheckbox (TSurface *pSurface, const TRect &rRect, const char *pT
 
     if (nState & StateFocused)
     {
-        DrawFocusRing (pSurface, Box, 2, pTheme);       // a box, not a circle
+        DrawFocusRing (pSurface, Box, 2, pTheme->M.nFocusGap, pTheme);       // a box, not a circle
     }
 }
 
@@ -276,7 +295,7 @@ static void DrawRadio (TSurface *pSurface, const TRect &rRect, const char *pText
     }
     if (nState & StateFocused)
     {
-        DrawFocusRing (pSurface, Box, nSize / 2, pTheme);
+        DrawFocusRing (pSurface, Box, nSize / 2, pTheme->M.nFocusGap, pTheme);
     }
 }
 
@@ -345,7 +364,7 @@ static void DrawPopup (TSurface *pSurface, const TRect &rRect, const char *pText
 
     if (nState & StateFocused)
     {
-        DrawFocusRing (pSurface, rRect, pTheme->M.nPopupRadius, pTheme);
+        DrawFocusRing (pSurface, rRect, pTheme->M.nPopupRadius, pTheme->M.nFocusGap, pTheme);
     }
 }
 
@@ -400,7 +419,7 @@ static void DrawField (TSurface *pSurface, const TRect &rRect, const char *pText
     // losing the focus.
     if (nState & StateFocused)
     {
-        DrawFocusRing (pSurface, rRect, 0, pTheme);
+        DrawFocusRing (pSurface, rRect, 0, pTheme->M.nFocusGap, pTheme);
     }
 }
 
@@ -547,7 +566,10 @@ unsigned ThemeReach (const TTheme *pTheme, unsigned nState)
     }
     if (nState & StateFocused)
     {
-        const unsigned nFocus = pTheme->M.nFocusGap + pTheme->M.nStroke;
+        // The same arithmetic the drawing does, and it has to be: a layout that
+        // reserves the close-in gap while the ring is drawn outside the black
+        // one lets a grey line into the margin, where nothing repaints it.
+        const unsigned nFocus = FocusGapFor (nState, pTheme) + pTheme->M.nStroke;
         if (nFocus > nOut)
         {
             nOut = nFocus;

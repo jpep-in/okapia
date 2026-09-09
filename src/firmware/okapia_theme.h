@@ -44,7 +44,13 @@ enum TPartState
     StateStrong   = 1u << 6,            // a label that carries weight, e.g. a heading
     // The caret is showing right now. It blinks, so a focused field is not
     // enough to say whether the mark is on the screen at this instant.
-    StateCaret    = 1u << 7
+    StateCaret    = 1u << 7,
+    // Operated, but never focused. An alert with two answers has no navigation
+    // to offer — Return is yes and Escape is no, and both work wherever the
+    // hand is — so its buttons take no ring. Without this the default one wore
+    // two: the ring that says "Return does this" and the ring that says "the
+    // keyboard is here", one inside the other, saying the same thing twice.
+    StateNoFocus  = 1u << 8
 };
 
 // What a field has to say about itself beyond its text. Only the theme knows
@@ -143,7 +149,11 @@ struct TTheme
     // surrounds — a pop-up is not as round as a button, and a tick box is not
     // round at all. Passing the button's radius everywhere is what made the
     // ring sit wrong on both.
-    void (*DrawFocusRing)    (TSurface *, const TRect &, unsigned, const TTheme *);
+    // Rectangle, corner radius, and how far out to sit. The gap is a parameter
+    // because the default button puts its ring outside the black one instead
+    // of inside it; everything else passes M.nFocusGap.
+    void (*DrawFocusRing)    (TSurface *, const TRect &, unsigned, unsigned,
+                              const TTheme *);
 };
 
 // The theme at 1:1. A second theme would be a second value of this type, and

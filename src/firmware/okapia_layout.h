@@ -60,7 +60,14 @@ void LayoutSectionGap (TLayout *pLayout);       // between groups
 // rule has to be taken from the bottom too — taken from the top it lands
 // nowhere near the rule and the rule sits hard against the buttons, which is
 // exactly how it read.
+// The mirror of LayoutRow: a band off the bottom with the room its contents
+// wear reserved around it. LayoutBottom is the raw one and reserves nothing, so
+// a control placed straight into it puts its focus ring into whatever sits
+// below — which is how two rows of pop-ups came to have their rings touching.
+TRect LayoutRowBottom (TLayout *pLayout, unsigned nHeight, unsigned nState);
+
 void LayoutSkipBottom (TLayout *pLayout, unsigned nAmount);
+void LayoutRowGapBottom (TLayout *pLayout);
 void LayoutSectionGapBottom (TLayout *pLayout);
 
 unsigned LayoutRoom (const TLayout *pLayout);   // what is still unspent, vertically
@@ -71,6 +78,12 @@ struct TRow
     const TTheme *pTheme;
     TRect         Free;
     bool          bFirst;               // no gutter before the first
+    // The same, going the other way. A band is filled from both ends — buttons
+    // from the right, everything else from the left — and each end owes a
+    // gutter between its own neighbours: without this the footer's two buttons
+    // were separated by nothing but what they wear, and a default one beside a
+    // focused one had its rings almost touching.
+    bool          bLast;
     bool          bOverflow;
 };
 

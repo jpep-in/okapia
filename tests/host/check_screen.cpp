@@ -251,18 +251,44 @@ static void CheckOperating (void)
 
     printf ("Actionner au clavier\n");
 
+    // Retour actionne ce que le clavier tient. Sur une page qu'on parcourt,
+    // l'oeil est sur le contrôle où l'on vient d'arriver : sauter au bouton
+    // par défaut à l'autre bout de la page serait un piège.
+    const int nFirst = S.nFocus;
     TScreenReply r = Send (&S, Key (OkKeyReturn, 0));
-    Expect (r.Result == ScreenActivated && r.nIndex == WStart,
-            "Retour actionne le bouton par défaut");
+    Expect (r.Result == ScreenActivated && r.nIndex == nFirst,
+            "Retour actionne le contrôle qui a le focus");
 
     Send (&S, Key (OkKeyTab, 0));                 // Réglages
     r = Send (&S, Key (OkKeyReturn, 0));
-    Expect (r.Result == ScreenActivated && r.nIndex == WStart,
-            "Retour reste sur le bouton par défaut, pas sur le focus");
+    Expect (r.Result == ScreenActivated && r.nIndex == WSettings,
+            "et il suit le focus, il ne saute pas au bouton par défaut");
 
     r = Send (&S, Key (OkKeySpace, 0));
     Expect (r.Result == ScreenActivated && r.nIndex == WSettings,
-            "Espace actionne le contrôle qui a le focus");
+            "Espace fait de même");
+
+    // Le repli sur le bouton par défaut n'existe que là où il n'y a pas de
+    // focus du tout : une alerte, le volet d'informations. Espace, lui, ne se
+    // replie sur rien — c'est la touche de la case sous le curseur, et une page
+    // sans focus n'a pas de case.
+    {
+        TWidget W2[WCount];
+        TScreen S2;
+        Build (W2);
+        for (unsigned i = 0; i < WCount; i++)
+        {
+            W2[i].nState |= StateNoFocus;
+        }
+        W2[WStart].nState |= StateDefault;
+        ScreenInit (&S2, &s_Theme, W2, WCount);
+        Expect (S2.nFocus < 0, "une page dont rien ne se focalise n'a pas de focus");
+        const TScreenReply d = Send (&S2, Key (OkKeyReturn, 0));
+        Expect (d.Result == ScreenActivated && d.nIndex == WStart,
+                "et là, Retour vaut le bouton par défaut");
+        Expect (Send (&S2, Key (OkKeySpace, 0)).Result == ScreenIdle,
+                "tandis qu'Espace ne fait rien");
+    }
 
     Send (&S, Key (OkKeyTab, 0));                 // la case
     Expect (!Checked (&S, WCheck), "la case part décochée");
@@ -511,6 +537,16 @@ static void CheckMenu (void)
     }
     Expect (FocusIs (&S, WPopup), "le focus atteint la déroulante");
     Expect (!ScreenMenuOpen (&S), "et son menu est fermé");
+
+    // Entrée l'ouvre aussi, et c'est ce qui fait qu'on entre dans un contrôle
+    // sur lequel on vient d'arriver : le menu prend ensuite Entrée pour choisir
+    // et Échap pour renoncer, donc la touche garde le même sens à l'aller comme
+    // au retour. Entrée ne vaut le bouton par défaut que là où le clavier ne se
+    // tient sur rien qui s'ouvre.
+    Send (&S, Key (OkKeyReturn, 0));
+    Expect (ScreenMenuOpen (&S), "Entrée ouvre la déroulante sous le clavier");
+    Send (&S, Key (OkKeyEscape, 0));
+    Expect (!ScreenMenuOpen (&S), "et Échap la referme");
 
     Send (&S, Key (OkKeySpace, 0));
     Expect (ScreenMenuOpen (&S), "Espace l'ouvre");

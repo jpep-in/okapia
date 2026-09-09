@@ -58,8 +58,15 @@ void ConfirmDraw (TSurface *pSurface, const TConfirm *pConfirm)
         TLayout &Layout = s_Page.Layout;
 
         PageFooter (&s_Page);
-        s_nYes = PageLast (&s_Page, pConfirm->pYes, StateDefault);
-        s_nNo  = pConfirm->pNo == 0 ? -1 : PageLast (&s_Page, pConfirm->pNo, StateNormal);
+        // Neither answer takes the focus: an alert with two of them has no
+        // navigation to offer. Return is yes, Escape is no, and both work
+        // wherever the hand happens to be — which is what a Macintosh alert
+        // always promised. The default one used to wear two rings at once, the
+        // one that means "Return does this" and the one that means "the
+        // keyboard is here", and they said the same thing twice.
+        s_nYes = PageLast (&s_Page, pConfirm->pYes, StateDefault | StateNoFocus);
+        s_nNo  = pConfirm->pNo == 0 ? -1
+                                    : PageLast (&s_Page, pConfirm->pNo, StateNoFocus);
 
         // The mark is two lines tall, which is what keeps it under the size at
         // which the typeface stops growing — and it is the typeface that draws

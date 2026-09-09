@@ -267,7 +267,10 @@ static void DrawList (TSurface *pSurface, const TTheme *pTheme, const TWidget *p
         // The marks first, so the name knows where it has to stop. Each is
         // drawn on its own with no label beside it: the heading above says what
         // it means, which is the whole point of a column.
-        if (pWidget->nColumns != 0)
+        // An action row answers none of the columns, so it draws none of their
+        // marks — a greyed tick box there would say it has an answer it is not
+        // allowed to give, which is not what is true of it.
+        if (pWidget->nColumns != 0 && !pItem->bAction)
         {
             nRight = ColumnLeft (pWidget, pTheme, 1) - (int) pTheme->M.nGap;
             for (unsigned c = 1; c <= pWidget->nColumns; c++)
@@ -320,7 +323,7 @@ static void DrawList (TSurface *pSurface, const TTheme *pTheme, const TWidget *p
     }
     if (pWidget->nState & StateFocused)
     {
-        pTheme->DrawFocusRing (pSurface, pWidget->Rect, 0, pTheme);
+        pTheme->DrawFocusRing (pSurface, pWidget->Rect, 0, pTheme->M.nFocusGap, pTheme);
     }
 }
 
@@ -444,9 +447,14 @@ int WidgetHit (const TWidget *pList, unsigned nCount, int nX, int nY)
     return -1;
 }
 
+void WidgetSetState (TWidget *pWidget, unsigned nState)
+{
+    pWidget->nState = nState | (pWidget->nState & (StateFocused | StateCaret));
+}
+
 bool WidgetFocusable (const TWidget *pWidget)
 {
-    if (pWidget->nState & StateDisabled)
+    if (pWidget->nState & (StateDisabled | StateNoFocus))
     {
         return false;
     }

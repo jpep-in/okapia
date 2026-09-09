@@ -62,5 +62,10 @@ extern const TGlyphImage OkapiaIconSystem6;
 extern const TGlyphImage OkapiaIconSystem7;
 extern const TGlyphImage OkapiaIconMacOS8;
 extern const TGlyphImage OkapiaIconMacOS9;
+
+// Okapia's own, and the only one here that is drawn rather than traced: a
+// CD-ROM is a medium, not an era. assets/icons/cdrom.svg is the drawing and
+// scripts/svg-to-icon.py is what reduces it.
+extern const TGlyphImage OkapiaIconCdrom;
 #endif
 

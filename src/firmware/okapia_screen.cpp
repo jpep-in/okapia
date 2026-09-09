@@ -709,7 +709,8 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
         // handled before this, inside the field. Without it a list of tick
         // boxes would be a thing only a mouse can operate, and the three
         // controls this replaced were reachable by Tab.
-        if (nFocused >= 0 && p->Type == WidgetList && p->nColumns != 0)
+        if (nFocused >= 0 && p->Type == WidgetList && p->nColumns != 0
+            && !(p->nChoice >= 0 && p->pItems[p->nChoice].bAction))
         {
             const int nWas = (int) p->nCell;
             int nNow = nWas + (pEvent->nKey == OkKeyRight ? +1 : -1);
@@ -753,38 +754,53 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
         }
         return Reply (ScreenIdle, -1);
 
+    case OkKeyReturn:
     case OkKeySpace:
-        // Operates whatever holds the focus. A button has nothing to toggle, so
-        // for it this is simply the press.
-        if (pScreen->nFocus < 0)
+        // Return acts on whatever holds the keyboard, and falls back to the
+        // default button only when nothing does.
+        //
+        // That fallback is what a ring around a button promises, and it is
+        // exactly right on a page with no navigation — an alert, the
+        // information pane — where there is nothing else Return could mean. On
+        // a page one walks through it would be a trap: the eye is on the
+        // control one has just reached and the key would fire something else
+        // at the other end of the page.
+        //
+        // Space does the same on the focus and never falls back: it is the
+        // Macintosh's key for turning over the box under the caret, and a page
+        // with no focus has no box.
+        if (pScreen->nFocus >= 0)
+        {
+            // A pop-up opens. The menu then takes Return to choose and Escape
+            // to close, so the key means the same thing on the way in and on
+            // the way out. Nothing else has an inside: a list is walked with
+            // the arrows where it stands.
+            if (p != 0 && p->Type == WidgetPopup && p->pItems != 0)
+            {
+                MenuOpen (pScreen, nFocused);
+                return Reply (ScreenChanged, -1);
+            }
+            // A list's mark, when the keyboard is standing on one. The screen
+            // above is told which, and does what it does for a click on it.
+            if (p != 0 && p->Type == WidgetList && p->nCell != 0 && p->nChoice >= 0
+                && !p->pItems[p->nChoice].bAction)
+            {
+                const TListItem *pItem = &p->pItems[p->nChoice];
+                if (pItem->nCell[p->nCell - 1] & StateDisabled)
+                {
+                    return Reply (ScreenIdle, -1);
+                }
+                ScreenTouch (pScreen, nFocused);
+                return Reply (ScreenActivated, nFocused, p->nCell);
+            }
+            ScreenOperate (pScreen, pScreen->nFocus);
+            return Reply (ScreenActivated, pScreen->nFocus);
+        }
+        if (pEvent->nKey == OkKeySpace)
         {
             return Reply (ScreenIdle, -1);
         }
-        if (p != 0 && p->Type == WidgetPopup && p->pItems != 0)
         {
-            MenuOpen (pScreen, nFocused);
-            return Reply (ScreenChanged, -1);
-        }
-        // A list's mark, when the keyboard is standing on one. The screen above
-        // is told which, and does the same thing it does for a click on it.
-        if (p != 0 && p->Type == WidgetList && p->nCell != 0 && p->nChoice >= 0)
-        {
-            const TListItem *pItem = &p->pItems[p->nChoice];
-            if (pItem->nCell[p->nCell - 1] & StateDisabled)
-            {
-                return Reply (ScreenIdle, -1);
-            }
-            ScreenTouch (pScreen, nFocused);
-            return Reply (ScreenActivated, nFocused, p->nCell);
-        }
-        ScreenOperate (pScreen, pScreen->nFocus);
-        return Reply (ScreenActivated, pScreen->nFocus);
-
-    case OkKeyReturn:
-        {
-            // The default button, wherever the focus is — that is what a ring
-            // around it promises. Space is the one that follows the focus, and
-            // keeping the two apart is what makes either of them predictable.
             const int nDefault = DefaultWidget (pScreen);
             if (nDefault < 0)
             {
@@ -901,6 +917,18 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
                 // keyboard on the column it landed in — so a hand that starts
                 // on the mouse and carries on with the keys carries on where it
                 // was, rather than back at the beginning of the row.
+                // An action row has nothing to select: clicking it is asking
+                // for it, there and then. Every other row only becomes the
+                // selection, because clicking one of those has a second
+                // meaning — reading what it says — and a command has none.
+                if (nItem >= 0 && pList->pItems[nItem].bAction)
+                {
+                    pList->nCell = 0;
+                    ScreenTouch (pScreen, nHit);
+                    pScreen->nPressed = -1;
+                    return Reply (ScreenActivated, nHit, 0);
+                }
+
                 const unsigned nCol = WidgetListColumnAt (pList, pScreen->pTheme,
                                                           pEvent->nX);
                 if (nCol != 0 && nItem >= 0)
