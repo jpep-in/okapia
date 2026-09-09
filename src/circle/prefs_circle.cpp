@@ -160,6 +160,13 @@ void AddPlatformPrefsDefaults(void)
 	// it beats a rebuild. Absent from the card means "keep the built-in table".
 	PrefsReplaceString("keycodefile", "/BasiliskII.keycodes");
 
+	// What your mouse reports per inch. The Macintosh assumes 200 (CrsrDev.a:
+	// 2045) and scales its own acceleration curve by that number, so a modern
+	// mouse at five times the density runs five times too fast through it.
+	// Only the PowerPC engine uses this: the 68k one hands the Mac deltas and
+	// the Mac accelerates them itself, dpi included.
+	PrefsReplaceInt32("mousedpi", 1000);
+
 	// A Mac refuses to start from a volume whose MDB still says "in use", which
 	// is exactly what an interrupted session leaves behind — on real hardware
 	// too. Repairing it is what a second bootable System would do; doing it
@@ -354,6 +361,11 @@ void SavePrefs(void)
 		"#\n"
 		"# 0 = Dynamic. 1 = every frame, 2 = 30 Hz, 6 = 10 Hz.\n"
 		"# frameskip 0\n"
+		"#\n"
+		"# What your mouse reports per inch, for the PowerPC engine only. The\n"
+		"# Macintosh assumes 200 and accelerates accordingly; say what yours is\n"
+		"# and its own Mouse control panel behaves as it was designed to.\n"
+		"# mousedpi 1000\n"
 		"#\n"
 		"# Minutes east of UTC. 60 for CET, 120 for CEST, -300 for EST. A Mac has\n"
 		"# no time zone: its clock is local time, and Okapia's starts at UTC.\n"

@@ -35,6 +35,8 @@
 #include <string.h>
 
 #include "adb.h"
+#include "cpu_emulation.h"
+#include "prefs.h"
 #include "main.h"
 
 #define FROM "okapia-input"
@@ -304,12 +306,135 @@ static void KeyStatusHandler (unsigned char ucModifiers, const unsigned char Raw
 }
 
 #ifdef SHEEPSHAVER
-// video_shared_circle.cpp: how far the pointer may go, which moves with the
-// mode and is the compositor's to answer.
+// sheepshaver/video_circle.cpp: how far the pointer may go; it moves with the
+// mode, so the file that owns the mode owns the answer.
 extern void VideoMacScreenSize (unsigned *pWidth, unsigned *pHeight);
 
 // Where the Macintosh's pointer is, because on this engine we have to tell it.
 static int s_nMouseX, s_nMouseY;
+
+/*
+ *  The Macintosh's own acceleration, applied here because it cannot apply it
+ *
+ *  This engine feeds the Mac a position through CursorDeviceDispatch's MoveTo
+ *  (adb.cpp:405), and MoveTo sets the cursor where it is told. Only Move --
+ *  selector 0 -- runs deltas through the acceleration tables (CrsrDev.a:137),
+ *  so the Mouse control panel has nothing to act on and its slider is inert.
+ *  Calling selector 0 instead would mean executing 68k on every report; this
+ *  does the same arithmetic on our side of the fence, once, with no guest code.
+ *
+ *  The curve is not invented. It is the ROM's own 'accl' resource for a mouse
+ *  (MiscROMRsrcs.r, the table marked "New, better-feeling"), in Fixed 16.16,
+ *  and the units are settled by CrsrDev.a:1257 -- the numbers are inches per
+ *  second, scaled into device counts by dpi/frameRate and into screen pixels by
+ *  72/frameRate. Three properties none of a hand-made curve would have had:
+ *  the gain is *below* one at very low speed, so the Mac slows the pointer to
+ *  let you aim; the gain peaks in the middle, near eight, rather than at the
+ *  top; and the output saturates at 150 in/s, which is a speed ceiling and not
+ *  a gain ceiling.
+ *
+ *  The control panel picks a Fixed between 0 and 1 and the ROM interpolates
+ *  between the identity table and this one (CrsrDev.a:1102). That is why the
+ *  slider's leftmost position is a tablet: at zero the table *is* the identity.
+ *  SPVolCtl's three bits are that setting, measured on System 7.1 and on Mac OS
+ *  8.6 alike, 0 to 6 in both.
+ */
+struct TAccelPoint { int nIn, nOut; };          // inches/second, Fixed 16.16
+
+static const TAccelPoint ACCEL_CURVE[] =
+{
+    { 0x0000713B, 0x00006000 },     //  0.44 ->   0.38, a gain below one
+    { 0x00044EC5, 0x00108000 },     //  4.31 ->  16.50
+    { 0x000C0000, 0x005F0000 },     // 12.00 ->  95.00, the peak, about 8x
+    { 0x0016EC4F, 0x008B0000 },     // 22.93 -> 139.00
+    { 0x001D3B14, 0x00948000 },     // 29.23 -> 148.50
+    { 0x00227627, 0x00960000 },     // 34.46 -> 150.00, saturated from here
+    { 0x00280000, 0x00960000 },     // 40.00 -> 150.00
+};
+static const unsigned ACCEL_POINTS = sizeof ACCEL_CURVE / sizeof ACCEL_CURVE[0];
+
+// The Macintosh screen's own resolution, which the ROM states as a constant
+// (CrsrDev.a:1764) rather than measuring.
+static const int SCREEN_DPI = 72;
+
+// What the Mac assumes a mouse reports (CrsrDev.a:2045). Yours is nothing like
+// it, which is the whole reason the "mousedpi" preference exists.
+static const int PERIOD_MOUSE_DPI = 200;
+
+static int s_nMouseDpi = 1000;
+
+// The pointer's position keeps its fraction, so a slow hand is never rounded
+// away to nothing, and the clock the speed is measured against.
+static int      s_nCarryX, s_nCarryY;       // 1/65536 of a pixel
+static unsigned s_nLastReportAt;
+
+// The control panel's setting, 0 to 6, read from the guest by the drain.
+static volatile unsigned s_nTracking = 3;
+
+
+// Fixed 16.16 throughout, as the ROM does it: this runs in a USB interrupt on
+// core 0, where floating point has no business being.
+static int CurveLookup (int nSpeed)
+{
+    if (nSpeed <= 0)
+    {
+        return 0;
+    }
+    if (nSpeed <= ACCEL_CURVE[0].nIn)
+    {
+        // Below the first point the ROM's table starts at a gain under one, and
+        // straight-lining to the origin keeps that: it is what makes a slow
+        // hand able to aim.
+        return (int) ((int64) nSpeed * ACCEL_CURVE[0].nOut / ACCEL_CURVE[0].nIn);
+    }
+    for (unsigned i = 1; i < ACCEL_POINTS; i++)
+    {
+        if (nSpeed <= ACCEL_CURVE[i].nIn)
+        {
+            const int x0 = ACCEL_CURVE[i - 1].nIn, y0 = ACCEL_CURVE[i - 1].nOut;
+            const int x1 = ACCEL_CURVE[i].nIn,     y1 = ACCEL_CURVE[i].nOut;
+            return y0 + (int) ((int64) (nSpeed - x0) * (y1 - y0) / (x1 - x0));
+        }
+    }
+    return ACCEL_CURVE[ACCEL_POINTS - 1].nOut;      // the ceiling
+}
+
+/*
+ *  One axis, one report
+ *
+ *  The ROM interpolates between the identity table and the curve by a Fixed
+ *  between 0 and 1 (CrsrDev.a:1102); the slider's seven positions are that
+ *  number, so 0 is the tablet and gives movement back untouched.
+ */
+static int Advance (int nDelta, int *pCarry, unsigned nElapsedUsec, int nTracking)
+{
+    if (nDelta == 0)
+    {
+        return 0;
+    }
+    const int nSign = nDelta < 0 ? -1 : 1;
+    const int nCount = nDelta * nSign;
+
+    // counts -> inches/second, Fixed 16.16.
+    const int nSpeed = (int) (((int64) nCount << 16) * 1000000
+                              / ((int64) s_nMouseDpi * nElapsedUsec));
+
+    int nOut = CurveLookup (nSpeed);
+
+    // Blend with the identity by the slider, which is what the ROM does rather
+    // than scaling the result: at 0 the pointer follows the hand exactly.
+    if (nTracking < 6)
+    {
+        nOut = (int) (((int64) nOut * nTracking
+                       + (int64) nSpeed * (6 - nTracking)) / 6);
+    }
+
+    // inches/second -> pixels, and keep the fraction for the next report.
+    *pCarry += nSign * (int) (((int64) nOut * SCREEN_DPI * nElapsedUsec) / 1000000);
+    const int nWhole = *pCarry >> 16;
+    *pCarry -= nWhole << 16;
+    return nWhole;
+}
 #endif
 
 static void MouseStatusHandler (unsigned nButtons, int nDeltaX,
@@ -321,20 +446,28 @@ static void MouseStatusHandler (unsigned nButtons, int nDeltaX,
     {
         s_nReports++;
 #ifdef SHEEPSHAVER
-        // Deltas turn into a position here, and the two engines genuinely
-        // differ. adb.cpp's relative branch drives the *68k* ADB mouse driver
-        // through the handler at ADBBase+16 — which is there under Basilisk's
-        // replaced Toolbox and is not what a real PowerMac ROM installs, so the
-        // reports were accepted and went nowhere. Its absolute branch goes
-        // through CursorDeviceDispatch instead (adb.cpp:405, under
-        // POWERPC_ROM), which is the path upstream's own video takes on this
-        // engine: video_x.cpp calls ADBSetRelMouseMode(false) and passes window
-        // coordinates (:2089). Circle only ever gives deltas, so the position
-        // is kept here.
+        /*
+         *  Counts to inches per second, through the curve, back to pixels.
+         *
+         *  Speed needs a clock, not a frame: the ROM divides by its frameRate
+         *  of 67 because that is when it recomputes, and we are handed reports
+         *  whenever the mouse has something to say. Measuring the interval is
+         *  both simpler and more honest than assuming one.
+         */
+        const unsigned nNow = CTimer::GetClockTicks ();
+        unsigned nElapsed = nNow - s_nLastReportAt;
+        s_nLastReportAt = nNow;
+        if (nElapsed == 0 || nElapsed > 200000)
+        {
+            nElapsed = 10000;   // first report, or a hand that stopped: assume 10 ms
+        }
+
+        const int nTracking = (int) __atomic_load_n (&s_nTracking, __ATOMIC_RELAXED);
+        s_nMouseX += Advance (nDeltaX, &s_nCarryX, nElapsed, nTracking);
+        s_nMouseY += Advance (nDeltaY, &s_nCarryY, nElapsed, nTracking);
+
         unsigned nWidth = 640, nHeight = 480;
         VideoMacScreenSize (&nWidth, &nHeight);
-        s_nMouseX += nDeltaX;
-        s_nMouseY += nDeltaY;
         if (s_nMouseX < 0) s_nMouseX = 0;
         if (s_nMouseY < 0) s_nMouseY = 0;
         if (s_nMouseX > (int) nWidth  - 1) s_nMouseX = (int) nWidth  - 1;
@@ -408,9 +541,55 @@ static void InputReport (void)
     s_nDrains = s_nMotionDrains = 0;
 }
 
+/*
+ *  Where the Macintosh keeps the pointer's speed, and how we know
+ *
+ *  SPVolCtl (0x208), bits 5:3 — the field the PRAM template calls "mouse
+ *  tracking" (SysUtil.a:1100). Not deduced: measured, by sweeping the Mouse
+ *  control panel in both directions and watching which of the ROM's plausible
+ *  homes moved. CrsrThresh (0x8EC) never left its startup 6 and parameter RAM
+ *  never moved at all, on System 7.1 and on Mac OS 8.6 alike, while SPVolCtl
+ *  followed every position: seven of them, the tablet at 0 and "Fast" at 6.
+ *
+ *  Read here because this runs on the emulation core; the USB handler that
+ *  needs it must not reach into guest memory itself. Costly enough to be worth
+ *  a counter and no more: somebody changing a control panel is not in a hurry.
+ */
+static void ReadMouseSettings (void)
+{
+    static unsigned s_nUntil;
+    if (s_nUntil-- != 0)
+    {
+        return;
+    }
+    s_nUntil = 512;
+
+    const unsigned nTracking = (ReadMacInt8 (0x208) >> 3) & 7;
+    const unsigned nScaling  = (ReadMacInt8 (0x20B) & 0x40) != 0 ? 1u : 0u;
+    const unsigned nThresh   = ReadMacInt16 (0x8EC);
+#ifdef SHEEPSHAVER
+    // Published to the USB handler, which must not read guest memory itself.
+    __atomic_store_n (&s_nTracking, nScaling != 0 ? nTracking : 0u,
+                      __ATOMIC_RELAXED);
+#endif
+
+    static unsigned s_nSaidT = 99, s_nSaidS = 99, s_nSaidC = 0xFFFF;
+    if (nTracking != s_nSaidT || nScaling != s_nSaidS || nThresh != s_nSaidC)
+    {
+        s_nSaidT = nTracking;
+        s_nSaidS = nScaling;
+        s_nSaidC = nThresh;
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "Mouse control panel: tracking %u/6, scaling %u, "
+                                "CrsrThresh %u",
+                                nTracking, nScaling, nThresh);
+    }
+}
+
 void InputDrain (void)
 {
     s_nDrains++;
+    ReadMouseSettings ();
 
     // Every one of these six calls raises INTFLAG_ADB and triggers the
     // interrupt itself (adb.cpp:248, :264, :312), so nothing here does.
@@ -522,6 +701,18 @@ void InputInit (void)
 #else
     s_nPendingDX = 0;
     s_nPendingDY = 0;
+#endif
+#ifdef SHEEPSHAVER
+    s_nCarryX = 0;
+    s_nCarryY = 0;
+    s_nLastReportAt = 0;
+    int nDpi = (int) PrefsFindInt32 ("mousedpi");
+    if (nDpi < 100)  nDpi = 100;
+    if (nDpi > 8000) nDpi = 8000;
+    s_nMouseDpi = nDpi;
+    CLogger::Get ()->Write (FROM, LogNotice,
+                            "Pointer: mouse at %d dpi, acceleration from the "
+                            "Mouse control panel (the ROM's own curve)", nDpi);
 #endif
 
     InputAttachDevices ();

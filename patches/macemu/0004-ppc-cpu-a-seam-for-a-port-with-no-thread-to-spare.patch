@@ -17,6 +17,14 @@ calls to powerpc_check_ticks(), which the port defines, and 0 — the
 default — compiles the whole thing away. Both interpreter loops carry the
 count, since which one runs depends on PPC_DECODE_CACHE.
 
+The count itself is a variable, ppc_check_ticks_quantum, which starts at
+PPC_CHECK_TICKS. A fixed count of instructions is a rate only on a machine
+whose speed never varies, and an interpreter's varies with what the guest
+is doing: measured on one board at 87 Hz averaged and 135 Hz instantaneous
+over the same run. A port that wants a rate can therefore measure this
+seam and write the quantum back, and one that never touches it keeps the
+old fixed behaviour exactly.
+
 mihaip/macemu (branch infinite-mac-kanjitalk755) carries the same seam for
 WebAssembly, hardcoded to 50000 and to its own #ifdef; this is the same
 idea named for what it does.
@@ -53,7 +61,7 @@ index 7563fd02..891b5631 100644
   *	PPC_DECODE_CACHE
   *
 diff --git a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
-index 39a31ecb..7e4686d9 100644
+index 39a31ecb..c57cc8e3 100644
 --- a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
 +++ b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.cpp
 @@ -578,6 +578,9 @@ void powerpc_cpu::execute(uint32 entry)
@@ -71,7 +79,7 @@ index 39a31ecb..7e4686d9 100644
  				}
  
 +#if PPC_CHECK_TICKS
-+				if (++check_ticks_counter >= PPC_CHECK_TICKS) {
++				if (++check_ticks_counter >= ppc_check_ticks_quantum) {
 +					check_ticks_counter = 0;
 +					powerpc_check_ticks();
 +				}
@@ -86,7 +94,7 @@ index 39a31ecb..7e4686d9 100644
  			dump_registers();
 +#endif
 +#if PPC_CHECK_TICKS
-+		if (++check_ticks_counter >= PPC_CHECK_TICKS) {
++		if (++check_ticks_counter >= ppc_check_ticks_quantum) {
 +			check_ticks_counter = 0;
 +			powerpc_check_ticks();
 +		}
@@ -94,17 +102,25 @@ index 39a31ecb..7e4686d9 100644
  		if (!spcflags().empty() && !check_spcflags())
  			goto return_site;
 diff --git a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
-index f1739a5f..b4a969e3 100644
+index f1739a5f..1cc598ff 100644
 --- a/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
 +++ b/SheepShaver/src/kpx_cpu/src/cpu/ppc/ppc-cpu.hpp
-@@ -515,4 +515,10 @@ inline void powerpc_cpu::trigger_interrupt()
+@@ -515,4 +515,18 @@ inline void powerpc_cpu::trigger_interrupt()
  extern void HandleInterrupt(powerpc_registers *r);
  #endif
  
 +#if PPC_CHECK_TICKS
-+// Defined by the port. Called from the interpreter every PPC_CHECK_TICKS
-+// instructions, on the emulation thread, with the CPU between two instructions.
++// Defined by the port. Called from the interpreter every
++// ppc_check_ticks_quantum instructions, on the emulation thread, with the CPU
++// between two instructions.
 +extern void powerpc_check_ticks();
++
++// How many instructions between two of those calls. A count of instructions is
++// a rate only on a machine whose speed never varies, and an interpreter's does:
++// a port that wants a rate measures this seam and writes the quantum back. It
++// starts at PPC_CHECK_TICKS, so a port that never touches it keeps the old
++// fixed behaviour.
++extern uint32 ppc_check_ticks_quantum;
 +#endif
 +
  #endif /* PPC_CPU_H */

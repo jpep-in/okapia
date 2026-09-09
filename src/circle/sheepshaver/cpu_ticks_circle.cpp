@@ -46,6 +46,68 @@ static const unsigned PRAM_EVERY = 64;
 static unsigned s_nVisits;
 static unsigned s_nLastReport;
 
+// The lifetime average hid the whole problem once: 87 Hz over a run whose last
+// window was 116. What the pointer is given is the rate now, not the average.
+static unsigned s_nVisitsAtReport;
+
+/*
+ *  The seam's own cadence, measured rather than assumed
+ *
+ *  PPC_CHECK_TICKS is a count of interpreted instructions, and a count of
+ *  instructions is a rate only on a machine whose speed never varies. This
+ *  one's does: at the fixed 50000 the seam was measured at 87 Hz averaged over
+ *  a run and 116 Hz over its last window, so the pointer reached the Macintosh
+ *  at a rate that followed what the Macintosh happened to be doing.
+ *
+ *  patches/macemu/0004 therefore compares against this variable rather than the
+ *  constant, and the constant becomes its starting value. The arithmetic below
+ *  is the 68k engine's, deliberately unchanged (cpu_ticks_circle.cpp): the two
+ *  seams have the same job and there is no reason for them to drift apart.
+ *
+ *  A kilohertz for the same reason as there: a USB mouse reports at about
+ *  100 Hz, and a drain that is not comfortably faster than its input merges
+ *  reports. It costs less here than on the 68k, since this engine hands the
+ *  Macintosh a position rather than a delta and a merged report is only late,
+ *  never wrong -- but late is what a pointer is judged on.
+ */
+uint32 ppc_check_ticks_quantum = PPC_CHECK_TICKS;
+
+static const unsigned TARGET_USEC     = 1000;
+static const unsigned QUANTUM_MIN     = 2000;
+static const unsigned QUANTUM_MAX     = 4000000;
+static const unsigned CALIBRATE_EVERY = 64;     // visits
+
+static unsigned s_nSinceCalibration;
+static unsigned s_nCalibratedAt;
+
+static void Recalibrate (void)
+{
+    if (++s_nSinceCalibration < CALIBRATE_EVERY)
+    {
+        return;
+    }
+
+    const unsigned nNow = CTimer::GetClockTicks ();
+    if (s_nCalibratedAt != 0)
+    {
+        const unsigned nPer = (nNow - s_nCalibratedAt) / s_nSinceCalibration;
+        if (nPer != 0)
+        {
+            // Proportional and damped: the interpreter's speed changes with
+            // what the guest is running, and a quantum that chases every
+            // window oscillates instead of settling.
+            unsigned nWanted = (unsigned)
+                ((u64) ppc_check_ticks_quantum * TARGET_USEC / nPer);
+            nWanted = (ppc_check_ticks_quantum + nWanted) / 2;
+            if (nWanted < QUANTUM_MIN) nWanted = QUANTUM_MIN;
+            if (nWanted > QUANTUM_MAX) nWanted = QUANTUM_MAX;
+            ppc_check_ticks_quantum = nWanted;
+        }
+    }
+    s_nCalibratedAt = nNow;
+    s_nSinceCalibration = 0;
+}
+
 /*
  *  mac_encoding_circle.cpp asks before running 68k code on the guest. This
  *  engine never lets it: SheepShaver's 68k is the Toolbox's, reached through a
@@ -62,6 +124,7 @@ void powerpc_check_ticks (void)
 {
     s_nVisits++;
 
+    Recalibrate ();
     InputDrain ();
 
     if ((s_nVisits % PRAM_EVERY) == 0)
@@ -78,7 +141,11 @@ void powerpc_check_ticks (void)
     {
         s_nLastReport = nNow;
         CLogger::Get ()->Write (FROM, LogNotice,
-                                "periodic seam: %u visits in %u s (%u Hz)",
-                                s_nVisits, nNow, s_nVisits / nNow);
+                                "periodic seam: %u visits in %u s (%u Hz "
+                                "lifetime, %u Hz now), quantum %u",
+                                s_nVisits, nNow, s_nVisits / nNow,
+                                (s_nVisits - s_nVisitsAtReport) / 5,
+                                (unsigned) ppc_check_ticks_quantum);
+        s_nVisitsAtReport = s_nVisits;
     }
 }
