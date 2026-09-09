@@ -11,6 +11,7 @@
 
 #include "hal_circle.h"
 
+#include <circle/logger.h>
 #include <circle/memory.h>
 #include <circle_glue.h>
 
@@ -131,6 +132,96 @@ bool COkapiaBoard::StartCard (void)
     m_bCard = f_mount (&m_FileSystem, "SD:", 1) == FR_OK;
     return m_bCard;
 }
+
+/*
+ *  The one fine timer. See hal_circle.h for why it lives on this side.
+ */
+#if RASPPI <= 4
+
+#include <circle/usertimer.h>
+#include <circle/interrupt.h>
+#include <circle/timer.h>
+
+static CUserTimer          *s_pFineTimer;
+static TBoardTickHandler   *s_pTickHandler;
+static unsigned             s_nPeriodUsec = 16625;
+static unsigned             s_nNextDue;
+
+// Never wake sooner than this: CUserTimer::Start asserts on a delay of 1 or
+// less, and a deadline already past has to become a fresh one rather than a
+// storm of immediate interrupts.
+static const unsigned MIN_DELAY_USEC = 200;
+
+static void FineTickHandler (CUserTimer *pTimer, void *pParam)
+{
+    (void) pParam;
+
+    // Rearmed before the work, so a slow tick delays this one and not the next.
+    const unsigned nNow = CTimer::GetClockTicks ();
+    s_nNextDue += s_nPeriodUsec;
+    int nDelay = (int) (s_nNextDue - nNow);
+    if (nDelay < (int) MIN_DELAY_USEC)
+    {
+        // Late. Resynchronise, never repay: upstream's own thread has the same
+        // rule (main_unix.cpp:1348), and repaying turned one delay into sixteen
+        // ticks at 0 ms followed by a 140 ms hole.
+        s_nNextDue = nNow + s_nPeriodUsec;
+        nDelay = (int) s_nPeriodUsec;
+    }
+    pTimer->Start ((unsigned) nDelay);
+
+    TBoardTickHandler *pHandler = s_pTickHandler;
+    if (pHandler != 0)
+    {
+        (*pHandler) ();
+    }
+}
+
+bool BoardFineTick (unsigned nPeriodUsec, TBoardTickHandler *pHandler)
+{
+    s_nPeriodUsec  = nPeriodUsec;
+    s_pTickHandler = pHandler;
+
+    if (s_pFineTimer != 0)
+    {
+        // The second Macintosh of a session arrives here. Said once, because
+        // this is the line that will show the engine switch was survived: the
+        // claim before it connected ARM_IRQ_TIMER1, and interrupt.cpp:145
+        // asserts on a second connection — which halts the board.
+        static bool s_bSaid;
+        if (!s_bSaid)
+        {
+            s_bSaid = true;
+            CLogger::Get ()->Write ("okapia-board", LogNotice,
+                                    "Fine timer already claimed; handler swapped "
+                                    "for the other engine");
+        }
+        return true;
+    }
+
+    s_pFineTimer = new CUserTimer (CInterruptSystem::Get (), FineTickHandler);
+    if (s_pFineTimer == 0 || !s_pFineTimer->Initialize ())
+    {
+        delete s_pFineTimer;
+        s_pFineTimer = 0;
+        s_pTickHandler = 0;
+        return false;
+    }
+    s_nNextDue = CTimer::GetClockTicks () + nPeriodUsec;
+    s_pFineTimer->Start (nPeriodUsec);
+    return true;
+}
+
+#else
+
+// A Pi 5 is not assumed to have it: nothing here reaches for that board's
+// hardware without having seen it work.
+bool BoardFineTick (unsigned, TBoardTickHandler *)
+{
+    return false;
+}
+
+#endif
 
 COkapiaBoard &OkapiaBoard (void)
 {

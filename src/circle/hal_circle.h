@@ -106,4 +106,34 @@ private:
 // Circle's own startup has finished.
 extern COkapiaBoard &OkapiaBoard (void);
 
+/*
+ *  The board's one fine-grained timer
+ *
+ *  The Mac's vertical blank wants an exact 16625 us, which Circle's periodic
+ *  handler cannot give: it fires at HZ, so a tick can only land on a 10 ms grid
+ *  and the spacing comes out 20, 10, 20, 20, 10. CUserTimer programs the system
+ *  timer's compare register directly and takes microseconds.
+ *
+ *  It lives here, in the shared half, because it is a claim on the hardware and
+ *  claims are the thing this port cannot afford to make twice. tick_circle.cpp
+ *  is compiled once *per engine*, so a guard local to it is a guard per engine:
+ *  switching from one Macintosh to the other would connect ARM_IRQ_TIMER1 a
+ *  second time, and interrupt.cpp:145 asserts on exactly that — which halts the
+ *  board, and under QEMU ends the session. Measured, after the switch, as a
+ *  machine that simply vanished.
+ *
+ *  So the timer is claimed once and the handler is replaced, on the model of
+ *  the one mouse registration and the one frame buffer. The deadline is kept
+ *  here too because it is the same arithmetic for both Macintoshes: rearmed
+ *  against an absolute time, and a tick that is already late is dropped rather
+ *  than repaid — repaying it hands the guest several vertical blanks with no
+ *  time between them.
+ */
+typedef void TBoardTickHandler (void);
+
+// Answers false where there is no such timer to claim, and the caller then
+// falls back on Circle's periodic handler. A second call only swaps the
+// handler; the timer and its interrupt are taken once for the life of the board.
+bool BoardFineTick (unsigned nPeriodUsec, TBoardTickHandler *pHandler);
+
 #endif

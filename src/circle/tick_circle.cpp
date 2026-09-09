@@ -21,12 +21,11 @@
 
 #include "sysdeps.h"
 #include "okapia_circle.h"
+#include "hal_circle.h"
 
 #include <stdio.h>
 #include <string.h>
 
-#include <circle/interrupt.h>
-#include <circle/usertimer.h>
 
 #include "cpu_emulation.h"
 #include "main.h"
@@ -185,76 +184,27 @@ static void OneTick (void)
 }
 
 /*
- *  The fine timer, and why the coarse one was not enough
+ *  Why the coarse timer is not enough
  *
  *  Circle's periodic handler fires at HZ, which is 100, so a Mac tick can only
- *  ever be emitted on a 10 ms grid — and 16625 does not divide 10000. The
- *  spacing that comes out is 20, 10, 20, 20, 10 ms: the average is exact, one
- *  frame in three is half as long as its neighbours, and the Macintosh redraws
- *  its pointer on that beat. Measured, and invariant: 103 short intervals to
- *  202 long ones in every five-second window, at rest and under load alike.
+ *  be emitted on a 10 ms grid — and 16625 does not divide 10000. The spacing is
+ *  20, 10, 20, 20, 10 ms: the average is exact, one frame in three is half as
+ *  long as its neighbours, and the Macintosh redraws its pointer on that beat.
+ *  Measured invariant at 103 short intervals to 202 long ones in every
+ *  five-second window.
  *
- *  CUserTimer programs the system timer's compare register directly and takes
- *  a delay in microseconds (usertimer.cpp:83), so the tick can be put where it
- *  belongs. It rests on ARM_IRQ_TIMER1, which Circle defines up to the Pi 4 —
- *  a Pi 5 falls back on the accumulator below rather than assume, which is what
- *  AGENTS.md asks of anything that reaches for that board's hardware.
+ *  The fine timer that fixes it is the board's, not this file's: hal_circle.cpp
+ *  holds the claim, because this file is compiled once per engine and a claim
+ *  guarded per engine is claimed twice the moment the two Macintoshes trade
+ *  places. See BoardFineTick().
  */
-#if RASPPI <= 4
-#define OKAPIA_FINE_TICK 1
-#else
-#define OKAPIA_FINE_TICK 0
-#endif
-
-// Never wake up sooner than this. CUserTimer::Start asserts on a delay of 1 or
-// less, and a deadline already past has to become a fresh one rather than a
-// storm of immediate interrupts.
-static const unsigned MIN_DELAY_USEC = 200;
-
-#if OKAPIA_FINE_TICK
-static CUserTimer *s_pFineTimer;
-#endif
-
-// Which source is in force. Answering through a function rather than an #ifdef
-// at every use keeps the two paths readable side by side.
-static CUserTimer *FineTimer (void)
+static void FineTick (void)
 {
-#if OKAPIA_FINE_TICK
-    return s_pFineTimer;
-#else
-    return 0;
-#endif
-}
-
-
-#if OKAPIA_FINE_TICK
-static unsigned s_nNextDue;             // us, on the free-running counter
-
-static void FineTickHandler (CUserTimer *pTimer, void *pParam)
-{
-    (void) pParam;
-
-    // Rearmed before the work, so a slow tick delays this one and not the next.
-    const unsigned nNow = CTimer::GetClockTicks ();
-    s_nNextDue += MAC_TICK_USEC;
-    int nDelay = (int) (s_nNextDue - nNow);
-    if (nDelay < (int) MIN_DELAY_USEC)
-    {
-        // Late. Upstream's rule (main_unix.cpp:1348): resynchronise, never
-        // repay. Repaying hands the Macintosh several vertical blanks with no
-        // time between them — measured once as sixteen ticks at 0 ms followed
-        // by a 140 ms hole — which is worse than the frame that was missed.
-        s_nNextDue = nNow + MAC_TICK_USEC;
-        nDelay = MAC_TICK_USEC;
-    }
-    pTimer->Start ((unsigned) nDelay);
-
     if (s_bRunning && !tick_inhibit)
     {
         OneTick ();
     }
 }
-#endif
 
 static void PeriodicHandler (void)
 {
@@ -291,34 +241,23 @@ void TickInit (void)
     // which under QEMU ends the session outright. That is four restarts from Mac
     // OS and then a machine that dies at the next one, seemingly at random.
     // Everything this handler needs is reset above, and s_bRunning gates it.
+    // The board owns the fine timer and only swaps our handler in, so this is
+    // safe to call at every start and from either engine. The periodic handler
+    // is the fallback and *that* one still needs the guard: Circle keeps four
+    // slots and gives none of them back.
+    const bool bFine = BoardFineTick (MAC_TICK_USEC, FineTick);
+
     static bool s_bArmed;
-    if (!s_bArmed)
+    if (!bFine && !s_bArmed)
     {
         s_bArmed = true;
-#if OKAPIA_FINE_TICK
-        s_pFineTimer = new CUserTimer (CInterruptSystem::Get (), FineTickHandler);
-        if (s_pFineTimer != 0 && s_pFineTimer->Initialize ())
-        {
-            s_nNextDue = CTimer::GetClockTicks () + MAC_TICK_USEC;
-            s_pFineTimer->Start (MAC_TICK_USEC);
-        }
-        else
-        {
-            delete s_pFineTimer;
-            s_pFineTimer = 0;
-        }
-#endif
-        if (FineTimer () == 0)
-        {
-            CTimer::Get ()->RegisterPeriodicHandler (PeriodicHandler);
-        }
+        CTimer::Get ()->RegisterPeriodicHandler (PeriodicHandler);
     }
 
     CLogger::Get ()->Write (FROM, LogNotice,
                             "Tick armed: %s, Mac tick every %u us",
-                            FineTimer () != 0
-                                ? "system timer, microsecond deadline"
-                                : "periodic handler on the host tick grid",
+                            bFine ? "system timer, microsecond deadline"
+                                  : "periodic handler on the host tick grid",
                             MAC_TICK_USEC);
 }
 
