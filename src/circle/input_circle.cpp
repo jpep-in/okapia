@@ -406,6 +406,13 @@ static int CurveLookup (int nSpeed)
  *  between 0 and 1 (CrsrDev.a:1102); the slider's seven positions are that
  *  number, so 0 is the tablet and gives movement back untouched.
  */
+// Measurement: where on the ROM's curve does this pointing device actually
+// live? The curve's gain is below one under 0.44 in/s and peaks near 12, so a
+// device whose reports cluster at the bottom feels like a dirty ball mouse and
+// one that spans the whole range feels like a Macintosh. Buckets are in/s.
+static unsigned s_SpeedHist[8];
+static unsigned s_nBiggestCount;
+
 static int Advance (int nDelta, int *pCarry, unsigned nElapsedUsec, int nTracking)
 {
     if (nDelta == 0)
@@ -418,6 +425,15 @@ static int Advance (int nDelta, int *pCarry, unsigned nElapsedUsec, int nTrackin
     // counts -> inches/second, Fixed 16.16.
     const int nSpeed = (int) (((int64) nCount << 16) * 1000000
                               / ((int64) s_nMouseDpi * nElapsedUsec));
+
+    {
+        const unsigned n = (unsigned) (nCount);
+        if (n > s_nBiggestCount) s_nBiggestCount = n;
+        const int v = nSpeed >> 16;             // whole inches per second
+        unsigned b = v <= 0 ? 0 : v < 1 ? 1 : v < 2 ? 2 : v < 4 ? 3
+                   : v < 8 ? 4 : v < 16 ? 5 : v < 32 ? 6 : 7;
+        s_SpeedHist[b]++;
+    }
 
     int nOut = CurveLookup (nSpeed);
 
@@ -537,6 +553,20 @@ static void InputReport (void)
                             "mouse: %u USB reports, %u drains (%u carried the "
                             "pointer)",
                             s_nReports, s_nDrains, s_nMotionDrains);
+#ifdef SHEEPSHAVER
+    if (s_nBiggestCount != 0)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "speed in/s  <1:%u 1-2:%u 2-4:%u 4-8:%u 8-16:%u "
+                                "16-32:%u 32+:%u  (gain<1 below 0.44), "
+                                "biggest report %u counts",
+                                s_SpeedHist[1] + s_SpeedHist[0], s_SpeedHist[2],
+                                s_SpeedHist[3], s_SpeedHist[4], s_SpeedHist[5],
+                                s_SpeedHist[6], s_SpeedHist[7], s_nBiggestCount);
+        memset (s_SpeedHist, 0, sizeof s_SpeedHist);
+        s_nBiggestCount = 0;
+    }
+#endif
     s_nReports = 0;
     s_nDrains = s_nMotionDrains = 0;
 }
@@ -707,7 +737,12 @@ void InputInit (void)
     s_nCarryY = 0;
     s_nLastReportAt = 0;
     int nDpi = (int) PrefsFindInt32 ("mousedpi");
-    if (nDpi < 100)  nDpi = 100;
+    // The floor is low on purpose. A real USB mouse is 400 to 1600, but under
+    // an emulator the "device" is whatever the host hands over — a Mac trackpad
+    // arrives already accelerated by macOS and in screen points, which measures
+    // nearer a hundred. The number describes what actually reaches us, not what
+    // is printed on the box.
+    if (nDpi < 40)   nDpi = 40;
     if (nDpi > 8000) nDpi = 8000;
     s_nMouseDpi = nDpi;
     CLogger::Get ()->Write (FROM, LogNotice,

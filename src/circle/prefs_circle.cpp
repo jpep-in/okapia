@@ -82,6 +82,10 @@ prefs_desc platform_prefs_items[] = {
 	// to `rom` when absent, so a card written before this keyword existed still
 	// starts the engine it was written for.
 	{"romppc", TYPE_STRING, false, "the PowerMac ROM, for the PowerPC engine"},
+	// Declared here and not only defaulted: an item missing from this table is
+	// parsed off the card and dropped, so the line reads correctly, changes
+	// nothing, and says nothing about it. That cost one whole measurement.
+	{"mousedpi", TYPE_INT32, false, "what the pointing device reports per inch"},
 	{NULL, TYPE_END, false, NULL}	// End of list
 };
 
@@ -160,9 +164,12 @@ void AddPlatformPrefsDefaults(void)
 	// it beats a rebuild. Absent from the card means "keep the built-in table".
 	PrefsReplaceString("keycodefile", "/BasiliskII.keycodes");
 
-	// What your mouse reports per inch. The Macintosh assumes 200 (CrsrDev.a:
-	// 2045) and scales its own acceleration curve by that number, so a modern
-	// mouse at five times the density runs five times too fast through it.
+	// What the pointing device reports per inch, as it reaches us. The Macintosh
+	// assumes 200 (CrsrDev.a:2045) and scales its own acceleration curve by that
+	// number, so a modern mouse at five times the density runs five times too
+	// fast through it. Under an emulator the number is not the device's: a Mac
+	// trackpad arrives already accelerated by the host and in screen points,
+	// which measures nearer a hundred than a thousand.
 	// Only the PowerPC engine uses this: the 68k one hands the Mac deltas and
 	// the Mac accelerates them itself, dpi included.
 	PrefsReplaceInt32("mousedpi", 1000);
