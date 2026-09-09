@@ -11,8 +11,12 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <stdio.h>
+#include <string.h>
+
 #include "okapia_confirm.h"
 #include "okapia_info.h"
+#include "okapia_newvolume.h"
 #include "okapia_settings.h"
 #include "okapia_strings.h"
 
@@ -65,4 +69,20 @@ void ConfirmSample (TConfirm *p)
     p->pBody  = Str (StrForgetPramBody);
     p->pYes   = Str (StrForgetPram);
     p->pNo    = Str (StrCancel);
+}
+
+// A card with room for a few volumes but not for every rung: the sizes that do
+// not fit are simply absent, which is what makes an impossible one impossible.
+void NewVolumeSample (TNewVolume *p)
+{
+    memset (p, 0, sizeof *p);
+    snprintf (p->Name, sizeof p->Name, "%s", "Macintosh HD");
+    p->SizeMB[0] = 20;
+    p->SizeMB[1] = 40;
+    p->SizeMB[2] = 80;
+    p->SizeMB[3] = 160;
+    p->SizeMB[4] = 320;
+    p->nSizes    = 5;
+    p->nPick     = 2;
+    p->nFreeMB   = 612;
 }

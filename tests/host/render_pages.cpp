@@ -10,6 +10,7 @@
 
 #include "okapia_confirm.h"
 #include "okapia_info.h"
+#include "okapia_newvolume.h"
 #include "okapia_screen.h"
 #include "okapia_settings.h"
 #include "okapia_strings.h"
@@ -17,6 +18,7 @@
 void SettingsSample (TSettings *p);
 void InfoSample (TInfo *p);
 void ConfirmSample (TConfirm *p);
+void NewVolumeSample (TNewVolume *p);
 
 static bool WritePPM (const char *pPath, const unsigned *pPixels, unsigned w, unsigned h)
 {
@@ -104,6 +106,16 @@ int main (int argc, char **argv)
         if (!WritePPM (Path, px, w, h)) return 1;
         printf ("%s\n", Path);
     }
+
+    TNewVolume New;
+    NewVolumeSample (&New);
+    NewVolumeDraw (&s, &New);
+    Settle (&s, NewVolumeWidgets);
+    NewVolumeRepaint (&s);
+    nAt = StrAppend (Path, sizeof Path, 0, pStem);
+    StrAppend (Path, sizeof Path, nAt, "-newvolume.ppm");
+    if (!WritePPM (Path, px, w, h)) return 1;
+    printf ("%s\n", Path);
 
     free (px);
     return 0;

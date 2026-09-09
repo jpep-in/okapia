@@ -305,6 +305,43 @@ unsigned HfsInventory (THfsVolumeInfo *pList, unsigned nMax)
  *  read-write rather than guessing (AGENTS.md, Data safety).
  */
 
+bool HfsFormat (const char *pPath, const char *pName)
+{
+    CLogger::Get ()->Write (FROM, LogNotice, "%s: formatting as \"%s\"", pPath, pName);
+
+    // Mode 0: no options. HFS_OPT_2048 is for media whose blocks are 2048 bytes,
+    // which a file on a FAT card is not.
+    if (hfs_format (pPath, 0, 0, pName, 0, 0) < 0)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "%s: cannot format (%s)", pPath,
+                                hfs_error != 0 ? hfs_error : "no reason given");
+        return false;
+    }
+
+    // Mounted straight back, read-only, and asked what it is. A format that
+    // wrote something the next mount cannot read is a volume that will be found
+    // broken later, by somebody who has since put files on it — so it is found
+    // here instead, while the only thing at stake is an empty file.
+    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDONLY);
+    if (pVolume == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogError,
+                                "%s: formatted but will not mount (%s)", pPath,
+                                hfs_error != 0 ? hfs_error : "no reason given");
+        return false;
+    }
+    hfsvolent Ent;
+    if (hfs_vstat (pVolume, &Ent) == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice, "%s: \"%s\", %lu KB free of %lu KB",
+                                pPath, Ent.name,
+                                (unsigned long) (Ent.freebytes / 1024),
+                                (unsigned long) (Ent.totbytes / 1024));
+    }
+    hfs_umount (pVolume);
+    return true;
+}
+
 bool HfsRepair (const char *pPath)
 {
     CLogger::Get ()->Write (FROM, LogNotice, "%s: repairing", pPath);

@@ -97,4 +97,18 @@ THfsSystemFlavour HfsFlavourOf (const THfsSystemVersion *pVersion);
 // clean again. This writes to the volume.
 bool HfsRepair (const char *pPath);
 
+// Write an empty HFS volume over a file that already exists and is already the
+// size the volume is to be. It does not create the file and does not grow it:
+// hfs_format() takes the medium's size from the file it is handed
+// (v_geometry, volume.c:241), so making the file the right size is the caller's
+// job — and on the card that means FatFs, which is not this layer's business.
+//
+// Partition 0, because that is what every image on this card is: a flat image
+// with no partition map, which is what Basilisk's own find_hfs_partition()
+// falls back to (disk.cpp:120).
+//
+// The name is the Macintosh's, not the file's. libhfs refuses one longer than
+// 27 characters, one that is empty, and one containing a colon (hfs.c:53).
+bool HfsFormat (const char *pPath, const char *pName);
+
 #endif

@@ -22,6 +22,8 @@
 
 #include "hfs_volume_circle.h"
 #include "mac_layout.h"
+#include "mac_ram_circle.h"
+#include "compositor_circle.h"
 
 // prefs_circle.cpp. Declared here rather than in a header of its own: it has
 // exactly one caller in the kernel, SavePrefs(), a few lines below it.
@@ -201,9 +203,14 @@ static void CheckLayout (void)
     Expect (L.nHostBytes == (size_t) (L.nEnd - L.nRAMBase),
             "le bloc hôte couvre exactement l'invité, sans trou");
 
-    // 256 Mo + 5 + 0,0625 + 0,5 : la valeur écrite dans le plan.
-    Expect (L.nHostBytes == 256u * 1024 * 1024 + 0x500000 + 0x10000 + 0x80000 + 0x100000,
-            "soit 262,6 Mo pour 256 Mo de RAM Mac");
+    // 256 Mo + 5 (ROM) + 0,0625 (pile) + 0,5 (SheepMem) + 4 (écran).
+    Expect (L.nHostBytes == 256u * 1024 * 1024 + OKAPIA_ROM_AREA_SIZE
+                            + OKAPIA_SIG_STACK_SIZE + OKAPIA_SHEEP_SIZE + OKAPIA_FRAME_SIZE,
+            "soit 265,6 Mo pour 256 Mo de RAM Mac");
+    // Et le supplément que mac_ram_circle.h réclame pour les deux moteurs doit
+    // couvrir cette disposition, sinon le second moteur redemande un bloc.
+    Expect (L.nHostBytes - L.nRAMSize <= OKAPIA_MAC_BLOCK_OVERHEAD,
+            "le supplément partagé couvre la disposition la plus gourmande");
 
     // Un alignement qui ne fait rien quand il n'a rien à faire.
     TMacLayout M;
@@ -231,6 +238,129 @@ int main (void)
     CheckFlavour ();
     CheckLayout ();
     unlink (TMP);
+
+    /*
+     *  Les tuiles annoncées
+     *
+     *  video_set_dirty_area() est la seule chose que le moteur PowerPC a et que
+     *  le 68k n'a pas : le Macintosh dit ce qu'il a changé. L'arithmétique des
+     *  tuiles est la partie qui peut se tromper en silence — une tuile oubliée
+     *  laisse un morceau d'écran périmé, ce qui ressemble à du déchirement et
+     *  pas à un calcul faux.
+     */
+    /*
+     *  Les modes directs
+     *
+     *  Le Mac est gros-boutien et son pixel 16 bits est 0RRRRRGG GGGBBBBB, ce
+     *  que les blitters directs de video_blit.cpp ne supposent pas. Leur avoir
+     *  confié un mode direct a donné un écran entièrement d'une seule couleur en
+     *  16 bits et des bandes verticales en 32 — une faute qui se voit tout de
+     *  suite à l'écran et jamais dans un lien. Ici on la verrait avant.
+     */
+    printf ("\n  Les modes directs du Macintosh\n");
+
+    unsigned char Src[8];
+    unsigned Out[4];
+
+    // 16 bits, gros-boutien : rouge pur, vert pur, bleu pur.
+    Src[0] = 0x7C; Src[1] = 0x00;   // 0x7C00
+    Src[2] = 0x03; Src[3] = 0xE0;   // 0x03E0
+    Src[4] = 0x00; Src[5] = 0x1F;   // 0x001F
+    CompositorConvert16To32 ((u8 *) Out, Src, 6);
+    Expect (Out[0] == 0xFF0000FFu, "16 bits : le rouge du Mac sort en octet bas");
+    Expect (Out[1] == 0xFF00FF00u, "16 bits : le vert au milieu");
+    Expect (Out[2] == 0xFFFF0000u, "16 bits : le bleu en haut");
+
+    // 32 bits : le Mac écrit xRGB, l'octet de tête est ignoré.
+    Src[0] = 0x00; Src[1] = 0x12; Src[2] = 0x34; Src[3] = 0x56;
+    CompositorConvert32To32 ((u8 *) Out, Src, 4);
+    Expect (Out[0] == 0xFF563412u, "32 bits : xRGB devient BGRA, l'octet de tête jeté");
+
+    printf ("\n  Les régions annoncées par le Macintosh\n");
+
+    TCompositor C;
+    memset (&C, 0, sizeof C);
+    C.nWidth  = 640;
+    C.nHeight = 480;
+
+    CompositorAnnounce (&C, 0, 0, 1, 1);
+    Expect (C.Announced[0] == 1, "un pixel en haut à gauche marque la première tuile");
+    unsigned nSet = 0;
+    for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
+    Expect (nSet == 1, "et elle seule");
+
+    memset (C.Announced, 0, sizeof C.Announced);
+    CompositorAnnounce (&C, 0, 0, 640, 480);
+    nSet = 0;
+    for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
+    Expect (nSet == 256, "tout l'écran marque les 256 tuiles");
+
+    // 640/16 = 40 pixels par tuile, 480/16 = 30. Un rectangle à cheval sur la
+    // frontière doit marquer les deux, pas une.
+    memset (C.Announced, 0, sizeof C.Announced);
+    CompositorAnnounce (&C, 39, 0, 2, 1);
+    Expect (C.Announced[0] == 0x3, "un rectangle à cheval marque les deux tuiles");
+
+    memset (C.Announced, 0, sizeof C.Announced);
+    CompositorAnnounce (&C, 600, 450, 200, 200);
+    Expect (C.Announced[15] == 0x8000, "ce qui déborde est rogné, pas replié");
+
+    memset (C.Announced, 0, sizeof C.Announced);
+    CompositorAnnounce (&C, 700, 0, 10, 10);
+    nSet = 0;
+    for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
+    Expect (nSet == 0, "entièrement hors écran ne marque rien");
+
+    CompositorAnnounce (&C, 0, 0, -5, 10);
+    CompositorAnnounce (&C, 0, 0, 10, 0);
+    nSet = 0;
+    for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
+    Expect (nSet == 0, "une largeur ou une hauteur nulle ou négative non plus");
+
+    // Un volume fabriqué de bout en bout, ici, sans carte : hfs_format() écrit
+    // sur un fichier qui a déjà sa taille, donc le test le fabrique comme le
+    // fera FatFs et vérifie ensuite ce que le Macintosh lirait. Un formatage
+    // qui écrit quelque chose que le montage suivant ne relit pas est un
+    // volume qu'on découvre cassé plus tard, avec des fichiers dessus.
+    printf ("\nfabriquer un volume\n");
+    {
+        const char *pPath = "/tmp/okapia-check-newvolume.image";
+        const unsigned long nBytes = 20UL * 1024 * 1024;
+
+        unlink (pPath);
+        int nFD = open (pPath, O_RDWR | O_CREAT | O_TRUNC, 0600);
+        Expect (nFD >= 0 && ftruncate (nFD, (off_t) nBytes) == 0,
+                "un fichier de 20 Mo, comme FatFs le fera sur la carte");
+        if (nFD >= 0)
+        {
+            close (nFD);
+        }
+
+        Expect (HfsFormat (pPath, "Macintosh HD"), "hfs_format() l'accepte");
+
+        THfsVolumeInfo Info;
+        Expect (HfsDescribe (pPath, &Info), "et il se relit comme un volume");
+        Expect (strcmp (Info.Name, "Macintosh HD") == 0, "sous le nom demandé");
+        Expect (Info.Blessed == 0, "vide, donc sans dossier système : il ne démarre pas");
+        Expect (Info.bClean, "et propre, puisque personne ne l'a encore monté");
+        // Ce que le Mac verra vraiment : HFS standard réserve ses tables, donc
+        // le libre est un peu sous la taille demandée, jamais au-dessus.
+        Expect (Info.TotalKB <= nBytes / 1024 && Info.TotalKB > nBytes / 1024 - 512,
+                "de la taille du fichier, aux tables près");
+        Expect (Info.FreeKB <= Info.TotalKB, "et il ne s'invente pas de place");
+
+        // Les noms que libhfs refuse. Le bouton Créer les refuse avant, mais
+        // c'est ici que la règle est écrite, et une règle en deux endroits est
+        // une règle qui divergera.
+        Expect (!HfsFormat (pPath, ""), "un nom vide est refusé");
+        Expect (!HfsFormat (pPath, "Disque:2"), "un nom avec deux-points aussi");
+        Expect (!HfsFormat (pPath, "un nom de plus de vingt-sept caracteres"),
+                "et un nom trop long");
+        // Refusés, et le volume d'avant est toujours là.
+        Expect (HfsDescribe (pPath, &Info) && strcmp (Info.Name, "Macintosh HD") == 0,
+                "et un refus ne détruit pas le volume qui était là");
+        unlink (pPath);
+    }
 
     printf ("\n%u écart(s)\n", s_nFailures);
     return s_nFailures == 0 ? 0 : 1;
