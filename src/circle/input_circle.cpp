@@ -36,6 +36,8 @@
 
 #include "adb.h"
 #include "cpu_emulation.h"
+#include "macos_util.h"
+#include "emul_op.h"
 #include "prefs.h"
 #include "main.h"
 
@@ -305,6 +307,13 @@ static void KeyStatusHandler (unsigned char ucModifiers, const unsigned char Raw
     memcpy (s_LastKeys, RawKeys, sizeof s_LastKeys);
 }
 
+
+// What the pointing device reports per inch, as it reaches us. Both engines
+// need it, for opposite reasons: the PowerPC one scales the ROM's curve by
+// it here, and the 68k one hands it to the Macintosh, so that the Mac's own
+// curve is scaled by the truth instead of by the 200 it would assume.
+static int s_nMouseDpi = 1000;
+
 #ifdef SHEEPSHAVER
 // sheepshaver/video_circle.cpp: how far the pointer may go; it moves with the
 // mode, so the file that owns the mode owns the answer.
@@ -361,7 +370,6 @@ static const int SCREEN_DPI = 72;
 // it, which is the whole reason the "mousedpi" preference exists.
 static const int PERIOD_MOUSE_DPI = 200;
 
-static int s_nMouseDpi = 1000;
 
 // The pointer's position keeps its fraction, so a slow hand is never rounded
 // away to nothing, and the clock the speed is measured against.
@@ -633,10 +641,121 @@ static void ReadMouseSettings (void)
     }
 }
 
+#ifndef SHEEPSHAVER
+/*
+ *  Telling the Macintosh what our mouse actually is
+ *
+ *  This engine hands the Mac deltas and lets its own driver accelerate them,
+ *  which is why the Mouse control panel works here without help. But the Mac
+ *  scales that curve by a resolution it believes rather than measures: the ROM
+ *  tags a mouse that accepts the 200 dpi protocol as '@200' and sets the field
+ *  to 200 (CrsrDev.a:2045), calling anything that refuses a "stupid 4th party
+ *  device". There is no path by which it could learn otherwise.
+ *
+ *  So a modern mouse at 1000 or 1600 dpi is accelerated as if it were five to
+ *  eight times slower than it is, and nothing inside Mac OS can correct it.
+ *  CrsrDevSetUnitsPerInch exists for exactly this — "May be called if the
+ *  software knows more about the resolution of the device than can be found
+ *  from the ADB bus" — and it recomputes the acceleration tables from the new
+ *  figure (CrsrDev.a:488).
+ *
+ *  Two calls, once, after the Macintosh has finished starting. Selector 11
+ *  walks the global device list rather than guessing a record pointer: given a
+ *  variable holding NIL it answers with the head of the list (CrsrDev.a:516),
+ *  and a wrong pointer here would have the ROM write a resolution into
+ *  whatever it addressed. Selector 10 then sets it.
+ */
+extern bool MacIsExecuting (void);
+extern bool MacHasBeenIdle (void);
+
+static void TellMacTheMouseResolution (void)
+{
+    static bool s_bDone;
+    // MacIsExecuting() only says an interpreter is running; the Cursor Device
+    // Manager exists once the System is up, and idling is how the Macintosh
+    // says it has finished starting.
+    if (s_bDone || !MacIsExecuting () || !MacHasBeenIdle ())
+    {
+        return;
+    }
+    s_bDone = true;
+
+    static const uint8 Proc[] =
+    {
+        // CrsrDevNextDevice(&scratch) — scratch is NIL, so this answers the
+        // head of the list and writes it back into scratch.
+        0x55, 0x4F,                             // subq.w  #2,sp   (OSErr)
+        0x48, 0x79, 0, 0, 0, 0,                 // pea     (scratch).L
+        0x70, 0x0B,                             // moveq   #11,d0
+        0xAA, 0xDB,                             // _CursorDeviceDispatch
+        0x30, 0x1F,                             // move.w  (sp)+,d0
+        // CrsrDevSetUnitsPerInch(resolution, scratch)
+        0x55, 0x4F,                             // subq.w  #2,sp   (OSErr)
+        0x2F, 0x39, 0, 0, 0, 0,                 // move.l  (scratch).L,-(sp)
+        0x2F, 0x3C, 0, 0, 0, 0,                 // move.l  #resolution,-(sp)
+        0x70, 0x0A,                             // moveq   #10,d0
+        0xAA, 0xDB,                             // _CursorDeviceDispatch
+        0x30, 0x1F,                             // move.w  (sp)+,d0
+        // Answer the record we found, so the log can say whether there was one.
+        0x20, 0x39, 0, 0, 0, 0,                 // move.l  (scratch).L,d0
+        (uint8) (M68K_RTS >> 8), (uint8) (M68K_RTS & 0xFF)
+    };
+
+    M68kRegisters r;
+    r.d[0] = sizeof Proc + 4;                   // code, then the scratch long
+    Execute68kTrap (0xA71E, &r);                // NewPtrSysClear()
+    const uint32 nProc = r.a[0];
+    if (nProc == 0)
+    {
+        // A stub that fails quietly is a feature that fails quietly.
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "No memory for the cursor-device stub; the "
+                                "Macintosh keeps assuming 200 dpi");
+        return;
+    }
+    CLogger::Get ()->Write (FROM, LogNotice,
+                            "Asking the Macintosh to accept %d dpi", s_nMouseDpi);
+    const uint32 nScratch = nProc + sizeof Proc;
+
+    Host2Mac_memcpy (nProc, (void *) Proc, sizeof Proc);
+    // Each address goes *after* its opcode word, and getting one of these wrong
+    // overwrites an instruction rather than its operand: the 68k then runs into
+    // whatever the address happened to be, and the fault surfaces on the host,
+    // pages away from the cause. Offsets counted from the table above.
+    WriteMacInt32 (nProc + 4,  nScratch);       // pea     (scratch).L
+    WriteMacInt32 (nProc + 18, nScratch);       // move.l  (scratch).L,-(sp)
+    WriteMacInt32 (nProc + 24, (uint32) s_nMouseDpi << 16);   // Fixed
+    WriteMacInt32 (nProc + 36, nScratch);       // move.l  (scratch).L,d0
+
+    Execute68k (nProc, &r);
+    const uint32 nRec = r.d[0];
+
+    r.a[0] = nProc;
+    Execute68kTrap (0xA01F, &r);                // DisposePtr()
+
+    if (nRec != 0)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "Told the Macintosh the mouse is %d dpi "
+                                "(cursor device at 0x%08X)",
+                                s_nMouseDpi, (unsigned) nRec);
+    }
+    else
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "No cursor device to tell: this System keeps "
+                                "its own idea of the mouse's resolution");
+    }
+}
+#endif
+
 void InputDrain (void)
 {
     s_nDrains++;
     ReadMouseSettings ();
+#ifndef SHEEPSHAVER
+    TellMacTheMouseResolution ();
+#endif
 
     // Every one of these six calls raises INTFLAG_ADB and triggers the
     // interrupt itself (adb.cpp:248, :264, :312), so nothing here does.
@@ -753,6 +872,8 @@ void InputInit (void)
     s_nCarryX = 0;
     s_nCarryY = 0;
     s_nLastReportAt = 0;
+#endif
+    {
     int nDpi = (int) PrefsFindInt32 ("mousedpi");
     // The floor is low on purpose. A real USB mouse is 400 to 1600, but under
     // an emulator the "device" is whatever the host hands over — a Mac trackpad
@@ -764,8 +885,8 @@ void InputInit (void)
     s_nMouseDpi = nDpi;
     CLogger::Get ()->Write (FROM, LogNotice,
                             "Pointer: mouse at %d dpi, acceleration from the "
-                            "Mouse control panel (the ROM's own curve)", nDpi);
-#endif
+                            "Mouse control panel", nDpi);
+    }
 
     InputAttachDevices ();
 }
