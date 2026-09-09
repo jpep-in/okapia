@@ -669,17 +669,29 @@ static void ReadMouseSettings (void)
 extern bool MacIsExecuting (void);
 extern bool MacHasBeenIdle (void);
 
-static void TellMacTheMouseResolution (void)
+void TellMacTheMouseResolution (void)
 {
     static bool s_bDone;
-    // MacIsExecuting() only says an interpreter is running; the Cursor Device
-    // Manager exists once the System is up, and idling is how the Macintosh
-    // says it has finished starting.
-    if (s_bDone || !MacIsExecuting () || !MacHasBeenIdle ())
+    if (s_bDone || !MacIsExecuting ())
     {
         return;
     }
     s_bDone = true;
+
+    /*
+     *  Called from idle_wait(), and the call site is not a detail.
+     *
+     *  The stub below asks the Memory Manager for a block and gives it back,
+     *  which means re-entering the Toolbox. From the drain that is between two
+     *  arbitrary instructions — possibly inside the Memory Manager itself — and
+     *  a heap corrupted there surfaces later and somewhere else entirely: once
+     *  measured as a data abort inside DiskInterrupt(), a second and a half
+     *  afterwards, with nothing to connect the two.
+     *
+     *  idle_wait() is the Macintosh saying it has run out of work, from inside
+     *  its own event loop (main_circle.cpp). It is a defined point, the System
+     *  is fully up, and nothing of ours is half-finished.
+     */
 
     static const uint8 Proc[] =
     {
@@ -754,9 +766,6 @@ void InputDrain (void)
 {
     s_nDrains++;
     ReadMouseSettings ();
-#ifndef SHEEPSHAVER
-    TellMacTheMouseResolution ();
-#endif
 
     // Every one of these six calls raises INTFLAG_ADB and triggers the
     // interrupt itself (adb.cpp:248, :264, :312), so nothing here does.

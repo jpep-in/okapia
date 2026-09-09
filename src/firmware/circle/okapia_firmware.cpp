@@ -338,6 +338,7 @@ static void LoadSettings (TSettings *pSettings)
     const int32 nRAM = PrefsFindInt32 ("ramsize");
     pSettings->V.nMemoryMB  = SettingsMemoryOffered ((unsigned) (nRAM / (1024 * 1024)));
     pSettings->V.nFrameSkip = PrefsFindInt32 ("frameskip");
+    pSettings->V.nMouseDpi  = PrefsFindInt32 ("mousedpi");
 
     // Silence is what an unreadable value means, and nosound wins wherever the
     // two disagree — audio_circle.cpp reads them the same way. A device claimed
@@ -385,6 +386,7 @@ static void SaveSettings (const TSettings *pSettings)
 {
     PrefsReplaceInt32 ("ramsize", (int32) pSettings->V.nMemoryMB * 1024 * 1024);
     PrefsReplaceInt32 ("frameskip", pSettings->V.nFrameSkip);
+    PrefsReplaceInt32 ("mousedpi", pSettings->V.nMouseDpi);
 
     PrefsReplaceString ("soundoutput", SOUND_NAMES[pSettings->V.nSound]);
     // Kept in step rather than replaced: upstream code and every prefs file

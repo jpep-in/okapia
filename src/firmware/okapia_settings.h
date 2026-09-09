@@ -52,6 +52,7 @@ struct TSettingsValues
 {
     unsigned nMemoryMB;
     int      nFrameSkip;                // 0 is Dynamic; otherwise VBLs per frame
+    int      nMouseDpi;                 // what the pointing device reports per inch
     unsigned nSound;                    // TSoundOutput
     unsigned nLanguage;                 // TLanguage
     // Open the boot menu at every start, without holding Option and without

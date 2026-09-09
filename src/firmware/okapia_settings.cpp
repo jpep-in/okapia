@@ -15,6 +15,7 @@ static TPage   s_Page;
 
 static int s_nMemory   = -1;
 static int s_nRefresh  = -1;
+static int s_nMouse    = -1;
 static int s_nSound    = -1;
 static int s_nLanguage = -1;
 static int s_nBootMenu = -1;
@@ -46,12 +47,40 @@ static const struct { int nSkip; const char *pRate; } REFRESH[] =
 };
 static const unsigned REFRESH_COUNT = sizeof REFRESH / sizeof REFRESH[0];
 
+// What the pointing device reports per inch. A Macintosh assumes 200 and has no
+// way to learn otherwise, so this is how it is told — and it is worth a place
+// on this page rather than a line in a file on the card: correcting it means
+// correcting the feel of the pointer, and nobody should have to pull the card
+// and find another computer to do that.
+static const int MOUSE_DPI[] = { 100, 200, 400, 600, 800, 1000 };
+static const unsigned MOUSE_DPI_COUNT = sizeof MOUSE_DPI / sizeof MOUSE_DPI[0];
+
 static char       s_MemoryText[MEMORY_COUNT][16];
 static TListItem  s_MemoryItems[MEMORY_COUNT];
 static char       s_RefreshText[REFRESH_COUNT + 1][16];
 static TListItem  s_RefreshItems[REFRESH_COUNT + 1];
+static char       s_MouseText[MOUSE_DPI_COUNT][16];
+static TListItem  s_MouseItems[MOUSE_DPI_COUNT];
 static TListItem  s_SoundItems[SoundOutputCount];
 static TListItem  s_LanguageItems[LanguageCount];
+
+// The nearest offered value, so a card carrying something we do not list — set
+// by hand, or by a later version — comes back as the closest thing on the menu
+// rather than as the first entry.
+static int MouseDpiIndex (int nDpi)
+{
+    int nBest = 0;
+    for (unsigned i = 1; i < MOUSE_DPI_COUNT; i++)
+    {
+        const int a = MOUSE_DPI[i]     > nDpi ? MOUSE_DPI[i]     - nDpi : nDpi - MOUSE_DPI[i];
+        const int b = MOUSE_DPI[nBest] > nDpi ? MOUSE_DPI[nBest] - nDpi : nDpi - MOUSE_DPI[nBest];
+        if (a < b)
+        {
+            nBest = (int) i;
+        }
+    }
+    return nBest;
+}
 
 static void BuildMenus (void)
 {
@@ -82,6 +111,18 @@ static void BuildMenus (void)
         s_RefreshItems[i + 1].pText  = s_RefreshText[i + 1];
         s_RefreshItems[i + 1].pIcon  = 0;
         s_RefreshItems[i + 1].nState = StateNormal;
+    }
+
+    // The unit is in the value rather than the label, so the row stays short in
+    // every language and the number carries its own meaning.
+    for (unsigned i = 0; i < MOUSE_DPI_COUNT; i++)
+    {
+        unsigned n = StrAppendNumber (s_MouseText[i], sizeof s_MouseText[i], 0,
+                                      MOUSE_DPI[i]);
+        StrAppend (s_MouseText[i], sizeof s_MouseText[i], n, " dpi");
+        s_MouseItems[i].pText  = s_MouseText[i];
+        s_MouseItems[i].pIcon  = 0;
+        s_MouseItems[i].nState = StateNormal;
     }
 
     static const TStringId SoundNames[SoundOutputCount] =
@@ -167,6 +208,7 @@ void SettingsSync (TSettings *pSettings)
 
     s_Widgets[s_nMemory].nChoice   = MemoryIndex (pSettings->V.nMemoryMB);
     s_Widgets[s_nRefresh].nChoice  = RefreshIndex (pSettings->V.nFrameSkip);
+    s_Widgets[s_nMouse].nChoice    = MouseDpiIndex (pSettings->V.nMouseDpi);
     s_Widgets[s_nSound].nChoice    = (int) pSettings->V.nSound;
     s_Widgets[s_nLanguage].nChoice = (int) pSettings->V.nLanguage;
 
@@ -289,6 +331,13 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
     p->nItems = REFRESH_COUNT + 1;
     LayoutRowGap (&Layout);
 
+    R = Row (&s_Page, nPopup, nLabel, StrMouseDpi, false);
+    s_nMouse = (int) s_Page.nCount;
+    p = PageAdd (&s_Page, WidgetPopup, R, 0, StateNormal);
+    p->pItems = s_MouseItems;
+    p->nItems = MOUSE_DPI_COUNT;
+    LayoutRowGap (&Layout);
+
     R = Row (&s_Page, nPopup, nLabel, StrSound, false);
     s_nSound = (int) s_Page.nCount;
     p = PageAdd (&s_Page, WidgetPopup, R, 0, StateNormal);
@@ -382,6 +431,14 @@ TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex)
             // page out again rather than draw one label in another's button.
             SettingsSync (pSettings);
             return SettingsRelayout;
+        }
+    }
+    else if (nIndex == s_nMouse)
+    {
+        const int n = s_Widgets[s_nMouse].nChoice;
+        if (n >= 0 && n < (int) MOUSE_DPI_COUNT)
+        {
+            pSettings->V.nMouseDpi = MOUSE_DPI[n];
         }
     }
     else if (nIndex == s_nRefresh)

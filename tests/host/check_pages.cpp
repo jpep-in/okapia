@@ -202,6 +202,11 @@ static int Find (TWidgetType Type, const char *pText)
 
 // The nth pop-up on the page, in layout order — which is the order they are
 // read in, and the only stable way to name one: their text is their value.
+// The nth popup down the settings page, in the order it lays them out:
+// 0 memory, 1 screen refresh, 2 mouse, 3 sound, 4 language. Positional, so
+// inserting a row shifts everything below it — which is exactly what happened
+// when the mouse row arrived, and the four failures all said "sound" while
+// meaning "the row above sound".
 static int Popup (unsigned nWhich)
 {
     TWidget *pW = 0;
@@ -321,8 +326,8 @@ int main (void)
     // Off is first, so a value that cannot be read leaves the machine silent —
     // a device claimed and not working is what froze the guest once already.
     Expect (SoundOff == 0, "le son coupé est la première valeur");
-    Choose (Popup (2), SoundHDMI);
-    SettingsOperate (&s_Settings, Popup (2));
+    Choose (Popup (3), SoundHDMI);
+    SettingsOperate (&s_Settings, Popup (3));
     Expect (s_Settings.V.nSound == SoundHDMI, "on peut choisir la sortie HDMI");
 
     // A board without USB audio shows the entry and greys it. An option that
@@ -332,7 +337,7 @@ int main (void)
     {
         TWidget *pW = 0;
         SettingsWidgets (&pW);
-        const TWidget &Menu = pW[Popup (2)];
+        const TWidget &Menu = pW[Popup (3)];
         Expect ((Menu.pItems[SoundUSB].nState & StateDisabled) != 0,
                 "sans USB, l'entrée est là et inactive");
         Expect ((Menu.pItems[SoundJack].nState & StateDisabled) == 0,
@@ -367,8 +372,8 @@ int main (void)
     {
         const TLanguage Was = StringsLanguage ();
         const unsigned nOther = (Was + 1) % LanguageCount;
-        Choose (Popup (3), (int) nOther);
-        Expect (SettingsOperate (&s_Settings, Popup (3)) == SettingsRelayout,
+        Choose (Popup (4), (int) nOther);
+        Expect (SettingsOperate (&s_Settings, Popup (4)) == SettingsRelayout,
                 "changer de langue demande une nouvelle mise en page");
         Expect (StringsLanguage () == (TLanguage) nOther, "et la langue a déjà changé");
         StringsSetLanguage (Was);

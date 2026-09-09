@@ -358,6 +358,12 @@ void idle_wait (void)
     }
     s_nIdleCalls++;
 
+    // The one point at which the Macintosh is known to be between jobs rather
+    // than inside one, which is what anything re-entering the Toolbox needs.
+    // Does its work once and returns immediately ever after.
+    extern void TellMacTheMouseResolution (void);
+    TellMacTheMouseResolution ();
+
     CTimer::SimpleusDelay (100);
 }
 
