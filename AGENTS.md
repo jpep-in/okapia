@@ -495,6 +495,26 @@ too, and a `malloc` and a `free` per floating-point instruction, which this proj
   `FwOutputClaim()` (`okapia_output.h`), on the model of the one mouse registration. **Before adding
   any registration, claim or `push_back` to a start path, ask what the fifth restart does to it**, and
   log the free heap per round: a number that does not move is the cheapest proof there is.
+- **And ask it of the *other Macintosh* too, because a guard in `PLATFORM_SRCS` is a guard per
+  engine.** Only `SHARED_SRCS` exists once — the board, the Mac RAM block, the entry point, the
+  firmware. Everything else is compiled twice on purpose, so a `static bool s_bArmed` in
+  `tick_circle.cpp` is two variables, and neither Macintosh can see the other's claim. It cost a
+  halted board one hour after the claim was written: `CUserTimer` connects `ARM_IRQ_TIMER1`, and
+  `interrupt.cpp:145` asserts that the line is free, so the second engine of a session tripped it
+  the moment the boot menu handed over. A Circle assertion halts, which under QEMU looks exactly
+  like the emulator quitting by itself — and that is how it was reported. **A claim on the
+  hardware belongs to `hal_circle.cpp`, and the engine only leaves its handler**, the way
+  `FwInputPassMouseTo()` and `FwOutputClaim()` already do. The log says when the second engine
+  finds it taken, because "it did not crash" is not the same evidence as "the second claim was
+  handled".
+- **The mirror of that rule: a symbol the PowerPC half references cannot be defined in the shared
+  half.** The merge renames every symbol that half *defines* (`ppc__`), and a reference renames
+  with it — so a definition sitting in `obj-shared` keeps its bare name while the reference goes
+  looking for the prefixed one, and the link fails. `ppc_check_ticks_quantum` is declared in
+  `ppc-cpu.hpp` (patched) and defined in `sheepshaver/cpu_ticks_circle.cpp`, both inside the
+  PowerPC half, which is why it binds. **The two rules pull in opposite directions across the same
+  line**: a hardware claim must be shared because the resource is one, and a renamed symbol must
+  not be, because the rename says so.
 - **`quit_program` stays set after the interpreter leaves** (`newcpu.cpp:1562`): upstream exits the
   process next and never has to start again. A second `Start680x0()` therefore returns at once, which
   reads exactly like "the Macintosh would not start". `MacRestartArm()` clears it.
