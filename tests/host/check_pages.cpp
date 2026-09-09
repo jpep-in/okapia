@@ -18,6 +18,7 @@
 
 #include "okapia_confirm.h"
 #include "okapia_info.h"
+#include "okapia_newvolume.h"
 #include "okapia_screen.h"
 #include "okapia_settings.h"
 #include "okapia_strings.h"
@@ -25,6 +26,7 @@
 void SettingsSample (TSettings *p);
 void InfoSample (TInfo *p);
 void ConfirmSample (TConfirm *p);
+void NewVolumeSample (TNewVolume *p);
 
 static unsigned s_nFailures;
 
@@ -158,6 +160,14 @@ static void Geometry (unsigned nScale)
     n = ConfirmWidgets (&pW);
     CheckOverlap (&T, pW, n, "confirmation : rien ne se chevauche");
     CheckFrame (&T, ConfirmDialog (), pW, n, "confirmation : rien ne dépasse");
+
+    TNewVolume New;
+    NewVolumeSample (&New);
+    NewVolumeDraw (&s_Surface, &New);
+    n = NewVolumeWidgets (&pW);
+    CheckOverlap (&T, pW, n, "nouveau volume : rien ne se chevauche");
+    CheckFrame (&T, NewVolumeDialog (), pW, n, "nouveau volume : rien ne dépasse");
+    Expect (!NewVolumeOverflowed (), "nouveau volume : la feuille tient");
 }
 
 /*
@@ -245,6 +255,32 @@ int main (void)
     // Nothing has been touched, so nothing asks for a restart and the button
     // says the smaller of the two things it can say.
     Expect (!SettingsNeedsRestart (&s_Settings), "à l'ouverture, aucun redémarrage requis");
+
+    // La case qui ouvre le menu à chaque démarrage. Elle est à Okapia et pas au
+    // Macintosh, donc elle ne demande aucun redémarrage : le prochain allumage
+    // la lit, c'est tout.
+    {
+        TWidget *pC = 0;
+        const unsigned nAll = SettingsWidgets (&pC);
+        int nBox = -1;
+        for (unsigned i = 0; i < nAll; i++)
+        {
+            if (pC[i].Type == WidgetCheckbox && pC[i].pText != 0
+                && strcmp (pC[i].pText, Str (StrBootMenu)) == 0)
+            {
+                nBox = (int) i;
+            }
+        }
+        Expect (nBox >= 0, "la case du menu de démarrage est là");
+        const bool bWas = s_Settings.V.bBootMenu;
+        SettingsOperate (&s_Settings, nBox);
+        Expect (s_Settings.V.bBootMenu != bWas, "elle bascule");
+        Expect (((pC[nBox].nState & StateChecked) != 0) == s_Settings.V.bBootMenu,
+                "et la case suit le modèle");
+        Expect (!SettingsNeedsRestart (&s_Settings),
+                "sans demander de redémarrage : le prochain allumage la lit");
+        SettingsOperate (&s_Settings, nBox);
+    }
     Expect (Find (WidgetButton, Str (StrSave)) >= 0, "le bouton dit « Enregistrer »");
 
     // The memory is the one setting the board cannot take at a Macintosh's
@@ -366,6 +402,31 @@ int main (void)
         const TScreenReply R = ScreenEvent (&s_Screen, &Ret);
         Expect (R.Result == ScreenActivated && ConfirmOperate (R.nIndex) == ConfirmYes,
                 "Entrée vaut l'assentiment");
+
+        // Et Échap vaut le refus, ce qui est l'autre moitié du marché : deux
+        // réponses, deux touches, et donc rien à parcourir au clavier.
+        const TEvent Esc = { EventKeyDown, OkKeyEscape, 0, 0, 0, 0 };
+        Expect (ScreenEvent (&s_Screen, &Esc).Result == ScreenCancelled,
+                "Échap vaut le refus");
+
+        // Aucun des deux boutons ne prend le focus, et l'écran n'en pose nulle
+        // part : l'anneau du bouton par défaut disait « Entrée fait ceci », et
+        // celui du focus « le clavier est ici » — deux anneaux l'un dans
+        // l'autre pour dire la même chose.
+        Expect (!WidgetFocusable (&pW[nYes]) && !WidgetFocusable (&pW[nNo]),
+                "aucune des deux réponses ne se focalise");
+        Expect (s_Screen.nFocus < 0, "et l'alerte n'a pas de focus du tout");
+        unsigned nRings = 0;
+        for (unsigned i = 0; i < n; i++)
+        {
+            if ((pW[i].nState & StateFocused) != 0) nRings++;
+        }
+        Expect (nRings == 0, "donc rien ne porte deux anneaux");
+
+        // Tab ne fait rien non plus, faute de quoi qu'on lui donne.
+        const TEvent Tab = { EventKeyDown, OkKeyTab, 0, 0, 0, 0 };
+        ScreenEvent (&s_Screen, &Tab);
+        Expect (s_Screen.nFocus < 0, "et Tab n'en invente pas");
     }
 
     printf ("\nles informations\n");
@@ -381,14 +442,25 @@ int main (void)
         {
             if (WidgetFocusable (&pW[i])) nFocusable++;
         }
-        // One way out and nothing else to operate: it is a page one reads.
-        Expect (nFocusable == 1, "une seule chose s'y actionne");
+        // Une page qu'on lit : une seule sortie, et donc rien à parcourir au
+        // clavier. Entrée en sort, Échap aussi, et aucun anneau ne se superpose
+        // à celui du bouton par défaut.
+        Expect (nFocusable == 0, "rien ne s'y focalise");
         int nBack = -1;
         for (unsigned i = 0; i < n; i++)
         {
-            if (WidgetFocusable (&pW[i])) nBack = (int) i;
+            if (pW[i].Type == WidgetButton) nBack = (int) i;
         }
-        Expect (nBack >= 0 && InfoIsBack (nBack), "et c'est le retour");
+        Expect (nBack >= 0 && InfoIsBack (nBack), "et la seule sortie est le retour");
+        Expect (nBack >= 0 && (pW[nBack].nState & StateDefault) != 0,
+                "qui porte l'anneau par défaut, et lui seul");
+
+        ScreenInit (&s_Screen, &s_Theme, pW, n);
+        Expect (s_Screen.nFocus < 0, "l'écran s'ouvre sans focus");
+        const TEvent Ret2 = { EventKeyDown, OkKeyReturn, 0, 0, 0, 0 };
+        const TScreenReply RB = ScreenEvent (&s_Screen, &Ret2);
+        Expect (RB.Result == ScreenActivated && InfoIsBack (RB.nIndex),
+                "Entrée sort du volet");
 
         // A value too long is truncated rather than refused: a pane that will
         // not open is worth nothing.

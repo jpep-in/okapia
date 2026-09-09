@@ -17,6 +17,7 @@ static int s_nMemory   = -1;
 static int s_nRefresh  = -1;
 static int s_nSound    = -1;
 static int s_nLanguage = -1;
+static int s_nBootMenu = -1;
 static int s_nShared   = -1;
 static int s_nPath     = -1;
 static int s_nName     = -1;
@@ -169,19 +170,21 @@ void SettingsSync (TSettings *pSettings)
     s_Widgets[s_nSound].nChoice    = (int) pSettings->V.nSound;
     s_Widgets[s_nLanguage].nChoice = (int) pSettings->V.nLanguage;
 
-    s_Widgets[s_nShared].nState = (s_Widgets[s_nShared].nState & StateFocused)
-                                | (pSettings->V.bShared ? StateChecked : StateNormal);
+    WidgetSetState (&s_Widgets[s_nBootMenu],
+                    pSettings->V.bBootMenu ? StateChecked : StateNormal);
+    WidgetSetState (&s_Widgets[s_nShared],
+                    pSettings->V.bShared ? StateChecked : StateNormal);
 
     // A volume nobody will see needs neither a place nor a name. Both fields say
     // so by going grey rather than by accepting letters that lead nowhere.
     const unsigned nShared = pSettings->V.bShared ? StateNormal : StateDisabled;
-    s_Widgets[s_nPath].nState = (s_Widgets[s_nPath].nState & StateFocused) | nShared;
-    s_Widgets[s_nName].nState = (s_Widgets[s_nName].nState & StateFocused) | nShared;
+    WidgetSetState (&s_Widgets[s_nPath], nShared);
+    WidgetSetState (&s_Widgets[s_nName], nShared);
 
     // The note lights up when it becomes true, instead of standing there
     // explaining a mark nobody has earned yet.
-    s_Widgets[s_nNote].nState = SettingsNeedsRestart (pSettings) ? StateNormal
-                                                                 : StateDisabled;
+    WidgetSetState (&s_Widgets[s_nNote],
+                    SettingsNeedsRestart (pSettings) ? StateNormal : StateDisabled);
 }
 
 /*
@@ -298,6 +301,22 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
     p = PageAdd (&s_Page, WidgetPopup, R, 0, StateNormal);
     p->pItems = s_LanguageItems;
     p->nItems = LanguageCount;
+    LayoutRowGap (&Layout);
+
+    // On its own line and full width: the label is a sentence, not a noun, and
+    // a sentence squeezed into the column the other labels share would be cut.
+    // It belongs to this group rather than to the shared folder below — both
+    // are about Okapia and not about the Macintosh, and the folder's three
+    // controls are one idea that a fourth would join by accident.
+    {
+        TRow Band;
+        RowBegin (&Band, pTheme, LayoutRow (&Layout, pTheme->M.nCheckSize, StateFocused));
+        const unsigned nWide = pTheme->M.nCheckSize + pTheme->M.nGap
+                             + GfxTextWidth (pTheme->pBodyFont, Str (StrBootMenu));
+        s_nBootMenu = (int) s_Page.nCount;
+        PageAdd (&s_Page, WidgetCheckbox, RowNext (&Band, nWide, StateFocused),
+                 Str (StrBootMenu), StateNormal);
+    }
     LayoutSectionGap (&Layout);
 
     // The shared folder is three controls and one idea, so they sit together with
@@ -389,6 +408,10 @@ TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex)
             StringsSetLanguage ((TLanguage) n);
             return SettingsRelayout;
         }
+    }
+    else if (nIndex == s_nBootMenu)
+    {
+        pSettings->V.bBootMenu = !pSettings->V.bBootMenu;
     }
     else if (nIndex == s_nShared)
     {

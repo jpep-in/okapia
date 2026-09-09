@@ -54,6 +54,11 @@ struct TSettingsValues
     int      nFrameSkip;                // 0 is Dynamic; otherwise VBLs per frame
     unsigned nSound;                    // TSoundOutput
     unsigned nLanguage;                 // TLanguage
+    // Open the boot menu at every start, without holding Option and without
+    // waiting out the window. A habit rather than a setting of the Macintosh:
+    // whoever changes System every day wants it, whoever changes it twice a
+    // year does not — and a board with no keyboard has no other way to ask.
+    bool     bBootMenu;
     bool     bShared;                   // the shared folder is offered at all
     char     SharedPath[SETTINGS_PATH]; // where it is on the card
     char     SharedName[SETTINGS_NAME]; // what the Mac calls it on the desktop

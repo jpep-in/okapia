@@ -50,6 +50,13 @@ int main (int argc, char **argv)
 
     TChooser Model;
     ChooserSample (&Model);
+    // Which row to show selected. The emulator popup speaks about it, so a
+    // picture of the screen with a 68k volume selected never shows the popup
+    // live — and that is the half worth looking at.
+    if (argc > 4)
+    {
+        Model.nStartup = atoi (argv[4]);
+    }
     ChooserDraw (&s, &Model);
 
     // And the loop settles the focus, exactly as the firmware does before it
@@ -60,6 +67,16 @@ int main (int argc, char **argv)
     const unsigned n = ChooserWidgets (&pW);
     TScreen Screen;
     ScreenInit (&Screen, &T, pW, n);
+    // Scrolled to the selection, as the loop does the moment anything is
+    // operated: a picture of a chooser whose selected row is off the bottom is
+    // a picture of the wrong thing.
+    for (unsigned i = 0; i < n; i++)
+    {
+        if (pW[i].Type == WidgetList)
+        {
+            WidgetListReveal (&pW[i], &T);
+        }
+    }
     ChooserRepaint (&s);
 
     const bool bOK = WritePPM (pOut, px, w, h);

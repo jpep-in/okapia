@@ -25,10 +25,24 @@ shut_down	Shut down	Éteindre
 forget_pram	Forget the parameter RAM	Oublier la PRAM
 rescue_disk	Rescue disk	Disque de secours
 read_only	Read-only	Lecture seule
+new_volume	+ New volume…	+ Nouveau volume…
+new_volume_title	New volume	Nouveau volume
+untitled	Untitled	Sans titre
+create	Create	Créer
+size	Size	Taille
+free_on_card	free on the card	libres sur la carte
+card_full	Not enough room on the card	Pas assez de place sur la carte
+mount_as	Mount as	Monter comme
+mount_hd	Hard disk	Disque dur
+mount_hd_read_only	Hard disk, read-only	Disque dur, lecture seule
+mount_cd	CD-ROM	CD-ROM
 no_system	No system	Aucun système
 cpu_68k	68k	68k
 cpu_powerpc	PowerPC	PowerPC
 cpu_universal	universal	universel
+emulator	Emulator	Émulateur
+emulator_68k	68k (Basilisk II)	68k (Basilisk II)
+emulator_powerpc	PowerPC (SheepShaver)	PowerPC (SheepShaver)
 volume_name	Volume name	Nom du volume
 shared_folder	Shared folder	Dossier partagé
 screen_refresh	Screen refresh	Rafraîchissement
@@ -36,6 +50,7 @@ dynamic	Dynamic	Dynamique
 sound	Sound	Son
 sound_off	Off	Coupé
 language	Language	Langue
+boot_menu	Always show this menu at startup	Toujours afficher ce menu au démarrage
 repair_title	Repair the volume?	Réparer le volume ?
 repair_body	This volume was not unmounted properly. Okapia can repair it before starting, which takes a few seconds and does not touch your files.	Ce volume n’a pas été démonté proprement. Okapia peut le réparer avant de démarrer, ce qui prend quelques secondes et ne touche pas à vos fichiers.
 repair_now	Repair	Réparer

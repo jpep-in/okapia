@@ -29,6 +29,7 @@
 #include "okapia_chooser.h"
 #include "okapia_confirm.h"
 #include "okapia_info.h"
+#include "okapia_newvolume.h"
 #include "okapia_settings.h"
 #include "okapia_gfx.h"
 #include "okapia_screen.h"
@@ -124,9 +125,52 @@ static void GatherVolumes (TChooser *pChooser)
         v->bBootable = Found[i].Blessed != 0;
         v->bClean    = Found[i].bClean;
         v->nFreeKB   = Found[i].FreeKB;
+        v->nTotalKB  = Found[i].TotalKB;
         v->bMounted  = false;
-        v->bReadOnly = false;
+        v->Mount     = MountHD;
+        // Nothing remembered yet; ChooserSync() settles it from the System, and
+        // the preferences below override it where there was a choice to make.
+        v->Engine    = CPUUnknown;
         pChooser->nCount++;
+    }
+
+    // What the preferences remember about the emulator, before the disks: a
+    // volume named by an `engine` line but absent from the card is simply
+    // ignored, exactly as a `disk` line for one is.
+    for (int nIndex = 0; ; nIndex++)
+    {
+        const char *pLine = PrefsFindString ("engine", nIndex);
+        if (pLine == 0)
+        {
+            break;
+        }
+        // "<path> <engine>" — the path first because that is what identifies
+        // the volume, and one space because SavePrefsToStream writes one.
+        const char *pSpace = pLine;
+        while (*pSpace != '\0' && *pSpace != ' ')
+        {
+            pSpace++;
+        }
+        if (*pSpace == '\0')
+        {
+            continue;
+        }
+        const unsigned nPathLen = (unsigned) (pSpace - pLine);
+        const bool bPowerPC = pSpace[1] == 'p';
+        for (unsigned i = 0; i < pChooser->nCount; i++)
+        {
+            const char *a = pChooser->Volumes[i].Path;
+            unsigned k = 0;
+            while (k < nPathLen && a[k] != '\0' && a[k] == pLine[k])
+            {
+                k++;
+            }
+            if (k == nPathLen && a[k] == '\0')
+            {
+                pChooser->Volumes[i].Engine = bPowerPC ? CPUPowerPC : CPU68k;
+                break;
+            }
+        }
     }
 
     // Now what the preferences say. The first disk they name is the one the ROM
@@ -153,9 +197,45 @@ static void GatherVolumes (TChooser *pChooser)
             {
                 continue;
             }
-            pChooser->Volumes[i].bMounted  = true;
-            pChooser->Volumes[i].bReadOnly = bReadOnly;
+            pChooser->Volumes[i].bMounted = true;
+            pChooser->Volumes[i].Mount    = bReadOnly ? MountHDReadOnly : MountHD;
             if (pChooser->nStartup < 0 && pChooser->Volumes[i].bBootable)
+            {
+                pChooser->nStartup = (int) i;
+            }
+            break;
+        }
+    }
+
+    // And the CD-ROM drives. The startup volume may be one of them, and what
+    // says so is `bootdriver`: the ROM is told which driver to start from, not
+    // which line comes first (main.cpp:139).
+    const bool bBootFromCd = PrefsFindInt32 ("bootdriver") == CHOOSER_BOOT_CDROM;
+    for (int nIndex = 0; ; nIndex++)
+    {
+        const char *pCd = PrefsFindString ("cdrom", nIndex);
+        if (pCd == 0)
+        {
+            break;
+        }
+        for (unsigned i = 0; i < pChooser->nCount; i++)
+        {
+            const char *a = pChooser->Volumes[i].Path, *b = pCd;
+            while (*a != '\0' && *a == *b)
+            {
+                a++;
+                b++;
+            }
+            if (*a != '\0' || *b != '\0')
+            {
+                continue;
+            }
+            pChooser->Volumes[i].bMounted = true;
+            pChooser->Volumes[i].Mount    = MountCD;
+            // The first disc listed, when the machine is set to start from one:
+            // that is the drive the CD driver offers first, which is the only
+            // thing that distinguishes two discs to a ROM told only the driver.
+            if (bBootFromCd && nIndex == 0 && pChooser->Volumes[i].bBootable)
             {
                 pChooser->nStartup = (int) i;
             }
@@ -179,6 +259,40 @@ static void ApplyVolumes (const TChooser *pChooser)
     {
         PrefsAddString ("disk", Lines[i]);
         CLogger::Get ()->Write (FROM, LogNotice, "disk %s", Lines[i]);
+    }
+
+    // Which driver the Macintosh starts from. Written every time, including the
+    // 0 that means "no preference": a card that once started from a disc would
+    // otherwise go on asking for the CD driver after the disc was gone.
+    const int nBootDriver = ChooserBootDriver (pChooser);
+    PrefsReplaceInt32 ("bootdriver", nBootDriver);
+    CLogger::Get ()->Write (FROM, LogNotice, "bootdriver %d", nBootDriver);
+
+    // The same for the CD-ROM drives, and it has to be the same call: a volume
+    // moved from one list to the other has to leave the first, and rewriting
+    // only the list it arrived in would mount it twice.
+    const unsigned nCds = ChooserCdromLines (pChooser, Lines, CHOOSER_MAX);
+    while (PrefsFindString ("cdrom", 0) != 0)
+    {
+        PrefsRemoveItem ("cdrom", 0);
+    }
+    for (unsigned i = 0; i < nCds; i++)
+    {
+        PrefsAddString ("cdrom", Lines[i]);
+        CLogger::Get ()->Write (FROM, LogNotice, "cdrom %s", Lines[i]);
+    }
+
+    // The same treatment for the emulator: replaced rather than edited, because
+    // a volume that stopped being universal has to lose its line as well.
+    const unsigned nEngines = ChooserEngineLines (pChooser, Lines, CHOOSER_MAX);
+    while (PrefsFindString ("engine", 0) != 0)
+    {
+        PrefsRemoveItem ("engine", 0);
+    }
+    for (unsigned i = 0; i < nEngines; i++)
+    {
+        PrefsAddString ("engine", Lines[i]);
+        CLogger::Get ()->Write (FROM, LogNotice, "engine %s", Lines[i]);
     }
     SavePrefs ();
 }
@@ -243,6 +357,7 @@ static void LoadSettings (TSettings *pSettings)
     }
 
     pSettings->V.nLanguage = (unsigned) StringsLanguage ();
+    pSettings->V.bBootMenu = PrefsFindBool ("bootmenu");
 
     const char *pShared = PrefsFindString ("extfs");
     pSettings->V.bShared = pShared != 0 && pShared[0] != '\0';
@@ -278,6 +393,7 @@ static void SaveSettings (const TSettings *pSettings)
     PrefsReplaceBool ("nosound", pSettings->V.nSound == SoundOff);
 
     PrefsReplaceString ("language", StringsCode ((TLanguage) pSettings->V.nLanguage));
+    PrefsReplaceBool ("bootmenu", pSettings->V.bBootMenu);
     PrefsReplaceString ("extfs", pSettings->V.bShared
                                  ? (pSettings->V.SharedPath[0] != '\0'
                                     ? pSettings->V.SharedPath : SHARED_PATH)
@@ -286,12 +402,14 @@ static void SaveSettings (const TSettings *pSettings)
     SavePrefs ();
 
     CLogger::Get ()->Write (FROM, LogNotice,
-                            "Settings: %u MB, frameskip %d, sound %s, language %s, %s",
+                            "Settings: %u MB, frameskip %d, sound %s, language %s, %s, %s",
                             pSettings->V.nMemoryMB, (int) pSettings->V.nFrameSkip,
                             SOUND_NAMES[pSettings->V.nSound],
                             StringsCode ((TLanguage) pSettings->V.nLanguage),
                             pSettings->V.bShared ? pSettings->V.SharedPath
-                                                 : "no shared folder");
+                                                 : "no shared folder",
+                            pSettings->V.bBootMenu ? "boot menu always"
+                                                   : "boot menu on Option");
 }
 
 /*
@@ -455,6 +573,12 @@ struct TPageDriver
     int      (*Operate) (int nIndex);
     void     (*Changed) (void);         // the selection moved; may be 0
     void     (*Relayout) (TSurface *);  // may be 0 when nothing can move
+    // What Escape means on this page, or 0 when it means nothing. A dialogue
+    // with two answers has a refusal and the key for it is Escape, exactly as
+    // Return is the key for the assent: neither needs the keyboard to be
+    // anywhere in particular, which is why an alert offers no navigation at
+    // all.
+    int      (*Cancel) (void);
 };
 
 static const int PageRelayout = -1;
@@ -499,6 +623,14 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
                 if (pDriver->Changed != 0)
                 {
                     pDriver->Changed ();
+                }
+            }
+            else if (Reply.Result == ScreenCancelled && pDriver->Cancel != 0)
+            {
+                const int nAnswer = pDriver->Cancel ();
+                if (nAnswer != 0)
+                {
+                    nResult = nAnswer;
                 }
             }
             else if (Reply.Result == ScreenActivated)
@@ -554,9 +686,16 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
  *  model would be drawing freed memory.
  */
 static TChooser  s_Chooser;
-static TSettings s_Settings;
-static TInfo     s_Info;
-static TConfirm  s_Confirm;
+
+TFirmwareEngine FirmwareWantedEngine (void)
+{
+    return ChooserStartupEngine (&s_Chooser) == CPUPowerPC ? FirmwareEnginePowerPC
+                                                           : FirmwareEngine68k;
+}
+static TSettings  s_Settings;
+static TInfo      s_Info;
+static TConfirm   s_Confirm;
+static TNewVolume s_NewVolume;
 
 static int ChooserAdapter (int nIndex)
 {
@@ -585,9 +724,202 @@ static int InfoAdapter (int nIndex)
     return InfoIsBack (nIndex) ? 1 : 0;
 }
 
+// A page one turns to is a page one comes back from, and Escape is how: it
+// costs nothing to offer and its absence is felt the first time somebody tries.
+static int InfoCancelled (void)
+{
+    return 1;
+}
+
+static int SettingsCancelled (void)
+{
+    return (int) SettingsBack;
+}
+
 static int ConfirmAdapter (int nIndex)
 {
     return (int) ConfirmOperate (nIndex);
+}
+
+// Escape is the refusal, and a message with nothing to refuse has none: an
+// alert whose only answer is "I see" is dismissed by that answer alone.
+static int ConfirmCancelled (void)
+{
+    return s_Confirm.pNo == 0 ? 0 : (int) ConfirmNo;
+}
+
+/*
+ *  Making a volume
+ *
+ *  Three steps and one rule. The rule is that a volume which does not fit
+ *  cannot be asked for, and the way that is enforced is by not offering the
+ *  size: the screen picks from a list this file computes, so there is no
+ *  refusal to write afterwards and no arithmetic repeated on both sides.
+ *
+ *  The file is created at its full size before anything is written into it.
+ *  That is not about speed: an image whose clusters are already allocated
+ *  cannot meet a full card halfway through a write the Macintosh believes has
+ *  succeeded, which is the one failure this project refuses to ship (AGENTS.md,
+ *  §Data safety). A volume that grows on demand would turn a full card into a
+ *  lost write at the worst possible moment.
+ */
+
+// What the card must keep for itself: the two parameter RAMs, a preferences
+// file that is rewritten in place at every pass through this screen — so it
+// needs room to be written before the old one is gone — the shared folder, and
+// enough slack that FatFs is never asked to allocate from nothing. A tenth of
+// what is free, and never less than this, because a tenth of very little is
+// nothing at all.
+static const unsigned long CARD_MARGIN_MB = 64;
+
+// The rungs offered, smallest first. It stops at 2 GB because HFS standard runs
+// out of allocation blocks there: 65535 of them, and libhfs sizes the block
+// from the volume (hfs.c:1573), so beyond that there is nothing left to give.
+static const unsigned long SIZE_RUNGS[] = { 20, 40, 80, 160, 320, 640, 1024, 2048 };
+
+static unsigned long CardFreeMB (void)
+{
+    DWORD nFreeClusters = 0;
+    FATFS *pFS = 0;
+    if (f_getfree ("SD:", &nFreeClusters, &pFS) != FR_OK || pFS == 0)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "Cannot read the card's free space");
+        return 0;
+    }
+    // Clusters to megabytes, in that order: the multiplication overflows a
+    // 32-bit count of bytes on any card worth using.
+    const unsigned long nSectorsPerMB = (1024UL * 1024) / FF_MAX_SS;
+    const unsigned long nSectors = (unsigned long) nFreeClusters * pFS->csize;
+    return nSectorsPerMB == 0 ? 0 : nSectors / nSectorsPerMB;
+}
+
+// The file name is ours, not the user's: a Macintosh volume is named in
+// MacRoman and may hold characters no FAT directory entry will take, so the
+// name that is asked for is the one the Mac shows and this is the one the card
+// carries. The first number nothing is using — a card whose volume1 was deleted
+// gets volume1 back, which is what somebody counting their files expects.
+static bool PickImagePath (char *pOut, size_t nSize)
+{
+    for (unsigned i = 1; i <= 99; i++)
+    {
+        snprintf (pOut, nSize, "/volume%u.image", i);
+        FILINFO Info;
+        char Full[80];
+        snprintf (Full, sizeof Full, "SD:%s", pOut);
+        if (f_stat (Full, &Info) != FR_OK)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Create the file at its full size. f_lseek past the end of a file opened for
+// writing is what allocates the clusters; f_expand would say so more plainly
+// but FF_USE_EXPAND is 0 in circle-stdlib's ffconf.h, which lives in external/
+// and is not ours to change.
+static bool MakeImageFile (const char *pFullPath, unsigned long nMB)
+{
+    FIL File;
+    if (f_open (&File, pFullPath, FA_CREATE_NEW | FA_WRITE) != FR_OK)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "%s: cannot create", pFullPath);
+        return false;
+    }
+    const FSIZE_t nBytes = (FSIZE_t) nMB * 1024 * 1024;
+    const FRESULT nSeek = f_lseek (&File, nBytes);
+    const bool bWhole = nSeek == FR_OK && f_tell (&File) == nBytes;
+    f_close (&File);
+
+    if (!bWhole)
+    {
+        // A file that could not be given its whole size is not a smaller
+        // volume, it is a volume the Macintosh would run off the end of. It
+        // goes, rather than being left for somebody to find later.
+        CLogger::Get ()->Write (FROM, LogError,
+                                "%s: only %lu MB could be allocated", pFullPath, nMB);
+        f_unlink (pFullPath);
+        return false;
+    }
+    return true;
+}
+
+// The sizes this card can actually offer, into the screen's own model.
+static void OfferSizes (TNewVolume *pNew)
+{
+    pNew->nFreeMB = CardFreeMB ();
+    const unsigned long nMargin = pNew->nFreeMB / 10 > CARD_MARGIN_MB
+                                ? pNew->nFreeMB / 10 : CARD_MARGIN_MB;
+    const unsigned long nRoom = pNew->nFreeMB > nMargin ? pNew->nFreeMB - nMargin : 0;
+
+    pNew->nSizes = 0;
+    for (unsigned i = 0; i < sizeof SIZE_RUNGS / sizeof SIZE_RUNGS[0]; i++)
+    {
+        if (SIZE_RUNGS[i] <= nRoom && pNew->nSizes < NEWVOLUME_SIZES)
+        {
+            pNew->SizeMB[pNew->nSizes++] = SIZE_RUNGS[i];
+        }
+    }
+    // The largest that fits, because somebody making their first volume on a
+    // card wants the card, and the ones who want less will say so.
+    pNew->nPick = pNew->nSizes == 0 ? 0 : pNew->nSizes - 1;
+}
+
+static int NewVolumeAdapter (int nIndex)
+{
+    return (int) NewVolumeOperate (&s_NewVolume, nIndex);
+}
+
+static int NewVolumeCancelled (void)
+{
+    return (int) NewVolumeCancel;
+}
+
+static void RunNewVolume (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme)
+{
+    memset (&s_NewVolume, 0, sizeof s_NewVolume);
+    snprintf (s_NewVolume.Name, sizeof s_NewVolume.Name, "%s", Str (StrUntitled));
+    OfferSizes (&s_NewVolume);
+    NewVolumeDraw (pShadow, &s_NewVolume);
+
+    static const TPageDriver Driver =
+    {
+        NewVolumeRepaint, NewVolumeWidgets, NewVolumeAdapter, 0, 0, NewVolumeCancelled
+    };
+    if (RunPage (pOutput, pShadow, pTheme, &Driver) != (int) NewVolumeCreate)
+    {
+        return;
+    }
+
+    char Path[64];
+    if (!PickImagePath (Path, sizeof Path))
+    {
+        CLogger::Get ()->Write (FROM, LogError, "No free image name on the card");
+        return;
+    }
+    char Full[80];
+    snprintf (Full, sizeof Full, "SD:%s", Path);
+
+    const unsigned long nMB = s_NewVolume.SizeMB[s_NewVolume.nPick];
+    if (!MakeImageFile (Full, nMB))
+    {
+        return;
+    }
+    // Formatted through the path the emulator will use, not the FatFs one:
+    // libhfs reaches the card through newlib, as it does everywhere else here.
+    if (!HfsFormat (Path, s_NewVolume.Name))
+    {
+        // Nothing of the user's is in it — it was made a moment ago — and a
+        // file that is not a volume would show up in the inventory as nothing
+        // at all, which is worse than not showing up.
+        f_unlink (Full);
+        return;
+    }
+    CLogger::Get ()->Write (FROM, LogNotice, "%s: created, %lu MB, \"%s\"",
+                            Path, nMB, s_NewVolume.Name);
+
+    // The card changed, so what the chooser is showing no longer describes it.
+    GatherVolumes (&s_Chooser);
 }
 
 /*
@@ -605,7 +937,7 @@ static bool Ask (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
 
     static const TPageDriver Driver =
     {
-        ConfirmRepaint, ConfirmWidgets, ConfirmAdapter, 0, 0
+        ConfirmRepaint, ConfirmWidgets, ConfirmAdapter, 0, 0, ConfirmCancelled
     };
     return RunPage (pOutput, pShadow, pTheme, &Driver) == (int) ConfirmYes;
 }
@@ -621,7 +953,10 @@ static void RunInfo (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme)
     GatherInfo (&s_Info, &s_Chooser, pOutput);
     InfoDraw (pShadow, &s_Info);
 
-    static const TPageDriver Driver = { InfoRepaint, InfoWidgets, InfoAdapter, 0, 0 };
+    static const TPageDriver Driver =
+    {
+        InfoRepaint, InfoWidgets, InfoAdapter, 0, 0, InfoCancelled
+    };
     RunPage (pOutput, pShadow, pTheme, &Driver);
 }
 
@@ -632,7 +967,8 @@ static TFirmwareResult RunSettings (TSurface *pOutput, TSurface *pShadow,
 
     static const TPageDriver SettingsDriver =
     {
-        SettingsRepaint, SettingsWidgets, SettingsAdapter, 0, SettingsRelayoutPage
+        SettingsRepaint, SettingsWidgets, SettingsAdapter, 0, SettingsRelayoutPage,
+        SettingsCancelled
     };
     for (;;)
     {
@@ -716,6 +1052,10 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
             RunInfo (pOutput, &Shadow, pTheme);
             break;
 
+        case ChooserNewVolume:
+            RunNewVolume (pOutput, &Shadow, pTheme);
+            break;
+
         case ChooserSettings:
             {
                 const TFirmwareResult R = RunSettings (pOutput, &Shadow, pTheme);
@@ -736,7 +1076,7 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
     return Result;
 }
 
-TFirmwareResult FirmwareRun (void)
+TFirmwareResult FirmwareRun (TFirmwareEngine Built)
 {
     // Claimed once for the life of the board and lent out, never taken and given
     // back: this runs again after every restart from Mac OS, and a mailbox
@@ -795,17 +1135,42 @@ TFirmwareResult FirmwareRun (void)
     // whether there is anything to start decides whether the window is the
     // right thing to show at all. It costs about a tenth of a second: the
     // inventory reads each image's master directory block, not its catalogue.
+    s_Chooser.Built = Built == FirmwareEnginePowerPC ? CPUPowerPC : CPU68k;
     GatherVolumes (&s_Chooser);
+    // Settles every volume's engine from its System and from what the card
+    // remembers, so the answer below is right even when the window is never
+    // opened — which is the ordinary boot. Not ChooserSync(): that speaks to
+    // components, and none has been laid out at this point.
+    ChooserSettleEngines (&s_Chooser);
     CLogger::Get ()->Write (FROM, LogNotice, "Chooser: %u volume(s), startup %d",
                             s_Chooser.nCount, s_Chooser.nStartup);
 
+    // Asked for once and for all: the window is skipped entirely, not shortened.
+    // Two seconds of nothing before a menu one has asked to see every time is
+    // two seconds of a machine looking broken — and on a board with no keyboard
+    // attached, Option is not an answer at all.
+    const bool bAlways = PrefsFindBool ("bootmenu");
+
     CLogger::Get ()->Write (FROM, LogNotice,
-                            "Output %ux%u, theme scale %u/16, language %s, %s, holding %u ms",
+                            "Output %ux%u, theme scale %u/16, language %s, %s, %s",
                             nWidth, nHeight, nScale16,
                             StringsCode (StringsLanguage ()),
-                            bKeyboard ? "keyboard attached" : "no keyboard", WINDOW_MS);
+                            bKeyboard ? "keyboard attached" : "no keyboard",
+                            bAlways ? "boot menu asked for" : "holding for Option");
 
-    for (unsigned nWaited = 0; nWaited < WINDOW_MS; nWaited += SLICE_MS)
+    // The window ends the moment it has its answer. Holding Option and then
+    // watching two seconds of nothing is two seconds of a machine that looks
+    // broken, and the wait was only ever there to give a hand time to arrive.
+    //
+    // Not the instant Option appears, though: Command-Option-P-R is four keys,
+    // and a keyboard reports them as they are scanned rather than all at once.
+    // Leaving on the first modifier would open the chooser at somebody who
+    // asked to forget the parameter RAM. So Option starts a short grace instead
+    // — long enough for the rest of a chord that is already held, far shorter
+    // than the window it replaces.
+    static const unsigned GRACE_MS = 250;
+    unsigned nStop = WINDOW_MS;
+    for (unsigned nWaited = 0; !bAlways && nWaited < nStop; nWaited += SLICE_MS)
     {
         // Drained rather than read, so that a window nobody touches cannot end
         // with a full queue: this one only wants the latch, but the queue is
@@ -815,6 +1180,12 @@ TFirmwareResult FirmwareRun (void)
         {
         }
         CTimer::Get ()->MsDelay (SLICE_MS);
+
+        if (nStop == WINDOW_MS && (FwInputSeenModifiers () & ModOption))
+        {
+            const unsigned nEnd = nWaited + SLICE_MS + GRACE_MS;
+            nStop = nEnd < WINDOW_MS ? nEnd : WINDOW_MS;
+        }
     }
 
     const unsigned nSeen = FwInputSeenModifiers ();
@@ -831,6 +1202,10 @@ TFirmwareResult FirmwareRun (void)
     const bool bOption = !bForgetPram
                       && (nSeen & ModOption)
                       && !(nSeen & (ModCommand | ModControl | ModShift));
+
+    // The preference is Option, standing. Not a third branch below: it has to
+    // reach the same place by the same road, or the two ways in would drift.
+    const bool bWanted = bOption || bAlways;
 
     if (bForgetPram)
     {
@@ -854,10 +1229,12 @@ TFirmwareResult FirmwareRun (void)
     // then hand a question-mark floppy to: the firmware is the only thing that
     // can put it right, so it opens itself. This is the case a card written by
     // hand lands in, and the one where the machine looks broken and is not.
-    else if (bOption || s_Chooser.nStartup < 0)
+    else if (bWanted || s_Chooser.nStartup < 0)
     {
-        CLogger::Get ()->Write (FROM, LogNotice, bOption ? "Option held: the chooser"
-                                                         : "Nothing to start: the chooser");
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                bAlways ? "Boot menu asked for: the chooser"
+                                        : bOption ? "Option held: the chooser"
+                                                  : "Nothing to start: the chooser");
         const TFirmwareResult Chosen = RunScreens (&Surface, &Theme);
         CLogger::Get ()->Write (FROM, LogNotice, "Display handed back");
         return Chosen;
