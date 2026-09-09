@@ -368,12 +368,24 @@ too, and a `malloc` and a `free` per floating-point instruction, which this proj
   tiles at a time and therefore drawn a few tiles at a time, so a menu comes down as a mosaic and a
   window opens in scattered blocks — an iMovie wipe nobody asked for. It was reported by eye, not by any
   number, which is the whole lesson: a compositor is judged on the screen. So `CompositorRun()` does two
-  passes. The first looks only at the cheap set — wherever the screen was moving last frame plus a
+  passes. The first looks only at the cheap set — wherever the screen has been moving lately plus a
   one-tile margin, and a rotating eighth of the rest — and if it finds nothing, **nothing is drawn and
   nothing can tear**. The moment it finds anything at all, the second pass compares every remaining tile
   before a single pixel goes out. A still screen therefore costs an eighth; a frame in which anything
   moves pays the full comparison, exactly as it always did, and shows the change whole. `nFullScans` in
   the video report is how many frames took the second pass.
+- **The cheap set cannot have one frame of memory**, and this cost a day. `Moving[]` holds the tiles
+  dirty in *this* frame, so overwriting `Watched` with it means a single still frame erases what the
+  compositor knew about where the screen was moving. Everything on screen tolerates that except the one
+  thing always moving slowly: the pointer, which at the low end of the Mouse control panel's range — or
+  on any magnified mode — advances a pixel every second or third frame. Its own steps therefore emptied
+  the set between them, and the next step fell outside the cheap set and waited its turn in the eighths
+  rotation: **up to 133 ms, at random**. Reported by eye as a pointer that catches for an instant and
+  then goes on, and **present in no measurement**, because those are frames in which the compositor
+  correctly decided nothing had changed. `WatchFor[16][16]` now keeps a tile in the set for twelve
+  frames after it stops. An ablation put this one change at about eighty per cent of a pointer problem
+  whose other three causes were all found by measuring — see
+  `developer_notes/2026-09-08-pointeur-saccade.md`.
 - **`frameskip 0` is Dynamic and now works**: the compositor holds itself to about an eighth of wall time,
   re-measured every second, capped at one refresh per 12 VBLs. That is the default. It settles on every
   VBL headless and on 3 Hz under a cocoa window — a slideshow, but the guest runs. The fix for the rate
@@ -384,6 +396,18 @@ too, and a `malloc` and a `free` per floating-point instruction, which this proj
   5 = 12, and **0 = Dynamic**) — which showed up here as a 9 Hz display and a mouse that dragged. Honour
   the preference, never hardcode the rate, and report the composite rate rather than the VBL rate: calling
   55 VBL/s "fps" hid a 9 Hz screen behind a reassuring number.
+- **A tick derived from `HZ` beats, and the average hides it.** Circle's periodic handler fires at `HZ`,
+  which is **100** (`timer.h:30`) and which no project setting changes, so a Mac tick can only ever be
+  emitted on a 10 ms grid — and 16625 does not divide 10000. The spacing that comes out is 20, 10, 20,
+  20, 10 ms: the rate is exactly right and **one frame in three is half the length of its neighbours**,
+  which the Macintosh redraws its pointer on. Measured invariant at 103 short intervals to 202 long ones
+  in every five-second window, at rest and under load alike. `CUserTimer` (`usertimer.h`) takes a delay
+  in microseconds and fixes it; the accumulator stays as the fallback for `RASPPI > 4`, since nothing is
+  assumed of a Pi 5, and the kernel says which is in force. **A late tick is dropped, never repaid** —
+  Circle rearms its own comparator by one period whatever the latency (`timer.cpp:577`), so a catch-up
+  of our own on top turned one delay into sixteen ticks at 0 ms followed by a 140 ms hole. Upstream's
+  own thread has the same rule (`main_unix.cpp:1348`). **`CUserTimer` has never run on real hardware**:
+  the `VBL spacing` histogram in the log is what will say whether it does.
 - **A CD image is partition 1, a disk image is partition 0**, and libhfs refuses the wrong one outright —
   "not a Macintosh HFS volume" one way, "invalid partition map" the other. `MountReadOnly()` tries both.
   Worse, a Toast image's driver descriptor announces **2048-byte blocks while its partition map is written
@@ -503,6 +527,28 @@ too, and a `malloc` and a `free` per floating-point instruction, which this proj
   take `mouse_lock`, which is why it never misbehaved and why the keyboard's silence was not evidence.
   And every `ADB*()` call raises `INTFLAG_ADB` and triggers the interrupt on its own — the drain adds
   neither, which is the same "don't double it" the cooked-mouse note above was already about.
+- **The drain is armed by the clock, not by an opcode count.** `cpu_do_check_ticks()` fires when
+  `emulated_ticks` wraps (`newcpu.h:332`), which is a rate only if the engine's speed is fixed — and it
+  is not: measured between **209 and 1076 visits per five-second window**, a drain every 5 to 24 ms
+  where the comment claimed four. The quantum is now measured against the clock every 64 visits and
+  corrected to hold 1 kHz, exactly as infinite-mac does for the same reason (`main_unix.cpp:342`), it
+  being the other port with no thread to spare. **A kilohertz is not excess**: the mouse reports at
+  about 100 Hz, and below that order the reports merge — a merged report is one ADB packet carrying up
+  to 275 counts where a 200 cpi mouse never sent a dozen, so the Mac's acceleration extrapolates a speed
+  no hand can produce and the pointer leaps. At 1 kHz it is **one ADB packet per USB report**, measured
+  228→228, 530→530, 179→179, the sole exception being the window where the drain had fallen to 668/s.
+  SheepShaver's seam is still a fixed `PPC_CHECK_TICKS`, and it runs at ~135 Hz.
+- **The Mouse control panel writes `SPVolCtl`, not `CrsrThresh`, and only Basilisk can hear it.** The
+  ROM offers two plausible homes and System 7.1 uses one: over eight changes of the slider, `CrsrThresh`
+  (0x8EC) never left 6, its startup value (`StartInit.a:2944`), and neither did parameter RAM — but
+  **`SPVolCtl` (0x208), bits 5:3** followed every one. Swept in both directions: seven positions, the
+  tablet at 0, "Slow" at 1, "Fast" at 6, and 7 never reached. None of that is needed while the engine
+  feeds `adb.cpp` **relative** deltas, because the Macintosh's own driver then does the accelerating —
+  which is the whole argument for relative over absolute, and why an absolute port has to reimplement a
+  curve it cannot read. SheepShaver has no such choice: its absolute path calls `CursorDeviceDispatch`
+  with **`MoveTo`, selector 1, which does not accelerate** — only `Move`, selector 0, runs deltas
+  through the tables (`CrsrDev.a:137`, `adb.cpp:405`). So the Mouse control panel is inert on that
+  engine by construction, and making it work means calling selector 0 ourselves.
 - **macOS build frictions**, all handled by `scripts/install-tools.sh`: BSD `getopt` ignores `--long`,
   Bash 3.2 has no `mapfile`, BSD `sed` has no `\b`, and zsh aborts a command when a glob matches nothing.
 
