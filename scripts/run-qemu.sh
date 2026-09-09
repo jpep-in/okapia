@@ -7,10 +7,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KERNEL="${1:-${REPO_ROOT}/tests/smoke/kernel8.img}"
 shift || true
-SD_IMAGE="${REPO_ROOT}/qemu/sd.img"
 
 # shellcheck source=/dev/null
 . "${REPO_ROOT}/scripts/env.sh"
+SD_IMAGE="${REPO_ROOT}/qemu/sd.img"
 
 [ -f "$KERNEL" ] || { echo "No kernel at $KERNEL — build it first." >&2; exit 1; }
 

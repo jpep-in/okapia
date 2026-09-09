@@ -1,31 +1,35 @@
 //
-// main.cpp — Okapia entry point.
+// okapia_main.cpp — entering the 68k Macintosh.
+//
+// No longer main(): one image carries both emulators and okapia_boot.cpp owns
+// the entry point. This is the 68k engine's one exported name, and the build
+// renames everything else the other engine defines so that the two cores — which
+// export the same InitAll, ExitAll, PatchROM and Execute68k — can share an
+// image (planification.md §19.3).
 //
 // Copyright (C) 2026  Okapia contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "kernel.h"
-#include <circle/startup.h>
+#include "okapia_boot.h"
 
-int main (void)
+extern "C" TOkapiaExit OkapiaRun68k (int bSwitched)
 {
-    // No return: some destructors used by CKernel are not implemented.
-    CKernel Kernel;
-    if (!Kernel.Initialize ())
+    // Built with new and never deleted: some of the kernel's members have no
+    // destructor worth running, and a Macintosh that has stopped has stopped.
+    // Kept across calls, because this engine may be come back to — the other
+    // one hands the board back the same way it took it — and a second CKernel
+    // would re-run everything that is only allowed once.
+    static CKernel *s_pKernel;
+
+    if (s_pKernel == 0)
     {
-        halt ();
-        return EXIT_HALT;
+        s_pKernel = new CKernel;
+        if (s_pKernel == 0 || !s_pKernel->Initialize ())
+        {
+            return OkapiaHalt;
+        }
     }
 
-    switch (Kernel.Run ())
-    {
-    case ShutdownReboot:
-        reboot ();
-        return EXIT_REBOOT;
-
-    case ShutdownHalt:
-    default:
-        halt ();
-        return EXIT_HALT;
-    }
+    return s_pKernel->Run (bSwitched != 0);
 }

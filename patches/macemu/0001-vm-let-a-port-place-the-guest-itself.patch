@@ -13,11 +13,16 @@ reservation, and the Apple condition is a processor test. So this adds a
 third way in, named for what it means rather than for who uses it.
 
 With VM_PORT_PLACES_GUEST defined, VMBaseDiff is a variable the port sets
-and both regions are banked. It also routes the Macintosh's device space
-to a page of its own, which is the same problem once more: a port that
-cannot trap has to send those accesses somewhere, and past the end of the
-block is not somewhere. Only that range — a stray access anywhere else
-should still show itself rather than be absorbed in silence.
+and both regions are banked. It also routes everything outside
+that block to a page of its own, which is the same problem once more: a
+port that cannot trap has to send those accesses somewhere, and past the
+end of the block is not somewhere.
+
+That is not a shortcut. It is what "ignoresegv" already does on hosts
+that trap, and both emulators default it to true — the Macintosh's device
+space and the odd stray access are absorbed there too. The count and the first
+address reached are exported, so a port can report them rather than
+ignore them.
 
 Everything else is unchanged; no existing build sees any difference.
 
@@ -26,7 +31,7 @@ generalises a case the tree already answers twice.
 
 ---
 diff --git a/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp b/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
-index e60bc85d..31a8679d 100755
+index e60bc85d..9eeaca55 100755
 --- a/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
 +++ b/SheepShaver/src/kpx_cpu/src/cpu/vm.hpp
 @@ -190,7 +190,7 @@ typedef uintptr vm_addr_t;
@@ -38,7 +43,7 @@ index e60bc85d..31a8679d 100755
  extern uintptr VMBaseDiff;
  #elif defined(NATMEM_OFFSET)
  const uintptr VMBaseDiff = NATMEM_OFFSET;
-@@ -208,12 +208,21 @@ const uintptr VMBaseDiff = NATMEM_OFFSET;
+@@ -208,12 +208,25 @@ const uintptr VMBaseDiff = NATMEM_OFFSET;
  static inline uint8 * vm_do_get_real_address(vm_addr_t addr)
  {
  	uintptr a = vm_wrap_address(addr);
@@ -51,13 +56,17 @@ index e60bc85d..31a8679d 100755
  	if ((a & ~0x1fff) == 0x68ffe000 || (a & ~0x1fff) == 0x5fffe000) return &gKernelData[a & 0x1fff];
 +#endif
 +#ifdef VM_PORT_PLACES_GUEST
-+	// The Macintosh's device space, which nothing here emulates. A port that
-+	// traps sends these to the SIGSEGV handler and skips the instruction; one
-+	// that cannot trap has to send them somewhere, and off the end of the block
-+	// is not somewhere. Only this range: a stray access anywhere else should
-+	// still show itself rather than be quietly absorbed.
-+	extern uint8 gDevicePage[0x1000];
-+	if (a >= 0xf0000000) return &gDevicePage[a & 0xfff];
++	// Anything outside the block the port placed: the Macintosh's device space,
++	// and the strays that "ignoresegv" absorbs on a host that traps — which is
++	// the default in both emulators, so absorbing is upstream's behaviour and
++	// not a shortcut. One unsigned compare, and the count is there to be read
++	// rather than to be ignored.
++	extern uint32 gGuestLow, gGuestSize, gStrayCount, gStrayFirst;
++	extern uint8 gStrayPage[0x1000];
++	if ((uint32)(a - gGuestLow) >= gGuestSize) {
++		if (gStrayCount++ == 0) gStrayFirst = a;
++		return &gStrayPage[a & 0xfff];
++	}
  #endif
  	return (uint8 *)(VMBaseDiff + a);
  }

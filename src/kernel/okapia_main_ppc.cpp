@@ -1,31 +1,27 @@
 //
-// okapia_main_ppc.cpp — Okapia entry point, SheepShaver engine.
+// okapia_main_ppc.cpp — entering the PowerPC Macintosh.
+//
+// The SheepShaver engine's one exported name; see okapia_main.cpp for why there
+// is exactly one.
 //
 // Copyright (C) 2026  Okapia contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "kernel_ppc.h"
-#include <circle/startup.h>
+#include "okapia_boot.h"
 
-int main (void)
+extern "C" TOkapiaExit OkapiaRunPowerPC (int bSwitched)
 {
-    // No return: some destructors used by the kernel are not implemented.
-    CKernelPPC Kernel;
-    if (!Kernel.Initialize ())
+    static CKernelPPC *s_pKernel;
+
+    if (s_pKernel == 0)
     {
-        halt ();
-        return EXIT_HALT;
+        s_pKernel = new CKernelPPC;
+        if (s_pKernel == 0 || !s_pKernel->Initialize ())
+        {
+            return OkapiaHalt;
+        }
     }
 
-    switch (Kernel.Run ())
-    {
-    case ShutdownReboot:
-        reboot ();
-        return EXIT_REBOOT;
-
-    case ShutdownHalt:
-    default:
-        halt ();
-        return EXIT_HALT;
-    }
+    return s_pKernel->Run (bSwitched != 0);
 }

@@ -22,13 +22,7 @@
 #include <circle/types.h>
 
 #include "hal_circle.h"
-
-enum TShutdownMode
-{
-    ShutdownNone,
-    ShutdownHalt,
-    ShutdownReboot
-};
+#include "okapia_boot.h"
 
 class CKernel
 {
@@ -37,7 +31,7 @@ public:
     ~CKernel (void);
 
     bool Initialize (void);
-    TShutdownMode Run (void);
+    TOkapiaExit Run (bool bSwitched);
 
 private:
     void LoadPreferences (void);
@@ -50,9 +44,6 @@ private:
     void LoadKeycodes (void);
     bool StartMacintosh (void);
 
-    // The Raspberry Pi itself, brought up once and in the right order, shared
-    // with the specimen kernel and with whatever engine comes next.
-    COkapiaBoard       m_Board;
 };
 
 #endif

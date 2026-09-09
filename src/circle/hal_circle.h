@@ -70,6 +70,15 @@ public:
     bool StartCard (void);
 
 private:
+    // Each of the four is idempotent: a second call answers what the first
+    // answered and touches nothing. That is what lets one board serve two
+    // emulators in the same image — the engine that takes over calls the same
+    // Start* sequence and must not re-register a thing. Circle keeps four
+    // periodic timer slots and one mouse claim, and neither can be given back
+    // (AGENTS.md), so a second real init is a failed assertion and a dead
+    // board rather than a bug you get to read about.
+    bool               m_bStarted, m_bConsole, m_bUSB, m_bCard;
+
     CActLED            m_ActLED;
     CKernelOptions     m_Options;
     CDeviceNameService m_DeviceNameService;
@@ -91,5 +100,10 @@ private:
     // the form that was paid for.
     CUSBHCIDevice     *m_pUSBHCI;
 };
+
+// The one board, for the life of the image. Built on first use rather than as a
+// global, because its constructor blinks the LED and a global would run before
+// Circle's own startup has finished.
+extern COkapiaBoard &OkapiaBoard (void);
 
 #endif

@@ -12,13 +12,7 @@
 #include <circle/types.h>
 
 #include "hal_circle.h"
-
-enum TShutdownMode
-{
-    ShutdownNone,
-    ShutdownHalt,
-    ShutdownReboot
-};
+#include "okapia_boot.h"
 
 class CKernelPPC
 {
@@ -27,11 +21,10 @@ public:
     ~CKernelPPC (void);
 
     bool Initialize (void);
-    TShutdownMode Run (void);
+    TOkapiaExit Run (bool bSwitched);
 
 private:
     // The same board the other kernel and the specimen bring up.
-    COkapiaBoard m_Board;
 };
 
 #endif

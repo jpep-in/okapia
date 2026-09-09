@@ -22,6 +22,13 @@
 // okapia_circle.h first, always: it is what defines ASSERT_STATIC, and every
 // Circle header fails to parse without it (see that file).
 #include "okapia_circle.h"
+#include "mac_ram_circle.h"
+#include "okapia_output.h"
+
+// kpx_cpu/sheepshaver_glue.cpp
+extern void exit_emul_ppc (void);
+extern void XPRAMExit (void);
+extern void DiskExit (void);
 #include <circle/startup.h>
 
 #include "cpu_emulation.h"
@@ -73,12 +80,19 @@ uintptr VMBaseDiff;
 uint8 gZeroPage[0x3000];
 uint8 gKernelData[0x2000];
 
-// And the Macintosh's device space, which nothing here emulates. The ROM pokes
-// the serial and power registers on its way up — main_unix.cpp lists the exact
-// instructions it has to step over — and a port that cannot trap has to give
-// those accesses somewhere to land. Reads come back as whatever was last
-// written, which is what a register nobody drives would do.
-uint8 gDevicePage[0x1000];
+// And everything outside the block: the Macintosh's device space, which nothing
+// here emulates, and the strays that a host with signals absorbs through
+// "ignoresegv" — true by default in both emulators, so this is upstream's
+// behaviour rather than a shortcut. Reads come back as whatever was last
+// written there, which is what a register nobody drives would do.
+//
+// Counted, and reported, because absorbing quietly is the part that would be a
+// shortcut. The bounds are the block's, set once it is allocated; before that
+// gGuestSize is zero and every address is a stray, which is correct — there is
+// nowhere for one to be. The first address reached is kept as well: a count
+// says how often the Macintosh went astray, and only the first one says where.
+uint32 gGuestLow, gGuestSize, gStrayCount, gStrayFirst;
+uint8  gStrayPage[0x1000];
 
 // SheepShaver's 32-bit addressable scratch, whose statics upstream defines in
 // its own main_*.cpp.
@@ -112,21 +126,33 @@ bool MacMemoryAllocate (uint32 nRAMSize)
         return false;
     }
 
-    s_nMacMemorySize = s_Layout.nHostBytes;
-
-    // HEAP_ANY: above 1 GB when the board has it, low memory otherwise. A raw
-    // block and not operator new — there are no constructors to run over a
-    // quarter of a gigabyte.
-    s_pMacMemory = (uint8 *) CMemorySystem::HeapAllocate (s_nMacMemorySize, HEAP_ANY);
-    if (s_pMacMemory == 0)
+    // The layout says what this engine needs; the claim asks for what *either*
+    // engine needs, so the block is taken once for the image (mac_ram_circle.h).
+    // The surplus sits past nEnd, where nothing is mapped and nothing looks.
+    s_nMacMemorySize = nRAMSize + OKAPIA_MAC_BLOCK_OVERHEAD;
+    if (s_nMacMemorySize < s_Layout.nHostBytes)
     {
-        CLogger::Get ()->Write (FROM, LogError, "Cannot allocate %u MB for the Mac",
-                                (unsigned) (s_nMacMemorySize / (1024 * 1024)));
+        CLogger::Get ()->Write (FROM, LogError,
+                                "The shared overhead is %u KB and this layout wants %u KB",
+                                (unsigned) (OKAPIA_MAC_BLOCK_OVERHEAD / 1024),
+                                (unsigned) ((s_Layout.nHostBytes - nRAMSize) / 1024));
         return false;
     }
 
-    // One offset, and everything else follows from it.
+    s_pMacMemory = (uint8 *) MacRamClaim (s_nMacMemorySize);
+    if (s_pMacMemory == 0)
+    {
+        return false;
+    }
+
+    // One offset, and everything else follows from it — including the bounds,
+    // which must be set in the same breath. Mac2HostAddr() consults them, so
+    // between VMBaseDiff and these every guest address is outside the block and
+    // translates to the stray page. Setting them a few lines later put
+    // ROMBaseHost inside a 4 KB array and DecodeROM wrote 4 MB into it.
     VMBaseDiff = MacLayoutBaseDiff (&s_Layout, s_pMacMemory);
+    gGuestLow  = s_Layout.nRAMBase;
+    gGuestSize = s_Layout.nEnd - s_Layout.nRAMBase;
 
     RAMBase     = s_Layout.nRAMBase;
     RAMSize     = s_Layout.nRAMSize;
@@ -143,7 +169,7 @@ bool MacMemoryAllocate (uint32 nRAMSize)
     // globals there; what it never wrote it must not read as leftovers.
     memset (gZeroPage, 0, sizeof gZeroPage);
     memset (gKernelData, 0, sizeof gKernelData);
-    memset (gDevicePage, 0, sizeof gDevicePage);
+    memset (gStrayPage, 0, sizeof gStrayPage);
 
     CLogger::Get ()->Write (FROM, LogNotice,
                             "Mac memory: %u MB at %p, guest 0x%08X, ROM guest 0x%08X, "
@@ -309,9 +335,68 @@ bool ChoiceAlert (const char *text, const char *pos, const char *neg)
  *  a serial port needs. Phase 22 will make this go round again instead.
  */
 
+// Set by ether_reset() when the Macintosh resets itself a second time — see
+// platform_bits_circle.cpp. It turns the stop below into a board reset, which
+// is the only way back to the firmware's window on this engine. Not static, on
+// purpose: it is read from the other file, and a name beginning with s_ would
+// have said the opposite.
+bool g_bMacRestartWanted;
+
 void QuitEmulator (void)
 {
     CLogger::Get ()->Write (FROM, LogNotice, "The Macintosh asked to stop");
+
+    // Not halt() straight away: ExitAll() is the only thing that closes the disk
+    // image, and closing it is what flushes the last of it to the card.
+    // Skipping it left, on a Shut Down — the one path where the Macintosh did
+    // everything right — exactly what pulling the plug leaves.
+    //
+    // The order is upstream's (Quit(), main_unix.cpp:1220) and the order is the
+    // whole of it. Leaving exit_emul_ppc() out, to avoid freeing an interpreter
+    // we are standing inside, hung the shutdown instead: the drivers close
+    // through the Macintosh, and the Macintosh is that interpreter. Upstream
+    // reaches here from the same place — PowerOff() is patched to EMUL_RETURN
+    // (rom_patches.cpp:2251), which lands in QuitEmulator() — so its order is
+    // the tested one and there is no reason to invent another.
+    extern void TickStop (void);
+    TickStop ();
+    exit_emul_ppc ();
+
+    // Two calls, and not ExitAll(). ExitAll() hangs here, measured: it closes
+    // thirteen drivers and several of them go through the Macintosh, which is
+    // the interpreter exit_emul_ppc() has just taken down. Upstream survives
+    // the same order because it exits the process next and nothing has to work
+    // afterwards; here the board has to reach halt() or reboot().
+    //
+    // These two are the ones data safety is about — the PRAM as the Mac left
+    // it, and the disk image closed, which is what flushes the last of it to
+    // the card — and they are proven to complete from this context. The rest is
+    // tidying for a program that is about to stop existing.
+    XPRAMExit ();
+    DiskExit ();
+
+    // Leave a black screen rather than the Macintosh's last frame. The board is
+    // about to reset, and between the reset and Circle claiming the display
+    // again the GPU keeps scanning out this buffer — but the new frame buffer
+    // is not the old one's size, so the same bytes are read back with another
+    // pitch and another depth. What that shows is the last desktop, magnified
+    // and in the wrong colours, for about a second. Nothing is wrong with it
+    // and it looks exactly like something is.
+    CBcmFrameBuffer *pOutput = FwOutputClaim ();
+    if (pOutput != 0)
+    {
+        memset ((void *) (uintptr) pOutput->GetBuffer (), 0,
+                (size_t) pOutput->GetPitch () * pOutput->GetHeight ());
+    }
+
+    if (g_bMacRestartWanted)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "Restarted from Mac OS: disk closed, resetting the board");
+        reboot ();
+    }
+
+    CLogger::Get ()->Write (FROM, LogNotice, "Shut down cleanly, disk closed");
     halt ();
 }
 

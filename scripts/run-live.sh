@@ -17,6 +17,11 @@ MONITOR="${OKAPIA_MONITOR:-/tmp/okapia-monitor.sock}"
 rm -f "$MONITOR"
 
 [ -f "$KERNEL" ] || { echo "Build first: gmake -C src/kernel" >&2; exit 1; }
+[ -f "$SD" ] || { echo "No card: run scripts/make-sd-image.sh" >&2; exit 1; }
+
+# One image carries both Macintoshes, so there is nothing left to check here:
+# whichever engine the card's startup volume asks for is entered by a function
+# call inside the running kernel (src/kernel/okapia_boot.cpp).
 
 printf 'Serial log: %s\n' "$LOG"
 # Window size is the frame buffer size: QEMU's cocoa backend sizes its window in

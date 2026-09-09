@@ -13,8 +13,18 @@
 # first that is bootable. A * prefix mounts it read-only.
 disk /machd76.image
 
-# The Macintosh ROM image.
+# The Macintosh ROM image, for the 68k engine.
 rom /okapia.rom
+
+# And for the PowerPC one, which runs a real PowerMac ROM rather than replacing
+# the Toolbox. Old World (TNT) covers System 7.5.x to Mac OS 9.0.4; a New World
+# ROM refuses anything before 8.1. Falls back to `rom` when absent.
+romppc /powermac9600v1.rom
+
+# Which emulator starts a volume whose System is universal — one line each,
+# written by the chooser. A System built for one processor settles it and gets
+# no line at all.
+# engine /machd76.image powerpc
 
 # 256 MB, this project's ceiling.
 ramsize 268435456

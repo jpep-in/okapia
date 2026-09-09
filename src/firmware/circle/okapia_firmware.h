@@ -19,9 +19,24 @@ enum TFirmwareResult
     FirmwareReboot                      // a setting needs Okapia restarted
 };
 
+// Which emulator a kernel image carries. One per image — the two cores define
+// the same symbols and cannot be linked together — so it is a fact about the
+// image, handed in rather than read: the firmware stays a screen, and nothing
+// in src/firmware knows that Basilisk or SheepShaver exist.
+enum TFirmwareEngine
+{
+    FirmwareEngine68k,
+    FirmwareEnginePowerPC
+};
+
 // Never fails in a way that stops the boot: a firmware that cannot draw must
 // still let the Macintosh start, so every failure here warns and returns
 // FirmwareBoot. The screen belongs to the Mac a moment later either way.
-TFirmwareResult FirmwareRun (void);
+TFirmwareResult FirmwareRun (TFirmwareEngine Built);
+
+// Which emulator the startup volume asks for, once FirmwareRun has been. Equal
+// to what was handed in unless the card says otherwise, and then it is the
+// kernel's business — it is the only thing that can go and fetch another image.
+TFirmwareEngine FirmwareWantedEngine (void);
 
 #endif

@@ -22,6 +22,12 @@
 #include "sysdeps.h"
 #include "okapia_circle.h"
 
+#include <stdio.h>
+#include <string.h>
+
+#include <circle/interrupt.h>
+#include <circle/usertimer.h>
+
 #include "cpu_emulation.h"
 #include "main.h"
 #include "macos_util.h"
@@ -38,6 +44,53 @@ extern bool tick_inhibit;
 static unsigned s_nAccumulator;     // host ticks scaled by 1000, see below
 static unsigned s_nTickCounter;     // Mac ticks, for the one-per-second work
 static bool     s_bRunning;
+
+/*
+ *  Measurement (temporary): is the Mac's vertical blank evenly spaced?
+ *
+ *  PeriodicHandler() below emits Mac ticks from an accumulator driven at HZ,
+ *  so the average rate is exact by construction and the spacing need not be.
+ *  The guest redraws its pointer on this beat, and the eye is given the
+ *  spacing, not the average — so the average is not the thing to report.
+ */
+static unsigned s_nLastTick;            // us, free-running counter
+static unsigned s_TickGaps[40];         // one bucket per ms; 39 catches the rest
+static unsigned s_nGapMin, s_nGapMax;
+
+static void TickMeasure (void)
+{
+    const unsigned nNow = CTimer::GetClockTicks ();
+    if (s_nLastTick != 0)
+    {
+        const unsigned nGap = nNow - s_nLastTick;
+        const unsigned nMs  = nGap / 1000;
+        s_TickGaps[nMs < 40 ? nMs : 39]++;
+        if (s_nGapMin == 0 || nGap < s_nGapMin) s_nGapMin = nGap;
+        if (nGap > s_nGapMax)                   s_nGapMax = nGap;
+    }
+    s_nLastTick = nNow;
+}
+
+static void TickReport (void)
+{
+    char Line[160];
+    unsigned nAt = 0;
+    Line[0] = '\0';
+    for (unsigned i = 0; i < 40; i++)
+    {
+        if (s_TickGaps[i] != 0 && nAt + 16 < sizeof Line)
+        {
+            nAt += (unsigned) snprintf (Line + nAt, sizeof Line - nAt, "%s%u:%u",
+                                        nAt != 0 ? " " : "", i, s_TickGaps[i]);
+        }
+    }
+    CLogger::Get ()->Write (FROM, LogNotice,
+                            "VBL spacing: min %u us, max %u us, ms:count %s",
+                            s_nGapMin, s_nGapMax, Line);
+    memset (s_TickGaps, 0, sizeof s_TickGaps);
+    s_nGapMin = 0;
+    s_nGapMax = 0;
+}
 
 // A Mac tick is 16625 µs; a host tick is 1000000/HZ µs. Working in microseconds
 // keeps the average exact instead of drifting a few seconds per hour.
@@ -80,12 +133,18 @@ static void OneSecond (void)
     // stopped executing rather than executed something wrong. Silent once it
     // settles, so it costs nothing on a machine that works.
     extern volatile unsigned g_nTimebaseReads;
+    extern uint32 gStrayCount, gStrayFirst;
     static unsigned s_nLastReads = 0;
-    if (g_nTimebaseReads != s_nLastReads)
+    static uint32   s_nLastStray = 0;
+    if (g_nTimebaseReads != s_nLastReads || gStrayCount != s_nLastStray)
     {
-        CLogger::Get ()->Write (FROM, LogNotice, "guest timebase reads: %u",
-                                g_nTimebaseReads);
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "guest: %u timebase reads, %u accesses outside "
+                                "the block, first at 0x%08X",
+                                g_nTimebaseReads, (unsigned) gStrayCount,
+                                (unsigned) gStrayFirst);
         s_nLastReads = g_nTimebaseReads;
+        s_nLastStray = gStrayCount;
     }
 #endif
 
@@ -96,12 +155,19 @@ static void OneSecond (void)
         AudioReport (s_nSeconds);
     }
 
+    if ((s_nSeconds % 5) == 0)
+    {
+        TickReport ();
+    }
+
     // XPRAM is written back by the kernel when it changes, not on a timer
     // (plan §7.8), so there is nothing periodic to do for it here.
 }
 
 static void OneTick (void)
 {
+    TickMeasure ();
+
     if (++s_nTickCounter > 60)
     {
         s_nTickCounter = 0;
@@ -118,6 +184,78 @@ static void OneTick (void)
     AudioPump ();
 }
 
+/*
+ *  The fine timer, and why the coarse one was not enough
+ *
+ *  Circle's periodic handler fires at HZ, which is 100, so a Mac tick can only
+ *  ever be emitted on a 10 ms grid — and 16625 does not divide 10000. The
+ *  spacing that comes out is 20, 10, 20, 20, 10 ms: the average is exact, one
+ *  frame in three is half as long as its neighbours, and the Macintosh redraws
+ *  its pointer on that beat. Measured, and invariant: 103 short intervals to
+ *  202 long ones in every five-second window, at rest and under load alike.
+ *
+ *  CUserTimer programs the system timer's compare register directly and takes
+ *  a delay in microseconds (usertimer.cpp:83), so the tick can be put where it
+ *  belongs. It rests on ARM_IRQ_TIMER1, which Circle defines up to the Pi 4 —
+ *  a Pi 5 falls back on the accumulator below rather than assume, which is what
+ *  AGENTS.md asks of anything that reaches for that board's hardware.
+ */
+#if RASPPI <= 4
+#define OKAPIA_FINE_TICK 1
+#else
+#define OKAPIA_FINE_TICK 0
+#endif
+
+// Never wake up sooner than this. CUserTimer::Start asserts on a delay of 1 or
+// less, and a deadline already past has to become a fresh one rather than a
+// storm of immediate interrupts.
+static const unsigned MIN_DELAY_USEC = 200;
+
+#if OKAPIA_FINE_TICK
+static CUserTimer *s_pFineTimer;
+#endif
+
+// Which source is in force. Answering through a function rather than an #ifdef
+// at every use keeps the two paths readable side by side.
+static CUserTimer *FineTimer (void)
+{
+#if OKAPIA_FINE_TICK
+    return s_pFineTimer;
+#else
+    return 0;
+#endif
+}
+
+
+#if OKAPIA_FINE_TICK
+static unsigned s_nNextDue;             // us, on the free-running counter
+
+static void FineTickHandler (CUserTimer *pTimer, void *pParam)
+{
+    (void) pParam;
+
+    // Rearmed before the work, so a slow tick delays this one and not the next.
+    const unsigned nNow = CTimer::GetClockTicks ();
+    s_nNextDue += MAC_TICK_USEC;
+    int nDelay = (int) (s_nNextDue - nNow);
+    if (nDelay < (int) MIN_DELAY_USEC)
+    {
+        // Late. Upstream's rule (main_unix.cpp:1348): resynchronise, never
+        // repay. Repaying hands the Macintosh several vertical blanks with no
+        // time between them — measured once as sixteen ticks at 0 ms followed
+        // by a 140 ms hole — which is worse than the frame that was missed.
+        s_nNextDue = nNow + MAC_TICK_USEC;
+        nDelay = MAC_TICK_USEC;
+    }
+    pTimer->Start ((unsigned) nDelay);
+
+    if (s_bRunning && !tick_inhibit)
+    {
+        OneTick ();
+    }
+}
+#endif
+
 static void PeriodicHandler (void)
 {
     if (!s_bRunning || tick_inhibit)
@@ -126,9 +264,17 @@ static void PeriodicHandler (void)
     }
 
     s_nAccumulator += HOST_TICK_USEC;
-    while (s_nAccumulator >= MAC_TICK_USEC)
+    if (s_nAccumulator >= MAC_TICK_USEC)
     {
         s_nAccumulator -= MAC_TICK_USEC;
+        if (s_nAccumulator >= MAC_TICK_USEC)
+        {
+            // More than a tick owed. Circle rearms its own compare register by
+            // one period whatever the delay (timer.cpp:577), so a late
+            // interrupt fires again at once and calls us twice in a row; adding
+            // our own catch-up on top is what turned a late tick into a burst.
+            s_nAccumulator = 0;
+        }
         OneTick ();
     }
 }
@@ -148,13 +294,32 @@ void TickInit (void)
     static bool s_bArmed;
     if (!s_bArmed)
     {
-        CTimer::Get ()->RegisterPeriodicHandler (PeriodicHandler);
         s_bArmed = true;
+#if OKAPIA_FINE_TICK
+        s_pFineTimer = new CUserTimer (CInterruptSystem::Get (), FineTickHandler);
+        if (s_pFineTimer != 0 && s_pFineTimer->Initialize ())
+        {
+            s_nNextDue = CTimer::GetClockTicks () + MAC_TICK_USEC;
+            s_pFineTimer->Start (MAC_TICK_USEC);
+        }
+        else
+        {
+            delete s_pFineTimer;
+            s_pFineTimer = 0;
+        }
+#endif
+        if (FineTimer () == 0)
+        {
+            CTimer::Get ()->RegisterPeriodicHandler (PeriodicHandler);
+        }
     }
 
     CLogger::Get ()->Write (FROM, LogNotice,
-                            "Tick armed: host %u Hz, Mac tick every %u us",
-                            (unsigned) HZ, MAC_TICK_USEC);
+                            "Tick armed: %s, Mac tick every %u us",
+                            FineTimer () != 0
+                                ? "system timer, microsecond deadline"
+                                : "periodic handler on the host tick grid",
+                            MAC_TICK_USEC);
 }
 
 void TickStart (void)

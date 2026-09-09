@@ -144,8 +144,42 @@ Then, under QEMU:
 ./scripts/run-test.sh           # kill the guest, then check the volume survived
 ```
 
-Objects under `src/kernel/emu/` do not depend on the Makefile, so after changing a flag run
+Objects under `src/kernel/emu-<engine>/` do not depend on the Makefile, so after changing a flag run
 `$MAKE -C src/kernel okapia-clean` or you will link stale ones. `AGENTS.md` has the rest.
+
+### The PowerPC Macintosh
+
+A second engine — SheepShaver — runs the real PowerMac ROM instead of replacing the Toolbox, so it boots
+Mac OS 7.5.2 and later on a PowerPC. **One image carries both.** The two emulator cores export the same
+`InitAll`, `ExitAll` and `PatchROM`, so the build partial-links each of them and renames every symbol
+one of them defines; nothing in `external/` is modified. Switching from the boot menu is then a function
+call rather than a reboot, and there is one kernel on the card instead of three.
+
+Stage a PowerMac ROM and a PowerPC-capable System in `qemu/sd-contents/` — neither ships here — then the
+ordinary build, which now produces both Macintosh:
+
+```
+. scripts/env.sh && $MAKE -C src/kernel
+./scripts/make-sd-image.sh
+./scripts/run-live.sh
+```
+
+The chooser asks which emulator only where there is a question. A System built for one processor
+settles it and the popup says which without offering a choice; a **universal** System — 7.5.2 to 8.1,
+where one System file carries both — leaves it open, and the answer is remembered per volume in an
+`engine` line. Nothing is written for the settled cases: a stored answer that repeats what the System
+says is one that will eventually contradict it.
+
+The ROM is not a free choice on this engine, and the two Macintoshes do not take the same one — so the
+card carries both, `rom` for the 68k engine and `romppc` for the PowerPC one:
+
+| ROM | what it accepts |
+|---|---|
+| Old World, 4 MB (`powermac9600v1.rom`, TNT) | System 7.5.x to Mac OS 9.0.4 |
+| New World, a `<CHRP-BOOT>` file (`macosrom16.rom`) | Mac OS 8.1 and later — it refuses anything older |
+
+`OUTPUT_W`/`OUTPUT_H` on `run-live.sh` size the window; the compositor scales and centres the Mac's
+screen inside it, on both engines.
 
 ## Licence
 

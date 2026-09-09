@@ -31,10 +31,14 @@ mkdir -p "$(dirname "$IMAGE")" "$CONTENTS"
 # the next rebuild; this one lives in sd-contents/ and survives, which is what
 # makes a test card reproducible. An existing file is never touched — it is the
 # user's configuration by then.
+# The file is called BasiliskII_Prefs whichever Macintosh reads it: the
+# preferences are engine-agnostic by design (plan §19.7) and prefs_circle.cpp
+# reads that one path from both.
 PREFS="${CONTENTS}/BasiliskII_Prefs"
 if [ ! -f "$PREFS" ]; then
     cp "${REPO_ROOT}/qemu/BasiliskII_Prefs.default" "$PREFS"
-    printf 'preferences: seeded %s from qemu/BasiliskII_Prefs.default\n' "$PREFS"
+    printf 'preferences: seeded %s from %s\n' "$PREFS" \
+        "qemu/BasiliskII_Prefs.default"
 fi
 
 # What has to fit, plus room for FAT structures and rounding.

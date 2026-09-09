@@ -42,10 +42,13 @@ enum
     OKAPIA_SHEEP_SIZE     = 0x80000,
     // The Macintosh's frame buffer. It has to be at a Mac address, because
     // screen_base is one and QuickDraw writes pixels through it — so it is part
-    // of the block and not something allocated beside it. A megabyte covers
-    // 640x480 at any depth this port will offer, and 800x600 in 256 colours,
-    // without the plan having to be redone to try one.
-    OKAPIA_FRAME_SIZE     = 0x100000
+    // of the block and not something allocated beside it.
+    //
+    // Four megabytes, which is 1024x768 in millions of colours with room to
+    // spare, and the largest mode the driver offers. Taken once at that size
+    // and never resized: a mode change must not allocate, and the Macintosh
+    // changes depth whenever a dialog wants more colours.
+    OKAPIA_FRAME_SIZE     = 0x400000
 };
 
 // Fixed by the ROM, not by us, and the reason the block has a ceiling.

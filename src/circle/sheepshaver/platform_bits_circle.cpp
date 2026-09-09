@@ -29,10 +29,9 @@
 /*
  *  The 60 Hz tick, held off across a mode switch
  *
- *  emul_op.cpp sets it while the Macintosh changes execution mode and clears it
- *  after. tick_circle.cpp does not read it yet — the tick simply keeps running —
- *  which is a thing to come back to if the first boot behaves oddly around a
- *  mode switch.
+ *  emul_op.cpp sets it around the Macintosh's early reset (OP_RESET) and clears
+ *  it after; tick_circle.cpp's periodic handler returns at once while it is set,
+ *  the same test upstream's tick thread makes (main_unix.cpp:1529).
  */
 bool tick_inhibit;
 
@@ -86,27 +85,64 @@ void prefs_exit (void)
 }
 
 /*
- *  Ethernet
+ *  Ethernet, and the only notice this engine gets that the Macintosh restarted
  *
- *  The dummy driver has no reset because it has nothing to reset. The call
- *  comes from the Macintosh changing execution mode (emul_op.cpp:293), which
- *  happens whether or not there is a network.
+ *  The dummy driver has nothing to reset. What makes this worth keeping is
+ *  where it is called from: OP_RESET, "early in MacOS reset" (emul_op.cpp:286),
+ *  which is the one place a PowerPC Macintosh announces that it is going round
+ *  again. The other engine has Basilisk's own reset opcode for this; here there
+ *  is no equivalent, and without it a Restart from the Finder resets the
+ *  nanokernel *inside* the emulator and reloads the same System — which is what
+ *  it did, with no way back to the boot menu and the disk image never closed.
+ *
+ *  An ordinary boot produces exactly one reset, so the first is the cold start
+ *  and every later one is the guest restarting — the same reading AGENTS.md
+ *  records for the 68k engine, measured there rather than assumed here.
+ *
+ *  Leaving through QuitEmulator() is deliberate: it is the one path that stops
+ *  the tick, unwinds the interpreter and closes the drivers, and closing them
+ *  is what flushes the disk. The board then resets, because this engine cannot
+ *  be started a second time in place — SheepShaver exits the process upstream
+ *  and pairs no InitAll with its ExitAll.
  */
 void ether_reset (void)
 {
+    static unsigned s_nResets;
+
+    if (++s_nResets > 1)
+    {
+        extern bool g_bMacRestartWanted;
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "The Macintosh restarted itself (reset #%u)", s_nResets);
+        g_bMacRestartWanted = true;
+        QuitEmulator ();
+    }
 }
 
 /*
  *  Code the Macintosh has just written
  *
- *  On a real PowerMac this flushes the caches. Under an interpreter there are
- *  no caches to flush — but there is a decode cache, and kpx_cpu invalidates it
- *  through FlushCodeCache(), which the CPU glue provides. So this is genuinely
- *  nothing to do here rather than something not done yet.
+ *  On a real PowerMac this flushes the processor's caches. Under an interpreter
+ *  there is no instruction cache — but there is a decode cache, keyed by
+ *  address, and it is exactly as stale as an unflushed icache would be. Leaving
+ *  this empty cost a boot: the Macintosh idles fine on the question-mark floppy,
+ *  because it loads no code, and comes apart a dozen seconds into starting a
+ *  System from disk, because that is nothing but loading code into addresses
+ *  something else has already been decoded at. What ran then was the previous
+ *  occupant of those bytes.
+ *
+ *  Upstream does the same thing under EMULATED_PPC (main_unix.cpp:1473),
+ *  ROM excepted: the ROM is written once, before the first instruction is
+ *  decoded, and PatchROM's own writes would otherwise flush 4 MB a time.
  */
 void MakeExecutable (int dummy, uint32 start, uint32 length)
 {
-    (void) dummy; (void) start; (void) length;
+    (void) dummy;
+    if (start >= ROMBase && start < ROMBase + ROM_SIZE)
+    {
+        return;
+    }
+    FlushCodeCache (start, start + length);
 }
 
 /*
