@@ -29,6 +29,9 @@ WANTED = {
     "okapia_system_7_icon":  "OkapiaIconSystem7",
     "okapia_mac_os_8_icon":  "OkapiaIconMacOS8",
     "okapia_mac_os_9_icon":  "OkapiaIconMacOS9",
+    # Not traced from anything: drawn here, and reduced by scripts/svg-to-icon.py
+    # from assets/icons/cdrom.svg. A medium is not an era, so it is ours to draw.
+    "okapia_cdrom_icon":     "OkapiaIconCdrom",
 }
 
 
