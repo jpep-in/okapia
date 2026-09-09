@@ -412,6 +412,8 @@ static int CurveLookup (int nSpeed)
 // one that spans the whole range feels like a Macintosh. Buckets are in/s.
 static unsigned s_SpeedHist[8];
 static unsigned s_nBiggestCount;
+static unsigned s_nElapsedGuessed, s_nElapsedCount;
+static u64      s_nElapsedSum;
 
 static int Advance (int nDelta, int *pCarry, unsigned nElapsedUsec, int nTracking)
 {
@@ -475,8 +477,16 @@ static void MouseStatusHandler (unsigned nButtons, int nDeltaX,
         s_nLastReportAt = nNow;
         if (nElapsed == 0 || nElapsed > 200000)
         {
-            nElapsed = 10000;   // first report, or a hand that stopped: assume 10 ms
+            // First report, or a hand that stopped. Counted, because the whole
+            // speed calculation rests on this interval being real: if the
+            // substitute fires often, every one of those reports was scaled
+            // against a made-up ten milliseconds and the curve was fed a
+            // fiction.
+            s_nElapsedGuessed++;
+            nElapsed = 10000;
         }
+        s_nElapsedSum += nElapsed;
+        s_nElapsedCount++;
 
         const int nTracking = (int) __atomic_load_n (&s_nTracking, __ATOMIC_RELAXED);
         s_nMouseX += Advance (nDeltaX, &s_nCarryX, nElapsed, nTracking);
@@ -559,12 +569,19 @@ static void InputReport (void)
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "speed in/s  <1:%u 1-2:%u 2-4:%u 4-8:%u 8-16:%u "
                                 "16-32:%u 32+:%u  (gain<1 below 0.44), "
-                                "biggest report %u counts",
+                                "biggest %u counts, interval %u us avg, "
+                                "%u guessed",
                                 s_SpeedHist[1] + s_SpeedHist[0], s_SpeedHist[2],
                                 s_SpeedHist[3], s_SpeedHist[4], s_SpeedHist[5],
-                                s_SpeedHist[6], s_SpeedHist[7], s_nBiggestCount);
+                                s_SpeedHist[6], s_SpeedHist[7], s_nBiggestCount,
+                                s_nElapsedCount
+                                    ? (unsigned) (s_nElapsedSum / s_nElapsedCount) : 0,
+                                s_nElapsedGuessed);
         memset (s_SpeedHist, 0, sizeof s_SpeedHist);
         s_nBiggestCount = 0;
+        s_nElapsedGuessed = 0;
+        s_nElapsedCount = 0;
+        s_nElapsedSum = 0;
     }
 #endif
     s_nReports = 0;
