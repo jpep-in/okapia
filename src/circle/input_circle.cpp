@@ -308,11 +308,15 @@ static void KeyStatusHandler (unsigned char ucModifiers, const unsigned char Raw
 }
 
 
+// What the Macintosh assumes a mouse reports, all by itself (CrsrDev.a:2045),
+// and therefore what we default to: saying it back changes nothing.
+static const int PERIOD_MOUSE_DPI = 200;
+
 // What the pointing device reports per inch, as it reaches us. Both engines
 // need it, for opposite reasons: the PowerPC one scales the ROM's curve by
 // it here, and the 68k one hands it to the Macintosh, so that the Mac's own
 // curve is scaled by the truth instead of by the 200 it would assume.
-static int s_nMouseDpi = 1000;
+static int s_nMouseDpi = PERIOD_MOUSE_DPI;
 
 #ifdef SHEEPSHAVER
 // sheepshaver/video_circle.cpp: how far the pointer may go; it moves with the
@@ -366,9 +370,6 @@ static const unsigned ACCEL_POINTS = sizeof ACCEL_CURVE / sizeof ACCEL_CURVE[0];
 // (CrsrDev.a:1764) rather than measuring.
 static const int SCREEN_DPI = 72;
 
-// What the Mac assumes a mouse reports (CrsrDev.a:2045). Yours is nothing like
-// it, which is the whole reason the "mousedpi" preference exists.
-static const int PERIOD_MOUSE_DPI = 200;
 
 
 // The pointer's position keeps its fraction, so a slow hand is never rounded

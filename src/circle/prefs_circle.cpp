@@ -172,7 +172,11 @@ void AddPlatformPrefsDefaults(void)
 	// which measures nearer a hundred than a thousand.
 	// Only the PowerPC engine uses this: the 68k one hands the Mac deltas and
 	// the Mac accelerates them itself, dpi included.
-	PrefsReplaceInt32("mousedpi", 1000);
+	// 200 and not 1000: it is the figure a Macintosh assumes on its own, so a
+	// card that says nothing keeps exactly the behaviour it had before this
+	// preference existed. A setting that changes the feel of the pointer for
+	// people who never asked for it is a bug, however correct its arithmetic.
+	PrefsReplaceInt32("mousedpi", 200);
 
 	// A Mac refuses to start from a volume whose MDB still says "in use", which
 	// is exactly what an interrupted session leaves behind — on real hardware
@@ -375,7 +379,7 @@ void SavePrefs(void)
 		"# if it were five to eight times slower than it is. Saying the truth\n"
 		"# here makes its own Mouse control panel behave as it was designed to,\n"
 		"# on both engines.\n"
-		"# mousedpi 1000\n"
+		"# mousedpi 200\n"
 		"#\n"
 		"# Minutes east of UTC. 60 for CET, 120 for CEST, -300 for EST. A Mac has\n"
 		"# no time zone: its clock is local time, and Okapia's starts at UTC.\n"
