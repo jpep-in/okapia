@@ -62,3 +62,6 @@ research_notes/
 
 # Disk images the Mac boots from: same rule as *.img, different extension.
 *.hda
+
+# Boot files staged for a real Pi 4 card by scripts/make-pi-sd.sh
+rpi4-sd-contents/

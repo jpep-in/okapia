@@ -404,7 +404,14 @@ patches-check:
 	@out=$$(../../scripts/apply-patches.sh --check 2>&1) 	 || { printf '%s\n' "$$out" >&2; exit 1; }
 
 .PHONY: okapia objects shared merge
+# The merge links emu-<engine>/*.o, a glob, so an object whose source has left
+# the build — a file dropped from a list, a trace build followed by a normal
+# one — would go on being linked, and silently. It is removed here instead.
 objects: $(OBJS)
+	@for o in $(OBJ)/*.o; do \
+	    case " $(OBJS) " in *" $$o "*) ;; \
+	    *) printf '  RM    %s (no longer built)\n' "$$o"; rm -f "$$o" "$${o%.o}.d" ;; esac; \
+	done
 shared:  $(SHARED_OBJS)
 
 # The check goes here and not on `objects`: okapia is the default goal and it

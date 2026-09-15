@@ -10,6 +10,12 @@ shift || true
 
 # shellcheck source=/dev/null
 . "${REPO_ROOT}/scripts/env.sh"
+
+# shellcheck source=/dev/null
+. "${REPO_ROOT}/scripts/target.sh"
+# QEMU's raspi3b puts the peripherals at 0x3F000000 and a Pi 4 kernel addresses
+# 0xFE000000, so the wrong build does not fail — it goes quiet. Say so instead.
+okapia_require_target "$REPO_ROOT" qemu "$(basename "$0")" || exit 1
 SD_IMAGE="${REPO_ROOT}/qemu/sd.img"
 
 [ -f "$KERNEL" ] || { echo "No kernel at $KERNEL — build it first." >&2; exit 1; }
