@@ -143,6 +143,7 @@ void AudioInit (void)
     // completion that never comes. The device is the board's and outlives
     // this start (hal_circle.h): claiming one per start froze restarts.
     CLogger::Get ()->Write (FROM, LogNotice, "Sound output: %s", pWhere);
+    BoardChimeFinish ();
     s_pSound = BoardSoundClaim (strcmp (pWhere, "hdmi") == 0 || strcmp (pWhere, "usb") == 0
                                 ? pWhere : "jack", QUEUE_MSECS);
     if (s_pSound == 0)

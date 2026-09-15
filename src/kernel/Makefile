@@ -143,6 +143,7 @@ FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
 # Everything else is duplicated on purpose. It costs image size and no
 # correctness: each engine's platform layer talks only to its own core.
 SHARED_SRCS = $(OKAPIA)/hal_circle.cpp $(OKAPIA)/mac_ram_circle.cpp \
+              $(OKAPIA)/rom_chime.cpp \
               okapia_boot.cpp $(FIRMWARE_SRCS)
 SHARED_OBJ  = obj-shared
 SHARED_OBJS = $(addprefix $(SHARED_OBJ)/,$(notdir $(SHARED_SRCS:.cpp=.o))) \

@@ -27,6 +27,7 @@
 #include "mac_ram_circle.h"
 #include "compositor_circle.h"
 #include "video_sizes_circle.h"
+#include "rom_chime.h"
 
 // prefs_circle.cpp. Declared here rather than in a header of its own: it has
 // exactly one caller in the kernel, SavePrefs(), a few lines below it.
@@ -310,9 +311,179 @@ static void CheckSizes (void)
  *  du poste sont essayées en plus quand elles sont là.
  */
 
+static void Put32 (unsigned char *p, u32 v)
+{
+    p[0] = v >> 24; p[1] = v >> 16; p[2] = v >> 8; p[3] = v;
+}
+
+static void Put16 (unsigned char *p, u32 v)
+{
+    p[0] = v >> 8; p[1] = v;
+}
+
+static void PutCommand (unsigned char *p, unsigned nLength, unsigned nCommand, u32 nAddress)
+{
+    memset (p, 0, 16);
+    p[0] = nLength; p[1] = nLength >> 8; p[2] = nCommand; p[3] = nCommand >> 8;
+    p[4] = nAddress; p[5] = nAddress >> 8; p[6] = nAddress >> 16; p[7] = nAddress >> 24;
+}
+
+// Amplitude d'une fréquence dans le canal gauche, par l'algorithme de Goertzel.
+static double Tone (const s16 *pStereo, unsigned nFrom, unsigned nCount, double fHz)
+{
+    const double w = 2.0 * 3.14159265358979 * fHz / ROM_CHIME_OUTPUT_RATE;
+    const double c = 2.0 * cos (w);
+    double s1 = 0.0, s2 = 0.0;
+    for (unsigned i = nFrom; i < nFrom + nCount; i++)
+    {
+        const double s0 = pStereo[i * 2] + c * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return sqrt (s1 * s1 + s2 * s2 - c * s1 * s2) / nCount;
+}
+
+static double Rms (const s16 *pStereo, unsigned nFrom, unsigned nCount)
+{
+    double f = 0.0;
+    for (unsigned i = nFrom; i < nFrom + nCount; i++)
+    {
+        f += (double) pStereo[i * 2] * pStereo[i * 2];
+    }
+    return sqrt (f / nCount);
+}
+
+static void CheckRomChime (void)
+{
+    printf ("\nle gong lu dans la ROM\n");
+
+    const u32 nSize = 0x100000;
+    unsigned char *pImage = (unsigned char *) calloc (nSize, 1);
+    TRomChime Chime;
+    const unsigned MAX_FRAMES = 262144;
+    s16 *pOut = (s16 *) malloc (MAX_FRAMES * 2 * sizeof (s16));
+
+    // 1. La 'beep' 0 : carte à 0x800, en-têtes de 8 octets, 'snd ' 1 puis 'beep' 0.
+    Put32 (pImage + 0x1A, 0x800);
+    pImage[0x805] = 8;
+    Put32 (pImage + 0x800, 0x900);
+    Put32 (pImage + 0x908, 0xA00);  Put32 (pImage + 0x90C, 0x5000);
+    Put32 (pImage + 0x910, 0x736E6420); pImage[0x915] = 1;
+    Put32 (pImage + 0xA08, 0);      Put32 (pImage + 0xA0C, 0x6000);
+    Put32 (pImage + 0xA10, 0x62656570);
+
+    const u32 nTop = 0xFFF00000, nSamples = 0x6040;
+    Put32 (pImage + 0x6000, 0x10); Put32 (pImage + 0x6004, 2);
+    Put32 (pImage + 0x6008, 0x1800); Put32 (pImage + 0x600C, nTop + nSamples);
+    PutCommand (pImage + 0x6010, 0x1000, 0x0000, nTop + nSamples);
+    PutCommand (pImage + 0x6020, 0x0800, 0x1000, nTop + nSamples + 0x1000);
+    PutCommand (pImage + 0x6030, 0, 0x7000, 0);
+
+    Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeFound
+            && Chime.Kind == RomChimeBeep && Chime.nOffset == nSamples
+            && Chime.nFrames == 0x1800 / 4,
+            "la 'beep' 0 est trouvée, ses échantillons au bon endroit");
+    Expect (RomChimeRender (pImage, nSize, &Chime, pOut, MAX_FRAMES) == 0x1800 / 4 * 2,
+            "et rendue à 44,1 kHz, deux fois plus de trames qu'à 22,05");
+
+    PutCommand (pImage + 0x6020, 0x0800, 0x1000, nTop + nSamples + 0x1004);
+    Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeMalformed,
+            "une commande qui ne suit pas la précédente est refusée");
+    PutCommand (pImage + 0x6020, 0x0800, 0x1000, nTop + nSamples + 0x1000);
+
+    Put32 (pImage + 0x6008, 0x1804);
+    Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeMalformed,
+            "un compte d'octets que les commandes ne couvrent pas aussi");
+
+    Put32 (pImage + 0x908, 0x800);  // une carte qui boucle
+    Expect (RomChimeFind (pImage, nSize, &Chime) != RomChimeFound,
+            "une carte qui boucle se termine");
+    memset (pImage, 0, nSize);
+
+    // 2. Un 'snd ' échantillonné, posé comme donnée : 1 s de la à 440 Hz, 22 254,5 Hz.
+    const u32 nSnd = 0x20000, nFrames8 = 22254;
+    Put16 (pImage + nSnd, 1); Put16 (pImage + nSnd + 2, 1); Put16 (pImage + nSnd + 4, 5);
+    Put32 (pImage + nSnd + 6, 0xA0); Put16 (pImage + nSnd + 10, 1);
+    Put16 (pImage + nSnd + 12, 0x8051); Put32 (pImage + nSnd + 16, 20);
+    Put32 (pImage + nSnd + 24, nFrames8); Put32 (pImage + nSnd + 28, 0x56EE8BA3);
+    pImage[nSnd + 41] = 60;
+    for (u32 i = 0; i < nFrames8; i++)
+    {
+        pImage[nSnd + 42 + i] = (u8) (128 + 100 * sin (2 * 3.14159265358979 * 440 * i / 22254.5454));
+    }
+    Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeFound
+            && Chime.Kind == RomChimeSampled && Chime.nOffset == nSnd + 42
+            && Chime.nFrames == nFrames8 && Chime.nRate == 0x56EE8BA3,
+            "un 'snd ' hors de la carte des ressources est trouvé par son en-tête");
+    unsigned n = RomChimeRender (pImage, nSize, &Chime, pOut, MAX_FRAMES);
+    Expect (n > 44090 && n < 44110, "et rendu à 44,1 kHz, une seconde toujours");
+    Expect (Tone (pOut, 4410, 8820, 440) > 10 * Tone (pOut, 4410, 8820, 523),
+            "à la même hauteur : 440 Hz, pas une autre");
+
+    Put32 (pImage + nSnd + 24, 2720);  // le bip système, un dixième de seconde
+    Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeNone,
+            "un son trop court pour un gong n'en est pas un");
+    memset (pImage, 0, nSize);
+
+    // 3. La table de l'ASC : deux voix à 0x20000 (347,8 Hz), la seconde 300 étapes
+    //    plus tard, 30 000 étapes.
+    const u32 nTable = 0x7158;
+    Put16 (pImage + nTable, 0x0204); Put32 (pImage + nTable + 2, 13);
+    Put32 (pImage + nTable + 6, 300); Put32 (pImage + nTable + 10, 30000);
+    Put16 (pImage + nTable + 14, 2);
+    Put32 (pImage + nTable + 16, 0x20000); Put32 (pImage + nTable + 20, 0x20000);
+    Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeFound
+            && Chime.Kind == RomChimeSynthesised && Chime.nOffset == nTable,
+            "la table de la puce ASC est trouvée");
+    n = RomChimeRender (pImage, nSize, &Chime, pOut, MAX_FRAMES);
+    Expect (n > 30300 && n < 30420, "30 000 étapes de 22,95 µs : 0,69 s");
+    // L'escalier met l'énergie sur l'harmonique 2 : 695,6 Hz.
+    Expect (Tone (pOut, 2205, 4410, 695.6) > 5 * Tone (pOut, 2205, 4410, 600),
+            "l'incrément 0x20000 sonne à 347,8 Hz, surtout par son harmonique 2");
+    Expect (Rms (pOut, n - 3000, 3000) < 0.3 * Rms (pOut, 2205, 4410),
+            "et le lissage pas à pas le fait s'éteindre");
+
+    pImage[nTable + 15] = 5;
+    Expect (RomChimeFind (pImage, nSize, &Chime) != RomChimeFound,
+            "plus de quatre voix, ce n'est pas une table de l'ASC");
+    free (pImage);
+
+    // Celles du poste, si elles sont là : jamais dans le dépôt.
+    static const struct { const char *pPath; u32 nBytes; TRomChimeKind Kind; unsigned nMin, nMax; } ROMS[] =
+    {
+        { "../../qemu/sd-contents/powermac9600v1.rom", 0x400000, RomChimeBeep,        103000, 104000 },
+        { "../../qemu/sd-contents/okapia.rom",         0x100000, RomChimeSampled,      61500,  62000 },
+        { "../../qemu/sd-contents/macIIci.rom",        0x080000, RomChimeSynthesised,  30300,  30420 },
+    };
+    for (unsigned r = 0; r < sizeof ROMS / sizeof ROMS[0]; r++)
+    {
+        FILE *pFile = fopen (ROMS[r].pPath, "rb");
+        if (pFile == 0)
+        {
+            continue;
+        }
+        u8 *pRom = (u8 *) malloc (ROMS[r].nBytes);
+        const bool bRead = fread (pRom, 1, ROMS[r].nBytes, pFile) == ROMS[r].nBytes;
+        fclose (pFile);
+        n = 0;
+        const bool bFound = bRead && RomChimeFind (pRom, ROMS[r].nBytes, &Chime) == RomChimeFound
+                            && Chime.Kind == ROMS[r].Kind;
+        if (bFound)
+        {
+            n = RomChimeRender (pRom, ROMS[r].nBytes, &Chime, pOut, MAX_FRAMES);
+        }
+        char Label[128];
+        snprintf (Label, sizeof Label, "%s du poste : gong trouvé, %u trames", ROMS[r].pPath + 22, n);
+        Expect (bFound && n >= ROMS[r].nMin && n <= ROMS[r].nMax, Label);
+        free (pRom);
+    }
+    free (pOut);
+}
+
 int main (void)
 {
     CheckSizes ();
+    CheckRomChime ();
     CheckUnknownLines ();
     CheckFlavour ();
     CheckLayout ();

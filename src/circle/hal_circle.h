@@ -200,4 +200,24 @@ void BoardLogFlush (void);
  */
 CSoundBaseDevice *BoardSoundClaim (const char *pWhere, unsigned nQueueMsecs);
 
+/*
+ *  The startup chime, from the ROM the card will start
+ *
+ *  At power-on, as early as the card and the preferences allow, and again at
+ *  every restart, as a Macintosh does: the ROM that the startup volume's
+ *  Macintosh will use is opened, its chime found — recorded or as the sound
+ *  chip's table, rom_chime.h — and rendered once, then played on the sound
+ *  output the preferences name, from a kernel timer, while USB and the boot
+ *  menu come up. When that ROM keeps none this reader knows, the first ROM on
+ *  the card that does is used instead. The search is redone only when the ROM
+ *  asked for changes.
+ *
+ *  BoardChimeFinish() lets it end, up to a few seconds, then stops it: an
+ *  engine calls it before it feeds the same device. BoardChimeStop() does not
+ *  wait.
+ */
+void BoardChimePlay (void);
+void BoardChimeFinish (void);
+void BoardChimeStop (void);
+
 #endif

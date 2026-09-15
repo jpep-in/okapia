@@ -111,6 +111,11 @@ bool CKernel::Initialize (void)
         return false;
     }
 
+    // The chime, as early as it can know which ROM to take it from: it plays
+    // from a timer while USB and the boot menu come up. Not again when the
+    // other engine hands back: that is the same start, not a restart.
+    BoardChimePlay ();
+
     // 5. Everything else.
     if (!OkapiaBoard ().StartUSB ())
     {
@@ -854,6 +859,9 @@ TOkapiaExit CKernel::Run (bool bSwitched)
         // that had not opened yet.
         InputRelease ();
         FwInputReclaim ();
+
+        // A Macintosh chimes when it restarts, not only when it is switched on.
+        BoardChimePlay ();
 
         // How long it ran, and how much memory is left. Going round is where a
         // leak turns into a machine that stops booting after a while, and a
