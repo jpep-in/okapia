@@ -13,7 +13,7 @@
 # caused by THIS run and this way of ending it. A copy that fails the check is
 # kept, not deleted, so it can be examined.
 #
-# A timed run has nobody to shut the Mac down, so it ends in SIGTERM. Expect the
+# A timed run has nobody to shut the Mac down, so it ends in SIGKILL. Expect the
 # volume to be dirty; that is a pulled plug, and Disk First Aid's job. What must
 # NOT appear is structural damage — that would mean writes never reached the card.
 set -euo pipefail
@@ -99,10 +99,19 @@ else
     printf 'boot      : WARNING, the Mac never reported itself idle in %s s\n' "$SECONDS_TO_RUN"
 fi
 
+# Which volume the Mac started from, straight from the kernel's own log.
+BOOT_VOLUME="$(sed -n 's/.*Boot volume: \///p' "$LOG" | tail -1 | tr -d ' ')"
+
 # --- did the guest write at all? ---
 # Without this, a green verdict below could simply mean nothing was exercised.
+# The volume and not the whole card: the kernel keeps okapia.log on the card
+# too, so a card compared whole always shows writes, Mac or no Mac.
 if [ -n "$IMAGE" ]; then
     CHANGED="?"
+elif [ -n "$BOOT_VOLUME" ]; then
+    CHANGED="$( { cmp -l <(mcopy -n -i "$SD" "::${BOOT_VOLUME}" -) \
+                         <(mcopy -n -i "$CARD" "::${BOOT_VOLUME}" -) 2>/dev/null || true; } \
+               | wc -l | tr -d ' ')"
 else
     CHANGED="$( { cmp -l "$SD" "$CARD" 2>/dev/null || true; } | wc -l | tr -d ' ')"
 fi
@@ -111,11 +120,10 @@ if [ "$CHANGED" = "?" ]; then
 elif [ "$CHANGED" = "0" ]; then
     printf '\nwrites    : NONE — the guest never wrote, the verdict below proves nothing\n'
 else
-    printf '\nwrites    : %s bytes changed on the card\n' "$CHANGED"
+    printf '\nwrites    : %s bytes changed %s\n' "$CHANGED" \
+        "${BOOT_VOLUME:+in $BOOT_VOLUME}"
 fi
 
-# Which volume the Mac started from, straight from the kernel's own log.
-BOOT_VOLUME="$(sed -n 's/.*Boot volume: \///p' "$LOG" | tail -1 | tr -d ' ')"
 if [ -n "$BOOT_VOLUME" ]; then
     printf 'volume    : %s (the one the Mac booted)\n' "$BOOT_VOLUME"
 else
@@ -128,7 +136,13 @@ fi
 inspect_card() {
     VOL_FLAG="?" ; VOL_FSCK="?"
 
-    CARD_MOUNT="$(hdiutil attach -readonly -nobrowse "$CARD" 2>/dev/null | tail -1 | awk '{print $1}')" || CARD_MOUNT=""
+    # A mount point of our own, never /Volumes/OKAPIA: every Okapia card is
+    # called OKAPIA, so with a real one plugged in the test card mounts as
+    # "OKAPIA 1" and a hard-coded path inspects somebody's actual Macintosh.
+    # It did, reporting that card's crashed volume as this run's damage.
+    local MNT="${WORK}/card"
+    mkdir -p "$MNT"
+    CARD_MOUNT="$(hdiutil attach -readonly -nobrowse -mountpoint "$MNT" "$CARD" 2>/dev/null | tail -1 | awk '{print $1}')" || CARD_MOUNT=""
     [ -n "$CARD_MOUNT" ] || { echo "could not read the card back" >&2; return 1; }
 
     # The volume the kernel actually started from, which it names in the log.
@@ -136,14 +150,14 @@ inspect_card() {
     # — and on a card with two Systems that is a volume the run may never have
     # touched, so a green verdict would mean nothing.
     GUEST_IMAGE=""
-    if [ -n "$BOOT_VOLUME" ] && [ -f "/Volumes/OKAPIA/${BOOT_VOLUME}" ]; then
-        GUEST_IMAGE="/Volumes/OKAPIA/${BOOT_VOLUME}"
+    if [ -n "$BOOT_VOLUME" ] && [ -f "${MNT}/${BOOT_VOLUME}" ]; then
+        GUEST_IMAGE="${MNT}/${BOOT_VOLUME}"
     else
         # Also the path when the log named a volume the mounted card does not
         # show under that name — 8.3 truncation, a case difference from mcopy.
         # Guessing is worse than naming, but far better than giving up.
         [ -z "$BOOT_VOLUME" ] || echo "warning: ${BOOT_VOLUME} not found on the card, guessing" >&2
-        GUEST_IMAGE="$(find /Volumes/OKAPIA -maxdepth 1 -name '*.image' 2>/dev/null | head -1)" || GUEST_IMAGE=""
+        GUEST_IMAGE="$(find "$MNT" -maxdepth 1 -name '*.image' 2>/dev/null | head -1)" || GUEST_IMAGE=""
     fi
     [ -f "$GUEST_IMAGE" ] || { cleanup; CARD_MOUNT=""; echo "no disk image on the card" >&2; return 1; }
 
