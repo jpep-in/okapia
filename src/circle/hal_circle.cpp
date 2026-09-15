@@ -530,3 +530,106 @@ COkapiaBoard &OkapiaBoard (void)
     static COkapiaBoard s_Board;
     return s_Board;
 }
+
+/*
+ *  The sound device — see hal_circle.h
+ */
+
+#include <circle/sound/hdmisoundbasedevice.h>
+#include <circle/sound/pwmsoundbasedevice.h>
+#if RASPPI >= 4
+#include <circle/sound/usbsoundbasedevice.h>
+#endif
+
+#include "okapia_output.h"
+
+static const unsigned SOUND_SAMPLE_RATE = 44100;
+
+static CSoundBaseDevice *s_pBoardSound;
+static char              s_BoardSoundWhere[8];
+static bool              s_bBoardSoundTried;
+
+CSoundBaseDevice *BoardSoundClaim (const char *pWhere, unsigned nQueueMsecs)
+{
+    if (s_bBoardSoundTried)
+    {
+        if (strcmp (pWhere, s_BoardSoundWhere) == 0)
+        {
+            return s_pBoardSound;
+        }
+
+        // Another output, chosen in the boot menu. The device in hand can only
+        // go once it has stopped: Cancel() lets the DMA finish its buffer, and
+        // only then is the state one the destructor accepts. Called between
+        // two starts of a Macintosh, never while one is running, so nothing
+        // is writing to it meanwhile.
+        if (s_pBoardSound != 0)
+        {
+            s_pBoardSound->Cancel ();
+            for (unsigned i = 0; i < 100 && s_pBoardSound->IsActive (); i++)
+            {
+                CTimer::Get ()->MsDelay (10);
+            }
+            if (s_pBoardSound->IsActive ())
+            {
+                CLogger::Get ()->Write (FROM, LogWarning,
+                                        "Sound device %s would not stop; keeping it "
+                                        "until the board restarts", s_BoardSoundWhere);
+                return 0;
+            }
+            delete s_pBoardSound;
+            s_pBoardSound = 0;
+        }
+        CLogger::Get ()->Write (FROM, LogNotice, "Sound output %s replaces %s",
+                                pWhere, s_BoardSoundWhere);
+    }
+    s_bBoardSoundTried = true;
+    memset (s_BoardSoundWhere, 0, sizeof s_BoardSoundWhere);
+    strncpy (s_BoardSoundWhere, pWhere, sizeof s_BoardSoundWhere - 1);
+
+    CSoundBaseDevice *pSound = 0;
+    if (strcmp (pWhere, "hdmi") == 0)
+    {
+        pSound = new CHDMISoundBaseDevice (CInterruptSystem::Get (), SOUND_SAMPLE_RATE);
+    }
+    else if (strcmp (pWhere, "usb") == 0)
+    {
+#if RASPPI >= 4
+        pSound = new CUSBSoundBaseDevice (SOUND_SAMPLE_RATE);
+#else
+        // Circle builds USB audio for a Pi 4 and a Pi 5 only
+        // (lib/sound/Makefile:37).
+        CLogger::Get ()->Write (FROM, LogWarning, "USB sound needs a Pi 4 or 5");
+        return 0;
+#endif
+    }
+    else
+    {
+        pSound = new CPWMSoundBaseDevice (CInterruptSystem::Get (), SOUND_SAMPLE_RATE);
+    }
+    if (pSound == 0)
+    {
+        return 0;
+    }
+
+    pSound->SetWriteFormat (SoundFormatSigned16, 2);
+    if (!pSound->AllocateQueue (nQueueMsecs))
+    {
+        CLogger::Get ()->Write (FROM, LogWarning, "Cannot allocate the sound queue");
+        delete pSound;          // never started, so there is nothing to wait for
+        return 0;
+    }
+
+    // Started once and left running: a queue-mode device plays silence while
+    // its queue is empty, so an engine that stops feeding it is all a close is.
+    if (!pSound->Start () || !pSound->IsActive ())
+    {
+        CLogger::Get ()->Write (FROM, LogWarning, "Sound device %s would not start", pWhere);
+        return 0;               // kept, not deleted: see hal_circle.h
+    }
+
+    s_pBoardSound = pSound;
+    CLogger::Get ()->Write (FROM, LogNotice, "Sound device %s claimed",
+                            pWhere);
+    return s_pBoardSound;
+}

@@ -273,6 +273,10 @@ ENGINE_DEFINES += -DDIRECT_ADDRESSING_GUARD=1
 # property of the FPU decidable without a guest, and it is the one that fails
 # when the register is too narrow (patches/macemu/0008).
 ENGINE_DEFINES += -DFPU_SELFTEST=1
+# One system beep at the first idle, on a card whose preferences turn sound on:
+# the Sound Manager waits for its sound to finish, so a pull that never happens
+# is a "returned" line that never comes (audio_circle.cpp).
+ENGINE_DEFINES += -DSOUND_SELFTEST=1
 endif
 # Toggling OKAPIA_TRACE does not invalidate kernel8.img on its own:
 # rm kernel8.img kernel8.elf first, or you will run the previous kernel.

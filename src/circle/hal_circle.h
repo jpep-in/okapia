@@ -42,6 +42,8 @@
 #include <wrap_fatfs.h>
 #include <circle/types.h>
 
+class CSoundBaseDevice;
+
 class COkapiaBoard
 {
 public:
@@ -175,5 +177,27 @@ void BoardWatchClock (bool bReport);
  *  halts or reboots — never from an interrupt: it blocks on the card.
  */
 void BoardLogFlush (void);
+
+/*
+ *  The sound device, claimed once for the life of the board
+ *
+ *  Circle's sound devices cannot be given back while they play. Cancel() only
+ *  asks the DMA to stop at the end of its buffer, and deleting the device
+ *  before that happened trips CHDMISoundBaseDevice's destructor assertion
+ *  (hdmisoundbasedevice.cpp:166), or frees a PWM device its interrupt still
+ *  calls into. A Circle assertion halts, and AudioExit() runs inside ExitAll()
+ *  *before* DiskExit(): every restart from Mac OS with sound on could freeze
+ *  the board with the disk image still open. And audio_circle.cpp is compiled
+ *  once per engine, so a device per engine would be two claims on one socket.
+ *
+ *  So the device is the board's, 44.1 kHz 16-bit stereo, and every start of
+ *  either Macintosh is handed the same one. pWhere is "hdmi", "usb" or "jack".
+ *  Asking for another output — the boot menu changed it — stops the device in
+ *  hand, waits until it has, and only then replaces it: call it between two
+ *  starts, never while a Macintosh is feeding the old one. Answers 0 when the
+ *  device will not start, and keeps answering 0 for that output rather than
+ *  trying again.
+ */
+CSoundBaseDevice *BoardSoundClaim (const char *pWhere, unsigned nQueueMsecs);
 
 #endif

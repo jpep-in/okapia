@@ -363,6 +363,10 @@ void idle_wait (void)
     // Does its work once and returns immediately ever after.
     extern void TellMacTheMouseResolution (void);
     TellMacTheMouseResolution ();
+#if SOUND_SELFTEST
+    extern void AudioSelfTest (void);
+    AudioSelfTest ();
+#endif
 
     CTimer::SimpleusDelay (100);
 }

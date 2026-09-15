@@ -60,7 +60,7 @@ prefs_desc platform_prefs_items[] = {
 	// jack, which a Pi 5 does not have and which is the wrong socket on a
 	// television. "off" is the value an unreadable one falls back to, because a
 	// device claimed and not working is what froze the guest once already.
-	{"soundoutput", TYPE_STRING, false, "where sound comes out: off, hdmi, jack or usb"},
+	{"soundoutput", TYPE_STRING, false, "where sound comes out: off, hdmi, jack or usb (discard: pulled and thrown away, for tests)"},
 	// Declared, not endorsed: rsrc_patches.cpp acts on it, but the patched idle
 	// loop has never been measured here. Declaring it keeps the parser from
 	// rejecting a prefs file brought over from a desktop Basilisk II.
