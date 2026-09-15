@@ -1,0 +1,137 @@
+libgloss/circle: seek with an off_t, so a file can be read past 2 GiB
+
+_lseek() took its offset as an int and LSeek() computed the new position
+in one, while newlib's lseek() hands it an off_t — 64 bits on AArch64 — and
+FatFs positions are FSIZE_t, up to 4 GiB - 1 on FAT32. So every offset from
+2 GiB on arrived negative and was refused with EINVAL: a disk image of 2 GB
+or more read cleanly up to that point and returned nothing beyond it, and
+lseek(fd, 0, SEEK_END) on such a file answered a negative size.
+
+The offset, the computed position and the result are off_t now, through the
+CGlueIO interface and its three implementations. A position FatFs cannot
+represent is refused with EOVERFLOW rather than truncated into a valid one,
+which is the failure that would read the wrong data instead of none.
+
+diff --git a/libs/circle-newlib/libgloss/circle/cglueio.h b/libs/circle-newlib/libgloss/circle/cglueio.h
+index 8fe054b06..7f86f53c2 100644
+--- a/libs/circle-newlib/libgloss/circle/cglueio.h
++++ b/libs/circle-newlib/libgloss/circle/cglueio.h
+@@ -27,8 +27,8 @@ namespace _CircleStdlib
+         virtual int
+         Write (const void *pBuffer, int nCount) = 0;
+ 
+-        virtual int
+-        LSeek(int ptr, int dir) = 0;
++        virtual off_t
++        LSeek(off_t ptr, int dir) = 0;
+ 
+         virtual int
+         Close (void) = 0;
+diff --git a/libs/circle-newlib/libgloss/circle/io.cpp b/libs/circle-newlib/libgloss/circle/io.cpp
+index 8fb96bd77..a7b6711bc 100644
+--- a/libs/circle-newlib/libgloss/circle/io.cpp
++++ b/libs/circle-newlib/libgloss/circle/io.cpp
+@@ -97,8 +97,8 @@ namespace _CircleStdlib
+             return nResult;
+         }
+ 
+-        int
+-        LSeek(int ptr, int dir)
++        off_t
++        LSeek(off_t ptr, int dir)
+         {
+             errno = ESPIPE;
+             return -1;
+@@ -361,8 +361,8 @@ namespace _CircleStdlib
+             return result;
+         }
+ 
+-        int
+-        LSeek(int ptr, int dir)
++        off_t
++        LSeek(off_t ptr, int dir)
+         {
+             /*
+              * If whence is SEEK_SET, the file offset shall be set to
+@@ -374,7 +374,11 @@ namespace _CircleStdlib
+              * If whence is SEEK_END, the file offset shall be set to
+              * the size of the file plus offset.
+              */
+-            int new_pos;
++            /*
++             * off_t, not int: FatFs positions are FSIZE_t, 4 GiB on FAT32,
++             * and an int refused every offset from 2 GiB on.
++             */
++            off_t new_pos;
+             switch (dir)
+             {
+                 case SEEK_SET:
+@@ -382,11 +386,11 @@ namespace _CircleStdlib
+                     break;
+ 
+                 case SEEK_CUR:
+-                    new_pos = static_cast<int>(f_tell(&mFile)) + ptr;
++                    new_pos = static_cast<off_t>(f_tell(&mFile)) + ptr;
+                     break;
+ 
+                 case SEEK_END:
+-                    new_pos = static_cast<int>(f_size(&mFile)) + ptr;
++                    new_pos = static_cast<off_t>(f_size(&mFile)) + ptr;
+                     break;
+ 
+                 default:
+@@ -394,8 +398,13 @@ namespace _CircleStdlib
+                     break;
+             }
+ 
+-            int result;
+-            if (new_pos >= 0)
++            off_t result;
++            if (new_pos > static_cast<off_t>(static_cast<FSIZE_t>(-1)))
++            {
++                errno = EOVERFLOW;
++                result = -1;
++            }
++            else if (new_pos >= 0)
+             {
+                 int const fresult = f_lseek(&mFile, static_cast<FSIZE_t>(new_pos));
+ 
+@@ -684,8 +693,8 @@ _write (int fildes, char *ptr, int len)
+     return file->GetGlueIO ()->Write (ptr, len);
+ }
+ 
+-extern "C" int
+-_lseek(int fildes, int ptr, int dir)
++extern "C" off_t
++_lseek(int fildes, off_t ptr, int dir)
+ {
+     _CircleStdlib::CircleFile * const file = _CircleStdlib::FileTable::GetFile(fildes);
+ 
+diff --git a/libs/circle-newlib/libgloss/circle/pipe.cpp b/libs/circle-newlib/libgloss/circle/pipe.cpp
+index e3f4c10e2..861138ae7 100644
+--- a/libs/circle-newlib/libgloss/circle/pipe.cpp
++++ b/libs/circle-newlib/libgloss/circle/pipe.cpp
+@@ -78,7 +78,7 @@ namespace _CircleStdlib
+             return nResult;
+         }
+ 
+-        int LSeek(int ptr, int dir) override
++        off_t LSeek(off_t ptr, int dir) override
+         {
+             errno = ESPIPE;
+             return -1;
+diff --git a/libs/circle-newlib/libgloss/circle/socketio.cpp b/libs/circle-newlib/libgloss/circle/socketio.cpp
+index bc1ee00db..d090d449c 100644
+--- a/libs/circle-newlib/libgloss/circle/socketio.cpp
++++ b/libs/circle-newlib/libgloss/circle/socketio.cpp
+@@ -100,8 +100,8 @@ namespace _CircleStdlib
+             delete mSocket;
+         }
+ 
+-        int
+-        LSeek(int ptr, int dir)
++        off_t
++        LSeek(off_t ptr, int dir)
+         {
+             return -1;
+         }

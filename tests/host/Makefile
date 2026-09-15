@@ -162,6 +162,14 @@ check_encoding.o: check_encoding.cpp
 check_encoding: check_encoding.o p_mac_encoding_circle.o
 	$(CXX) -o $@ $^
 
+# The subject of scripts/check-large-volume.sh: not a check on its own, since
+# the defect it exposes lives in the kernel's C library, not on this machine.
+make_large_volume.o: make_large_volume.cpp
+	$(CXX) -O2 -Wall -I$(LIBHFS) -MMD -MP -c -o $@ $<
+
+make_large_volume: make_large_volume.o $(HFS_OBJS)
+	$(CXX) -o $@ $^
+
 # The measurements are part of the build, not something to remember to run: an
 # asymmetry of one pixel is invisible on a screenshot and obvious at three. The
 # behaviour joins them: what the focus does under a sequence of keys is decidable
@@ -190,7 +198,7 @@ view: render_specimen
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
 	      check_chooser check_pages check_platform check_platform.tmp check_blit \
-	      check_encoding \
+	      check_encoding make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean

@@ -38,6 +38,7 @@ tests/host/check_screen
 tests/host/check_chooser
 tests/host/check_pages
 tests/host/check_platform
+tests/host/make_large_volume
 tests/host/check_platform.tmp
 tests/host/check_blit
 tests/host/check_encoding
