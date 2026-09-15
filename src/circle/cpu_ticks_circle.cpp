@@ -20,6 +20,7 @@
 
 #include "sysdeps.h"
 #include "okapia_circle.h"
+#include "hal_circle.h"
 #include "cpu_emulation.h"
 #include "main.h"
 
@@ -156,14 +157,22 @@ void cpu_do_check_ticks (void)
         GuestBoundsReport ();
 #endif
 
-        CLogger::Get ()->Write ("okapia-68k", LogNotice,
-                                "running: %lu k opcodes in %u s (%lu k/s), "
-                                "quantum %u, %s",
-                                (unsigned long) (nOpcodes / 1000), nNow,
-                                (unsigned long) (nOpcodes / 1000 / (nNow ? nNow : 1)),
-                                s_nQuantum,
-                                MacHasBeenIdle () ? "started"
-                                : HasIdleTime ()  ? "still starting"
-                                                  : "no idle patch: cannot tell");
+        // Here and not in the tick: asking the firmware and writing the card
+        // both block.
+        const bool bReport = PerfReportWanted ();
+        BoardWatchClock (bReport);
+        if (bReport)
+        {
+            CLogger::Get ()->Write ("okapia-68k", LogNotice,
+                                    "running: %lu k opcodes in %u s (%lu k/s), "
+                                    "quantum %u, %s",
+                                    (unsigned long) (nOpcodes / 1000), nNow,
+                                    (unsigned long) (nOpcodes / 1000 / (nNow ? nNow : 1)),
+                                    s_nQuantum,
+                                    MacHasBeenIdle () ? "started"
+                                    : HasIdleTime ()  ? "still starting"
+                                                      : "no idle patch: cannot tell");
+        }
+        BoardLogFlush ();
     }
 }

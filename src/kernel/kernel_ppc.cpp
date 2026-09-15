@@ -204,6 +204,7 @@ TOkapiaExit CKernelPPC::Run (bool bSwitched)
     TickStart ();
 
     CLogger::Get ()->Write (FROM, LogNotice, "Entering PowerPC execution");
+    BoardLogFlush ();       // everything up to here, before anything can crash
     init_emul_ppc ();
     emul_ppc (ROMBase + 0x310000);  // does not return until the Macintosh stops
     TickStop ();

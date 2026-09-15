@@ -1,0 +1,32 @@
+configure: optimise newlib outside debug builds
+
+The debug branch of CFLAGS_FOR_TARGET says -O0 explicitly; the other one
+says nothing, and nothing means GCC's default, which is also -O0. So every
+C function in newlib — libm entirely, and libc apart from the routines
+written in assembler — is built unoptimised in a release build, and the
+generated code shows it: sinl() stores its argument on the stack and reads
+it straight back before doing anything.
+
+That matters to anything calling the maths library in a loop. Basilisk II's
+68881 emulation calls sinl, cosl, tanl, atanl, expl, logl, powl and sqrtl
+for the FPU instructions of the same names, so an emulated floating-point
+benchmark was measuring an unoptimised libm.
+
+-O2, as the debug branch implies was intended, and -ffp-contract=off so
+that the double-precision functions keep exactly the results they had:
+fdlibm-derived code is written for IEEE operations one at a time, and at
+-O2 GCC would otherwise fuse multiplies and adds.
+
+diff --git a/configure b/configure
+index b87aeb1..e490dc4 100755
+--- a/configure
++++ b/configure
+@@ -357,7 +357,7 @@ if [ $DEBUG -eq 1 ]
+ then
+     CFLAGS_FOR_TARGET="$ARCH -D__circle__ -DRASPPI=$RASPBERRYPI $CIRCLE_DEFINES -O0 -g -Wno-parentheses $KASAN_CFLAGS"
+ else
+-    CFLAGS_FOR_TARGET="$ARCH -D__circle__ -DRASPPI=$RASPBERRYPI $CIRCLE_DEFINES -g -Wno-parentheses $KASAN_CFLAGS"
++    CFLAGS_FOR_TARGET="$ARCH -D__circle__ -DRASPPI=$RASPBERRYPI $CIRCLE_DEFINES -O2 -ffp-contract=off -g -Wno-parentheses $KASAN_CFLAGS"
+ fi
+ if [ $CLANG -eq 1 ]
+ then

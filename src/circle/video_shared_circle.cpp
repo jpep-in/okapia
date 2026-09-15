@@ -354,9 +354,14 @@ static void Retune (unsigned nPerComposite)
     }
     if (nWanted != s_nFrameSkip)
     {
-        CLogger::Get ()->Write (FROM, LogNotice,
-                                "dynamic: composite %u us, refresh every %u VBL",
-                                nPerComposite, nWanted);
+        // A report like the others: under a drawing load the rate can change
+        // at every look, and each line stops the Macintosh while it goes out.
+        if (PerfReportWanted ())
+        {
+            CLogger::Get ()->Write (FROM, LogNotice,
+                                    "dynamic: composite %u us, refresh every %u VBL",
+                                    nPerComposite, nWanted);
+        }
         s_nFrameSkip = nWanted;
     }
 }
@@ -407,15 +412,18 @@ bool VideoScreenVBL (void)
 
     // s_nVBLs counts vertical blanks, not composites. Reporting the VBL rate as
     // "fps" once hid a 9 Hz display behind a reassuring 55.
-    CLogger::Get ()->Write (FROM, LogNotice,
-                            "%u VBL (%u/s), screen %u/s, composite %u us "
-                            "(%u.%u%% of wall), %u/256 boxes, %u full scans, "
-                            "guest buffer %s",
-                            s_nVBLs, s_nVBLs / (nNow ? nNow : 1),
-                            nScreenRate, nPerComposite,
-                            nLoadPerMille / 10, nLoadPerMille % 10,
-                            nBoxesPer, s_Compositor.nFullScans,
-                            GuestHasContent () ? "has content" : "still blank");
+    if (PerfReportWanted ())
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "%u VBL (%u/s), screen %u/s, composite %u us "
+                                "(%u.%u%% of wall), %u/256 boxes, %u full scans, "
+                                "guest buffer %s",
+                                s_nVBLs, s_nVBLs / (nNow ? nNow : 1),
+                                nScreenRate, nPerComposite,
+                                nLoadPerMille / 10, nLoadPerMille % 10,
+                                nBoxesPer, s_Compositor.nFullScans,
+                                GuestHasContent () ? "has content" : "still blank");
+    }
 
     s_Compositor.nUsec       = 0;
     s_Compositor.nFrames     = 0;

@@ -86,8 +86,22 @@ prefs_desc platform_prefs_items[] = {
 	// parsed off the card and dropped, so the line reads correctly, changes
 	// nothing, and says nothing about it. That cost one whole measurement.
 	{"mousedpi", TYPE_INT32, false, "what the pointing device reports per inch"},
+	{"perfreport", TYPE_BOOLEAN, false, "print engine, video, input and clock counters every 5 s"},
 	{NULL, TYPE_END, false, NULL}	// End of list
 };
+
+bool PerfReportWanted(void)
+{
+#ifdef CIRCLE_QEMU
+	// QEMU's PL011 has no transmit timing: a character costs a trap, not
+	// 87 µs of a stopped Macintosh. The scripts read these lines, and a card
+	// built here is copied to boards, so the preference is left alone rather
+	// than defaulted differently per build.
+	return true;
+#else
+	return PrefsFindBool("perfreport");
+#endif
+}
 
 /*
  *  Defaults, applied before the card is read so that the card overrides them.
@@ -194,6 +208,11 @@ void AddPlatformPrefsDefaults(void)
 
 	// False: the Macintosh is what one came for, and the menu is the detour.
 	PrefsReplaceBool("bootmenu", false);
+
+	// False: the serial port is polled, and a report is the Macintosh stopped
+	// while it goes out. A benchmark that wants the counters turns it on and
+	// knows what it costs. PerfReportWanted() above.
+	PrefsReplaceBool("perfreport", false);
 }
 
 /*
@@ -401,6 +420,12 @@ void SavePrefs(void)
 		"# the volumes found on the card at startup.\n"
 		"# hfsrepair true\n"
 		"# hfsinventory true\n"
+		"#\n"
+		"# Print the emulator's counters on the serial port every 5 seconds:\n"
+		"# opcode rate, screen refresh cost, mouse, processor clock and\n"
+		"# temperature. Useful for a benchmark, and not free: the Macintosh\n"
+		"# stops while each line goes out, about 1%% of its time.\n"
+		"# perfreport true\n"
 		"#\n"
 		"# Keywords below that Circle has nothing to do (scsi*, jit*, ether*,\n"
 		"# seriala, serialb, mousewheel*, and the rest) are listed by upstream and\n"

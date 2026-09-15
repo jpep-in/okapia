@@ -568,12 +568,16 @@ static void InputReport (void)
     }
     s_nLast = nNow;
 
-    CLogger::Get ()->Write (FROM, LogNotice,
-                            "mouse: %u USB reports, %u drains (%u carried the "
-                            "pointer)",
-                            s_nReports, s_nDrains, s_nMotionDrains);
+    const bool bReport = PerfReportWanted ();
+    if (bReport)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "mouse: %u USB reports, %u drains (%u carried the "
+                                "pointer)",
+                                s_nReports, s_nDrains, s_nMotionDrains);
+    }
 #ifdef SHEEPSHAVER
-    if (s_nBiggestCount != 0)
+    if (bReport && s_nBiggestCount != 0)
     {
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "speed in/s  <1:%u 1-2:%u 2-4:%u 4-8:%u 8-16:%u "

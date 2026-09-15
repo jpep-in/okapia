@@ -31,7 +31,10 @@ ifeq ($(ENGINE),basilisk)
   # host's widest IEEE type, and on AArch64 that is binary128 — a 15-bit
   # exponent with the Mac's own bias, 112 fraction bits for the Mac's 63.
   # Nothing is lost. See patches/macemu/0008.
-  ENGINE_DEFINES = -DDIRECT_ADDRESSING -DFPU_IEEE
+  # M68K_NO_FAULT_PC: nothing here can raise the access error that reads
+  # regs.fault_pc — no JIT, no SIGSEGV path into the core — so the interpreter
+  # stops writing it twice per instruction (patches/macemu/0009).
+  ENGINE_DEFINES = -DDIRECT_ADDRESSING -DFPU_IEEE -DM68K_NO_FAULT_PC
   ENGINE_VPATH   =
 else ifeq ($(ENGINE),sheepshaver)
   MACEMU         = ../../external/macemu/SheepShaver/src
@@ -159,7 +162,11 @@ BDF           = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf \
 # of their own — everything is behind os_open/os_read/... in os.h — so os.c
 # compiles unchanged against newlib.
 HFS         = ../../external/hfsutils/libhfs
-HFS_SRCS    = $(wildcard $(HFS)/*.c)
+# Less memcmp.c, a stand-in for the Unixes of 1996 that had none. Linked in, its
+# object beat libc.a to the symbol and gave the whole image — both engines, the
+# compositor's tile comparison first — a memcmp that compares one byte per
+# iteration, where newlib's compares sixteen.
+HFS_SRCS    = $(filter-out $(HFS)/memcmp.c,$(wildcard $(HFS)/*.c))
 
 EMU_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) \
            $(COMPAT_SRCS) $(PLATFORM_SRCS) $(REUSED_SRCS)

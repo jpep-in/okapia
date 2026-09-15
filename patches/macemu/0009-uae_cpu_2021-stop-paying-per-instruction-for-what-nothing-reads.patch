@@ -1,0 +1,120 @@
+uae_cpu_2021: stop paying per instruction for what nothing reads
+
+Two costs sit in the interpreter's inner loop on every host without
+X86_ASSEMBLY, and neither buys anything there.
+
+regs.fault_pc is written twice per instruction by m68k_do_execute(), and
+once more by every m68k_setpc(), which means recomputing the PC each time.
+Its one reader is the frame of a 68040 access error (exception 2), and the
+interpreter raises that only through BUS_ERROR, which nothing but the JIT
+or a SIGSEGV path into the core invokes. M68K_NO_FAULT_PC lets a port
+without either say so; the default keeps upstream's behaviour exactly, and
+the knob is ignored under USE_JIT. Should an access error be raised anyway,
+its frame carries the current PC instead of a stale one.
+
+SPCFLAGS_SET and SPCFLAGS_CLEAR take spcflags_lock on every call, and
+MakeFromSR() makes one of each on every write to the status register —
+which the Macintosh does constantly, masking and unmasking interrupts. The
+writers are interrupts or other threads setting a bit and the CPU loop
+clearing one, so an atomic OR and AND are all the exclusion that takes.
+GCC and Clang provide them on every target; the mutex stays for the rest.
+
+On a Raspberry Pi the lock was Circle's EnterCritical(), a save and a
+restore of the interrupt mask, called from the interpreter.
+
+diff --git a/BasiliskII/src/uae_cpu_2021/newcpu.cpp b/BasiliskII/src/uae_cpu_2021/newcpu.cpp
+index e8c38ada..72d4b1ea 100644
+--- a/BasiliskII/src/uae_cpu_2021/newcpu.cpp
++++ b/BasiliskII/src/uae_cpu_2021/newcpu.cpp
+@@ -606,7 +606,11 @@ void Exception(int nr, uaecptr oldpc)
+ 	    regs.wb3_status = 0;
+ 	    exc_push_word(regs.mmu_ssw);
+ 	    exc_push_long(regs.mmu_fault_addr); /* EA */
++#if defined(M68K_NO_FAULT_PC) && !defined(USE_JIT)
++	    exc_make_frame(7, regs.sr, m68k_getpc(), 2, 0, 0);
++#else
+ 	    exc_make_frame(7, regs.sr, regs.fault_pc, 2, 0, 0);
++#endif
+ 
+ 	}
+ #ifdef EXCEPTIONS_VIA_LONGJMP
+@@ -1507,7 +1511,8 @@ void m68k_do_execute (void)
+     uae_u32 pc;
+     uae_u32 opcode;
+     for (;;) {
+-	regs.fault_pc = pc = m68k_getpc();
++	pc = m68k_getpc();
++	M68K_SET_FAULT_PC(pc);
+ #ifdef FULL_HISTORY
+ #ifdef NEED_TO_DEBUG_BADLY
+ 	history[lasthist] = regs;
+@@ -1538,7 +1543,7 @@ void m68k_do_execute (void)
+ #endif
+ 	(*cpufunctbl[opcode])(opcode);
+ 	cpu_check_ticks();
+-	regs.fault_pc = m68k_getpc();
++	M68K_SET_FAULT_PC(m68k_getpc());
+ 
+ 	if (SPCFLAGS_TEST(SPCFLAG_ALL_BUT_EXEC_RETURN)) {
+ 		if (m68k_do_specialties())
+diff --git a/BasiliskII/src/uae_cpu_2021/newcpu.h b/BasiliskII/src/uae_cpu_2021/newcpu.h
+index 82e9acdb..eeb575c2 100644
+--- a/BasiliskII/src/uae_cpu_2021/newcpu.h
++++ b/BasiliskII/src/uae_cpu_2021/newcpu.h
+@@ -204,12 +204,23 @@ static inline uae_u32 next_ilong (void)
+     return r;
+ }
+ 
++/* regs.fault_pc has one reader: the frame of a 68040 access error, exception
++   2, raised through BUS_ERROR — which only a JIT or a host with a SIGSEGV path
++   into the core calls. A port with neither defines M68K_NO_FAULT_PC and stops
++   writing, twice per instruction, a value nothing reads. */
++#if defined(M68K_NO_FAULT_PC) && !defined(USE_JIT)
++# define M68K_SET_FAULT_PC(pc) ((void) 0)
++#else
++# define M68K_SET_FAULT_PC(pc) (regs.fault_pc = (pc))
++#endif
++
+ static inline void m68k_setpc (uaecptr newpc)
+ {
+ #ifndef FULLMMU
+     regs.pc_p = regs.pc_oldp = get_real_address(newpc, 0, sz_word);
+ #endif
+-    regs.fault_pc = regs.pc = newpc;
++    regs.pc = newpc;
++    M68K_SET_FAULT_PC(newpc);
+ }
+ 
+ #define m68k_setpc_fast m68k_setpc
+diff --git a/BasiliskII/src/uae_cpu_2021/spcflags.h b/BasiliskII/src/uae_cpu_2021/spcflags.h
+index eb465e72..f709aaf3 100644
+--- a/BasiliskII/src/uae_cpu_2021/spcflags.h
++++ b/BasiliskII/src/uae_cpu_2021/spcflags.h
+@@ -76,6 +76,19 @@ enum {
+ #include "main.h"
+ extern B2_mutex *spcflags_lock;
+ 
++#if defined(__GNUC__)
++/* Set by interrupts and other threads, cleared by the CPU loop: an atomic OR
++   and AND are all the exclusion that takes. A mutex costs a lock round trip
++   on every SR write instead, since MakeFromSR() sets one flag and clears
++   another each time, and the Macintosh masks interrupts constantly. */
++#define SPCFLAGS_SET(m) do { \
++	__atomic_fetch_or(&regs.spcflags, (m), __ATOMIC_SEQ_CST); \
++} while (0)
++
++#define SPCFLAGS_CLEAR(m) do { \
++	__atomic_fetch_and(&regs.spcflags, ~(m), __ATOMIC_SEQ_CST); \
++} while (0)
++#else
+ #define SPCFLAGS_SET(m) do { 				\
+ 	B2_lock_mutex(spcflags_lock);			\
+ 	regs.spcflags |= (m);					\
+@@ -87,6 +100,7 @@ extern B2_mutex *spcflags_lock;
+ 	regs.spcflags &= ~(m);					\
+ 	B2_unlock_mutex(spcflags_lock);         \
+ } while (0)
++#endif
+ 
+ #define SleepAndWait() usleep(1000);
+ 

@@ -29,4 +29,11 @@
 #include <circle/timer.h>
 #include <circle/synchronize.h>
 
+// Whether the periodic reports — engine, video, input, tick, sound — go out on
+// the serial port. The port is polled, so every character stops the Macintosh
+// for 87 µs: about 46 ms every five seconds, in stalls of 8 to 15 ms, some of
+// them from inside the tick interrupt. Off on a board unless `perfreport` asks;
+// always on under QEMU, whose serial port costs nothing. prefs_circle.cpp.
+bool PerfReportWanted (void);
+
 #endif

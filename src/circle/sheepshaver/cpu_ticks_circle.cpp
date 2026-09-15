@@ -22,6 +22,7 @@
 
 #include "sysdeps.h"
 #include "okapia_circle.h"
+#include "hal_circle.h"
 
 #include "cpu_emulation.h"
 #include "main.h"
@@ -140,12 +141,20 @@ void powerpc_check_ticks (void)
     if (nNow != s_nLastReport && nNow != 0 && (nNow % 5) == 0)
     {
         s_nLastReport = nNow;
-        CLogger::Get ()->Write (FROM, LogNotice,
-                                "periodic seam: %u visits in %u s (%u Hz "
-                                "lifetime, %u Hz now), quantum %u",
-                                s_nVisits, nNow, s_nVisits / nNow,
-                                (s_nVisits - s_nVisitsAtReport) / 5,
-                                (unsigned) ppc_check_ticks_quantum);
+        // Here and not in the tick: asking the firmware and writing the card
+        // both block.
+        const bool bReport = PerfReportWanted ();
+        BoardWatchClock (bReport);
+        if (bReport)
+        {
+            CLogger::Get ()->Write (FROM, LogNotice,
+                                    "periodic seam: %u visits in %u s (%u Hz "
+                                    "lifetime, %u Hz now), quantum %u",
+                                    s_nVisits, nNow, s_nVisits / nNow,
+                                    (s_nVisits - s_nVisitsAtReport) / 5,
+                                    (unsigned) ppc_check_ticks_quantum);
+        }
         s_nVisitsAtReport = s_nVisits;
+        BoardLogFlush ();
     }
 }

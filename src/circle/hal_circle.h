@@ -3,7 +3,7 @@
  *
  * Okapia has two kernels already — the Macintosh one and the specimen that
  * shows the firmware with no emulator behind it — and a third is coming for a
- * second engine (planification.md §19.9). Each was bringing the board up on its
+ * second engine (docs/project/architecture.md). Each was bringing the board up on its
  * own, in the same order, with the same comments, and they had already drifted:
  * one built the USB host as a member and the other as a pointer, which is not a
  * matter of taste but the difference between a working machine and a kernel
@@ -27,6 +27,7 @@
 #define OKAPIA_HAL_CIRCLE_H
 
 #include <circle/actled.h>
+#include <circle/cputhrottle.h>
 #include <circle/koptions.h>
 #include <circle/devicenameservice.h>
 #include <circle/nulldevice.h>
@@ -75,7 +76,7 @@ private:
     // emulators in the same image — the engine that takes over calls the same
     // Start* sequence and must not re-register a thing. Circle keeps four
     // periodic timer slots and one mouse claim, and neither can be given back
-    // (AGENTS.md), so a second real init is a failed assertion and a dead
+    // (docs/project/architecture.md), so a second real init is a failed assertion and a dead
     // board rather than a bug you get to read about.
     bool               m_bStarted, m_bConsole, m_bUSB, m_bCard;
 
@@ -96,9 +97,13 @@ private:
     // A failed assertion in a member constructor runs before serial and is
     // therefore a silent hang with nothing at all on the wire — which is
     // exactly what the USB host cost when it was written the obvious way
-    // (AGENTS.md). The Macintosh kernel had drifted back to a member; this is
+    // (docs/contributing/testing-and-debugging.md). The Macintosh kernel had drifted back to a member; this is
     // the form that was paid for.
     CUSBHCIDevice     *m_pUSBHCI;
+
+    // A pointer for the same reason: its constructor asserts and asks the
+    // firmware, and neither may happen before there is a log to say so.
+    CCPUThrottle      *m_pCPUThrottle;
 };
 
 // The one board, for the life of the image. Built on first use rather than as a
@@ -135,5 +140,40 @@ typedef void TBoardTickHandler (void);
 // falls back on Circle's periodic handler. A second call only swaps the
 // handler; the timer and its interrupt are taken once for the life of the board.
 bool BoardFineTick (unsigned nPeriodUsec, TBoardTickHandler *pHandler);
+
+/*
+ *  What the ARM is actually running at
+ *
+ *  Start() sets the processor to its maximum rate, and says what the firmware
+ *  had left it at. That is not the end of the story on a board that heats: the
+ *  firmware caps the rate on its own at 80 °C and throttles at 85, and nothing
+ *  reaches the Macintosh to say so — a slow benchmark then reads as a slow
+ *  emulator. This asks the firmware and logs whenever the throttling state
+ *  changes; with bReport, it also logs the rate and the temperature.
+ *
+ *  Every few seconds from an engine's own periodic seam, never from an
+ *  interrupt: each question is a round trip to the VideoCore that blocks.
+ */
+void BoardWatchClock (bool bReport);
+
+/*
+ *  The log, on the card
+ *
+ *  The serial port is only a log for whoever has a 3.3 V adapter on GPIO 14
+ *  and 15; everyone else has a card. StartCard() opens okapia.log at the root
+ *  of it, after keeping the last session's as okapia-previous.log, and this
+ *  writes out whatever the logger has gathered since the last call.
+ *
+ *  Both files have a fixed size, 512 KB, made once, and are overwritten in
+ *  place: every write lands in whole sectors the file already owns, and neither
+ *  the FAT nor a directory is written again after the files exist. That is the
+ *  disk image's own rule (docs/topics/storage.md), and it means a plug pulled during a
+ *  flush can cost the last lines of the log and nothing else on the card. A
+ *  session longer than the file starts again at its top, below a marker.
+ *
+ *  From an engine's periodic seam every few seconds, and before the board
+ *  halts or reboots — never from an interrupt: it blocks on the card.
+ */
+void BoardLogFlush (void);
 
 #endif

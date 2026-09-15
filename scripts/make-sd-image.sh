@@ -70,7 +70,21 @@ STAGING="${IMAGE}.new"
 trap 'rm -f "$STAGING"' EXIT
 
 dd if=/dev/zero of="$STAGING" bs=1m count="$SIZE_MB" status=none
-mformat -i "$STAGING" -F -v OKAPIA ::
+
+# The largest clusters FAT32 allows at this size. FatFs keeps no map of a file's
+# clusters, so a seek inside a disk image follows the chain one link at a time
+# and every read stops at a cluster boundary: mformat's default of 4 KB made
+# the 500 MB image a chain of 128 000 links. FAT32 also needs more than 65 525
+# clusters, or FatFs reads the volume as FAT16 — hence 70 000, with room for
+# the FATs themselves. A card too small for 8 KB keeps mformat's own choice.
+CLUSTER_SECTORS=""
+for spc in 64 32 16; do
+    if [ $(( SIZE_MB * 2048 / spc )) -ge 70000 ]; then
+        CLUSTER_SECTORS="$spc"
+        break
+    fi
+done
+mformat -i "$STAGING" -F ${CLUSTER_SECTORS:+-c "$CLUSTER_SECTORS"} -v OKAPIA ::
 
 if [ -n "$(ls -A "$CONTENTS" 2>/dev/null)" ]; then
     mcopy -i "$STAGING" -s "$CONTENTS"/* ::

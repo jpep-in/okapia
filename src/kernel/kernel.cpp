@@ -733,6 +733,7 @@ bool CKernel::StartMacintosh (void)
     TickStart ();
 
     CLogger::Get ()->Write (FROM, LogNotice, "Entering 68k execution");
+    BoardLogFlush ();       // everything up to here, before anything can crash
     MacRestartArm ();
     Start680x0 ();
     TickStop ();                          // does not return until the Mac stops

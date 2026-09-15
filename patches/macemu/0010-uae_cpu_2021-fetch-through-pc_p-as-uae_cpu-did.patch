@@ -1,0 +1,39 @@
+uae_cpu_2021: fetch through pc_p, as uae_cpu did
+
+Outside FULLMMU, get_ibyte(), get_iword() and get_ilong() find the byte to
+read by recomputing the guest PC, m68k_getpc() = pc + (pc_p - pc_oldp), and
+translating it back with get_real_address(). Every opcode goes through
+get_iword(0), and so does every extension word, so the interpreter reloads
+pc, pc_oldp and MEMBaseDiff for each of them: on AArch64, six instructions
+and three memory loads to arrive at a pointer already sitting in regs.pc_p.
+
+It is the same pointer, exactly. uae_cpu_2021 translates only by direct
+addressing, one offset; m68k_setpc() sets pc_p = pc_oldp =
+get_real_address(pc), and m68k_incpc() is the only other writer, adding to
+pc_p. Nothing in the generated handlers writes any of the three. So
+get_real_address(m68k_getpc()) == pc_p, and uae_cpu fetched that way all
+along (uae_cpu/newcpu.h:122-124).
+
+DIRECT_ADDRESSING_GUARD keeps the long way, so that a port checking guest
+addresses against its block still sees every fetch.
+
+diff --git a/BasiliskII/src/uae_cpu_2021/newcpu.h b/BasiliskII/src/uae_cpu_2021/newcpu.h
+--- a/BasiliskII/src/uae_cpu_2021/newcpu.h
++++ b/BasiliskII/src/uae_cpu_2021/newcpu.h
+@@ -118,6 +118,16 @@ static ALWAYS_INLINE uae_u32 get_ilong(uae_u32 o)
+ 	return mmu_get_long(addr, 0, sz_long);
+ }
+ 
++#elif DIRECT_ADDRESSING && !DIRECT_ADDRESSING_GUARD
++/* Direct addressing is one offset, and m68k_setpc() and m68k_incpc() are the
++   only writers of pc, pc_p and pc_oldp, so regs.pc_p is exactly
++   get_real_address(m68k_getpc()) already — which is how uae_cpu fetched
++   (uae_cpu/newcpu.h:122). Going through the guest PC instead reloads pc,
++   pc_oldp and MEMBaseDiff for every opcode and every extension word. The guard
++   keeps the long way, so that each fetch is still checked against the block. */
++#define get_ibyte(o) do_get_mem_byte((uae_u8 *)(regs.pc_p + (o) + 1))
++#define get_iword(o) do_get_mem_word((uae_u16 *)(regs.pc_p + (o)))
++#define get_ilong(o) do_get_mem_long((uae_u32 *)(regs.pc_p + (o)))
+ #else
+ #define get_ibyte(o) do_get_mem_byte((uae_u8 *)(get_real_address(m68k_getpc(), 0, sz_byte) + (o) + 1))
+ #define get_iword(o) do_get_mem_word((uae_u16 *)(get_real_address(m68k_getpc(), 0, sz_word) + (o)))

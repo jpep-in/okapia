@@ -43,6 +43,9 @@ extern bool tick_inhibit;
 static unsigned s_nAccumulator;     // host ticks scaled by 1000, see below
 static unsigned s_nTickCounter;     // Mac ticks, for the one-per-second work
 static bool     s_bRunning;
+// PerfReportWanted(), read at TickInit(): what follows runs in the tick
+// interrupt, which is no place to walk the preferences.
+static bool     s_bReport;
 
 /*
  *  Measurement (temporary): is the Mac's vertical blank evenly spaced?
@@ -106,7 +109,7 @@ static void OneSecond (void)
     // INTFLAG_1HZ is what drives DiskInterrupt(), and therefore volume mounting
     // (emul_op.cpp:484). Worth confirming it actually fires.
     static unsigned s_nSeconds;
-    if (++s_nSeconds <= 3 || (s_nSeconds % 15) == 0)
+    if (++s_nSeconds <= 3 || (s_bReport && (s_nSeconds % 15) == 0))
     {
         // Do the Mac's two clocks agree? Ticks (low memory 0x16A) is bumped by
         // our 60 Hz VBL; Microseconds() comes from Circle's counter. If they
@@ -135,7 +138,8 @@ static void OneSecond (void)
     extern uint32 gStrayCount, gStrayFirst;
     static unsigned s_nLastReads = 0;
     static uint32   s_nLastStray = 0;
-    if (g_nTimebaseReads != s_nLastReads || gStrayCount != s_nLastStray)
+    if (s_bReport
+        && (g_nTimebaseReads != s_nLastReads || gStrayCount != s_nLastStray))
     {
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "guest: %u timebase reads, %u accesses outside "
@@ -149,18 +153,14 @@ static void OneSecond (void)
 
     // Sound only says anything once the Mac has a source playing, which is
     // exactly when you want to see whether blocks are getting through.
-    if ((s_nSeconds % 5) == 0)
+    if (s_bReport && (s_nSeconds % 5) == 0)
     {
         AudioReport (s_nSeconds);
-    }
-
-    if ((s_nSeconds % 5) == 0)
-    {
         TickReport ();
     }
 
     // XPRAM is written back by the kernel when it changes, not on a timer
-    // (plan §7.8), so there is nothing periodic to do for it here.
+    // (docs/topics/clock-and-pram.md), so there is nothing periodic to do for it here.
 }
 
 static void OneTick (void)
@@ -234,6 +234,13 @@ void TickInit (void)
     s_nAccumulator = 0;
     s_nTickCounter = 0;
     s_bRunning = false;
+    s_bReport = PerfReportWanted ();
+    if (!s_bReport)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "Periodic reports off: the serial port is polled "
+                                "and would stop the Macintosh (perfreport)");
+    }
 
     // Once for the life of the board, never once per start. Circle keeps four
     // periodic slots and offers no way to give one back, so a registration at
