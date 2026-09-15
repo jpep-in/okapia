@@ -17,9 +17,9 @@
 # 640x480 or the interface is drawn at a fractional scale.
 #
 # "live" is the one to reach for when the question is how the interface feels
-# rather than what it measures: Tab and Maj-Tab walk the focus, Espace operates
-# what holds it, Retour the default button, the arrows move the list, and
-# Gauche/Droite turn the page. The mouse works, and the pointer appears the
+# rather than what it measures: Tab and Shift-Tab walk the focus, Space operates
+# what holds it, Return the default button, the arrows move the list, and
+# Left/Right turn the page. The mouse works, and the pointer appears the
 # moment it moves. No card is touched, so it is always safe to leave running.
 set -euo pipefail
 
@@ -87,7 +87,7 @@ qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial "file:${WORK}/serial.lo
 QPID=$!
 
 # One command per connection, with a pause: a burst down a single socket is
-# dropped, which cost this project an afternoon once already (AGENTS.md).
+# dropped, which cost this project an afternoon once already (docs/contributing/testing-and-debugging.md).
 say () { echo "$1" | nc -U "${WORK}/monitor.sock" >/dev/null 2>&1 || true; }
 
 # Long enough for the first paint, which costs the better part of a second under

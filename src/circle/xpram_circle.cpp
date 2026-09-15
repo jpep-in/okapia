@@ -33,7 +33,7 @@
 // SheepShaver's is 8192 bytes and Basilisk's is 256, and the fields inside them
 // are at different offsets. One file would be read back by the other machine as
 // its own settings — and the shorter read succeeds, so it would be taken for
-// good ones. The preferences are engine-agnostic on purpose (plan §19.7); a
+// good ones. The preferences are engine-agnostic on purpose (docs/preferences.md); a
 // Mac's PRAM is the Mac's, and a PowerMac and a Quadra each keep their own.
 #ifdef SHEEPSHAVER
 static const char XPRAM_FILE_NAME[] = "/SheepShaver_XPRAM";

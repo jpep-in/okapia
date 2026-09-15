@@ -11,7 +11,7 @@
  * writes nothing at all — not even the scavenge (volume.c:1059) — so it can
  * describe every image on the card without touching one. Read-write, mounting
  * *is* the repair. Which of the two runs is a preference, never a default this
- * file decides on its own: see §Data safety in AGENTS.md.
+ * file decides on its own: see docs/topics/storage.md.
  *
  * Copyright (C) 2026  Okapia contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -302,7 +302,7 @@ unsigned HfsInventory (THfsVolumeInfo *pList, unsigned nMax)
  *  bootable again.
  *
  *  This writes to the user's volume, so it refuses anything it cannot mount
- *  read-write rather than guessing (AGENTS.md, Data safety).
+ *  read-write rather than guessing (docs/topics/storage.md).
  */
 
 bool HfsFormat (const char *pPath, const char *pName)

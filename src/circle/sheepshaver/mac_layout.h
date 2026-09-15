@@ -1,7 +1,7 @@
 /*
  * mac_layout.h — where SheepShaver's Macintosh lives in memory.
  *
- * This is the arithmetic planification.md §19.4 spends pages on, kept apart
+ * This is the arithmetic docs/topics/engine-powerpc.md explains, kept apart
  * from any allocation so it can be checked on a development machine. Getting it
  * wrong does not produce an error: it produces a Macintosh that reads someone
  * else's bytes, which is the hardest kind of fault to trace back.

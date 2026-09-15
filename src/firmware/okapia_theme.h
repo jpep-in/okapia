@@ -14,7 +14,7 @@
  *
  * The look is an uchronia, not a reproduction: this menu opens in front of
  * Systems from 6 to 9, so copying any one of them would date it against its own
- * contents. See planification.md §7.12.
+ * contents. See docs/topics/boot-menu.md.
  *
  * Metrics being the theme's is also what makes resolution independence possible
  * at all: a scale factor multiplies them, the interface is drawn at the

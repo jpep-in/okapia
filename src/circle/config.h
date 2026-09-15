@@ -6,7 +6,7 @@
  * provides. Every line here is a claim the compiler will check.
  *
  * With this file in place, upstream's Unix/sysdeps.h works unchanged: no
- * Okapia-specific sysdeps.h is needed. See planification.md, spike V2.
+ * Okapia-specific sysdeps.h is needed. See docs/topics/engine-68k.md, build glue.
  *
  * Copyright (C) 2026  Okapia contributors
  * SPDX-License-Identifier: GPL-3.0-or-later

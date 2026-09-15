@@ -116,7 +116,7 @@ void AddPlatformPrefsDefaults(void)
 {
 	PrefsReplaceString("rom", DEFAULT_ROM);
 
-	// 256 MB is the ceiling this project targets; see planification.md §2.
+	// 256 MB is the ceiling this project targets; see docs/project/decisions.md.
 	PrefsReplaceInt32("ramsize", 256 * 1024 * 1024);
 
 	// Upstream defaults frameskip to 6, i.e. a 10 Hz screen. The Mac draws its

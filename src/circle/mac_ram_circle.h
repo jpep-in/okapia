@@ -4,8 +4,8 @@
 // A quarter of a gigabyte is not something an image that carries two engines
 // can allocate twice: Circle serves blocks larger than its largest bucket by
 // walking forward through free space, so the second request either fails on a
-// 1 GB board or succeeds and leaves the board with nothing (AGENTS.md, resource
-// budget). Only one Macintosh runs at a time, so only one block is needed — and
+// 1 GB board or succeeds and leaves the board with nothing (docs/contributing/
+// guide.md, resource budget). Only one Macintosh runs at a time, so only one block is needed — and
 // the engine that takes over inherits it rather than asking for its own.
 //
 // Claimed at the largest size any engine asks for, and never given back. The

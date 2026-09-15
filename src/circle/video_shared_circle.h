@@ -56,7 +56,7 @@ bool VideoScreenOpen (void);
 // Take the shadow buffer, at the largest guest frame this engine will produce.
 // Idempotent, and deliberately so: the Macintosh goes round more than once and
 // nothing here is ever given back, so a second start finds it already there
-// (AGENTS.md).
+// (docs/topics/startup-and-shutdown.md).
 bool VideoScreenShadow (u32 nBytes);
 
 // Forget the mode, keep the output and the shadow. There is nothing to release.

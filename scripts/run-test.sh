@@ -225,7 +225,7 @@ if [ "$VOL_FSCK" = "bad" ]; then
 elif [ -z "$BOOT_VOLUME" ]; then
     # The kernel did not name what it started from, so the volume inspected
     # above was chosen by sorting order. It may be one the run never touched,
-    # and a clean bill on it says nothing at all. AGENTS.md: anything that
+    # and a clean bill on it says nothing at all. docs/topics/storage.md: anything that
     # judges "did this survive" must name what it judged.
     echo "VERDICT   : INCONCLUSIVE — the log names no boot volume, so the" >&2
     echo "            volume inspected was a guess. Nothing is proved." >&2

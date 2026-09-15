@@ -333,7 +333,7 @@ void QuitEmulator (void)
 
     // Without this the Mac powers off, the 68k loop keeps running past the
     // PowerOff() trap, and the disk image is never closed — which is exactly
-    // how the HFS volume ends up dirty (AGENTS.md).
+    // how the HFS volume ends up dirty (docs/topics/startup-and-shutdown.md).
     m68k_emulop_return ();
 }
 

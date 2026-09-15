@@ -5,7 +5,7 @@
  * but waits on time that never passes. Upstream drives it from a pthread that
  * sleeps 16625 µs at a time; Circle's scheduler is cooperative and cannot
  * preempt the 68k loop, so it has to come from a timer interrupt instead
- * (plan §7.3). The handler runs on core 0 in IRQ context and does nothing but
+ * (docs/project/architecture.md#timing). The handler runs on core 0 in IRQ context and does nothing but
  * set flags — the emulation itself runs on another core.
  *
  * Circle's periodic handler fires at HZ, which is 100. The Mac wants 60.15 Hz,

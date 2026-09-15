@@ -776,8 +776,8 @@ static int ConfirmCancelled (void)
  *  The file is created at its full size before anything is written into it.
  *  That is not about speed: an image whose clusters are already allocated
  *  cannot meet a full card halfway through a write the Macintosh believes has
- *  succeeded, which is the one failure this project refuses to ship (AGENTS.md,
- *  §Data safety). A volume that grows on demand would turn a full card into a
+ *  succeeded, which is the one failure this project refuses to ship (see
+ *  docs/topics/storage.md). A volume that grows on demand would turn a full card into a
  *  lost write at the worst possible moment.
  */
 

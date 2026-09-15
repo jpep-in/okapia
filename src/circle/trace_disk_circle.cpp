@@ -5,7 +5,7 @@
  * DiskPrime turns into readErr (disk.cpp:337). This is how you tell a failing
  * read from a Mac that simply stops asking — the difference between a broken
  * file layer and a broken volume, and it found a corrupt HFS image once already.
- * The linker's --wrap gives the hook without touching external/ (AGENTS.md).
+ * The linker's --wrap gives the hook without touching external/ (docs/contributing/testing-and-debugging.md).
  *
  * Off unless src/kernel/Makefile passes OKAPIA_TRACE=1; see the LDFLAGS block in
  * that file.

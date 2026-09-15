@@ -6,7 +6,7 @@
  * window does not exist: every write the Mac makes is a whole number of
  * 512-byte sectors at a sector boundary, which FatFs sends straight to the
  * card. The shared folder writes whatever length the guest asked for, so it
- * does open one — and §Data safety in AGENTS.md says a change that adds a
+ * does open one — and docs/topics/storage.md says a change that adds a
  * write-back cache owes a flush policy in the same change. This is it.
  *
  * A pulled plug during a copy then costs the file being copied and nothing
@@ -15,7 +15,7 @@
  * clusters are already written, which is worse than losing the copy — it looks
  * like success.
  *
- * Hooked at link time rather than by patching external/ (AGENTS.md). Circle
+ * Hooked at link time rather than by patching external/ (docs/contributing/guide.md). Circle
  * invokes ld directly, so the flag is a bare --wrap.
  *
  * Copyright (C) 2026  Okapia contributors

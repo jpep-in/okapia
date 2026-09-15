@@ -38,5 +38,5 @@ cat <<'NOTE'
 
 To move a pin: cd into the submodule, git checkout <tag-or-sha>, then commit the
 submodule change in the parent repo. Never `git submodule update --remote` blind.
-Validation required before committing a pin change: see planification.md §4.3.
+Validation required before committing a pin change: see docs/contributing/build.md.
 NOTE

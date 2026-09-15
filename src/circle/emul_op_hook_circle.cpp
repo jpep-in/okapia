@@ -3,7 +3,7 @@
  *
  * Two of Basilisk's own opcodes say something Okapia needs to hear, and both
  * arrive through EmulOp(). Hooked at link time rather than by patching
- * external/ (AGENTS.md). Circle invokes ld directly, so the flag is a bare
+ * external/ (docs/contributing/build.md). Circle invokes ld directly, so the flag is a bare
  * --wrap.
  *
  * M68K_EMUL_OP_CLKNOMEM is the one path by which XPRAM changes while the guest

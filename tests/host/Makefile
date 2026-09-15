@@ -3,7 +3,7 @@
 #
 # The firmware's drawing code has no Circle dependency on purpose, so it builds
 # here with the host compiler and every component can be looked at without a
-# kernel, a card or an emulator. AGENTS.md asks for host tests wherever they are
+# kernel, a card or an emulator. The contributor guide asks for host tests wherever they are
 # possible; for an interface, "possible" means exactly this.
 #
 #   make            build and render specimen.ppm at 1x

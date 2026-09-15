@@ -38,10 +38,10 @@ tests/host/check_screen
 tests/host/check_chooser
 tests/host/check_pages
 tests/host/check_platform
-tests/host/make_large_volume
 tests/host/check_platform.tmp
 tests/host/check_blit
 tests/host/check_encoding
+tests/host/make_large_volume
 tests/host/render_chooser
 tests/host/render_pages
 tests/host/*.ppm
@@ -66,3 +66,6 @@ research_notes/
 
 # Boot files staged for a real Pi 4 card by scripts/make-pi-sd.sh
 rpi4-sd-contents/
+
+# French originals of the documentation, archived for reference and never cited
+archive-fr/

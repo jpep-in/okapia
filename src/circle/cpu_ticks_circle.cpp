@@ -3,7 +3,7 @@
  *
  * The interpreter counts down emulated_ticks and calls cpu_do_check_ticks() when
  * it wraps, which is where a host gets to do periodic work. On Okapia the 60 Hz
- * tick comes from a Circle timer interrupt instead (plan §7.3), so the timing
+ * tick comes from a Circle timer interrupt instead (docs/project/architecture.md#timing), so the timing
  * itself must not happen here.
  *
  * What does belong here is everything that has to run *in the 68k thread*. The

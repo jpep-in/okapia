@@ -79,7 +79,7 @@ struct TChooser
     unsigned       nCount;
     int            nStartup;            // the volume that boots, or -1
     // Which emulator this kernel image actually carries — one per image, since
-    // the two cores define the same symbols (AGENTS.md). Handed in as data so
+    // the two cores define the same symbols (docs/contributing/build.md). Handed in as data so
     // the screen can say that starting the other one means going round through
     // the loader, and so a test can drive both without being rebuilt.
     TChooserCPU    Built;

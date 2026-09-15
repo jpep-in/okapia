@@ -5,7 +5,7 @@
 // the entry point. This is the 68k engine's one exported name, and the build
 // renames everything else the other engine defines so that the two cores — which
 // export the same InitAll, ExitAll, PatchROM and Execute68k — can share an
-// image (planification.md §19.3).
+// image (docs/project/architecture.md).
 //
 // Copyright (C) 2026  Okapia contributors
 // SPDX-License-Identifier: GPL-3.0-or-later

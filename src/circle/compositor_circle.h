@@ -41,7 +41,7 @@ struct TCompositor
     // The previous frame, at least nBytesPerRow * nHeight. Without it every
     // frame is a full redraw, which is affordable headless and is not once a
     // display is attached: QEMU tracks dirty pages then, and the same composite
-    // costs 12x more (AGENTS.md).
+    // costs 12x more (docs/topics/display.md).
     u8       *pShadow;
     unsigned  nShadowBytes;
 

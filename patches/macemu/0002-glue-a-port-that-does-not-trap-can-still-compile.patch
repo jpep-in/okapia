@@ -16,7 +16,7 @@ program counter it prints, and the #error becomes that fall-through. No
 existing build changes: every host that defines the capability still
 takes the same path it did.
 
-Okapia (planification.md §19.4). Offered upstream: an #error inside a
+Okapia (docs/topics/engine-powerpc.md). Offered upstream: an #error inside a
 function is hostile to a port whose answer is "this cannot happen".
 
 ---

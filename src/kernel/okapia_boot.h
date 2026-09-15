@@ -1,7 +1,7 @@
 //
 // okapia_boot.h — which Macintosh runs, and what happens when it stops.
 //
-// One image carries both emulators (planification.md §19.3), so the choice is
+// One image carries both emulators (docs/project/architecture.md), so the choice is
 // no longer made by which kernel the Pi's firmware loaded: it is made here, at
 // run time, and changing it costs a function call rather than a reboot.
 //

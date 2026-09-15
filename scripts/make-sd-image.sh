@@ -32,7 +32,7 @@ mkdir -p "$(dirname "$IMAGE")" "$CONTENTS"
 # makes a test card reproducible. An existing file is never touched — it is the
 # user's configuration by then.
 # The file is called BasiliskII_Prefs whichever Macintosh reads it: the
-# preferences are engine-agnostic by design (plan §19.7) and prefs_circle.cpp
+# preferences are engine-agnostic by design (docs/preferences.md) and prefs_circle.cpp
 # reads that one path from both.
 PREFS="${CONTENTS}/BasiliskII_Prefs"
 if [ ! -f "$PREFS" ]; then

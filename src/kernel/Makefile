@@ -8,7 +8,7 @@ include ../../external/circle-stdlib/Config.mk
 # One engine per image, and that is not a matter of taste: the two cores define
 # the same symbols — InitAll, ExitAll, EmulOp, PatchROM, Execute68k — so they
 # cannot be linked together, and even the files they share compile differently
-# under -DSHEEPSHAVER (planification.md §19.3). What changes with the engine is
+# under -DSHEEPSHAVER (docs/project/architecture.md). What changes with the engine is
 # the upstream tree, the config.h that describes this target to it, the flags,
 # the object directory, and the mangled names the linker is asked to wrap.
 #
@@ -136,7 +136,7 @@ FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
 # The image carries both emulators and the build renames one of them wholesale,
 # so anything duplicated would be duplicated *state* as well: a second board
 # would re-register a periodic timer handler and re-claim the mouse, and Circle
-# gives back neither (AGENTS.md); a second firmware would keep its own idea of
+# gives back neither (docs/project/architecture.md); a second firmware would keep its own idea of
 # what the chooser answered; a second frame buffer claim leaks 4.8 MB a round.
 # So the board, the entry point and the whole firmware are compiled once, into
 # a directory that is not per-engine, and both halves bind to that one copy.
@@ -248,7 +248,7 @@ LIBS := $(CIRCLEHOME)/lib/sound/libsound.a $(CIRCLE_STDLIB_LIBS)
 # (emul_op_hook_circle.cpp).
 # They go on each engine's **partial** link, not on the final one, and that is
 # not a detail: `ld -r` resolves every reference inside the set it is given, so
-# by the time the final link runs there is nothing left to redirect. AGENTS.md
+# by the time the final link runs there is nothing left to redirect. The docs
 # already said only calls crossing a translation unit are wrapped — collapsing
 # 76 of them into one object makes that nearly none. The hooks linked, exported
 # their symbols, and were never called: the Macintosh's restart and shutdown
@@ -262,7 +262,7 @@ ENGINE_WRAPS = --wrap=_Z11extfs_writeiPvm --wrap=_Z6EmulOptP13M68kRegisters \
                --wrap=_Z25macroman_to_host_encodingPKc
 
 # Diagnostics, off by default: build with OKAPIA_TRACE=1 to hook upstream
-# functions at link time rather than patching external/ (AGENTS.md). Circle
+# functions at link time rather than patching external/ (docs/contributing/build.md). Circle
 # invokes ld directly, so these are bare --wrap, not -Wl,--wrap. The symbols are
 # Sys_read(void*, void*, loff_t, size_t) and Exception(int, uaecptr), mangled.
 ifeq ($(OKAPIA_TRACE),1)
@@ -461,7 +461,7 @@ merge: $(SHARED_OBJS)
 
 # Both engines' objects, not just the one being built: a flag change that
 # matters to one usually matters to the other, and a stale directory left
-# behind is the trap AGENTS.md describes.
+# behind is the trap docs/contributing/build.md describes.
 okapia-clean:
 	rm -rf emu emu-basilisk emu-sheepshaver $(SHARED_OBJ)
 	rm -f kernel8.elf kernel8.img kernel8.lst kernel8.map \

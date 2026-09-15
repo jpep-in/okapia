@@ -59,7 +59,7 @@ obj:
 # -MMD -MP, and the .d files pulled back in below. Without them a change to a
 # header recompiles nothing, and the link silently mixes objects built against
 # two different layouts of the same struct — which shows up as a jump into the
-# font tables, not as a compile error. AGENTS.md records the same trap for the
+# font tables, not as a compile error. docs/contributing/build.md records the same trap for the
 # emulator objects; a private rule reintroduces it unless it carries this.
 obj/%.o: $(FIRMWARE)/%.cpp | obj
 	@printf '  CPP   firmware/%s\n' "$(notdir $<)"

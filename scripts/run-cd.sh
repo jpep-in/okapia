@@ -11,7 +11,7 @@
 # parameter RAM at 0x7a, where a Macintosh keeps its startup device. That is the
 # same setting the C key stood for.
 #
-# End the session with Special -> Shut Down, as AGENTS.md asks. Anything else is
+# End the session with Special -> Shut Down, as docs/topics/storage.md asks. Anything else is
 # a pulled plug on a Macintosh that is writing to the volume it is installing.
 set -euo pipefail
 

@@ -1,187 +1,81 @@
+![Okapia logo: a compact Macintosh with an okapi's stripes](assets/logo/okapia.svg)
+
 # Okapia
 
-A classic Macintosh on bare metal: [Basilisk II](https://github.com/kanjitalk755/macemu) ported onto
-[Circle](https://github.com/rsta2/circle), so a Raspberry Pi boots straight into a 68k Mac with no Linux
-underneath. The kernel image on the SD card *is* the emulator.
+**A Quadra that fits in your hand, and a Power Macintosh in the same box.** Okapia turns a Raspberry Pi into a
+classic Macintosh: power on, hear the chime, land in the Finder. No Linux underneath, no emulator window on someone
+else's desktop. [Basilisk II](https://github.com/kanjitalk755/macemu) and SheepShaver run bare metal on the hardware
+through [Circle](https://github.com/rsta2/circle), both in one kernel image. On a Raspberry Pi 4, System 7 runs on a
+68040 about five times as fast as a Quadra 650, and Mac OS 9 on a PowerPC close to a Power Macintosh 6100/60.
 
-Disk images live on the card, and every write the Mac acknowledges is on the card when it says so.
+Hold **Option** at power-on and a boot menu opens: pick System 7 or Mac OS 9 with the mouse, and the right processor
+comes with it.
 
-**Status**: boots System 7.1 and 7.6, six colour depths, keyboard, mouse, shared folder, clean Shut Down.
-No networking or sound yet. `planification.md` (French) tracks the phases.
+Bring your own ROMs and Systems; your disk images live on the card.
 
-## The card
+## Status
 
-FAT-formatted, files at the root:
+Working on a Raspberry Pi 4 and under QEMU:
 
-| File | What it is |
-|---|---|
-| `kernel8.img` | Okapia, plus Circle's `config.txt` and firmware files |
-| `okapia.rom` | a Macintosh ROM image (a Quadra 650 ROM is what this targets) |
-| `machd76.image` | a disk image holding a System — any name works |
-| `BasiliskII_Prefs` | preferences. Written for you on the first boot if absent |
-| `BasiliskII_XPRAM` | the Mac's PRAM, 256 bytes. Written by Okapia |
-| `BasiliskII.keycodes` | optional: a key-mapping override. See `keycodefile` |
-| `shared/` | the shared folder, if you use one |
+- **68k**: System 7.0.1 to Mac OS 8.1 on a 68040 with an exact 68881 (IEEE binary128); about 5× a Quadra 650 on
+  Speedometer's CPU test.
+- **PowerPC**: Mac OS 7.5.2 to 9.0.4 from an Old World or New World ROM, close to a Power Macintosh 6100/60.
+- **The Okapia boot menu**: pick the startup volume, the engine, memory, screen refresh, sound output, mouse
+  resolution, shared folder; make a new volume; mount images as disks or CD-ROMs.
+- Display at the monitor's native mode with the same resolutions on both engines, six colour depths, a compositor that
+  redraws only what changed.
+- Sound on the jack, HDMI or USB with working volume, and **the startup chime read from each Macintosh's own ROM**.
+- USB keyboard and mouse as ADB, with the Mac's own acceleration; a shared folder on the card; the clock and PRAM kept
+  across power cuts; volumes repaired after an interrupted session; clean restart and shut down.
 
-No ROM and no disk image ships with this project.
+Not yet: networking, Happy Mac and Sad Mac screens, provisioning. See the [roadmap](docs/project/roadmap.md).
 
-## Preferences
+No Apple ROM, System or disk image ships with this project: you supply them.
 
-`/BasiliskII_Prefs` at the root of the card, in Basilisk II's format and read by Basilisk II's own parser
-— a prefs file from a desktop Basilisk II works here, and vice versa. Edit it on anything that reads FAT.
+## Quick start
 
-One `keyword value` per line. A `#` or `;` **in the first column** starts a comment; there is no
-trailing-comment syntax, so `ramsize 268435456 # 256 MB` sets the value to `268435456 # 256 MB`. An
-unrecognised keyword warns and is ignored.
+On a Pi 4: format a card FAT32 with 32 KB clusters, copy the Raspberry Pi firmware, `config.txt` and `kernel8.img`
+(staged by `scripts/make-pi-sd.sh`), your ROM and a disk image holding a System, and power on. Hold **Option** for the
+boot menu. Leave Mac OS through **Special → Shut Down**. Details: [Getting started](docs/getting-started.md).
 
-| Keyword | Default | Meaning |
-|---|---|---|
-| `disk` | `/machd76.image` | A disk image on the card. Repeat for more volumes; the Mac starts from the first bootable one. A `*` prefix mounts it read-only. |
-| `rom` | `/okapia.rom` | The Macintosh ROM image. |
-| `ramsize` | `268435456` | Mac RAM in bytes. 256 MB is the ceiling here. |
-| `modelidauto` | `true` | Set `modelid` from the System on the boot volume. |
-| `modelid` | `5` | `5` = Mac IIci, needed by System 7.0–7.1. `14` = Quadra 900, needed by Mac OS 8. Used only when `modelidauto` is off or detection fails. |
-| `cpu` | `4` | `0` = 68000 … `4` = 68040. |
-| `fpu` | `true` | FPU emulation. |
-| `frameskip` | `0` | `0` = dynamic, `1` = every frame, `2` = 30 Hz, `4` = 15 Hz, `6` = 10 Hz. The Mac draws its own cursor, so a low rate reads as a laggy mouse. |
-| `nosound` | `false` | On under QEMU, which models no audio output. |
-| `nocdrom` | `false` | Don't install the CD-ROM driver. |
-| `extfs` | `/shared` | The shared folder. Empty for none. |
-| `extfsname` | `Okapia` | Its name on the desktop, 27 characters max. |
-| `hfsrepair` | `true` | Repair a volume an interrupted session left in use. |
-| `hfsinventory` | `true` | List the card's volumes at startup. |
-| `floppy` | *(empty)* | Leave the empty entry: without a `floppy` line the Mac tries to mount two floppy drives that do not exist. |
-| `bootdrive`, `bootdriver` | `0` | Which drive the ROM starts from; `0` is the default order. |
-| `keyboardtype` | `5` | ADB keyboard type. |
-| `keycodefile` | `/BasiliskII.keycodes` | A key-mapping file on the card, in Basilisk's own format — a `BasiliskII.keycodes` copied from a desktop Basilisk II works unchanged. Only needed for a keyboard that reports something unusual; absent means the built-in table stands. |
-| `timezone` | `0` | Minutes east of UTC — `60` for CET, `120` for CEST, `-300` for EST. The clock starts at the time the kernel was built, in UTC, and a Mac of this era has no time zone: its clock *is* local time. Without this it runs an hour or two behind and looks like a stale build. There is no RTC on a Pi and no NTP yet. |
-| `yearofs`, `dayofs` | `0` | Offsets on the Mac's clock. |
+Build on macOS:
 
-### Keywords that do nothing here
-
-Written back into the file unchanged, so a value that seems ignored is ignored on purpose.
-
-| Keywords | Why |
-|---|---|
-| `screen`, `displaycolordepth`, `title`, `init_grab`, `hotkey`, `scale_*`, `mag_rate`, `gammaramp`, `sdlrender`, `nogui` | They configure a window on a host desktop. The Mac owns the framebuffer directly; its Monitors control panel picks the depth. |
-| `jit*` | Circle marks everything past `_etext` non-executable, so a JIT is impossible. The interpreter is the only CPU here. |
-| `ether`, `etherconfig`, `udptunnel`, `udpport`, `redir`, `host_domain` | No networking yet. |
-| `seriala`, `serialb` | The Pi's one usable UART carries Okapia's log. |
-| `dsp`, `mixer` | OSS device paths. Sound goes through Circle's own device. |
-| `scsi0`…`scsi6` | Host SCSI pass-through. There is no host. |
-| `keycodes`, `mousewheel*`, `swap_opt_cmd` | X11 and SDL keyboard translation. Okapia feeds ADB from raw HID reports. |
-| `noclipconversion`, `name_encoding` | Host clipboard and host filename conversion. |
-| `ignoresegv` | Installs a POSIX `SIGSEGV` handler. Bare metal has no signals; faults arrive as C++ exceptions. |
-| `cdrom` | No drive to name; pointing it at an image file is untested. |
-| `xpram` | The PRAM file name is fixed. |
-| `idlewait`, `sound_buffer`, `delay`, `fbdevicefile` | Host-specific tuning with no counterpart. |
-
-## The shared folder
-
-`extfs /shared` makes the `shared` directory on the card appear on the Mac's desktop as a volume, named by
-`extfsname`. That is how files get in and out: copy them onto the card from anything that reads FAT.
-
-It is built on Apple's **File System Manager 1.2**:
-
-| System | |
-|---|---|
-| 7.0, 7.1 | install the File System Manager 1.2 extension |
-| 7.5 and later | works as installed |
-
-Without it the log says `No FSM present, disabling ExtFS` and no volume appears. The FSM is *not* File
-Sharing — that is AppleShare over the network, and it does nothing here.
-
-**One folder, not several**: Basilisk's ExtFS is single-volume by design. Put sub-folders inside it.
-
-A file's Mac type, creator and resource fork live in `.finf/` and `.rsrc/` sub-directories beside it,
-created as needed. A file you copied onto the card yourself has neither, so it gets a type from its
-extension — a `.txt` arrives as a text document, a `.jpg` as a picture.
-
-The clock starts from the later of two things: the time the kernel was built, and the last time any volume
-on the card was written to. So a machine that ran yesterday comes back roughly where it left off rather
-than at the build date. It never goes backwards. An RTC and NTP will come first in that order once they
-exist.
-
-Setting the date from the Mac's own Date & Time control panel does not stick: Basilisk drops writes to the
-emulated clock on every platform. The host owns the time.
-
-The Mac's PRAM — startup disk, sound volume, desktop pattern — is kept in `BasiliskII_XPRAM` at the root
-of the card and written the moment it changes, so a power cut does not cost your settings.
-
-## After a power cut
-
-A Mac refuses to start from a volume whose Master Directory Block still says "in use", and an interrupted
-session — pulled plug, reset, `kill -9` — always leaves it that way. That is a File Manager policy, not
-damage: measured on a healthy volume, one killed session sets that one flag and changes nothing else. No
-lost writes, no catalogue damage.
-
-Okapia scavenges the volume itself before the Mac sees it, so a hard stop costs the boot and nothing else.
-The Mac still tells you it was not shut down properly, which it works out another way.
-
-Set `hfsrepair false` to switch that off: the volume is then left exactly as found and the Mac shows the
-question-mark floppy. **Okapia never marks a volume clean without scavenging it** — that would hide real
-corruption.
-
-Still, shut the Mac down from the Finder. `Special → Shut Down` closes the disk image and halts the board.
-
-## Building
-
-macOS ships GNU Make 3.81; `scripts/env.sh` points `$MAKE` at a 4.x one.
-
+```bash
+./scripts/install-tools.sh
 ```
-./scripts/bootstrap.sh          # toolchain, submodules, reference sources
-./scripts/build-libs.sh qemu    # Circle + newlib — once per target: qemu, 3, 4, 5
+
+```bash
+./scripts/bootstrap.sh
+```
+
+```bash
+./scripts/build-libs.sh qemu
+```
+
+```bash
 . scripts/env.sh && $MAKE -C src/kernel
 ```
 
-Then, under QEMU:
+Then `./scripts/make-sd-image.sh` and `./scripts/run-live.sh` under QEMU, or `build-libs.sh pi4` for the board — see
+[Build](docs/contributing/build.md) and [Testing and debugging](docs/contributing/testing-and-debugging.md).
 
-```
-./scripts/make-sd-image.sh      # a card built from qemu/sd-contents/, sized to fit
-./scripts/run-live.sh           # a window you can use; end with Finder → Shut Down
-./scripts/run-qemu.sh           # serial on stdout, GDB on :1234
-./scripts/screenshot.sh         # boot a throwaway copy, capture the Mac's screen
-./scripts/run-test.sh           # kill the guest, then check the volume survived
-```
+## Documentation
 
-Objects under `src/kernel/emu-<engine>/` do not depend on the Makefile, so after changing a flag run
-`$MAKE -C src/kernel okapia-clean` or you will link stale ones. `AGENTS.md` has the rest.
+The full documentation is in [`docs/`](docs/README.md), in English, one page per subject, each covering how to use a
+feature, how it works, its status, its pitfalls and its history.
 
-### The PowerPC Macintosh
-
-A second engine — SheepShaver — runs the real PowerMac ROM instead of replacing the Toolbox, so it boots
-Mac OS 7.5.2 and later on a PowerPC. **One image carries both.** The two emulator cores export the same
-`InitAll`, `ExitAll` and `PatchROM`, so the build partial-links each of them and renames every symbol
-one of them defines; nothing in `external/` is modified. Switching from the boot menu is then a function
-call rather than a reboot, and there is one kernel on the card instead of three.
-
-Stage a PowerMac ROM and a PowerPC-capable System in `qemu/sd-contents/` — neither ships here — then the
-ordinary build, which now produces both Macintosh:
-
-```
-. scripts/env.sh && $MAKE -C src/kernel
-./scripts/make-sd-image.sh
-./scripts/run-live.sh
-```
-
-The chooser asks which emulator only where there is a question. A System built for one processor
-settles it and the popup says which without offering a choice; a **universal** System — 7.5.2 to 8.1,
-where one System file carries both — leaves it open, and the answer is remembered per volume in an
-`engine` line. Nothing is written for the settled cases: a stored answer that repeats what the System
-says is one that will eventually contradict it.
-
-The ROM is not a free choice on this engine, and the two Macintoshes do not take the same one — so the
-card carries both, `rom` for the 68k engine and `romppc` for the PowerPC one:
-
-| ROM | what it accepts |
+| | |
 |---|---|
-| Old World, 4 MB (`powermac9600v1.rom`, TNT) | System 7.5.x to Mac OS 9.0.4 |
-| New World, a `<CHRP-BOOT>` file (`macosrom16.rom`) | Mac OS 8.1 and later — it refuses anything older |
+| **Use it** | [Getting started](docs/getting-started.md) · [Preferences](docs/preferences.md) |
+| **Understand it** | [Vision](docs/project/vision.md) · [Architecture](docs/project/architecture.md) · [Decisions](docs/project/decisions.md) · [Roadmap](docs/project/roadmap.md) · [Glossary](docs/project/glossary.md) |
+| **Topics** | [Startup and shutdown](docs/topics/startup-and-shutdown.md) · [Boot menu](docs/topics/boot-menu.md) · [68k engine](docs/topics/engine-68k.md) · [PowerPC engine](docs/topics/engine-powerpc.md) · [Display](docs/topics/display.md) · [Sound](docs/topics/sound.md) · [Input](docs/topics/input.md) · [Storage](docs/topics/storage.md) · [Shared folder](docs/topics/shared-folder.md) · [Clock and PRAM](docs/topics/clock-and-pram.md) · [Network](docs/topics/network.md) |
+| **Contribute** | [Contributor guide](docs/contributing/guide.md) · [Build](docs/contributing/build.md) · [Testing and debugging](docs/contributing/testing-and-debugging.md) · [Benchmarks](docs/contributing/benchmarks.md) |
+| **Notes** | [Development notes and research studies](docs/README.md#notes) |
 
-`OUTPUT_W`/`OUTPUT_H` on `run-live.sh` size the window; the compositor scales and centres the Mac's
-screen inside it, on both engines.
+AI agents: read [`AGENTS.md`](AGENTS.md) first.
 
 ## Licence
 
-GPLv3 or later. Basilisk II is GPLv2-or-later (Christian Bauer and contributors), Circle is GPLv3-or-later
-(Rene Stange), libhfs is GPLv2-or-later (Robert Leslie). No Apple ROM or system software is included.
+Okapia is written by Jonathan Pepin and released under GPLv3 or later. Circle is GPLv3 (Rene Stange); Basilisk II and
+SheepShaver are GPLv2-or-later (Christian Bauer, Marc Hellwig and contributors, carried on by kanjitalk755); libhfs is
+GPLv2-or-later (Robert Leslie). No Apple ROM or system software is included.

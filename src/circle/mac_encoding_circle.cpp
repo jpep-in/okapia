@@ -10,7 +10,7 @@
  * It shows at the first accented name, which on the machines this project is
  * for is the first folder anyone opens.
  *
- * Hooked with --wrap rather than by patching external/ (AGENTS.md), so the two
+ * Hooked with --wrap rather than by patching external/ (docs/contributing/guide.md), so the two
  * functions below replace extfs_unix.cpp's outright. Neither allocates: the
  * caller copies the result immediately (extfs.cpp:229) and never keeps it.
  *

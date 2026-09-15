@@ -8,7 +8,7 @@
 // The keyboard's handover to the emulator costs nothing: Circle keeps one raw
 // handler, so InputInit() replacing ours in StartMacintosh() *is* the handover.
 // Trying to give it back by registering a null handler does not detach it, it
-// returns it to cooked mode and the boot stops dead — see AGENTS.md.
+// returns it to cooked mode and the boot stops dead — see docs/topics/input.md.
 //
 // The mouse is not like that. CMouseDevice::RegisterStatusHandler asserts that
 // the slot is empty (mouse.cpp:85) and offers no way to withdraw, so it can be

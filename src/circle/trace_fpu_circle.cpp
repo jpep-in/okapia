@@ -7,7 +7,7 @@
  * instructions does — and it is the difference between "the round trip is
  * lossless" and "the round trip is lossless and the guest takes it".
  *
- * Hooked at link time rather than by patching external/ (AGENTS.md), so the
+ * Hooked at link time rather than by patching external/ (docs/contributing/testing-and-debugging.md), so the
  * spelling is __wrap_ plus the mangled name and nothing more.
  *
  * Off unless src/kernel/Makefile passes OKAPIA_TRACE=1.
