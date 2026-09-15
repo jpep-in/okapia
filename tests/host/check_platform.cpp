@@ -15,7 +15,9 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -316,6 +318,79 @@ int main (void)
     nSet = 0;
     for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
     Expect (nSet == 0, "une largeur ou une hauteur nulle ou négative non plus");
+
+    /*
+     *  Ce que le compositeur écrit à l'écran
+     *
+     *  Le framebuffer du Pi est de la mémoire Device : un accès non aligné y
+     *  est une faute, et un Macintosh en 912x492 a tué la carte parce que ses
+     *  tuiles de 57 pixels mettaient la copie vectorisée hors alignement. Ici
+     *  la faute ne se voit pas — l'hôte accepte tout — mais le chemin réécrit
+     *  pour l'éviter doit dessiner exactement la même chose, aux largeurs
+     *  impaires, aux origines impaires et avec un pitch qui n'est pas un
+     *  multiple de 16. C'est ce qu'on vérifie, pixel par pixel.
+     */
+    printf ("\n  Ce que le compositeur écrit à l'écran\n");
+    {
+        struct { unsigned w, h, ow, oh, scale; const char *pWhat; } Cases[] = {
+            {  912, 492, 1824,  984, 2, "912x492 doublé dans 1824x984, le mode qui tuait la carte" },
+            {  853, 480, 2560, 1440, 3, "853x480 triplé dans 2560x1440" },
+            { 1280, 720, 1824,  984, 1, "1280x720 à l'échelle 1, centré" },
+            {  640, 480, 1366,  768, 1, "640x480 dans 1366x768 : origine impaire, pitch non multiple de 16" },
+        };
+        for (unsigned c = 0; c < sizeof Cases / sizeof Cases[0]; c++)
+        {
+            const unsigned w = Cases[c].w, h = Cases[c].h;
+            const unsigned ow = Cases[c].ow, oh = Cases[c].oh;
+            u8 *pMac    = (u8 *) calloc ((size_t) w * h, 4);
+            u8 *pShadow = (u8 *) calloc ((size_t) w * h, 4);
+            u8 *pOut    = (u8 *) aligned_alloc (16, (size_t) ow * oh * 4);
+            memset (pOut, 0xEE, (size_t) ow * oh * 4);
+            for (unsigned y = 0; y < h; y++)
+            {
+                for (unsigned x = 0; x < w; x++)
+                {
+                    u8 *p = pMac + (y * w + x) * 4;
+                    p[0] = 0; p[1] = (u8) x; p[2] = (u8) y; p[3] = (u8) ((x >> 8) + (y >> 8) * 16);
+                }
+            }
+
+            TCompositor K;
+            memset (&K, 0, sizeof K);
+            K.pSource = pMac; K.nWidth = w; K.nHeight = h;
+            K.nBytesPerRow = w * 4; K.nSourceBits = 32;
+            K.pOutput = pOut; K.nOutputWidth = ow; K.nOutputHeight = oh;
+            K.nOutputPitch = ow * 4; K.nOutputBits = 32;
+            K.pConvertRow = CompositorConvert32To32Bgr;
+            K.pShadow = pShadow; K.nShadowBytes = w * h * 4;
+
+            bool bOK = CompositorPlan (&K) && K.nScale == Cases[c].scale;
+            if (bOK)
+            {
+                CompositorRun (&K);
+            }
+            for (unsigned y = 0; bOK && y < oh; y++)
+            {
+                for (unsigned x = 0; bOK && x < ow; x++)
+                {
+                    unsigned v;
+                    memcpy (&v, pOut + (y * ow + x) * 4, 4);
+                    const bool bInside = x >= K.nOriginX && x < K.nOriginX + w * K.nScale
+                                      && y >= K.nOriginY && y < K.nOriginY + h * K.nScale;
+                    unsigned nWant = 0;
+                    if (bInside)
+                    {
+                        const u8 *p = pMac + (((y - K.nOriginY) / K.nScale) * w
+                                              + (x - K.nOriginX) / K.nScale) * 4;
+                        nWant = 0xFF000000u | (unsigned) p[1] << 16 | (unsigned) p[2] << 8 | p[3];
+                    }
+                    bOK = v == nWant;
+                }
+            }
+            Expect (bOK, Cases[c].pWhat);
+            free (pMac); free (pShadow); free (pOut);
+        }
+    }
 
     // Un volume fabriqué de bout en bout, ici, sans carte : hfs_format() écrit
     // sur un fichier qui a déjà sa taille, donc le test le fabrique comme le

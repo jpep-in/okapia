@@ -13,6 +13,77 @@
 #include <circle/timer.h>
 #include <circle/util.h>
 
+/*
+ *  Writing the output
+ *
+ *  The frame buffer is Device memory (translationtable64.cpp:145), where every
+ *  access has to be naturally aligned: a 16- or 32-byte NEON store at an
+ *  address that is only 4- or 8-aligned is an alignment fault, and the board
+ *  stops there with nothing written to the log. memcpy stores that way at the
+ *  ends of a copy, and so does any loop GCC vectorises: the doubling loop that
+ *  wrote straight to the output became stp q31, q30 at -O2, safe as long as
+ *  tiles started on even pixels. A Macintosh at 912x492 has tiles 57 pixels
+ *  wide, and the board died the moment it drew one. QEMU does not model the
+ *  fault; only a real board shows it.
+ *
+ *  So a row is assembled — converted, scaled — in ordinary memory, and these
+ *  two are the only ways anything reaches the output: single 4-byte stores up
+ *  to a 16-byte boundary, whole 16-byte blocks from there, single stores for
+ *  the rest. Kept out of the vectoriser and out of loop distribution, which
+ *  would otherwise turn the single stores back into a memcpy.
+ */
+#if defined (__GNUC__) && !defined (__clang__)
+#define OUTPUT_SCALAR __attribute__ ((optimize ("no-tree-vectorize", \
+                                                "no-tree-loop-distribute-patterns")))
+#else
+#define OUTPUT_SCALAR
+#endif
+
+OUTPUT_SCALAR
+static void OutputPut (u8 *pDest, const u8 *pSource, u32 nBytes)
+{
+    // nBytes is a whole number of 32-bit pixels and pDest starts on one.
+    while (nBytes >= 4 && ((uintptr) pDest & 15) != 0)
+    {
+        *(u32 *) pDest = (u32) pSource[0] | (u32) pSource[1] << 8
+                       | (u32) pSource[2] << 16 | (u32) pSource[3] << 24;
+        pDest += 4; pSource += 4; nBytes -= 4;
+    }
+    const u32 nWhole = nBytes & ~15u;
+    if (nWhole != 0)
+    {
+        memcpy (pDest, pSource, nWhole);
+        pDest += nWhole; pSource += nWhole; nBytes -= nWhole;
+    }
+    while (nBytes >= 4)
+    {
+        *(u32 *) pDest = (u32) pSource[0] | (u32) pSource[1] << 8
+                       | (u32) pSource[2] << 16 | (u32) pSource[3] << 24;
+        pDest += 4; pSource += 4; nBytes -= 4;
+    }
+}
+
+OUTPUT_SCALAR
+static void OutputClear (u8 *pDest, u32 nBytes)
+{
+    while (nBytes >= 4 && ((uintptr) pDest & 15) != 0)
+    {
+        *(u32 *) pDest = 0;
+        pDest += 4; nBytes -= 4;
+    }
+    const u32 nWhole = nBytes & ~15u;
+    if (nWhole != 0)
+    {
+        memset (pDest, 0, nWhole);
+        pDest += nWhole; nBytes -= nWhole;
+    }
+    while (nBytes >= 4)
+    {
+        *(u32 *) pDest = 0;
+        pDest += 4; nBytes -= 4;
+    }
+}
+
 bool CompositorPlan (TCompositor *pC)
 {
     if (   pC->nWidth == 0 || pC->nHeight == 0
@@ -35,8 +106,12 @@ bool CompositorPlan (TCompositor *pC)
     pC->nOriginY = (pC->nOutputHeight - pC->nHeight * pC->nScale) / 2;
 
     // Whatever the last mode left outside the new image would otherwise stay on
-    // screen forever: nothing ever writes those pixels again.
-    memset (pC->pOutput, 0, (size_t) pC->nOutputPitch * pC->nOutputHeight);
+    // screen forever: nothing ever writes those pixels again. A row at a time,
+    // because a pitch that is not a multiple of 16 puts rows off the boundary.
+    for (unsigned y = 0; y < pC->nOutputHeight; y++)
+    {
+        OutputClear (pC->pOutput + y * pC->nOutputPitch, pC->nOutputPitch);
+    }
     pC->bFullRedraw = true;
     return true;
 }
@@ -49,8 +124,11 @@ void CompositorRun (TCompositor *pC)
     // holds eight of them. Align the tile edges to whole source bytes.
     const unsigned nAlign     = (pC->nSourceBits < 8) ? (8 / pC->nSourceBits) : 1;
 
-    static u8 RowBuffer[4096 * 4];
-    if ((u64) pC->nWidth * nOutBytes > sizeof RowBuffer)
+    static u8  RowBuffer[4096 * 4];
+    static u32 ScaledRow[4096];        // the output is at most 4096 wide
+    if (   (u64) pC->nWidth * nOutBytes > sizeof RowBuffer
+        || (u64) pC->nWidth * pC->nScale > sizeof ScaledRow / sizeof ScaledRow[0]
+        || nOutBytes != 4)
     {
         return;
     }
@@ -234,25 +312,13 @@ void CompositorRun (TCompositor *pC)
                          + (pC->nOriginY + y * pC->nScale) * pC->nOutputPitch
                          + (pC->nOriginX + x0 * pC->nScale) * nOutBytes;
 
-                if (pC->nScale == 1)
+                // Scaled in ordinary memory, where the vectoriser is welcome;
+                // the output only ever sees OutputPut. See the top of the file.
+                const u8 *pRow = RowBuffer;
+                if (pC->nScale > 1)
                 {
-                    memcpy (pDst, RowBuffer, nWidth * nOutBytes);
-                }
-                else if (pC->nScale == 2 && ((uintptr) pDst & 7) == 0)
-                {
-                    // Two output pixels are one 64-bit store, which halves them.
-                    u64 *pOut = (u64 *) pDst;
                     const u32 *pIn = (const u32 *) RowBuffer;
-                    for (unsigned x = 0; x < nWidth; x++)
-                    {
-                        u64 v = pIn[x];
-                        pOut[x] = v | (v << 32);
-                    }
-                }
-                else
-                {
-                    u32 *pOut = (u32 *) pDst;
-                    const u32 *pIn = (const u32 *) RowBuffer;
+                    u32 *pOut = ScaledRow;
                     for (unsigned x = 0; x < nWidth; x++)
                     {
                         for (unsigned t = 0; t < pC->nScale; t++)
@@ -260,12 +326,13 @@ void CompositorRun (TCompositor *pC)
                             *pOut++ = pIn[x];
                         }
                     }
+                    pRow = (const u8 *) ScaledRow;
                 }
 
-                for (unsigned t = 1; t < pC->nScale; t++)
+                const u32 nRowBytes = nWidth * pC->nScale * nOutBytes;
+                for (unsigned t = 0; t < pC->nScale; t++)
                 {
-                    memcpy (pDst + t * pC->nOutputPitch, pDst,
-                            nWidth * pC->nScale * nOutBytes);
+                    OutputPut (pDst + t * pC->nOutputPitch, pRow, nRowBytes);
                 }
             }
         }
@@ -359,7 +426,10 @@ void CompositorAnnounce (TCompositor *pC, int x, int y, int w, int h)
     }
 }
 
-void CompositorConvert16To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes)
+// One loop per byte order rather than a shift read per pixel: these run over
+// every dirty row, and the order never changes while a board is up.
+static inline void Convert16To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes,
+                                  unsigned nRed, unsigned nBlue)
 {
     u32 *q = (u32 *) pDest;
     for (u32 i = 0; i < nSourceBytes; i += 2)
@@ -369,20 +439,41 @@ void CompositorConvert16To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes)
         unsigned g = (v >> 5)  & 0x1F;
         unsigned b =  v        & 0x1F;
         *q++ = 0xFF000000
-             |  (r << 3 | r >> 2)
+             | ((r << 3 | r >> 2) << nRed)
              | ((g << 3 | g >> 2) << 8)
-             | ((b << 3 | b >> 2) << 16);
+             | ((b << 3 | b >> 2) << nBlue);
     }
 }
 
-void CompositorConvert32To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes)
+static inline void Convert32To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes,
+                                  unsigned nRed, unsigned nBlue)
 {
     u32 *q = (u32 *) pDest;
     for (u32 i = 0; i < nSourceBytes; i += 4)
     {
         *q++ = 0xFF000000
-             |  (u32) pSource[i + 1]
+             | ((u32) pSource[i + 1] << nRed)
              | ((u32) pSource[i + 2] << 8)
-             | ((u32) pSource[i + 3] << 16);
+             | ((u32) pSource[i + 3] << nBlue);
     }
+}
+
+void CompositorConvert16To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes)
+{
+    Convert16To32 (pDest, pSource, nSourceBytes, 0, 16);
+}
+
+void CompositorConvert32To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes)
+{
+    Convert32To32 (pDest, pSource, nSourceBytes, 0, 16);
+}
+
+void CompositorConvert16To32Bgr (u8 *pDest, const u8 *pSource, u32 nSourceBytes)
+{
+    Convert16To32 (pDest, pSource, nSourceBytes, 16, 0);
+}
+
+void CompositorConvert32To32Bgr (u8 *pDest, const u8 *pSource, u32 nSourceBytes)
+{
+    Convert32To32 (pDest, pSource, nSourceBytes, 16, 0);
 }

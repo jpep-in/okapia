@@ -28,4 +28,12 @@
 // Never delete what this returns.
 CBcmFrameBuffer *FwOutputClaim (void);
 
+// Whether red is the low byte of an output pixel. The firmware answers, and the
+// answer is not the same everywhere: a Raspberry Pi scans out blue in the low
+// byte, as Circle's COLOR32 macro says, while QEMU's bcm2835-fb defaults to red
+// there. Colours were fixed once against QEMU alone, and a real board then
+// showed every Macintosh colour with red and blue exchanged. Valid after a
+// successful FwOutputClaim().
+bool FwOutputRedLow (void);
+
 #endif

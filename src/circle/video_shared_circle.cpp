@@ -9,9 +9,11 @@
 #include "okapia_circle.h"
 
 #include <circle/bcmframebuffer.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "okapia_output.h"
+#include "hal_circle.h"
 #include "compositor_circle.h"
 #include "video_shared_circle.h"
 
@@ -27,6 +29,7 @@
 const unsigned VideoScreenDepths[6] = { 1, 2, 4, 8, 16, 32 };
 
 static CBcmFrameBuffer *s_pOutput;
+static bool             s_bRedLow;      // FwOutputRedLow(), read at each open
 static u8              *s_pShadow;
 static u32              s_nShadowBytes;
 static TCompositor      s_Compositor;
@@ -76,6 +79,8 @@ bool VideoScreenOpen (void)
         CLogger::Get ()->Write (FROM, LogError, "No frame buffer");
         return false;
     }
+
+    s_bRedLow = FwOutputRedLow ();
 
     if (s_pOutput->GetDepth () != 32)
     {
@@ -207,10 +212,11 @@ bool VideoScreenApply (const u8 *pSource, unsigned nWidth, unsigned nHeight,
         return false;
     }
 
-    // The output's pixel format, which is what video_blit.cpp converts into.
-    // Red in the low byte: Circle's SetPalette builds entries as red << 0
-    // (bcmframebuffer.cpp:134), whatever its COLOR32 macro says, and following
-    // the macro instead put a blue desktop on screen in orange.
+    // The output's pixel format, which is what video_blit.cpp converts into,
+    // and which the firmware states (okapia_output.h). It was once fixed at red
+    // in the low byte, from an argument about Circle's SetPalette that holds for
+    // 8-bit palettes and says nothing about a 32-bit frame buffer: that matched
+    // QEMU and exchanged red and blue on every real board.
     //
     // fullscreen is not decoration either: without it Screen_blitter_init sends
     // the one-bit depth down an X11 path that assumes a 1-bit image
@@ -218,12 +224,12 @@ bool VideoScreenApply (const u8 *pSource, unsigned nWidth, unsigned nHeight,
     VisualFormat Visual;
     Visual.fullscreen = true;
     Visual.depth      = (int) s_pOutput->GetDepth ();
-    Visual.Rmask      = 0x000000FF;
+    Visual.Rmask      = s_bRedLow ? 0x000000FF : 0x00FF0000;
     Visual.Gmask      = 0x0000FF00;
-    Visual.Bmask      = 0x00FF0000;
-    Visual.Rshift     = 0;
+    Visual.Bmask      = s_bRedLow ? 0x00FF0000 : 0x000000FF;
+    Visual.Rshift     = s_bRedLow ? 0 : 16;
     Visual.Gshift     = 8;
-    Visual.Bshift     = 16;
+    Visual.Bshift     = s_bRedLow ? 16 : 0;
 
     if (nBits == 16 || nBits == 32)
     {
@@ -231,8 +237,16 @@ bool VideoScreenApply (const u8 *pSource, unsigned nWidth, unsigned nHeight,
         // pixels the way the Mac wrote them (compositor_circle.h). Handing it a
         // direct mode gave a screen entirely in one colour at 16 bits and
         // vertical stripes at 32.
-        s_Compositor.pConvertRow = (nBits == 16) ? CompositorConvert16To32
-                                                 : CompositorConvert32To32;
+        if (s_bRedLow)
+        {
+            s_Compositor.pConvertRow = (nBits == 16) ? CompositorConvert16To32
+                                                     : CompositorConvert32To32;
+        }
+        else
+        {
+            s_Compositor.pConvertRow = (nBits == 16) ? CompositorConvert16To32Bgr
+                                                     : CompositorConvert32To32Bgr;
+        }
     }
     else
     {
@@ -272,6 +286,11 @@ bool VideoScreenApply (const u8 *pSource, unsigned nWidth, unsigned nHeight,
                             nWidth, nHeight, nBits,
                             s_Compositor.nScale, s_Compositor.nOriginX,
                             s_Compositor.nOriginY);
+
+    // Onto the card now and not at the next seam: a mode is the moment a
+    // screen goes wrong, and a board that stops drawing it takes the log with
+    // it. A Macintosh at 912x492 once did exactly that, and left nothing.
+    BoardLogFlush ();
     return true;
 }
 
@@ -282,13 +301,15 @@ void VideoScreenPalette (const u8 *pRGB, unsigned nEntries)
         return;
     }
 
+    const unsigned nRed  = s_bRedLow ? 0 : 16;
+    const unsigned nBlue = s_bRedLow ? 16 : 0;
     for (unsigned i = 0; i < 256; i++)
     {
         const unsigned c = i & (nEntries - 1);
         ExpandMap[i] =   0xFF000000
-                       |  (u32) pRGB[c * 3 + 0]
+                       | ((u32) pRGB[c * 3 + 0] << nRed)
                        | ((u32) pRGB[c * 3 + 1] << 8)
-                       | ((u32) pRGB[c * 3 + 2] << 16);
+                       | ((u32) pRGB[c * 3 + 2] << nBlue);
     }
 
     // Every pixel now maps to a different colour, so what the output shows no

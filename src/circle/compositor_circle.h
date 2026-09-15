@@ -108,5 +108,8 @@ void CompositorAnnounce (TCompositor *pC, int x, int y, int w, int h);
 // Indexed modes do go through Screen_blit, which is what ExpandMap is for.
 void CompositorConvert16To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes);
 void CompositorConvert32To32 (u8 *pDest, const u8 *pSource, u32 nSourceBytes);
+// The same, for an output with blue in the low byte — a Raspberry Pi's.
+void CompositorConvert16To32Bgr (u8 *pDest, const u8 *pSource, u32 nSourceBytes);
+void CompositorConvert32To32Bgr (u8 *pDest, const u8 *pSource, u32 nSourceBytes);
 
 #endif
