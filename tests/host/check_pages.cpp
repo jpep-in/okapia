@@ -432,6 +432,52 @@ int main (void)
         const TEvent Tab = { EventKeyDown, OkKeyTab, 0, 0, 0, 0 };
         ScreenEvent (&s_Screen, &Tab);
         Expect (s_Screen.nFocus < 0, "et Tab n'en invente pas");
+
+        // Les choix : quel Macintosh oublier. Des boutons radio qu'on clique et
+        // qui ne prennent jamais le clavier — sinon Entrée cocherait au lieu
+        // d'acquiescer.
+        int nFirst = -1;
+        unsigned nRadios = 0, nMarked = 0;
+        for (unsigned i = 0; i < n; i++)
+        {
+            if (pW[i].Type != WidgetRadio) continue;
+            if (nFirst < 0) nFirst = (int) i;
+            nRadios++;
+            if (pW[i].nState & StateChecked) nMarked++;
+            Expect (!WidgetFocusable (&pW[i]), "un choix ne prend pas le focus");
+        }
+        Expect (nRadios == C.nChoices, "un bouton radio par choix");
+        Expect (nMarked == 1 && ConfirmChoice () == C.nChoice,
+                "un seul coché, celui qu'on a demandé");
+
+        // Un clic sur « Les deux » le coche, décoche l'autre, et l'alerte reste.
+        const TWidget &Both = pW[nFirst + 2];
+        const TEvent Down = { EventMouseDown, 0, 0, 0,
+                              Both.Rect.nX + 4, Both.Rect.nY + (int) Both.Rect.nHeight / 2 };
+        TEvent Up = Down;
+        Up.Type = EventMouseUp;
+        ScreenEvent (&s_Screen, &Down);
+        const TScreenReply Click = ScreenEvent (&s_Screen, &Up);
+        Expect (Click.Result == ScreenActivated && ConfirmOperate (Click.nIndex) == ConfirmWaiting,
+                "cliquer un choix ne répond pas à la question");
+        Expect (ConfirmChoice () == 2, "et c'est lui qui est coché désormais");
+        Expect (s_Screen.nFocus < 0, "sans que le focus bouge");
+        const TScreenReply R2 = ScreenEvent (&s_Screen, &Ret);
+        Expect (R2.Result == ScreenActivated && ConfirmOperate (R2.nIndex) == ConfirmYes,
+                "Entrée vaut toujours l'assentiment après un choix");
+
+        // Sans choix, l'alerte n'en montre pas.
+        TConfirm Plain = C;
+        Plain.nChoices = 0;
+        ConfirmDraw (&s_Surface, &Plain);
+        TWidget *pP = 0;
+        const unsigned nP = ConfirmWidgets (&pP);
+        unsigned nPlainRadios = 0;
+        for (unsigned i = 0; i < nP; i++)
+        {
+            if (pP[i].Type == WidgetRadio) nPlainRadios++;
+        }
+        Expect (nPlainRadios == 0 && ConfirmChoice () == 0, "et une alerte simple n'a pas de choix");
     }
 
     printf ("\nles informations\n");

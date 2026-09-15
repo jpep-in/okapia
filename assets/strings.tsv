@@ -88,7 +88,10 @@ info_author	Author	Auteur
 shut_down_title	Shut down?	Éteindre ?
 shut_down_body	The Macintosh has not started, so nothing is open and nothing can be lost. Okapia will stop, and the screen will go dark before you switch the power off.	Le Macintosh n’a pas démarré : rien n’est ouvert, rien ne peut être perdu. Okapia va s’arrêter, et l’écran s’éteindra avant que vous coupiez l’alimentation.
 forget_pram_title	Forget the parameter RAM?	Oublier la PRAM ?
-forget_pram_body	The parameter RAM holds what the Macintosh remembers about itself — its startup disk, its sound level, the depth of its screen. Forgetting it restores the factory values and touches none of your files.	La PRAM contient ce que le Macintosh retient de lui-même : son disque de démarrage, son niveau sonore, la profondeur de son écran. L’oublier rétablit les valeurs d’usine et ne touche à aucun de vos fichiers.
+forget_pram_body	The parameter RAM holds what the Macintosh remembers about itself — its startup disk, its sound level, the depth of its screen — and the 68k and PowerPC Macintoshes each keep their own. Forgetting it restores the factory values and touches none of your files.	La PRAM contient ce que le Macintosh retient de lui-même : son disque de démarrage, son niveau sonore, la profondeur de son écran. Le Macintosh 68k et le PowerPC ont chacun la leur. L’oublier rétablit les valeurs d’usine et ne touche à aucun de vos fichiers.
+forget_pram_68k	68k	68k
+forget_pram_powerpc	PowerPC	PowerPC
+forget_pram_both	Both	Les deux
 spec_title	Specimen — the component system	Échantillon — le système de composants
 spec_buttons	Buttons	Boutons
 spec_choices	Tick boxes and radio buttons	Cases et boutons radio

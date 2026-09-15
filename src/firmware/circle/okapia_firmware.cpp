@@ -299,19 +299,34 @@ static void ApplyVolumes (const TChooser *pChooser)
 
 // The parameter RAM, forgotten. main.cpp:106 rebuilds it from scratch as soon
 // as the "NuMc" signature is missing, so removing the file *is* the zap — and
-// it touches nothing of the user's data.
+// it touches nothing of the user's data. Each engine keeps its own file
+// (xpram_circle.cpp), and the firmware serves both, so it is told which.
 //
 // f_unlink and not remove(): the newlib glue's remove() deletes the file and
 // then leaves something behind that wedges the next fopen — the ROM never
 // opened and the kernel stopped dead, with no log at all.
-static void ForgetPram (void)
+static void ForgetPramFile (const char *pWhy, const char *pFile)
 {
-    const FRESULT nResult = f_unlink ("SD:/BasiliskII_XPRAM");
-    CLogger::Get ()->Write (FROM, LogNotice, "Parameter RAM %s (%d)",
+    char Path[40];
+    snprintf (Path, sizeof Path, "SD:/%s", pFile);
+    const FRESULT nResult = f_unlink (Path);
+    CLogger::Get ()->Write (FROM, LogNotice, "%s: %s %s (%d)", pWhy, pFile,
                             nResult == FR_OK ? "forgotten"
                                              : (nResult == FR_NO_FILE ? "was already absent"
                                                                       : "could not be removed"),
                             (int) nResult);
+}
+
+static void ForgetPram (const char *pWhy, bool b68k, bool bPowerPC)
+{
+    if (b68k)
+    {
+        ForgetPramFile (pWhy, "BasiliskII_XPRAM");
+    }
+    if (bPowerPC)
+    {
+        ForgetPramFile (pWhy, "SheepShaver_XPRAM");
+    }
 }
 
 /*
@@ -927,21 +942,36 @@ static void RunNewVolume (TSurface *pOutput, TSurface *pShadow, const TTheme *pT
 /*
  *  Asking before doing
  */
+// With choices, *pnChoice is the one marked on the way in and the one marked
+// when the assent came on the way out.
 static bool Ask (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
-                 TConfirmLevel Level, TStringId Title, TStringId Body, TStringId Yes)
+                 TConfirmLevel Level, TStringId Title, TStringId Body, TStringId Yes,
+                 const TStringId *pChoices = 0, unsigned nChoices = 0,
+                 unsigned *pnChoice = 0)
 {
     s_Confirm.Level  = Level;
     s_Confirm.pTitle = Str (Title);
     s_Confirm.pBody  = Str (Body);
     s_Confirm.pYes   = Str (Yes);
     s_Confirm.pNo    = Str (StrCancel);
+    s_Confirm.nChoices = pChoices == 0 ? 0 : nChoices;
+    s_Confirm.nChoice  = pnChoice == 0 ? 0 : *pnChoice;
+    for (unsigned i = 0; i < s_Confirm.nChoices && i < CONFIRM_CHOICES; i++)
+    {
+        s_Confirm.pChoices[i] = Str (pChoices[i]);
+    }
     ConfirmDraw (pShadow, &s_Confirm);
 
     static const TPageDriver Driver =
     {
         ConfirmRepaint, ConfirmWidgets, ConfirmAdapter, 0, 0, ConfirmCancelled
     };
-    return RunPage (pOutput, pShadow, pTheme, &Driver) == (int) ConfirmYes;
+    const bool bYes = RunPage (pOutput, pShadow, pTheme, &Driver) == (int) ConfirmYes;
+    if (pnChoice != 0)
+    {
+        *pnChoice = ConfirmChoice ();
+    }
+    return bYes;
 }
 
 /*
@@ -1041,12 +1071,27 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
             break;
 
         case ChooserForgetPram:
-            // A caution: it changes something the Macintosh will not get back,
-            // even though it touches none of the user's files.
-            if (Ask (pOutput, &Shadow, pTheme, ConfirmCaution, StrForgetPramTitle,
-                     StrForgetPramBody, StrForgetPram))
             {
-                ForgetPram ();
+                // A caution: it changes something the Macintosh will not get
+                // back, even though it touches none of the user's files.
+                //
+                // Which Macintosh, because each keeps its own. The one marked
+                // first is the one the selected volume starts — what Command-
+                // Option-P-R forgets — so accepting straight away does the same
+                // as the keys.
+                static const TStringId Which[] =
+                {
+                    StrForgetPram68k, StrForgetPramPowerpc, StrForgetPramBoth
+                };
+                enum { Which68k, WhichPowerPC, WhichBoth };
+                unsigned nWhich = FirmwareWantedEngine () == FirmwareEnginePowerPC
+                                ? WhichPowerPC : Which68k;
+                if (Ask (pOutput, &Shadow, pTheme, ConfirmCaution, StrForgetPramTitle,
+                         StrForgetPramBody, StrForgetPram,
+                         Which, sizeof Which / sizeof Which[0], &nWhich))
+                {
+                    ForgetPram ("Boot menu", nWhich != WhichPowerPC, nWhich != Which68k);
+                }
             }
             break;
 
@@ -1211,21 +1256,11 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
 
     if (bForgetPram)
     {
-        // main.cpp:106 rebuilds the parameter RAM from scratch as soon as the
-        // "NuMc" signature is missing, so removing the file *is* the zap — and
-        // it touches nothing of the user's data.
-        //
-        // f_unlink and not remove(): the newlib glue's remove() deletes the file
-        // and then leaves something behind that wedges the next fopen — the ROM
-        // never opened and the kernel stopped dead after this point, with no log
-        // at all. Going straight to the file system does the same job and the
-        // boot carries on.
-        const FRESULT nResult = f_unlink ("SD:/BasiliskII_XPRAM");
-        CLogger::Get ()->Write (FROM, LogNotice, "Command-Option-P-R: parameter RAM %s (%d)",
-                                nResult == FR_OK ? "forgotten"
-                                                 : (nResult == FR_NO_FILE ? "was already absent"
-                                                                          : "could not be removed"),
-                                (int) nResult);
+        // The Macintosh about to start, and only that one: a real Macintosh
+        // forgot its own parameter RAM, and the other engine's is another
+        // machine's. The boot menu's button can forget either, or both.
+        const bool bPowerPC = FirmwareWantedEngine () == FirmwareEnginePowerPC;
+        ForgetPram ("Command-Option-P-R", !bPowerPC, bPowerPC);
     }
     // Nothing to start from is not a state to hold a grey screen through and
     // then hand a question-mark floppy to: the firmware is the only thing that

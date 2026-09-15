@@ -98,6 +98,12 @@ int main (int argc, char **argv)
         TConfirm Confirm;
         ConfirmSample (&Confirm);
         Confirm.Level = Levels[i].Level;
+        // The choices on the caution only, which is the alert that has them;
+        // the other two show the plain form.
+        if (Confirm.Level != ConfirmCaution)
+        {
+            Confirm.nChoices = 0;
+        }
         ConfirmDraw (&s, &Confirm);
         Settle (&s, ConfirmWidgets);
         ConfirmRepaint (&s);

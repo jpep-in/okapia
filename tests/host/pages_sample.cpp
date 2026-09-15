@@ -69,6 +69,13 @@ void ConfirmSample (TConfirm *p)
     p->pBody  = Str (StrForgetPramBody);
     p->pYes   = Str (StrForgetPram);
     p->pNo    = Str (StrCancel);
+    // With its row of choices, as the firmware asks it: the longest form of an
+    // alert, so the one whose layout has the most to lose.
+    p->pChoices[0] = Str (StrForgetPram68k);
+    p->pChoices[1] = Str (StrForgetPramPowerpc);
+    p->pChoices[2] = Str (StrForgetPramBoth);
+    p->nChoices    = 3;
+    p->nChoice     = 1;
 }
 
 // A card with room for a few volumes but not for every rung: the sizes that do

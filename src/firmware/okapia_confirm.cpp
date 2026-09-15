@@ -10,11 +10,13 @@
 #include "okapia_page.h"
 #include "okapia_strings.h"
 
-static const unsigned MAX_WIDGETS = 8;
+static const unsigned MAX_WIDGETS = 8 + CONFIRM_CHOICES;
 static TWidget s_Widgets[MAX_WIDGETS];
 static TPage   s_Page;
 static int     s_nYes = -1;
 static int     s_nNo  = -1;
+static int     s_nFirstChoice = -1;     // the first radio's index, or -1
+static unsigned s_nChoices;
 static unsigned s_nHeight;
 
 unsigned ConfirmWidgets (TWidget **ppList)
@@ -32,7 +34,19 @@ TConfirmAnswer ConfirmOperate (int nIndex)
 {
     if (nIndex == s_nYes) return ConfirmYes;
     if (nIndex == s_nNo)  return ConfirmNo;
-    return ConfirmWaiting;
+    return ConfirmWaiting;              // a choice: the screen has marked it already
+}
+
+unsigned ConfirmChoice (void)
+{
+    for (unsigned i = 0; s_nFirstChoice >= 0 && i < s_nChoices; i++)
+    {
+        if (s_Widgets[s_nFirstChoice + (int) i].nState & StateChecked)
+        {
+            return i;
+        }
+    }
+    return 0;
 }
 
 // The alert's own width, in the design units the theme was drawn against. Wide
@@ -68,6 +82,17 @@ void ConfirmDraw (TSurface *pSurface, const TConfirm *pConfirm)
         s_nNo  = pConfirm->pNo == 0 ? -1
                                     : PageLast (&s_Page, pConfirm->pNo, StateNoFocus);
 
+        // The choices claim their row from the bottom, above the footer, so the
+        // sentence keeps whatever is left and the trial pass measures it alone.
+        s_nChoices = pConfirm->nChoices < CONFIRM_CHOICES ? pConfirm->nChoices
+                                                          : CONFIRM_CHOICES;
+        TRect ChoiceBand = Rect (0, 0, 0, 0);
+        if (s_nChoices > 0)
+        {
+            ChoiceBand = LayoutRowBottom (&Layout, pTheme->M.nCheckSize, StateNormal);
+            LayoutSectionGapBottom (&Layout);
+        }
+
         // The mark is two lines tall, which is what keeps it under the size at
         // which the typeface stops growing — and it is the typeface that draws
         // the marks' own letters.
@@ -95,6 +120,19 @@ void ConfirmDraw (TSurface *pSurface, const TConfirm *pConfirm)
         const unsigned nHigh = nWanted > nIcon ? nWanted : nIcon;
         Text = Rect (Text.nX, Text.nY, Text.nWidth, nHigh);
         PageAdd (&s_Page, WidgetParagraph, Text, pConfirm->pBody, StateNormal);
+
+        // Under the sentence and aligned with it, not with the mark: they are
+        // part of what is being asked.
+        s_nFirstChoice = s_nChoices > 0 ? (int) s_Page.nCount : -1;
+        const TRect Row = Rect (Text.nX, ChoiceBand.nY, Text.nWidth, ChoiceBand.nHeight);
+        for (unsigned i = 0; i < s_nChoices; i++)
+        {
+            const unsigned nState = StateNoFocus
+                                  | (i == pConfirm->nChoice ? StateChecked : StateNormal);
+            PageAdd (&s_Page, WidgetRadio,
+                     RectColumn (Row, i, s_nChoices, pTheme->M.nGap),
+                     pConfirm->pChoices[i], nState);
+        }
 
         if (nPass == 0)
         {
