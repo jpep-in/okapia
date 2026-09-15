@@ -1,15 +1,15 @@
 /*
- * check_blit.cpp — les convertisseurs indexés d'upstream, mesurés.
+ * check_blit.cpp — upstream's indexed converters, measured.
  *
- * video_blit.cpp est le seul code d'affichage qu'Okapia n'écrit pas : le
- * compositeur reçoit ce que ces routines lui donnent, et une palette ignorée
- * ressemble exactement à un bug de compositeur. Elle ne l'est pas — les deux
- * convertisseurs 1 bit écrivaient -(bit), c'est-à-dire du noir et blanc câblé,
- * là où tous leurs voisins lisent ExpandMap (patches/macemu/0003).
+ * video_blit.cpp is the only display code Okapia does not write: the
+ * compositor receives what these routines hand it, and an ignored palette
+ * looks exactly like a compositor bug. It is not one — the two 1-bit
+ * converters wrote -(bit), that is hard-wired black and white, where all
+ * their neighbours read ExpandMap (patches/macemu/0003).
  *
- * Ce qui est vérifié ici est la propriété qui rend le bug visible : une palette
- * inversée doit sortir inversée. Un test qui n'emploierait que la palette
- * ordinaire noir-sur-blanc passerait sur le code fautif.
+ * What is checked here is the property that makes the bug visible: an
+ * inverted palette must come out inverted. A test using only the ordinary
+ * black-on-white palette would pass on the faulty code.
  *
  * Copyright (C) 2026  Okapia contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -26,7 +26,7 @@ static unsigned s_nFailures;
 
 static void Expect (bool bOK, const char *pWhat)
 {
-    printf ("  %s %s\n", bOK ? "ok  " : "ECHEC", pWhat);
+    printf ("  %s %s\n", bOK ? "ok  " : "FAIL ", pWhat);
     if (!bOK)
     {
         s_nFailures++;
@@ -34,12 +34,12 @@ static void Expect (bool bOK, const char *pWhat)
 }
 
 /*
- *  La palette, remplie comme les deux pilotes la remplissent
+ *  The palette, filled the way both drivers fill it
  *
- *  video_circle.cpp:306 et sheepshaver/video_circle.cpp:404 écrivent les 256
- *  entrées en répétant les couleurs quand le mode en a moins, parce que les
- *  convertisseurs lisent ExpandMap[c >> 6] sans masquer. Reproduire cela ici
- *  n'est pas une commodité : c'est la convention testée.
+ *  video_circle.cpp:306 and sheepshaver/video_circle.cpp:404 write all 256
+ *  entries, repeating the colours when the mode has fewer, because the
+ *  converters read ExpandMap[c >> 6] without masking. Reproducing that here is
+ *  not a convenience: it is the convention under test.
  */
 
 static void FillExpandMap (const uint8 *pPalette, int nColours)
@@ -58,7 +58,7 @@ static bool SelectBlitter (int nMacDepth, int nOutputDepth)
 {
     VisualFormat Visual;
     memset (&Visual, 0, sizeof Visual);
-    Visual.fullscreen = true;   // sinon la profondeur 1 prend le chemin X11
+    Visual.fullscreen = true;   // otherwise depth 1 takes the X11 path
     Visual.depth      = nOutputDepth;
     Visual.Rmask      = 0x000000FF;
     Visual.Gmask      = 0x0000FF00;
@@ -68,21 +68,21 @@ static bool SelectBlitter (int nMacDepth, int nOutputDepth)
 }
 
 /*
- *  1 bit vers 32 : la palette doit arriver
+ *  1 bit to 32: the palette must get through
  */
 
 static void CheckOneBitTo32 (void)
 {
-    printf ("1 bit vers 32\n");
+    printf ("1 bit to 32\n");
 
-    // Noir et blanc à l'endroit, puis la même chose inversée. C'est le second
-    // cas qui distingue une palette lue d'une palette câblée.
+    // Black and white the right way up, then the same inverted. The second
+    // case is what tells a palette that is read from one hard-wired.
     static const uint8 Normal[6]   = { 0x00, 0x00, 0x00,  0xFF, 0xFF, 0xFF };
     static const uint8 Inverted[6] = { 0xFF, 0xFF, 0xFF,  0x00, 0x00, 0x00 };
 
-    Expect (SelectBlitter (1, 32), "un convertisseur est choisi");
+    Expect (SelectBlitter (1, 32), "a converter is chosen");
 
-    // 0xA5 = 1010 0101, le bit de poids fort d'abord.
+    // 0xA5 = 1010 0101, most significant bit first.
     static const uint8 Source[1] = { 0xA5 };
     static const int   Bits[8]   = { 1, 0, 1, 0, 0, 1, 0, 1 };
     uint32 Out[8];
@@ -96,7 +96,7 @@ static void CheckOneBitTo32 (void)
     {
         bOK = bOK && Out[i] == ExpandMap[Bits[i]];
     }
-    Expect (bOK, "chaque bit sort à la couleur que la palette lui donne");
+    Expect (bOK, "each bit comes out in the colour the palette gives it");
 
     FillExpandMap (Inverted, 2);
     memset (Out, 0xCC, sizeof Out);
@@ -107,50 +107,50 @@ static void CheckOneBitTo32 (void)
     {
         bOK = bOK && Out[i] == ExpandMap[Bits[i]];
     }
-    Expect (bOK, "et une palette inversée sort inversée");
+    Expect (bOK, "and an inverted palette comes out inverted");
 
-    // La forme fautive écrivait 0 ou 0xFFFFFFFF : l'alpha du fond y était nul
-    // pour la moitié des pixels, ce qui suffit à la reconnaître.
+    // The faulty form wrote 0 or 0xFFFFFFFF: the alpha was zero for half the
+    // pixels, which is enough to recognise it.
     Expect ((Out[0] & 0xFF000000u) == 0xFF000000u
          && (Out[1] & 0xFF000000u) == 0xFF000000u,
-            "l'alpha vient de la palette et non du signe d'un entier");
+            "the alpha comes from the palette, not from the sign of an integer");
 }
 
 /*
- *  1 bit vers 16, que l'amont n'a pas corrigé
+ *  1 bit to 16, which upstream did not fix
  */
 
 static void CheckOneBitTo16 (void)
 {
-    printf ("1 bit vers 16\n");
+    printf ("1 bit to 16\n");
 
     static const uint8 Palette[6] = { 0xFF, 0xFF, 0xFF,  0x00, 0x00, 0x00 };
-    Expect (SelectBlitter (1, 16), "un convertisseur est choisi");
+    Expect (SelectBlitter (1, 16), "a converter is chosen");
 
     FillExpandMap (Palette, 2);
-    static const uint8 Source[1] = { 0x80 };    // un seul bit, le premier
+    static const uint8 Source[1] = { 0x80 };    // a single bit, the first
     uint16 Out[8];
     memset (Out, 0xCC, sizeof Out);
     Screen_blit ((uint8 *) Out, Source, sizeof Source);
 
     Expect (Out[0] == (uint16) ExpandMap[1] && Out[1] == (uint16) ExpandMap[0],
-            "la palette arrive aussi sur seize bits");
+            "the palette gets through at sixteen bits too");
 }
 
 /*
- *  2 bits vers 32, le voisin qui n'a jamais été faux
+ *  2 bits to 32, the neighbour that was never wrong
  *
- *  Il sert de témoin : si celui-ci échoue, c'est la table ou l'appel qui sont
- *  en cause, pas la correction.
+ *  It is the control: if this one fails, the table or the call is at fault,
+ *  not the fix.
  */
 
 static void CheckTwoBitsTo32 (void)
 {
-    printf ("2 bits vers 32, témoin\n");
+    printf ("2 bits to 32, control\n");
 
     static const uint8 Palette[12] = { 0x10, 0x11, 0x12,  0x20, 0x21, 0x22,
                                        0x30, 0x31, 0x32,  0x40, 0x41, 0x42 };
-    Expect (SelectBlitter (2, 32), "un convertisseur est choisi");
+    Expect (SelectBlitter (2, 32), "a converter is chosen");
 
     FillExpandMap (Palette, 4);
     static const uint8 Source[1] = { 0x1B };    // 00 01 10 11
@@ -160,7 +160,7 @@ static void CheckTwoBitsTo32 (void)
 
     Expect (Out[0] == ExpandMap[0] && Out[1] == ExpandMap[1]
          && Out[2] == ExpandMap[2] && Out[3] == ExpandMap[3],
-            "les quatre entrées sortent dans l'ordre");
+            "the four entries come out in order");
 }
 
 int main (void)
@@ -171,9 +171,9 @@ int main (void)
 
     if (s_nFailures > 0)
     {
-        printf ("\n%u échec(s)\n", s_nFailures);
+        printf ("\n%u failure(s)\n", s_nFailures);
         return 1;
     }
-    printf ("\nTout passe.\n");
+    printf ("\nAll passed.\n");
     return 0;
 }

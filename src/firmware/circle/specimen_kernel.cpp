@@ -51,14 +51,14 @@ static const char *WidgetName (const TWidget *pWidget)
 {
     switch (pWidget->Type)
     {
-    case WidgetButton:      return "bouton";
-    case WidgetIconButton:  return "bouton icône";
-    case WidgetCheckbox:    return "case";
+    case WidgetButton:      return "button";
+    case WidgetIconButton:  return "icon button";
+    case WidgetCheckbox:    return "tick box";
     case WidgetRadio:       return "radio";
-    case WidgetList:        return "liste";
-    case WidgetPopup:       return "déroulante";
-    case WidgetField:       return "champ";
-    default:                return "composant";
+    case WidgetList:        return "list";
+    case WidgetPopup:       return "popup";
+    case WidgetField:       return "field";
+    default:                return "component";
     }
 }
 
@@ -157,8 +157,8 @@ TShutdownMode CSpecimenKernel::Run (void)
     bool bPointer = false;
 
     CLogger::Get ()->Write (FROM, LogNotice,
-                    "Page %u sur %u [%s] ; Tab, Espace, Retour, flèches, "
-                    "Gauche/Droite pour la page, L pour la langue",
+                    "Page %u of %u [%s]; Tab, Space, Return, arrows, "
+                    "Left/Right for the page, L for the language",
                     nPage, nPages, StringsCode (StringsLanguage ()));
 
     for (unsigned nTick = 0; ; nTick++)
@@ -185,7 +185,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                     const char *pWhat = pW->pItems != 0 && pW->nChoice >= 0
                                             ? pW->pItems[pW->nChoice].pText
                                             : (pW->pText != 0 ? pW->pText : "");
-                    CLogger::Get ()->Write (FROM, LogNotice, "Actionné : %s \"%s\"",
+                    CLogger::Get ()->Write (FROM, LogNotice, "Operated: %s \"%s\"",
                                     WidgetName (pW), pWhat);
                 }
                 bRepaint = true;
@@ -196,7 +196,7 @@ TShutdownMode CSpecimenKernel::Run (void)
                 break;
 
             case ScreenCancelled:
-                CLogger::Get ()->Write (FROM, LogNotice, "Échap");
+                CLogger::Get ()->Write (FROM, LogNotice, "Escape");
                 break;
 
             case ScreenIdle:

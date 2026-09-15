@@ -94,7 +94,7 @@ static void Expect (const char *pWhat, int nGot, int nWant)
     {
         s_nFailures++;
     }
-    printf ("    %-34s %3d  (attendu %3d) %s\n", pWhat, nGot, nWant, bOK ? "" : "  <-- ECART");
+    printf ("    %-34s %3d  (expected %3d) %s\n", pWhat, nGot, nWant, bOK ? "" : "  <-- OFF");
 }
 
 // A ring drawn around a control must clear it by the same amount on all four
@@ -105,11 +105,11 @@ static void CheckRing (const TSurface *pSurface, const char *pWhat, const TRect 
     const TBox b = InkBox (pSurface, Rect (rControl.nX - 40, rControl.nY - 40,
                                  rControl.nWidth + 80, rControl.nHeight + 80));
     printf ("  %s\n", pWhat);
-    Expect ("dégagement à gauche", rControl.nX - b.nLeft, (int) nExpectedGap);
-    Expect ("dégagement à droite",
+    Expect ("clearance left", rControl.nX - b.nLeft, (int) nExpectedGap);
+    Expect ("clearance right",
             b.nRight - (rControl.nX + (int) rControl.nWidth - 1), (int) nExpectedGap);
-    Expect ("dégagement en haut", rControl.nY - b.nTop, (int) nExpectedGap);
-    Expect ("dégagement en bas",
+    Expect ("clearance top", rControl.nY - b.nTop, (int) nExpectedGap);
+    Expect ("clearance bottom",
             b.nBottom - (rControl.nY + (int) rControl.nHeight - 1), (int) nExpectedGap);
 }
 
@@ -117,7 +117,7 @@ static void CheckScale (unsigned nScale16)
 {
     TTheme T;
     ThemeMake (nScale16, &T);
-    printf ("\n=== échelle %u/16 — corps %u px, trait %u, anneau %u/%u, focus %u ===\n",
+    printf ("\n=== scale %u/16 — body %u px, stroke %u, ring %u/%u, focus %u ===\n",
             nScale16, T.pBodyFont->nHeight, T.M.nStroke, T.M.nRingWidth, T.M.nRingGap,
             T.M.nFocusGap);
 
@@ -126,7 +126,7 @@ static void CheckScale (unsigned nScale16)
     // The default button's ring: outside the button by the gap plus its own width.
     TSurface s = Blank ();
     T.DrawButton (&s, Button, "Démarrer", StateDefault, &T);
-    CheckRing (&s, "bouton par défaut — anneau", Button, T.M.nRingGap + T.M.nRingWidth);
+    CheckRing (&s, "default button — ring", Button, T.M.nRingGap + T.M.nRingWidth);
 
     // Focus rings, on every control that can take one. The clearance must not
     // depend on which control it is.
@@ -134,7 +134,7 @@ static void CheckScale (unsigned nScale16)
 
     s = Blank ();
     T.DrawButton (&s, Button, "Focus", StateFocused, &T);
-    CheckRing (&s, "bouton — focus", Button, nFocus);
+    CheckRing (&s, "button — focus", Button, nFocus);
 
     // Sized from its own label. A control narrower than its text overflows —
     // nothing clips a string to its control yet — and the ring would then be
@@ -144,13 +144,13 @@ static void CheckScale (unsigned nScale16)
                               + 4 * T.M.nGap, T.M.nButtonHeight);
     s = Blank ();
     T.DrawPopup (&s, Popup, "Dynamique", StateFocused, &T);
-    CheckRing (&s, "menu local — focus", Popup, nFocus);
+    CheckRing (&s, "popup menu — focus", Popup, nFocus);
 
     const TRect Field = Rect (120, 60, 140, T.M.nFieldHeight);
     s = Blank ();
     const TFieldMark Mark = { 6, 6 };
     T.DrawField (&s, Field, "Okapia", StateFocused | StateCaret, Mark, &T);
-    CheckRing (&s, "champ de saisie — focus", Field, nFocus);
+    CheckRing (&s, "text field — focus", Field, nFocus);
 
     // The tick box and the radio sit inside a taller row, so the ring is
     // measured against the box the theme actually draws, not against the row.
@@ -160,11 +160,11 @@ static void CheckScale (unsigned nScale16)
 
     s = Blank ();
     T.DrawCheckbox (&s, Row, "", StateFocused, &T);
-    CheckRing (&s, "case à cocher — focus", Box, nFocus);
+    CheckRing (&s, "tick box — focus", Box, nFocus);
 
     s = Blank ();
     T.DrawRadio (&s, Row, "", StateFocused, &T);
-    CheckRing (&s, "bouton radio — focus", Box, nFocus);
+    CheckRing (&s, "radio button — focus", Box, nFocus);
 
     // The contents of a dialogue must clear its frame by the margin — the
     // margin, not what is left of it once the frame has taken its share. The
@@ -187,8 +187,8 @@ static void CheckScale (unsigned nScale16)
         }
 
         const TRect C = ThemeContent (Dialog, &T);
-        printf ("  dialogue — contenu dégagé du filet intérieur\n");
-        Expect ("dégagement à gauche", C.nX - x, (int) T.M.nMargin);
+        printf ("  dialogue — content clear of the inner rule\n");
+        Expect ("clearance left", C.nX - x, (int) T.M.nMargin);
     }
 
     // A label centred in a box must have as much air above its capitals as
@@ -197,10 +197,10 @@ static void CheckScale (unsigned nScale16)
     T.DrawButton (&s, Button, "Hom", StateNormal, &T);
     const TRect Inside = RectInset (Button, (int) T.M.nStroke + 2, (int) T.M.nStroke + 2);
     const TBox b = InkBox (&s, Inside);
-    printf ("  bouton — texte\n");
-    Expect ("air au-dessus moins en dessous",
+    printf ("  button — text\n");
+    Expect ("air above minus below",
             (b.nTop - Button.nY) - (Button.nY + (int) Button.nHeight - 1 - b.nBottom), 0);
-    Expect ("air à gauche moins à droite",
+    Expect ("air left minus right",
             (b.nLeft - Button.nX) - (Button.nX + (int) Button.nWidth - 1 - b.nRight), 0);
 }
 
@@ -326,9 +326,9 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
             {
                 if (nOverlaps == 0)
                 {
-                    printf ("  chevauchement : %s / %s en (%d,%d)\n",
-                            A.pText ? A.pText : "(sans texte)",
-                            B.pText ? B.pText : "(sans texte)", rb.nX, rb.nY);
+                    printf ("  overlap: %s / %s at (%d,%d)\n",
+                            A.pText ? A.pText : "(no text)",
+                            B.pText ? B.pText : "(no text)", rb.nX, rb.nY);
                 }
                 nOverlaps++;
             }
@@ -336,19 +336,19 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
     }
     if (nOverlaps != 0)
     {
-        printf ("  %u paire(s) de composants se chevauchent\n", nOverlaps);
+        printf ("  %u pair(s) of components overlap\n", nOverlaps);
         s_nFailures++;
     }
 
-    printf ("\n=== spécimen %ux%u page %u [%s] — rien ne doit entrer dans la marge ===\n",
+    printf ("\n=== specimen %ux%u page %u [%s] — nothing may enter the margin ===\n",
             nW, nH, nPage, StringsCode (StringsLanguage ()));
-    printf ("  marge %u px ; intrusion la plus proche : g %d  d %d  h %d  b %d\n",
+    printf ("  margin %u px; nearest intrusion: l %d  r %d  t %d  b %d\n",
             T.M.nMargin,
             nWorstLeft == 1000 ? -1 : nWorstLeft, nWorstRight == 1000 ? -1 : nWorstRight,
             nWorstTop == 1000 ? -1 : nWorstTop, nWorstBottom == 1000 ? -1 : nWorstBottom);
     if (nWorstLeft != 1000 || nWorstRight != 1000 || nWorstTop != 1000 || nWorstBottom != 1000)
     {
-        printf ("    <-- déborde (bas : x=%d y=%d ; bas du contenu=%d)\n",
+        printf ("    <-- overflows (bottom: x=%d y=%d; content bottom=%d)\n",
                 nBotX, nBotY, C.nY + (int) C.nHeight);
         s_nFailures++;
     }
@@ -375,8 +375,8 @@ static void Outside (const TSurface *pSurface, const TRect &rControl, unsigned n
     const TBox b = InkBox (pSurface, Rect (0, 0, W, H));
     const int nRight = b.nRight - (rControl.nX + (int) rControl.nWidth - 1) - (int) nReach;
     const int nLeft  = rControl.nX - b.nLeft - (int) nReach;
-    Expect ("dépassement à droite", nRight > 0 ? nRight : 0, 0);
-    Expect ("dépassement à gauche", nLeft  > 0 ? nLeft  : 0, 0);
+    Expect ("overflow right", nRight > 0 ? nRight : 0, 0);
+    Expect ("overflow left", nLeft  > 0 ? nLeft  : 0, 0);
 }
 
 static void CheckTruncation (unsigned nScale16)
@@ -396,23 +396,23 @@ static void CheckTruncation (unsigned nScale16)
     };
     const TCase Cases[] =
     {
-        { "étiquette",  T.DrawLabel,    StateNormal  },
-        { "bouton",     T.DrawButton,   StateNormal  },
-        { "bouton par défaut", T.DrawButton, StateDefault },
-        // Les deux à la fois : le bouton par défaut garde son gros anneau noir
-        // et reçoit en plus la fine ligne grise du focus, posée *dehors*. Au
-        // gré du focus ordinaire elle tombait entre 3 et 4 pixels, c'est-à-dire
-        // dans la bande du noir, et les deux se recouvraient. Ce que ce cas
-        // vérifie, c'est que le calcul de la réserve suit le dessin : sinon la
-        // ligne grise part dans la marge, que rien ne repeint.
-        { "bouton par défaut au focus", T.DrawButton, StateDefault | StateFocused },
-        { "bouton au focus", T.DrawButton, StateFocused },
-        { "case",       T.DrawCheckbox, StateNormal  },
+        { "label",      T.DrawLabel,    StateNormal  },
+        { "button",     T.DrawButton,   StateNormal  },
+        { "default button", T.DrawButton, StateDefault },
+        // Both at once: the default button keeps its heavy black ring and also
+        // gets the thin grey focus line, laid *outside* it. Placed like an
+        // ordinary focus it fell 3 to 4 pixels out, inside the black band, and
+        // the two overlapped. What this case checks is that the reach follows
+        // the drawing: otherwise the grey line lands in the margin, which
+        // nothing repaints.
+        { "default button with focus", T.DrawButton, StateDefault | StateFocused },
+        { "button with focus", T.DrawButton, StateFocused },
+        { "tick box",   T.DrawCheckbox, StateNormal  },
         { "radio",      T.DrawRadio,    StateNormal  },
-        { "déroulante", T.DrawPopup,    StateNormal  }
+        { "popup",      T.DrawPopup,    StateNormal  }
     };
 
-    printf ("\n=== troncature à l'échelle %u/16 — aucun texte hors de son contrôle ===\n",
+    printf ("\n=== truncation at scale %u/16 — no text outside its control ===\n",
             nScale16);
 
     // Narrow on purpose: wide enough to be a control, far too narrow for the
@@ -434,7 +434,7 @@ static void CheckTruncation (unsigned nScale16)
         TSurface s = Blank ();
         const TFieldMark Mark = { (unsigned) strlen (Long), (unsigned) strlen (Long) };
         T.DrawField (&s, Control, Long, StateFocused | StateCaret, Mark, &T);
-        printf ("  champ, curseur à la fin\n");
+        printf ("  field, caret at the end\n");
         Outside (&s, Control, ThemeReach (&T, StateFocused));
     }
 
@@ -448,10 +448,10 @@ static void CheckTruncation (unsigned nScale16)
                                                    T.M.nLineHeight);
         const TRect Box = Rect (60, 40, nWidth, nHigh);
         T.DrawParagraph (&s, Box, Long, StateNormal, &T);
-        printf ("  paragraphe (%u lignes)\n", nHigh / T.M.nLineHeight);
+        printf ("  paragraph (%u lines)\n", nHigh / T.M.nLineHeight);
         Outside (&s, Box, 0);
         const TBox b = InkBox (&s, Rect (0, 0, W, H));
-        Expect ("dépassement en bas",
+        Expect ("overflow bottom",
                 b.nBottom - (Box.nY + (int) Box.nHeight - 1) <= 0
                     ? 0 : b.nBottom - (Box.nY + (int) Box.nHeight - 1), 0);
     }
@@ -466,14 +466,13 @@ int main (void)
         CheckTruncation (Scales[i]);
     }
 
-    // L'écart entre deux voisins se mesure entre ce qui est *dessiné*, pas
-    // entre les rectangles : ce que porte un contrôle vient s'ajouter de chaque
-    // côté, et la constante d'écart est de l'air par-dessus. Deux trous en
-    // faisaient mentir la règle — une bande remplie par la droite n'insérait
-    // aucune gouttière entre ses boutons, et une bande prise en bas ne
-    // réservait pas ce que ses contrôles portent.
+    // The gap between two neighbours is measured between what is *drawn*, not
+    // between rectangles: what a control wears adds on each side, and the gap
+    // constant is air on top of it. Two holes made the rule lie — a row filled
+    // from the right put no gutter between its buttons, and a row taken from
+    // the bottom did not reserve what its controls wear.
     {
-        printf ("\n=== l'écart entre voisins tient compte de ce qu'ils portent ===\n");
+        printf ("\n=== the gap between neighbours allows for what they wear ===\n");
         TTheme T;
         ThemeMake (16, &T);
 
@@ -484,7 +483,7 @@ int main (void)
         const int nAir = A.nX - (B.nX + (int) B.nWidth);
         const unsigned nOwed = T.M.nGap + ThemeReach (&T, StateDefault | StateFocused)
                              + ThemeReach (&T, StateFocused);
-        Expect ("deux boutons du pied ont leur gouttière en plus de leurs anneaux",
+        Expect ("two footer buttons keep their gutter on top of their rings",
                 nAir >= (int) nOwed, 1);
 
         TLayout L;
@@ -493,7 +492,7 @@ int main (void)
         LayoutRowGapBottom (&L);
         const TRect High = LayoutRowBottom (&L, T.M.nButtonHeight, StateFocused);
         const int nGapV = Low.nY - (High.nY + (int) High.nHeight);
-        Expect ("et deux bandes prises en bas gardent la leur",
+        Expect ("and two rows taken from the bottom keep theirs",
                 nGapV >= (int) (T.M.nRowGap + 2 * ThemeReach (&T, StateFocused)), 1);
     }
 
@@ -527,6 +526,6 @@ int main (void)
     }
     StringsSetLanguage ((TLanguage) 0);
 
-    printf ("\n%u écart(s)\n", s_nFailures);
+    printf ("\n%u failure(s)\n", s_nFailures);
     return s_nFailures == 0 ? 0 : 1;
 }

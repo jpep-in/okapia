@@ -1,12 +1,11 @@
 /*
- * check_encoding.cpp — les noms de fichiers du dossier partagé.
+ * check_encoding.cpp — the shared folder's file names.
  *
- * Entre une carte FAT en UTF-8 et un Macintosh en MacRoman, la conversion est
- * exactement le genre de code qui a l'air juste et abîme un nom sur cinquante :
- * une table de 128 entrées, trois formes d'UTF-8, et deux cas où il vaut mieux
- * ne rien faire que faire à moitié. Rien de tout cela ne demande une carte, un
- * émulateur ni un Macintosh, donc rien de tout cela n'a de raison d'être
- * découvert sur une carte.
+ * Between a FAT card in UTF-8 and a Macintosh in MacRoman, the conversion is
+ * exactly the kind of code that looks right and damages one name in fifty: a
+ * 128-entry table, three UTF-8 forms, and two cases where doing nothing is
+ * better than doing half. None of it needs a card, an emulator or a Macintosh,
+ * so none of it has any reason to be discovered on a card.
  *
  * Copyright (C) 2026  Okapia contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -18,7 +17,7 @@
 #include "sysdeps.h"
 #include "cpu_emulation.h"
 
-// mac_encoding_circle.cpp les appelle sous --wrap ; ici on les nomme.
+// mac_encoding_circle.cpp reaches them through --wrap; here they are named.
 extern "C" const char *__wrap__Z25host_encoding_to_macromanPKc (const char *);
 extern "C" const char *__wrap__Z25macroman_to_host_encodingPKc (const char *);
 
@@ -26,27 +25,27 @@ extern "C" const char *__wrap__Z25macroman_to_host_encodingPKc (const char *);
 #define ToHost __wrap__Z25macroman_to_host_encodingPKc
 
 /*
- *  Le Macintosh que ce test n'a pas
+ *  The Macintosh this test does not have
  *
- *  La sonde du Script Manager ne part que si un 68000 tourne. Ici il n'y en a
- *  pas, ce qui est aussi le cas au démarrage réel : la conversion MacRoman est
- *  alors le pari par défaut, et c'est ce pari qui est mesuré.
+ *  The Script Manager probe only runs when a 68000 is running. There is none
+ *  here, which is also the case during a real startup: MacRoman is then the
+ *  default bet, and that bet is what is measured.
  */
 bool MacIsExecuting (void) { return false; }
 
 void Execute68k (uint32, M68kRegisters *)      { }
 void Execute68kTrap (uint16, M68kRegisters *)  { }
 
-// Host2Mac_memcpy() est une fonction en ligne sous DIRECT_ADDRESSING et lit
-// cet offset. Rien ne l'appelle ici — la sonde ne part pas — mais il faut
-// qu'il existe pour que l'éditeur de liens s'y retrouve.
+// Host2Mac_memcpy() is inline under DIRECT_ADDRESSING and reads this offset.
+// Nothing calls it here — the probe does not run — but it has to exist for
+// the linker to be satisfied.
 uintptr MEMBaseDiff;
 
 static unsigned s_nFailures;
 
 static void Expect (bool bOK, const char *pWhat)
 {
-    printf ("  %s %s\n", bOK ? "ok  " : "ECHEC", pWhat);
+    printf ("  %s %s\n", bOK ? "ok  " : "FAIL ", pWhat);
     if (!bOK)
     {
         s_nFailures++;
@@ -56,59 +55,59 @@ static void Expect (bool bOK, const char *pWhat)
 static void ExpectSame (const char *pGot, const char *pWant, const char *pWhat)
 {
     bool bOK = strcmp (pGot, pWant) == 0;
-    printf ("  %s %s\n", bOK ? "ok  " : "ECHEC", pWhat);
+    printf ("  %s %s\n", bOK ? "ok  " : "FAIL ", pWhat);
     if (!bOK)
     {
-        printf ("        attendu \"%s\", obtenu \"%s\"\n", pWant, pGot);
+        printf ("        expected \"%s\", got \"%s\"\n", pWant, pGot);
         s_nFailures++;
     }
 }
 
 /*
- *  L'aller et le retour
+ *  There and back
  */
 
 static void CheckRoundTrip (void)
 {
-    printf ("aller-retour\n");
+    printf ("round trip\n");
 
-    // Un nom accentué, le cas qui a motivé tout le fichier. En MacRoman, é est
-    // 0x8E et û est 0x9E.
+    // An accented name, the case that motivated the whole file. In MacRoman, é
+    // is 0x8E and û is 0x9E.
     static const char Mac[]  = "R\x8Esum\x8E.txt";
     static const char Host[] = "R\xC3\xA9sum\xC3\xA9.txt";
 
-    ExpectSame (ToMac (Host), Mac,  "UTF-8 accentué vers MacRoman");
-    ExpectSame (ToHost (Mac), Host, "et MacRoman vers UTF-8");
+    ExpectSame (ToMac (Host), Mac,  "accented UTF-8 to MacRoman");
+    ExpectSame (ToHost (Mac), Host, "and MacRoman to UTF-8");
 
-    ExpectSame (ToMac (ToHost (Mac)), Mac, "l'aller-retour ne perd rien");
+    ExpectSame (ToMac (ToHost (Mac)), Mac, "the round trip loses nothing");
 
-    // L'ASCII traverse sans être touché, ce qui est la quasi-totalité des noms.
-    ExpectSame (ToMac ("System Folder"),  "System Folder", "l'ASCII passe tel quel");
-    ExpectSame (ToHost ("System Folder"), "System Folder", "dans les deux sens");
+    // ASCII goes through untouched, which is nearly every name.
+    ExpectSame (ToMac ("System Folder"),  "System Folder", "ASCII passes as it is");
+    ExpectSame (ToHost ("System Folder"), "System Folder", "both ways");
 
-    ExpectSame (ToMac (""),  "", "le nom vide aussi");
-    ExpectSame (ToHost (""), "", "dans les deux sens");
+    ExpectSame (ToMac (""),  "", "so does the empty name");
+    ExpectSame (ToHost (""), "", "both ways");
 }
 
 /*
- *  Les caractères que MacRoman a et que personne n'attend
+ *  The characters MacRoman has and nobody expects
  */
 
 static void CheckHighRange (void)
 {
-    printf ("le haut de la table\n");
+    printf ("the top of the table\n");
 
-    // 0xA5 est le rond médian, 0xD0 le tiret demi-cadratin, 0xAA le symbole
-    // marque déposée : trois points de code hors du Latin-1, donc trois octets
-    // en UTF-8. Ils prouvent que l'encodeur ne s'arrête pas à deux.
+    // 0xA5 is the bullet, 0xD0 the en dash, 0xAA the trademark sign: three
+    // code points outside Latin-1, so three bytes in UTF-8. They prove the
+    // encoder does not stop at two.
     static const char Mac[]  = "\xA5\xD0\xAA";
     static const char Host[] = "\xE2\x80\xA2\xE2\x80\x93\xE2\x84\xA2";
 
-    ExpectSame (ToHost (Mac), Host, "trois octets en sortie quand il en faut trois");
-    ExpectSame (ToMac (Host), Mac,  "et trois octets en entrée");
+    ExpectSame (ToHost (Mac), Host, "three bytes out when three are needed");
+    ExpectSame (ToMac (Host), Mac,  "and three bytes in");
 
-    // Les 128 entrées, une par une : une seule erreur de transcription se
-    // cacherait derrière n'importe quel test plus étroit.
+    // All 128 entries, one by one: a single transcription error would hide
+    // behind any narrower test.
     bool bAll = true;
     for (int i = 0x80; i < 0x100; i++)
     {
@@ -117,46 +116,46 @@ static void CheckHighRange (void)
         strcpy (Copy, ToHost (Name));
         bAll = bAll && strcmp (ToMac (Copy), Name) == 0;
     }
-    Expect (bAll, "les 128 entrées hautes font l'aller-retour");
+    Expect (bAll, "the 128 high entries survive the round trip");
 }
 
 /*
- *  Ce qui ne se convertit pas
+ *  What does not convert
  *
- *  Rendre le nom d'origine est un choix, pas un oubli : un nom que le Mac ne
- *  peut pas lire est une gêne, un demi-nom est une perte.
+ *  Handing back the original name is a choice, not an oversight: a name the
+ *  Mac cannot read is a nuisance, half a name is a loss.
  */
 
 static void CheckRefusals (void)
 {
-    printf ("les refus\n");
+    printf ("refusals\n");
 
-    // Un caractère chinois : parfaitement valide en UTF-8, absent de MacRoman.
+    // A Chinese character: perfectly valid UTF-8, absent from MacRoman.
     static const char Chinese[] = "\xE6\x96\x87.txt";
     ExpectSame (ToMac (Chinese), Chinese,
-                "un caractère hors MacRoman laisse le nom entier");
+                "a character outside MacRoman leaves the name whole");
 
-    // De l'UTF-8 malformé — une continuation isolée — ne doit rien produire.
+    // Malformed UTF-8 — a lone continuation — must produce nothing.
     static const char Broken[] = "a\xC3.txt";
-    ExpectSame (ToMac (Broken), Broken, "de l'UTF-8 cassé n'est pas deviné");
+    ExpectSame (ToMac (Broken), Broken, "broken UTF-8 is not guessed at");
 
-    // Un plan supplémentaire (un emoji) : quatre octets, hors MacRoman.
+    // A supplementary plane (an emoji): four bytes, outside MacRoman.
     static const char Emoji[] = "\xF0\x9F\x8D\x8E.txt";
-    ExpectSame (ToMac (Emoji), Emoji, "et un caractère à quatre octets non plus");
+    ExpectSame (ToMac (Emoji), Emoji, "nor is a four-byte character");
 
-    Expect (ToMac (0) == 0 && ToHost (0) == 0, "un pointeur nul revient nul");
+    Expect (ToMac (0) == 0 && ToHost (0) == 0, "a null pointer comes back null");
 }
 
 /*
- *  Les longueurs
+ *  Lengths
  */
 
 static void CheckLengths (void)
 {
-    printf ("les longueurs\n");
+    printf ("lengths\n");
 
-    // 255 octets, la limite d'un nom long FAT, tous accentués : 510 octets en
-    // UTF-8 à l'aller, 255 en MacRoman au retour. Le tampon doit tenir.
+    // 255 bytes, the limit of a FAT long name, all accented: 510 bytes of UTF-8
+    // one way, 255 of MacRoman the other. The buffer must hold.
     char Long[256];
     for (int i = 0; i < 255; i++)
     {
@@ -166,18 +165,18 @@ static void CheckLengths (void)
 
     char Utf8[1024];
     strcpy (Utf8, ToHost (Long));
-    Expect (strlen (Utf8) == 510, "255 lettres accentuées font 510 octets");
-    ExpectSame (ToMac (Utf8), Long, "et reviennent entières");
+    Expect (strlen (Utf8) == 510, "255 accented letters make 510 bytes");
+    ExpectSame (ToMac (Utf8), Long, "and come back whole");
 
-    // Au-delà du tampon, le nom revient intact et non tronqué. Aucune carte FAT
-    // ne produit un nom pareil ; c'est la garde qui est mesurée, pas le cas.
+    // Past the buffer, the name comes back intact rather than truncated. No FAT
+    // card produces such a name; it is the guard being measured, not the case.
     static char Huge[600];
     for (int i = 0; i < 599; i++)
     {
-        Huge[i] = (char) 0xA5;      // trois octets chacun en UTF-8
+        Huge[i] = (char) 0xA5;      // three bytes each in UTF-8
     }
     Huge[599] = 0;
-    ExpectSame (ToHost (Huge), Huge, "un nom trop long revient tel quel");
+    ExpectSame (ToHost (Huge), Huge, "a name too long comes back as it is");
 }
 
 int main (void)
@@ -189,9 +188,9 @@ int main (void)
 
     if (s_nFailures > 0)
     {
-        printf ("\n%u échec(s)\n", s_nFailures);
+        printf ("\n%u failure(s)\n", s_nFailures);
         return 1;
     }
-    printf ("\nTout passe.\n");
+    printf ("\nAll passed.\n");
     return 0;
 }

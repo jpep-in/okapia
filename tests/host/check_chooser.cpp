@@ -27,7 +27,7 @@ static unsigned s_nFailures;
 
 static void Expect (bool bOK, const char *pWhat)
 {
-    printf ("  %s %s\n", bOK ? "ok  " : "ECHEC", pWhat);
+    printf ("  %s %s\n", bOK ? "ok  " : "FAIL ", pWhat);
     if (!bOK)
     {
         s_nFailures++;
@@ -217,71 +217,71 @@ int main (void)
 
     char Out[CHOOSER_MAX][CHOOSER_LINE];
 
-    printf ("Le sélecteur\n");
+    printf ("The chooser\n");
     Open ();
-    Expect (s_Model.nCount == 7, "sept volumes sur la carte");
-    Expect (ChooserSelected () == 0, "la sélection part sur le volume de démarrage");
+    Expect (s_Model.nCount == 7, "seven volumes on the card");
+    Expect (ChooserSelected () == 0, "the selection starts on the startup volume");
 
     // The processor sits with the version, not among the dotted states: the
     // labels come from Str() so this measures the row and not one language.
     Expect (strstr (s_Items ()[0].pText, Str (StrCpu68k)) != 0,
-            "un volume 7.1.2 annonce son processeur");
+            "a 7.1.2 volume states its processor");
     Expect (strstr (s_Items ()[1].pText, Str (StrCpuUniversal)) != 0,
-            "un 7.6 universel le dit, puisque là il y aura un choix");
+            "a universal 7.6 says so, since there will be a choice");
     Expect (strstr (s_Items ()[5].pText, Str (StrCpuPowerpc)) != 0,
-            "et un 8.6 annonce PowerPC");
+            "and an 8.6 states PowerPC");
     Expect (strstr (s_Items ()[4].pText, Str (StrCpu68k)) == 0
             && strstr (s_Items ()[4].pText, Str (StrCpuPowerpc)) == 0,
-            "un volume sans Système lisible n'invente pas de processeur");
+            "a volume with no readable System invents no processor");
 
     unsigned n = Lines (Out);
-    Expect (n == 5, "cinq volumes montés en disque sur sept");
-    Expect (strcmp (Out[0], "/boot71.img") == 0, "le volume de démarrage vient en premier");
-    Expect (strcmp (Out[2], "*/os81.img") == 0, "un volume en lecture seule porte son étoile");
+    Expect (n == 5, "five volumes of seven mounted as disks");
+    Expect (strcmp (Out[0], "/boot71.img") == 0, "the startup volume comes first");
+    Expect (strcmp (Out[2], "*/os81.img") == 0, "a read-only volume carries its star");
 
-    // Les deux réponses qui sont des oui-ou-non sont dans la ligne, une colonne
-    // chacune : les lire sous la liste demandait de retenir de quelle ligne
-    // elles parlaient. La troisième n'en est pas une et n'est pas là.
+    // The two answers that are yes-or-no sit in the row, a column each: reading
+    // them under the list meant remembering which row they spoke about. The
+    // third is not one and is not there.
     TWidget *pW = 0;
     ChooserWidgets (&pW);
     const TWidget &List = pW[FindList ()];
-    Expect (List.nColumns == 2, "la liste porte deux colonnes");
+    Expect (List.nColumns == 2, "the list carries two columns");
     Expect (List.pColumns != 0
             && strcmp (List.pColumns[0].pHeader, Str (StrStartupDisk)) == 0
             && strcmp (List.pColumns[1].pHeader, Str (StrMounted)) == 0,
-            "et chacune son en-tête");
+            "each with its header");
     Expect (List.pColumns[0].bRadio && !List.pColumns[1].bRadio,
-            "le démarrage est un choix unique, le montage une bascule");
+            "startup is a single choice, mounting a toggle");
 
     Select (1);
-    Expect (Cell (ColStartup) == ChooserNothing, "cocher « disque de démarrage » ne quitte pas");
-    Expect (s_Model.nStartup == 1, "et le volume de démarrage a changé");
+    Expect (Cell (ColStartup) == ChooserNothing, "ticking startup disk does not leave");
+    Expect (s_Model.nStartup == 1, "and the startup volume has changed");
     n = Lines (Out);
-    Expect (strcmp (Out[0], "/machd76.image") == 0, "le nouveau vient en premier");
-    Expect (strcmp (Out[1], "/boot71.img") == 0, "l'ancien garde sa place dans le reste");
+    Expect (strcmp (Out[0], "/machd76.image") == 0, "the new one comes first");
+    Expect (strcmp (Out[1], "/boot71.img") == 0, "the old one keeps its place among the rest");
 
-    // Un volume sans Système ne peut pas démarrer, et sa case le dit — sur sa
-    // propre ligne, donc sans qu'il faille l'avoir sélectionné pour le voir.
+    // A volume with no System cannot start, and its box says so — on its own
+    // row, so without having to select it to see.
     Expect ((s_Items ()[4].nCell[ColStartup - 1] & StateDisabled) != 0,
-            "un volume sans Système ne peut pas être le disque de démarrage");
+            "a volume with no System cannot be the startup disk");
 
-    // Démonter en retire le volume des lignes écrites.
+    // Unmounting takes the volume out of the lines written.
     Select (0);
     Cell (ColMounted);
-    Expect (!s_Model.Volumes[0].bMounted, "on peut démonter un volume");
+    Expect (!s_Model.Volumes[0].bMounted, "a volume can be unmounted");
     n = Lines (Out);
-    Expect (n == 4, "et il quitte les lignes écrites");
+    Expect (n == 4, "and it leaves the lines written");
 
-    // Le volume de démarrage, lui, ne peut pas être démonté sous ses propres pieds.
+    // The startup volume, though, cannot be unmounted from under itself.
     Expect ((s_Items ()[1].nCell[ColMounted - 1] & StateDisabled) != 0,
-            "le volume de démarrage ne peut pas être démonté");
+            "the startup volume cannot be unmounted");
 
-    // Lecture seule : le geste de sûreté du projet, un caractère dans une ligne.
+    // Read-only: the project's safety gesture, one character in a line.
     Select (3);
-    Cell (ColMounted);                  // il était démonté
+    Cell (ColMounted);                  // it was unmounted
     MountPick (MountHDReadOnly);
     Expect (s_Model.Volumes[3].Mount == MountHDReadOnly,
-            "on peut passer un volume en lecture seule");
+            "a volume can be made read-only");
     n = Lines (Out);
     bool bStarred = false;
     for (unsigned i = 0; i < n; i++)
@@ -291,34 +291,33 @@ int main (void)
             bStarred = true;
         }
     }
-    Expect (bStarred, "et son étoile part sur la carte");
+    Expect (bStarred, "and its star goes onto the card");
 
-    // Sans volume de démarrage, le bouton qui ne peut pas marcher le dit avant.
+    // With no startup volume, the button that cannot work says so beforehand.
     Select (1);
-    Cell (ColMounted);                  // démonte le volume de démarrage… refusé
+    Cell (ColMounted);                  // unmounts the startup volume… refused
     s_Model.nStartup = -1;
     ChooserSync (&s_Model);
     ChooserWidgets (&pW);
     const int nStart = Find (WidgetButton, Str (StrStart));
     Expect ((pW[nStart].nState & StateDisabled) != 0,
-            "sans rien pour démarrer, le bouton est inactif");
+            "with nothing to start, the button is disabled");
 
-    // Les boutons du pied répondent ce qu'ils promettent.
+    // The footer buttons answer what they promise.
     s_Model.nStartup = 1;
     ChooserSync (&s_Model);
-    Expect (Operate (nStart) == ChooserStart, "Démarrer démarre");
+    Expect (Operate (nStart) == ChooserStart, "Start starts");
 
-    // Le clavier part sur la liste, pas sur la première chose qui traîne : Retour
-    // actionne ce que le clavier tient, et posé sur le pied de page il ouvrait
-    // les réglages depuis l'écran principal.
+    // The keyboard starts on a deliberate control, not on whatever lies first:
+    // Return operates what the keyboard holds, and resting on the footer it
+    // opened the settings from the main screen.
     Open ();
     Expect (s_Screen.nFocus == Find (WidgetButton, Str (StrStart)),
-            "le clavier part sur Démarrer");
+            "the keyboard starts on Start");
 
-    // Et il se voit quand il arrive sur Démarrer. ChooserSync réécrivait l'état
-    // entier du bouton, et la boucle le fait rejouer à chaque changement : le
-    // focus était effacé avant d'avoir été dessiné, si bien qu'aucune touche ne
-    // pouvait le faire apparaître sur le bouton principal.
+    // And it shows when it reaches Start. ChooserSync rewrote the button's whole
+    // state, and the loop replays it at every change: the focus was erased
+    // before it was drawn, so no key could make it appear on the main button.
     {
         TWidget *pW2 = 0;
         const unsigned nAll = ChooserWidgets (&pW2);
@@ -327,53 +326,53 @@ int main (void)
         {
             Send (Key (OkKeyTab, 0));
         }
-        Expect (s_Screen.nFocus == nStart, "le clavier tient Démarrer");
+        Expect (s_Screen.nFocus == nStart, "the keyboard holds Start");
         Expect ((pW2[nStart].nState & StateFocused) != 0,
-                "et il porte l'anneau de focus");
-        // Ce qui compte est qu'il y survive : c'est le rejeu qui l'effaçait.
+                "and it wears the focus ring");
+        // What matters is that it survives: the replay is what erased it.
         ChooserSync (&s_Model);
         Expect ((pW2[nStart].nState & StateFocused) != 0,
-                "que le modèle soit rejoué ne le lui reprend pas");
+                "replaying the model does not take it away");
         Expect ((pW2[nStart].nState & StateDefault) != 0,
-                "et il reste le bouton par défaut");
+                "and it stays the default button");
     }
     Open ();
 
-    // Le clavier traverse les colonnes : sans cela, une liste de cases serait
-    // une chose que seule la souris actionne, alors que les trois contrôles
-    // qu'elle remplace étaient atteignables par Tab.
+    // The keyboard goes through the columns: otherwise a list of boxes would be
+    // something only the mouse operates, while the three controls it replaces
+    // were reachable with Tab.
     Open ();
     {
         TWidget *pL = 0;
         ChooserWidgets (&pL);
         const int nList = FindList ();
         s_Screen.nFocus = nList;
-        Expect (pL[nList].nCell == 0, "le clavier part du nom");
+        Expect (pL[nList].nCell == 0, "the keyboard starts from the name");
         Send (Key (OkKeyRight, 0));
-        Expect (pL[nList].nCell == ColStartup, "droite entre dans la première colonne");
+        Expect (pL[nList].nCell == ColStartup, "right enters the first column");
         Send (Key (OkKeyRight, 0));
-        Expect (pL[nList].nCell == ColMounted, "et va jusqu'à la dernière");
+        Expect (pL[nList].nCell == ColMounted, "and goes as far as the last");
         Send (Key (OkKeyRight, 0));
-        Expect (pL[nList].nCell == ColMounted, "sans sortir par la droite");
+        Expect (pL[nList].nCell == ColMounted, "without leaving by the right");
         Send (Key (OkKeyLeft, 0));
-        Expect (pL[nList].nCell == ColStartup, "gauche revient");
+        Expect (pL[nList].nCell == ColStartup, "left comes back");
 
-        // Espace actionne la case où le clavier se trouve, et la réponse dit
-        // laquelle — c'est ce que la boucle passe au sélecteur.
+        // Space operates the box the keyboard is on, and the reply says which —
+        // that is what the loop hands the chooser.
         pL[nList].nChoice = 2;
         pL[nList].nCell   = ColMounted;
         const TScreenReply R = Send (Key (OkKeySpace, 0));
         Expect (R.Result == ScreenActivated && R.nIndex == nList && R.nCell == ColMounted,
-                "espace actionne la case sous le clavier");
+                "space operates the box under the keyboard");
 
-        // Une case grisée ne s'actionne pas plus au clavier qu'à la souris.
-        pL[nList].nChoice = 4;           // le volume sans Système
+        // A greyed box no more operates from the keyboard than from the mouse.
+        pL[nList].nChoice = 4;           // the volume with no System
         pL[nList].nCell   = ColStartup;
         Expect (Send (Key (OkKeySpace, 0)).Result == ScreenIdle,
-                "et une case inactive ne répond pas");
+                "and a disabled box does not answer");
     }
 
-    // Le clavier atteint tout, et Échap ne détruit rien.
+    // The keyboard reaches everything, and Escape destroys nothing.
     Open ();
     unsigned nFocusable = 0;
     ChooserWidgets (&pW);
@@ -385,88 +384,88 @@ int main (void)
             nFocusable++;
         }
     }
-    Expect (nFocusable >= 6, "tout ce qui s'actionne est atteignable au clavier");
+    Expect (nFocusable >= 6, "everything operable is reachable by keyboard");
     const int nWas = s_Screen.nFocus;
     for (unsigned i = 0; i < nFocusable; i++)
     {
         Send (Key (OkKeyTab, 0));
     }
-    Expect (s_Screen.nFocus == nWas, "Tab fait le tour");
+    Expect (s_Screen.nFocus == nWas, "Tab goes all the way round");
 
     // Which emulator starts a volume. The whole point is that the question is
     // only asked where there is one: a System built for one processor settles
     // it, and the popup then says which without offering a choice.
-    printf ("\nle moteur d'émulation\n");
+    printf ("\nthe emulation engine\n");
     Select (0);
     Expect ((Popup ()->nState & StateDisabled) != 0,
-            "un Système 68k ne pose pas la question");
-    Expect (Popup ()->nChoice == 0, "et il annonce quand même lequel démarrera");
+            "a 68k System does not ask the question");
+    Expect (Popup ()->nChoice == 0, "and still says which will start");
     Select (5);
     Expect ((Popup ()->nState & StateDisabled) != 0,
-            "un Système PowerPC non plus");
-    Expect (Popup ()->nChoice == 1, "et celui-là annonce PowerPC");
+            "nor does a PowerPC System");
+    Expect (Popup ()->nChoice == 1, "and that one says PowerPC");
     Select (1);
     Expect ((Popup ()->nState & StateDisabled) == 0,
-            "un Système universel, si : c'est là qu'il y a un choix");
+            "a universal System does: that is where there is a choice");
 
     n = EngineLines (Out);
-    Expect (n == 2, "deux volumes universels, deux lignes écrites");
+    Expect (n == 2, "two universal volumes, two lines written");
     Expect (strcmp (Out[0], "/machd76.image 68k") == 0,
-            "et rien n'est écrit pour ceux qui n'ont pas le choix");
+            "and nothing is written for those with no choice");
 
     Popup ()->nChoice = 1;
     Expect (ChooserOperate (&s_Model, FindPopup (), 0) == ChooserNothing,
-            "changer de moteur ne quitte pas l'écran");
-    Expect (s_Model.Volumes[1].Engine == CPUPowerPC, "le choix est retenu");
+            "changing the engine does not leave the screen");
+    Expect (s_Model.Volumes[1].Engine == CPUPowerPC, "the choice is kept");
     n = EngineLines (Out);
     Expect (strcmp (Out[0], "/machd76.image powerpc") == 0,
-            "et il part sur la carte");
+            "and it goes onto the card");
     Expect (ChooserStartupEngine (&s_Model) == CPU68k,
-            "le volume de démarrage est un autre, donc rien ne change pour le noyau");
+            "the startup volume is another one, so nothing changes for the kernel");
 
     // And the case the loader exists for: a startup volume that asks for the
     // engine this image does not carry.
     s_Model.nStartup = 1;
     ChooserSync (&s_Model);
     Expect (ChooserStartupEngine (&s_Model) == CPUPowerPC,
-            "le disque de démarrage réclame l'autre moteur");
+            "the startup disk asks for the other engine");
     s_Model.nStartup = 0;
 
     // A choice made on a universal volume must not follow the selection onto a
     // volume that has no choice — the popup speaks about the selected row.
     Select (5);
     Expect (Popup ()->nChoice == 1 && (Popup ()->nState & StateDisabled) != 0,
-            "et la sélection suivante reprend la main sur ce qu'il affiche");
+            "and the next selection takes back what it shows");
     Select (0);
-    Expect (Popup ()->nChoice == 0, "chaque volume garde le sien");
+    Expect (Popup ()->nChoice == 0, "each volume keeps its own");
 
     // The row that makes a volume. It is in the list because what it makes
     // lands in the list, and first because that place never moves while the
     // volumes under it come and go.
-    printf ("\nla ligne qui crée un volume\n");
+    printf ("\nthe row that makes a volume\n");
     Open ();
     {
         TWidget *pW2 = 0;
         ChooserWidgets (&pW2);
         const TWidget &L = pW2[FindList ()];
         Expect (L.nItems == s_Model.nCount + 1,
-                "la liste porte une ligne de plus qu'il n'y a de volumes");
-        Expect (s_ActionRow ()->bAction, "et la première est une commande");
+                "the list carries one row more than there are volumes");
+        Expect (s_ActionRow ()->bAction, "and the first is a command");
         Expect (strcmp (s_ActionRow ()->pText, Str (StrNewVolume)) == 0,
-                "qui dit ce qu'elle fait");
-        Expect (!s_Items ()[0].bAction, "les suivantes sont des volumes");
+                "that says what it does");
+        Expect (!s_Items ()[0].bAction, "the next ones are volumes");
     }
 
     SelectAction ();
-    Expect (ChooserSelected () == -1, "sélectionnée, elle n'est aucun volume");
+    Expect (ChooserSelected () == -1, "selected, it is no volume");
     Expect ((MountPopup ()->nState & StateDisabled) != 0
             && (Popup ()->nState & StateDisabled) != 0,
-            "et les deux popups n'ont plus de volume à décrire");
+            "and both popups have no volume left to describe");
     Expect (ChooserOperate (&s_Model, FindList (), 0) == ChooserNewVolume,
-            "l'actionner demande un nouveau volume");
+            "operating it asks for a new volume");
 
-    // Au clavier : espace l'actionne, et les flèches n'entrent pas dans une
-    // colonne qu'elle n'a pas.
+    // With the keyboard: space operates it, and the arrows do not enter a
+    // column it does not have.
     {
         TWidget *pL = 0;
         ChooserWidgets (&pL);
@@ -475,13 +474,13 @@ int main (void)
         pL[nList].nChoice = 0;
         pL[nList].nCell   = 0;
         Send (Key (OkKeyRight, 0));
-        Expect (pL[nList].nCell == 0, "les flèches n'entrent pas dans ses colonnes");
+        Expect (pL[nList].nCell == 0, "the arrows do not enter its columns");
         const TScreenReply R = Send (Key (OkKeySpace, 0));
         Expect (R.Result == ScreenActivated && R.nCell == 0,
-                "et espace l'actionne comme un bouton");
+                "and space operates it like a button");
     }
 
-    // Une carte vide n'a que cette ligne, et la sélection s'y pose.
+    // An empty card has only that row, and the selection lands on it.
     {
         TChooser Empty;
         memset (&Empty, 0, sizeof Empty);
@@ -490,10 +489,10 @@ int main (void)
         ChooserDraw (&s_Surface, &Empty);
         TWidget *pW2 = 0;
         ChooserWidgets (&pW2);
-        Expect (pW2[FindList ()].nItems == 1, "une carte vide ne porte que la commande");
-        Expect (pW2[FindList ()].nChoice == 0, "et la sélection s'y pose");
+        Expect (pW2[FindList ()].nItems == 1, "an empty card carries only the command");
+        Expect (pW2[FindList ()].nChoice == 0, "and the selection lands on it");
         Expect (ChooserOperate (&Empty, FindList (), 0) == ChooserNewVolume,
-                "donc une carte vide propose d'en faire un");
+                "so an empty card offers to make one");
     }
     Open ();
 
@@ -501,84 +500,83 @@ int main (void)
     // is — find_hfs_partition() reads a flat one and a partitioned one either
     // way — so this is a choice, and the three answers are the whole vocabulary
     // the preferences have for one volume.
-    printf ("\nmonter comme\n");
+    printf ("\nmount as\n");
     Open ();
     Select (6);
     Expect (MountPopup ()->nChoice == (int) MountCD,
-            "le popup annonce ce que le volume sélectionné est");
+            "the popup says what the selected volume is");
     Expect (strstr (s_Items ()[6].pText, Str (StrMountCd)) != 0,
-            "et la ligne le dit sans qu'on la sélectionne");
+            "and the row says so without being selected");
 
     n = Lines (Out);
     for (unsigned i = 0; i < n; i++)
     {
         Expect (strcmp (Out[i], "/installppc86fr.toast") != 0,
-                "un CD n'est pas un disque");
+                "a CD is not a disk");
     }
     n = CdromLines (Out);
     Expect (n == 1 && strcmp (Out[0], "/installppc86fr.toast") == 0,
-            "il part sur sa propre ligne, sans étoile");
+            "it goes on its own line, with no star");
 
-    // Un CD amorçable peut démarrer la machine, et ce n'est pas l'ordre des
-    // lignes qui le dit : la ROM reçoit un *pilote* par la PRAM.
+    // A bootable CD can start the machine, and it is not the order of the lines
+    // that says so: the ROM is handed a *driver* through the PRAM.
     Expect ((s_Items ()[6].nCell[ColStartup - 1] & StateDisabled) == 0,
-            "un CD amorçable peut être le disque de démarrage");
+            "a bootable CD can be the startup disk");
     Expect (ChooserBootDriver (&s_Model) == 0,
-            "tant qu'il ne l'est pas, aucun pilote n'est imposé");
+            "as long as it is not, no driver is imposed");
     Cell (ColStartup);
-    Expect (s_Model.nStartup == 6, "cocher sa marque le choisit");
+    Expect (s_Model.nStartup == 6, "ticking its mark chooses it");
     Expect (ChooserBootDriver (&s_Model) == CHOOSER_BOOT_CDROM,
-            "et la machine reçoit CDROMRefNum");
+            "and the machine gets CDROMRefNum");
     n = CdromLines (Out);
     Expect (n == 1 && strcmp (Out[0], "/installppc86fr.toast") == 0,
-            "le disque de démarrage vient en tête de sa propre liste");
+            "the startup disk heads its own list");
     n = Lines (Out);
-    Expect (n == 5, "et il ne s'invite pas dans les disques");
-    // Repasser sur un disque doit remettre 0 : une carte qui a démarré d'un
-    // disque une fois réclamerait le pilote CD pour toujours.
+    Expect (n == 5, "and it does not slip in among the disks");
+    // Going back to a disk must reset it to 0: a card that once started from a
+    // CD would otherwise ask for the CD driver for ever.
     Select (0);
     Cell (ColStartup);
-    Expect (ChooserBootDriver (&s_Model) == 0, "revenir à un disque lève le pilote");
+    Expect (ChooserBootDriver (&s_Model) == 0, "going back to a disk lifts the driver");
     Select (6);
     Cell (ColStartup);
 
-    // Le passage d'une liste à l'autre, dans les deux sens, sans que le volume
-    // se retrouve dans les deux.
+    // Moving from one list to the other, both ways, without the volume ending
+    // up in both.
     Open ();
     Select (4);
-    Expect (MountPick (MountCD) == ChooserNothing, "changer de montage ne quitte pas l'écran");
+    Expect (MountPick (MountCD) == ChooserNothing, "changing how it mounts does not leave the screen");
     n = CdromLines (Out);
-    Expect (n == 2, "un volume passé en CD rejoint l'autre liste");
+    Expect (n == 2, "a volume made a CD joins the other list");
     n = Lines (Out);
     for (unsigned i = 0; i < n; i++)
     {
-        Expect (strcmp (Out[i], "/travaux.img") != 0, "et quitte la première");
+        Expect (strcmp (Out[i], "/travaux.img") != 0, "and leaves the first");
     }
     MountPick (MountHD);
     n = CdromLines (Out);
-    Expect (n == 1, "et le retour marche aussi");
+    Expect (n == 1, "and going back works too");
 
-    // L'image de la ligne suit le montage, dans les deux sens. Elle était posée
-    // une fois pour toutes à la mise en page, qui ne se refait pas quand on
-    // change un menu : un disque restait dessiné en dossier, et un dossier en
-    // disque, jusqu'au prochain écran.
+    // The row's picture follows the mount, both ways. It used to be set once and
+    // for all at layout, which is not redone when a menu changes: a disk stayed
+    // drawn as a folder, and a folder as a disk, until the next screen.
     Select (5);
     const TGlyphImage *pWasFolder = s_Items ()[5].pIcon;
     MountPick (MountCD);
     Expect (s_Items ()[5].pIcon != pWasFolder,
-            "passer un volume en CD change son image");
+            "making a volume a CD changes its picture");
     Expect (s_Items ()[5].pIcon == s_Items ()[6].pIcon,
-            "et c'est la même que celle du CD déjà là");
+            "to the same one as the CD already there");
     MountPick (MountHD);
-    Expect (s_Items ()[5].pIcon == pWasFolder, "revenir en disque la rend");
+    Expect (s_Items ()[5].pIcon == pWasFolder, "going back to a disk restores it");
 
-    // Faire un CD du volume de démarrage ne le lui retire pas : il reste le
-    // volume de démarrage, et c'est le pilote annoncé qui change.
+    // Making the startup volume a CD does not take that away: it stays the
+    // startup volume, and it is the announced driver that changes.
     Select (0);
     MountPick (MountCD);
-    Expect (s_Model.nStartup == 0, "le volume de démarrage devenu CD le reste");
+    Expect (s_Model.nStartup == 0, "the startup volume made a CD stays it");
     Expect (ChooserBootDriver (&s_Model) == CHOOSER_BOOT_CDROM,
-            "et la machine démarrera par le pilote CD");
+            "and the machine will start through the CD driver");
     Open ();
 
     // The page has to fit in every language it speaks, at the smallest surface
@@ -592,7 +590,7 @@ int main (void)
             StringsSetLanguage ((TLanguage) i);
             ChooserDraw (&s_Surface, &s_Model);
             char What[64];
-            snprintf (What, sizeof What, "la page tient en 640x480 en %s",
+            snprintf (What, sizeof What, "the page fits 640x480 in %s",
                       StringsCode ((TLanguage) i));
             Expect (!ChooserOverflowed (), What);
         }
@@ -622,11 +620,11 @@ int main (void)
             default: break;
             }
         }
-        Expect (nIcons == 4, "le pied de page porte quatre marques");
-        Expect (nSeen == 15, "réglages, informations, PRAM et arrêt, chacune la sienne");
+        Expect (nIcons == 4, "the footer carries four marks");
+        Expect (nSeen == 15, "settings, information, PRAM and shut down, each its own");
     }
 
-    printf ("\n%u écart(s)\n", s_nFailures);
+    printf ("\n%u failure(s)\n", s_nFailures);
     free (s_pPixels);
     return s_nFailures == 0 ? 0 : 1;
 }

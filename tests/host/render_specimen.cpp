@@ -127,7 +127,7 @@ static bool RenderPage (const char *pOut, unsigned nScale, unsigned nPage)
     const bool bOK = WritePPM (pOut, pPixels, nWidth, nHeight);
     if (bOK)
     {
-        printf ("%s: %ux%u, page %u, échelle %u/16\n", pOut, nWidth, nHeight, nPage,
+        printf ("%s: %ux%u, page %u, scale %u/16\n", pOut, nWidth, nHeight, nPage,
                 ThemeScaleFor (nWidth, nHeight));
     }
 

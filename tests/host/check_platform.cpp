@@ -56,7 +56,7 @@ static unsigned s_nFailures;
 
 static void Expect (bool bOK, const char *pWhat)
 {
-    printf ("  %s %s\n", bOK ? "ok  " : "ECHEC", pWhat);
+    printf ("  %s %s\n", bOK ? "ok  " : "FAIL ", pWhat);
     if (!bOK)
     {
         s_nFailures++;
@@ -78,7 +78,7 @@ static void Write (const char *pContents)
 
 static void CheckUnknownLines (void)
 {
-    printf ("\nles lignes de préférences non déclarées\n");
+    printf ("\npreference lines nobody declared\n");
 
     char     Buffer[512];
     unsigned nKept  = 0;
@@ -90,9 +90,9 @@ static void CheckUnknownLines (void)
            "hfsrepair true\n"
            "gfxaccel true\n");
     nFound = PrefsCollectUnknown (TMP, Buffer, sizeof Buffer, &nKept);
-    Expect (nFound == 1 && nKept == 1, "une seule ligne sur trois est inconnue");
+    Expect (nFound == 1 && nKept == 1, "only one line of three is unknown");
     Expect (strcmp (Buffer, "gfxaccel true\n") == 0,
-            "et elle est rendue entière, valeur comprise");
+            "and it comes back whole, value included");
 
     // A value with spaces in it, which is the case a keyword-and-value split
     // gets wrong: everything after the keyword belongs to the value.
@@ -100,33 +100,33 @@ static void CheckUnknownLines (void)
     nFound = PrefsCollectUnknown (TMP, Buffer, sizeof Buffer, &nKept);
     Expect (nKept == 1
             && strcmp (Buffer, "machine /Mac OS 9.image | sheepshaver | /macosrom\n") == 0,
-            "les espaces d'une valeur sont conservés");
+            "the spaces in a value are kept");
 
     // The header SavePrefs() writes is regenerated at every save, so keeping
     // its comments would double the file line by line.
-    Write ("# un commentaire\n"
-           "; un autre\n"
+    Write ("# a comment\n"
+           "; another\n"
            "\n"
            "   \n"
            "ramsize 42\n");
     nFound = PrefsCollectUnknown (TMP, Buffer, sizeof Buffer, &nKept);
     Expect (nFound == 0 && nKept == 0,
-            "commentaires, lignes vides et lignes blanches sont ignorés");
+            "comments, empty lines and blank lines are ignored");
 
     // Nothing may be lost quietly: what does not fit is still counted, and
     // SavePrefs() warns on the difference.
     Write ("aaaa 1\nbbbb 2\ncccc 3\n");
     nFound = PrefsCollectUnknown (TMP, Buffer, 10, &nKept);
-    Expect (nFound == 3, "les lignes qui ne tiennent pas sont comptées");
-    Expect (nKept < nFound, "et ne sont pas écrites");
-    Expect (strlen (Buffer) < 10, "le tampon n'est jamais dépassé");
+    Expect (nFound == 3, "lines that do not fit are counted");
+    Expect (nKept < nFound, "and not written");
+    Expect (strlen (Buffer) < 10, "the buffer is never overrun");
 
     // A save on a card that has no preferences file yet, which is the first
     // boot: SavePrefs() calls this before creating the file.
     unlink (TMP);
     nFound = PrefsCollectUnknown (TMP, Buffer, sizeof Buffer, &nKept);
     Expect (nFound == 0 && nKept == 0 && Buffer[0] == '\0',
-            "un fichier absent ne rapporte rien");
+            "a missing file reports nothing");
 }
 
 /*
@@ -147,40 +147,41 @@ static THfsSystemFlavour Flavour (unsigned nMajor, unsigned nMinor, unsigned nBu
 
 static void CheckFlavour (void)
 {
-    printf ("\nla nature du Système\n");
+    printf ("\nwhat sort of System\n");
 
     // The two volumes staged in qemu/sd-contents/, measured 2026-09-04: these
     // two lines are the ones that have a right answer outside this file.
     Expect (Flavour (7, 1, 2, false) == HfsFlavour68k,
-            "7.1.2 sans fragment natif : 68k, et rien à demander");
+            "7.1.2 with no native fragment: 68k, nothing to ask");
     Expect (Flavour (7, 6, 1, true) == HfsFlavourUniversal,
-            "7.6.1 avec fragments natifs : universel, donc on demande");
+            "7.6.1 with native fragments: universal, so ask");
 
     // The lower bound is SheepShaver's earliest correctives, 7.5.2. Below it,
     // a native fragment changes nothing: no emulator would take the volume.
     Expect (Flavour (7, 5, 0, true) == HfsFlavour68k,
-            "7.5 est encore en dessous, fragments ou pas");
+            "7.5 is still below, fragments or not");
     Expect (Flavour (7, 5, 2, true) == HfsFlavourUniversal,
-            "7.5.2 est la première version que les deux couvrent");
+            "7.5.2 is the first version both cover");
 
     // The upper bound is where Basilisk's own patch list stops.
     Expect (Flavour (8, 1, 0, true) == HfsFlavourUniversal,
-            "8.1 est la dernière que les deux couvrent");
+            "8.1 is the last both cover");
     Expect (Flavour (8, 5, 0, true) == HfsFlavourPowerPC,
-            "8.5 est PowerPC, et rien à demander");
+            "8.5 is PowerPC, nothing to ask");
     Expect (Flavour (9, 0, 4, true) == HfsFlavourPowerPC,
-            "9.0.4 aussi");
+            "so is 9.0.4");
 
     // Deliberately not "PowerPC": Mac OS stayed largely 68k code inside, so a
     // fragment says the PowerPC half is installed and never that it is alone.
     Expect (Flavour (8, 0, 0, false) == HfsFlavour68k,
-            "dans la bande, sans fragment natif, c'est du 68k");
+            "inside the band, with no native fragment, it is 68k");
 
-    // System 6 has no 'vers' in its System file, so HfsSystemVersion() fails
-    // and leaves the structure zeroed. Answering "68k" there would be right by
-    // accident; the rule has to say it does not know.
+    // A System whose version cannot be read leaves the structure zeroed — System
+    // 6 does today, because its System file is typed 'ZSYS' rather than 'zsys'.
+    // Answering "68k" there would be right by accident; the rule has to say it
+    // does not know.
     Expect (Flavour (0, 0, 0, false) == HfsFlavourUnreadable,
-            "pas de version lisible : la règle ne conclut pas");
+            "no readable version: the rule draws no conclusion");
 }
 
 /*
@@ -189,72 +190,71 @@ static void CheckFlavour (void)
 
 static void CheckLayout (void)
 {
-    printf ("\nle plan mémoire de SheepShaver\n");
+    printf ("\nSheepShaver's memory layout\n");
 
     TMacLayout L;
-    Expect (MacLayoutPlan (256 * 1024 * 1024, &L), "256 Mo tiennent");
+    Expect (MacLayoutPlan (256 * 1024 * 1024, &L), "256 MB fit");
 
-    Expect (L.nRAMBase == 0x10000000, "la RAM commence là où l'amont la met");
+    Expect (L.nRAMBase == 0x10000000, "the RAM starts where upstream puts it");
     Expect (L.nROMBase == L.nRAMBase + L.nRAMSize,
-            "la ROM suit la RAM immédiatement — c'est tout le §19.4");
-    Expect ((L.nROMBase & 0xFFFFF) == 0, "et sur une frontière de mégaoctet");
+            "the ROM follows the RAM immediately");
+    Expect ((L.nROMBase & 0xFFFFF) == 0, "and on a megabyte boundary");
     Expect (L.nSigStack == L.nROMBase + OKAPIA_ROM_AREA_SIZE,
-            "la pile de signal suit la zone ROM, cinq mégaoctets et non quatre");
+            "the signal stack follows the ROM area, five megabytes and not four");
     Expect (L.nSheepBase == L.nSigStack + OKAPIA_SIG_STACK_SIZE,
-            "puis le bloc propre à SheepShaver");
+            "then SheepShaver's own block");
     Expect (L.nFrameBase == L.nSheepBase + OKAPIA_SHEEP_SIZE,
-            "et l'écran, qui doit être à une adresse Mac comme le reste");
+            "and the screen, which must be at a Mac address like the rest");
     Expect (L.nHostBytes == (size_t) (L.nEnd - L.nRAMBase),
-            "le bloc hôte couvre exactement l'invité, sans trou");
+            "the host block covers exactly the guest, with no hole");
 
-    // 256 Mo + 5 (ROM) + 0,0625 (pile) + 0,5 (SheepMem) + 16 (écran).
+    // 256 MB + 5 (ROM) + 0.0625 (stack) + 0.5 (SheepMem) + 16 (screen).
     Expect (L.nHostBytes == 256u * 1024 * 1024 + OKAPIA_ROM_AREA_SIZE
                             + OKAPIA_SIG_STACK_SIZE + OKAPIA_SHEEP_SIZE + OKAPIA_FRAME_SIZE,
-            "soit 277,6 Mo pour 256 Mo de RAM Mac");
-    // Et le supplément que mac_ram_circle.h réclame pour les deux moteurs doit
-    // couvrir cette disposition, sinon le second moteur redemande un bloc.
+            "that is 277.6 MB for 256 MB of Mac RAM");
+    // And the overhead mac_ram_circle.h claims for both engines must cover this
+    // layout, or the second engine asks for a block again.
     Expect (L.nHostBytes - L.nRAMSize <= OKAPIA_MAC_BLOCK_OVERHEAD,
-            "le supplément partagé couvre la disposition la plus gourmande");
+            "the shared overhead covers the hungriest layout");
 
-    // Un alignement qui ne fait rien quand il n'a rien à faire.
+    // An alignment that does nothing when there is nothing to do.
     TMacLayout M;
     Expect (MacLayoutPlan (255 * 1024 * 1024 + 1, &M)
             && M.nROMBase == 0x10000000 + 256u * 1024 * 1024,
-            "une taille non alignée pousse la ROM au mégaoctet suivant");
+            "an unaligned size pushes the ROM to the next megabyte");
 
-    // Les trois refus. Ils disent non au démarrage, ce qui est le seul moment
-    // où un plan mémoire faux peut encore être expliqué.
-    Expect (!MacLayoutPlan (0, &M), "zéro octet de RAM est refusé");
+    // The three refusals. They say no at startup, the only moment a wrong
+    // memory layout can still be explained.
+    Expect (!MacLayoutPlan (0, &M), "zero bytes of RAM are refused");
     Expect (!MacLayoutPlan (0xF0000000u, &M),
-            "une taille qui ferait déborder l'espace 32 bits aussi");
+            "so is a size that would overflow the 32-bit space");
 
-    // La Kernel Data est à 0x68ffe000 et c'est la ROM qui la place, pas nous :
-    // le bloc doit finir en dessous, pas seulement commencer en dessous.
+    // The Kernel Data is at 0x68ffe000 and the ROM places it, not us: the block
+    // must end below it, not merely start below it.
     Expect (!MacLayoutPlan (0x58ffe000u, &M),
-            "et une RAM qui atteindrait la Kernel Data de la ROM");
-    // La plus grande RAM qui tient encore, calculée plutôt qu'écrite : elle
-    // bouge dès que l'écran ou la ROM change de taille.
+            "and a RAM that would reach the ROM's Kernel Data");
+    // The largest RAM that still fits, computed rather than written down: it
+    // moves whenever the screen or the ROM changes size.
     const uint32_t nTail = OKAPIA_ROM_AREA_SIZE + OKAPIA_SIG_STACK_SIZE
                          + OKAPIA_SHEEP_SIZE + OKAPIA_FRAME_SIZE;
     const uint32_t nLargest = (OKAPIA_KERNEL_DATA_BASE - 0x10000000u - nTail) & ~0xFFFFFu;
     Expect (MacLayoutPlan (nLargest, &M) && M.nEnd <= OKAPIA_KERNEL_DATA_BASE,
-            "juste en dessous, cela passe encore");
+            "just below, it still fits");
     Expect (!MacLayoutPlan (nLargest + 0x100000u, &M),
-            "et un mégaoctet de plus ne passe plus");
+            "and one megabyte more no longer does");
 }
 
 /*
- *  Les résolutions proposées
+ *  The resolutions offered
  *
- *  Les deux Macintosh reçoivent la même liste ; seuls les identifiants
- *  diffèrent. Une taille fixe garde son identifiant quel que soit l'écran,
- *  parce que Mac OS 7.5 et suivants mémorisent le choix du tableau de bord
- *  Moniteurs par identifiant.
+ *  Both Macintosh get the same list; only the identifiers differ. A fixed size
+ *  keeps its identifier whatever the display, because Mac OS 7.5 and later
+ *  remember the Monitors control panel's choice by identifier.
  */
 
 static void CheckSizes (void)
 {
-    printf ("\nles résolutions proposées aux deux Macintosh\n");
+    printf ("\nthe resolutions offered to both Macintosh\n");
 
     u32 Ids[VIDEO_SCREEN_STANDARD];
     for (unsigned i = 0; i < VIDEO_SCREEN_STANDARD; i++)
@@ -270,7 +270,7 @@ static void CheckSizes (void)
         const unsigned *a = VideoScreenStandard[i - 1], *b = VideoScreenStandard[i];
         bOrdered = bOrdered && (a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]));
     }
-    Expect (bOrdered, "la liste fixe est rangée comme le tableau de bord Moniteurs, sans doublon");
+    Expect (bOrdered, "the fixed list is ordered like the Monitors control panel, with no duplicate");
 
     unsigned n = VideoScreenSizeList (Ids, Extra, 2560, 1440, 1280, 720, L);
     bool bSame = n == VIDEO_SCREEN_STANDARD;
@@ -279,36 +279,36 @@ static void CheckSizes (void)
         bSame = L[i].nWidth == VideoScreenStandard[i][0]
              && L[i].nHeight == VideoScreenStandard[i][1] && L[i].nId == Ids[i];
     }
-    Expect (bSame, "un écran 1440p et screen 1280/720 : la liste fixe seule, chaque taille sous son identifiant");
+    Expect (bSame, "a 1440p display and screen 1280/720: the fixed list alone, each size under its identifier");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1280, 720, L);
     Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1366
             && L[n - 1].nHeight == 768 && L[n - 1].nId == 0x200,
-            "la taille propre d'un écran hors liste vient après, sous le premier identifiant libre");
+            "the own size of a display not in the list comes after, under the first free identifier");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1000, 700, L);
     Expect (n == VIDEO_SCREEN_SIZES_MAX && L[n - 2].nId == 0x200
             && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x201,
-            "puis celle que demandent les préférences, sous le second");
+            "then the one the preferences ask for, under the second");
 
     n = VideoScreenSizeList (Ids, Extra, 0, 0, 1000, 700, L);
     Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x200,
-            "sans taille d'écran utilisable, la préférence prend le premier");
+            "with no usable display size, the preference takes the first");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1366, 768, L);
-    Expect (n == VIDEO_SCREEN_STANDARD + 1, "une préférence égale à l'écran n'est pas proposée deux fois");
+    Expect (n == VIDEO_SCREEN_STANDARD + 1, "a preference equal to the display is not offered twice");
 
     n = VideoScreenSizeList (Ids, Extra, 1920, 1080, 0, 0, L);
-    Expect (n == VIDEO_SCREEN_STANDARD, "sans préférence, rien de plus");
+    Expect (n == VIDEO_SCREEN_STANDARD, "with no preference, nothing more");
 }
 
 /*
- *  Le gong, lu dans la ROM
+ *  The chime, read from the ROM
  *
- *  Des ROM fabriquées ici, une par façon de garder le gong : la 'beep' 0 d'un
- *  Power Macintosh, un 'snd ' échantillonné posé comme donnée (Quadra), la table
- *  de la puce ASC (Macintosh II, IIci). Aucune ROM Apple dans le dépôt ; celles
- *  du poste sont essayées en plus quand elles sont là.
+ *  ROMs fabricated here, one per way of keeping the chime: a Power Macintosh's
+ *  'beep' 0, a sampled 'snd ' laid down as data (Quadra), the ASC chip's table
+ *  (Macintosh II, IIci). No Apple ROM in the repository; the ones on the machine
+ *  are tried as well when they are there.
  */
 
 static void Put32 (unsigned char *p, u32 v)
@@ -328,7 +328,7 @@ static void PutCommand (unsigned char *p, unsigned nLength, unsigned nCommand, u
     p[4] = nAddress; p[5] = nAddress >> 8; p[6] = nAddress >> 16; p[7] = nAddress >> 24;
 }
 
-// Amplitude d'une fréquence dans le canal gauche, par l'algorithme de Goertzel.
+// The amplitude of one frequency in the left channel, by Goertzel's algorithm.
 static double Tone (const s16 *pStereo, unsigned nFrom, unsigned nCount, double fHz)
 {
     const double w = 2.0 * 3.14159265358979 * fHz / ROM_CHIME_OUTPUT_RATE;
@@ -355,7 +355,7 @@ static double Rms (const s16 *pStereo, unsigned nFrom, unsigned nCount)
 
 static void CheckRomChime (void)
 {
-    printf ("\nle gong lu dans la ROM\n");
+    printf ("\nthe chime read from the ROM\n");
 
     const u32 nSize = 0x100000;
     unsigned char *pImage = (unsigned char *) calloc (nSize, 1);
@@ -363,7 +363,7 @@ static void CheckRomChime (void)
     const unsigned MAX_FRAMES = 262144;
     s16 *pOut = (s16 *) malloc (MAX_FRAMES * 2 * sizeof (s16));
 
-    // 1. La 'beep' 0 : carte à 0x800, en-têtes de 8 octets, 'snd ' 1 puis 'beep' 0.
+    // 1. The 'beep' 0: map at 0x800, 8-byte headers, 'snd ' 1 then 'beep' 0.
     Put32 (pImage + 0x1A, 0x800);
     pImage[0x805] = 8;
     Put32 (pImage + 0x800, 0x900);
@@ -382,25 +382,25 @@ static void CheckRomChime (void)
     Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeFound
             && Chime.Kind == RomChimeBeep && Chime.nOffset == nSamples
             && Chime.nFrames == 0x1800 / 4,
-            "la 'beep' 0 est trouvée, ses échantillons au bon endroit");
+            "the 'beep' 0 is found, its samples in the right place");
     Expect (RomChimeRender (pImage, nSize, &Chime, pOut, MAX_FRAMES) == 0x1800 / 4 * 2,
-            "et rendue à 44,1 kHz, deux fois plus de trames qu'à 22,05");
+            "and rendered at 44.1 kHz, twice the frames of 22.05");
 
     PutCommand (pImage + 0x6020, 0x0800, 0x1000, nTop + nSamples + 0x1004);
     Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeMalformed,
-            "une commande qui ne suit pas la précédente est refusée");
+            "a command that does not follow the previous one is refused");
     PutCommand (pImage + 0x6020, 0x0800, 0x1000, nTop + nSamples + 0x1000);
 
     Put32 (pImage + 0x6008, 0x1804);
     Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeMalformed,
-            "un compte d'octets que les commandes ne couvrent pas aussi");
+            "so is a byte count the commands do not cover");
 
-    Put32 (pImage + 0x908, 0x800);  // une carte qui boucle
+    Put32 (pImage + 0x908, 0x800);  // a map that loops
     Expect (RomChimeFind (pImage, nSize, &Chime) != RomChimeFound,
-            "une carte qui boucle se termine");
+            "a map that loops ends");
     memset (pImage, 0, nSize);
 
-    // 2. Un 'snd ' échantillonné, posé comme donnée : 1 s de la à 440 Hz, 22 254,5 Hz.
+    // 2. A sampled 'snd ' laid down as data: 1 s of A at 440 Hz, 22,254.5 Hz.
     const u32 nSnd = 0x20000, nFrames8 = 22254;
     Put16 (pImage + nSnd, 1); Put16 (pImage + nSnd + 2, 1); Put16 (pImage + nSnd + 4, 5);
     Put32 (pImage + nSnd + 6, 0xA0); Put16 (pImage + nSnd + 10, 1);
@@ -414,19 +414,19 @@ static void CheckRomChime (void)
     Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeFound
             && Chime.Kind == RomChimeSampled && Chime.nOffset == nSnd + 42
             && Chime.nFrames == nFrames8 && Chime.nRate == 0x56EE8BA3,
-            "un 'snd ' hors de la carte des ressources est trouvé par son en-tête");
+            "a 'snd ' outside the resource map is found by its header");
     unsigned n = RomChimeRender (pImage, nSize, &Chime, pOut, MAX_FRAMES);
-    Expect (n > 44090 && n < 44110, "et rendu à 44,1 kHz, une seconde toujours");
+    Expect (n > 44090 && n < 44110, "and rendered at 44.1 kHz, still one second");
     Expect (Tone (pOut, 4410, 8820, 440) > 10 * Tone (pOut, 4410, 8820, 523),
-            "à la même hauteur : 440 Hz, pas une autre");
+            "at the same pitch: 440 Hz, not another");
 
-    Put32 (pImage + nSnd + 24, 2720);  // le bip système, un dixième de seconde
+    Put32 (pImage + nSnd + 24, 2720);  // the system beep, a tenth of a second
     Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeNone,
-            "un son trop court pour un gong n'en est pas un");
+            "a sound too short for a chime is not one");
     memset (pImage, 0, nSize);
 
-    // 3. La table de l'ASC : deux voix à 0x20000 (347,8 Hz), la seconde 300 étapes
-    //    plus tard, 30 000 étapes.
+    // 3. The ASC table: two voices at 0x20000 (347.8 Hz), the second 300 steps
+    //    later, 30,000 steps.
     const u32 nTable = 0x7158;
     Put16 (pImage + nTable, 0x0204); Put32 (pImage + nTable + 2, 13);
     Put32 (pImage + nTable + 6, 300); Put32 (pImage + nTable + 10, 30000);
@@ -434,21 +434,21 @@ static void CheckRomChime (void)
     Put32 (pImage + nTable + 16, 0x20000); Put32 (pImage + nTable + 20, 0x20000);
     Expect (RomChimeFind (pImage, nSize, &Chime) == RomChimeFound
             && Chime.Kind == RomChimeSynthesised && Chime.nOffset == nTable,
-            "la table de la puce ASC est trouvée");
+            "the ASC chip's table is found");
     n = RomChimeRender (pImage, nSize, &Chime, pOut, MAX_FRAMES);
-    Expect (n > 30300 && n < 30420, "30 000 étapes de 22,95 µs : 0,69 s");
-    // L'escalier met l'énergie sur l'harmonique 2 : 695,6 Hz.
+    Expect (n > 30300 && n < 30420, "30,000 steps of 22.95 us: 0.69 s");
+    // The stairs put the energy on the second harmonic: 695.6 Hz.
     Expect (Tone (pOut, 2205, 4410, 695.6) > 5 * Tone (pOut, 2205, 4410, 600),
-            "l'incrément 0x20000 sonne à 347,8 Hz, surtout par son harmonique 2");
+            "the 0x20000 increment sounds at 347.8 Hz, mostly through its second harmonic");
     Expect (Rms (pOut, n - 3000, 3000) < 0.3 * Rms (pOut, 2205, 4410),
-            "et le lissage pas à pas le fait s'éteindre");
+            "and the step-by-step smoothing makes it die away");
 
     pImage[nTable + 15] = 5;
     Expect (RomChimeFind (pImage, nSize, &Chime) != RomChimeFound,
-            "plus de quatre voix, ce n'est pas une table de l'ASC");
+            "more than four voices is not an ASC table");
     free (pImage);
 
-    // Celles du poste, si elles sont là : jamais dans le dépôt.
+    // The machine's own, if they are there: never in the repository.
     static const struct { const char *pPath; u32 nBytes; TRomChimeKind Kind; unsigned nMin, nMax; } ROMS[] =
     {
         { "../../qemu/sd-contents/powermac9600v1.rom", 0x400000, RomChimeBeep,        103000, 104000 },
@@ -473,7 +473,7 @@ static void CheckRomChime (void)
             n = RomChimeRender (pRom, ROMS[r].nBytes, &Chime, pOut, MAX_FRAMES);
         }
         char Label[128];
-        snprintf (Label, sizeof Label, "%s du poste : gong trouvé, %u trames", ROMS[r].pPath + 22, n);
+        snprintf (Label, sizeof Label, "%s on this machine: chime found, %u frames", ROMS[r].pPath + 22, n);
         Expect (bFound && n >= ROMS[r].nMin && n <= ROMS[r].nMax, Label);
         free (pRom);
     }
@@ -490,43 +490,42 @@ int main (void)
     unlink (TMP);
 
     /*
-     *  Les tuiles annoncées
+     *  Announced tiles
      *
-     *  video_set_dirty_area() est la seule chose que le moteur PowerPC a et que
-     *  le 68k n'a pas : le Macintosh dit ce qu'il a changé. L'arithmétique des
-     *  tuiles est la partie qui peut se tromper en silence — une tuile oubliée
-     *  laisse un morceau d'écran périmé, ce qui ressemble à du déchirement et
-     *  pas à un calcul faux.
+     *  video_set_dirty_area() is the one thing the PowerPC engine has and the
+     *  68k does not: the Macintosh says what it changed. The tile arithmetic is
+     *  the part that can go wrong silently — a forgotten tile leaves a piece of
+     *  stale screen, which looks like tearing and not like a wrong sum.
      */
     /*
-     *  Les modes directs
+     *  Direct modes
      *
-     *  Le Mac est gros-boutien et son pixel 16 bits est 0RRRRRGG GGGBBBBB, ce
-     *  que les blitters directs de video_blit.cpp ne supposent pas. Leur avoir
-     *  confié un mode direct a donné un écran entièrement d'une seule couleur en
-     *  16 bits et des bandes verticales en 32 — une faute qui se voit tout de
-     *  suite à l'écran et jamais dans un lien. Ici on la verrait avant.
+     *  The Mac is big-endian and its 16-bit pixel is 0RRRRRGG GGGBBBBB, which
+     *  video_blit.cpp's direct blitters do not assume. Handing them a direct
+     *  mode gave a screen entirely one colour at 16 bits and vertical bands at
+     *  32 — a fault seen at once on screen and never at link time. Here it would
+     *  be seen first.
      */
-    printf ("\n  Les modes directs du Macintosh\n");
+    printf ("\n  The Macintosh's direct modes\n");
 
     unsigned char Src[8];
     unsigned Out[4];
 
-    // 16 bits, gros-boutien : rouge pur, vert pur, bleu pur.
+    // 16 bits, big-endian: pure red, pure green, pure blue.
     Src[0] = 0x7C; Src[1] = 0x00;   // 0x7C00
     Src[2] = 0x03; Src[3] = 0xE0;   // 0x03E0
     Src[4] = 0x00; Src[5] = 0x1F;   // 0x001F
     CompositorConvert16To32 ((u8 *) Out, Src, 6);
-    Expect (Out[0] == 0xFF0000FFu, "16 bits : le rouge du Mac sort en octet bas");
-    Expect (Out[1] == 0xFF00FF00u, "16 bits : le vert au milieu");
-    Expect (Out[2] == 0xFFFF0000u, "16 bits : le bleu en haut");
+    Expect (Out[0] == 0xFF0000FFu, "16 bits: the Mac's red comes out in the low byte");
+    Expect (Out[1] == 0xFF00FF00u, "16 bits: green in the middle");
+    Expect (Out[2] == 0xFFFF0000u, "16 bits: blue at the top");
 
-    // 32 bits : le Mac écrit xRGB, l'octet de tête est ignoré.
+    // 32 bits: the Mac writes xRGB, the leading byte is ignored.
     Src[0] = 0x00; Src[1] = 0x12; Src[2] = 0x34; Src[3] = 0x56;
     CompositorConvert32To32 ((u8 *) Out, Src, 4);
-    Expect (Out[0] == 0xFF563412u, "32 bits : xRGB devient BGRA, l'octet de tête jeté");
+    Expect (Out[0] == 0xFF563412u, "32 bits: xRGB becomes BGRA, the leading byte dropped");
 
-    printf ("\n  Les régions annoncées par le Macintosh\n");
+    printf ("\n  Regions announced by the Macintosh\n");
 
     TCompositor C;
     memset (&C, 0, sizeof C);
@@ -534,57 +533,57 @@ int main (void)
     C.nHeight = 480;
 
     CompositorAnnounce (&C, 0, 0, 1, 1);
-    Expect (C.Announced[0] == 1, "un pixel en haut à gauche marque la première tuile");
+    Expect (C.Announced[0] == 1, "one pixel top left marks the first tile");
     unsigned nSet = 0;
     for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
-    Expect (nSet == 1, "et elle seule");
+    Expect (nSet == 1, "and only it");
 
     memset (C.Announced, 0, sizeof C.Announced);
     CompositorAnnounce (&C, 0, 0, 640, 480);
     nSet = 0;
     for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
-    Expect (nSet == 256, "tout l'écran marque les 256 tuiles");
+    Expect (nSet == 256, "the whole screen marks all 256 tiles");
 
-    // 640/16 = 40 pixels par tuile, 480/16 = 30. Un rectangle à cheval sur la
-    // frontière doit marquer les deux, pas une.
+    // 640/16 = 40 pixels per tile, 480/16 = 30. A rectangle straddling the
+    // boundary must mark both, not one.
     memset (C.Announced, 0, sizeof C.Announced);
     CompositorAnnounce (&C, 39, 0, 2, 1);
-    Expect (C.Announced[0] == 0x3, "un rectangle à cheval marque les deux tuiles");
+    Expect (C.Announced[0] == 0x3, "a straddling rectangle marks both tiles");
 
     memset (C.Announced, 0, sizeof C.Announced);
     CompositorAnnounce (&C, 600, 450, 200, 200);
-    Expect (C.Announced[15] == 0x8000, "ce qui déborde est rogné, pas replié");
+    Expect (C.Announced[15] == 0x8000, "what overflows is clipped, not wrapped");
 
     memset (C.Announced, 0, sizeof C.Announced);
     CompositorAnnounce (&C, 700, 0, 10, 10);
     nSet = 0;
     for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
-    Expect (nSet == 0, "entièrement hors écran ne marque rien");
+    Expect (nSet == 0, "entirely off screen marks nothing");
 
     CompositorAnnounce (&C, 0, 0, -5, 10);
     CompositorAnnounce (&C, 0, 0, 10, 0);
     nSet = 0;
     for (unsigned i = 0; i < 16; i++) nSet += (unsigned) __builtin_popcount (C.Announced[i]);
-    Expect (nSet == 0, "une largeur ou une hauteur nulle ou négative non plus");
+    Expect (nSet == 0, "nor does a zero or negative width or height");
 
     /*
-     *  Ce que le compositeur écrit à l'écran
+     *  What the compositor writes to the screen
      *
-     *  Le framebuffer du Pi est de la mémoire Device : un accès non aligné y
-     *  est une faute, et un Macintosh en 912x492 a tué la carte parce que ses
-     *  tuiles de 57 pixels mettaient la copie vectorisée hors alignement. Ici
-     *  la faute ne se voit pas — l'hôte accepte tout — mais le chemin réécrit
-     *  pour l'éviter doit dessiner exactement la même chose, aux largeurs
-     *  impaires, aux origines impaires et avec un pitch qui n'est pas un
-     *  multiple de 16. C'est ce qu'on vérifie, pixel par pixel.
+     *  The Pi's frame buffer is Device memory: an unaligned access there is a
+     *  fault, and a Macintosh at 912x492 killed the board because its 57-pixel
+     *  tiles put the vectorised copy out of alignment. The fault does not show
+     *  here — the host accepts anything — but the path rewritten to avoid it
+     *  must draw exactly the same thing at odd widths, odd origins and with a
+     *  pitch that is not a multiple of 16. That is what is checked, pixel by
+     *  pixel.
      */
-    printf ("\n  Ce que le compositeur écrit à l'écran\n");
+    printf ("\n  What the compositor writes to the screen\n");
     {
         struct { unsigned w, h, ow, oh, scale; const char *pWhat; } Cases[] = {
-            {  912, 492, 1824,  984, 2, "912x492 doublé dans 1824x984, le mode qui tuait la carte" },
-            {  853, 480, 2560, 1440, 3, "853x480 triplé dans 2560x1440" },
-            { 1280, 720, 1824,  984, 1, "1280x720 à l'échelle 1, centré" },
-            {  640, 480, 1366,  768, 1, "640x480 dans 1366x768 : origine impaire, pitch non multiple de 16" },
+            {  912, 492, 1824,  984, 2, "912x492 doubled into 1824x984, the mode that killed the board" },
+            {  853, 480, 2560, 1440, 3, "853x480 tripled into 2560x1440" },
+            { 1280, 720, 1824,  984, 1, "1280x720 at scale 1, centred" },
+            {  640, 480, 1366,  768, 1, "640x480 in 1366x768: odd origin, pitch not a multiple of 16" },
         };
         for (unsigned c = 0; c < sizeof Cases / sizeof Cases[0]; c++)
         {
@@ -640,12 +639,12 @@ int main (void)
         }
     }
 
-    // Un volume fabriqué de bout en bout, ici, sans carte : hfs_format() écrit
-    // sur un fichier qui a déjà sa taille, donc le test le fabrique comme le
-    // fera FatFs et vérifie ensuite ce que le Macintosh lirait. Un formatage
-    // qui écrit quelque chose que le montage suivant ne relit pas est un
-    // volume qu'on découvre cassé plus tard, avec des fichiers dessus.
-    printf ("\nfabriquer un volume\n");
+    // A volume made from end to end, here, with no card: hfs_format() writes
+    // over a file that already has its size, so the test makes it the way FatFs
+    // will and then checks what the Macintosh would read. A format that writes
+    // something the next mount does not read back is a volume found broken
+    // later, with files on it.
+    printf ("\nmaking a volume\n");
     {
         const char *pPath = "/tmp/okapia-check-newvolume.image";
         const unsigned long nBytes = 20UL * 1024 * 1024;
@@ -653,56 +652,56 @@ int main (void)
         unlink (pPath);
         int nFD = open (pPath, O_RDWR | O_CREAT | O_TRUNC, 0600);
         Expect (nFD >= 0 && ftruncate (nFD, (off_t) nBytes) == 0,
-                "un fichier de 20 Mo, comme FatFs le fera sur la carte");
+                "a 20 MB file, as FatFs will make it on the card");
         if (nFD >= 0)
         {
             close (nFD);
         }
 
-        Expect (HfsFormat (pPath, "Macintosh HD"), "hfs_format() l'accepte");
+        Expect (HfsFormat (pPath, "Macintosh HD"), "hfs_format() accepts it");
 
         THfsVolumeInfo Info;
-        Expect (HfsDescribe (pPath, &Info), "et il se relit comme un volume");
-        Expect (strcmp (Info.Name, "Macintosh HD") == 0, "sous le nom demandé");
-        Expect (Info.Blessed == 0, "vide, donc sans dossier système : il ne démarre pas");
-        Expect (Info.bClean, "et propre, puisque personne ne l'a encore monté");
-        // Ce que le Mac verra vraiment : HFS standard réserve ses tables, donc
-        // le libre est un peu sous la taille demandée, jamais au-dessus.
+        Expect (HfsDescribe (pPath, &Info), "and it reads back as a volume");
+        Expect (strcmp (Info.Name, "Macintosh HD") == 0, "under the name asked for");
+        Expect (Info.Blessed == 0, "empty, so with no System Folder: it does not start");
+        Expect (Info.bClean, "and clean, since nobody has mounted it yet");
+        // What the Mac will really see: standard HFS reserves its tables, so the
+        // free space is a little under the size asked for, never above it.
         Expect (Info.TotalKB <= nBytes / 1024 && Info.TotalKB > nBytes / 1024 - 512,
-                "de la taille du fichier, aux tables près");
-        Expect (Info.FreeKB <= Info.TotalKB, "et il ne s'invente pas de place");
+                "the size of the file, give or take the tables");
+        Expect (Info.FreeKB <= Info.TotalKB, "and it invents no space");
 
-        // Les noms que libhfs refuse. Le bouton Créer les refuse avant, mais
-        // c'est ici que la règle est écrite, et une règle en deux endroits est
-        // une règle qui divergera.
-        Expect (!HfsFormat (pPath, ""), "un nom vide est refusé");
-        Expect (!HfsFormat (pPath, "Disque:2"), "un nom avec deux-points aussi");
-        Expect (!HfsFormat (pPath, "un nom de plus de vingt-sept caracteres"),
-                "et un nom trop long");
-        // Refusés, et le volume d'avant est toujours là.
+        // The names libhfs refuses. The Create button refuses them first, but
+        // this is where the rule is written, and a rule in two places is a rule
+        // that will drift.
+        Expect (!HfsFormat (pPath, ""), "an empty name is refused");
+        Expect (!HfsFormat (pPath, "Disk:2"), "so is a name with a colon");
+        Expect (!HfsFormat (pPath, "a name longer than twenty-seven characters"),
+                "and a name too long");
+        // Refused, and the volume from before is still there.
         Expect (HfsDescribe (pPath, &Info) && strcmp (Info.Name, "Macintosh HD") == 0,
-                "et un refus ne détruit pas le volume qui était là");
+                "and a refusal does not destroy the volume that was there");
         unlink (pPath);
     }
 
-    printf ("\nla date d'un volume, comme plancher de l'horloge\n");
+    printf ("\na volume's date, as the clock's floor\n");
     {
-        // 2026-09-15 00:00, l'heure de construction dans le repère local.
+        // 2026-09-15 00:00, the build time in the local frame.
         const long nBuild = 1789430400L;
-        // drLsMod à $FFFFFFFF, tel que libhfs le rend (décalage de 2082844800).
+        // drLsMod at $FFFFFFFF, as libhfs hands it back (offset by 2082844800).
         const long nSaturated = (long) (0xFFFFFFFFul - 2082844800ul);
-        Expect (nSaturated == HFS_SATURATED_DATE, "la valeur saturée est bien 2040-02-06 06:28:15");
+        Expect (nSaturated == HFS_SATURATED_DATE, "the saturated value is indeed 2040-02-06 06:28:15");
         Expect (!HfsDateIsPlausible (nSaturated, nBuild),
-                "un drLsMod saturé est refusé (l'horloge restait bloquée en 2040)");
+                "a saturated drLsMod is refused (the clock stayed stuck in 2040)");
         Expect (!HfsDateIsPlausible (nSaturated - 1, nBuild),
-                "une seconde avant aussi : dix ans après la construction, ce n'est pas un usage");
-        Expect (HfsDateIsPlausible (nBuild - 86400, nBuild), "hier est plausible");
+                "so is one second before: ten years after the build is not use");
+        Expect (HfsDateIsPlausible (nBuild - 86400, nBuild), "yesterday is plausible");
         Expect (HfsDateIsPlausible (nBuild + 5L * 365 * 86400, nBuild),
-                "cinq ans après la construction aussi : un noyau vieillit");
+                "so is five years after the build: a kernel ages");
         Expect (!HfsDateIsPlausible (nBuild + HFS_PLAUSIBLE_AHEAD + 1, nBuild),
-                "au-delà de la borne, refusé");
+                "past the bound, refused");
     }
 
-    printf ("\n%u écart(s)\n", s_nFailures);
+    printf ("\n%u failure(s)\n", s_nFailures);
     return s_nFailures == 0 ? 0 : 1;
 }
