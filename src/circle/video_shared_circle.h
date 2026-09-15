@@ -28,18 +28,14 @@
 
 #include <circle/types.h>
 
+#include "video_sizes_circle.h"
+
 // Every depth a Macintosh of this era offers, and the Monitors control panel
 // names them all: black and white, 4, 16 and 256 colours, thousands, millions.
 // Greyscale is not a depth — the Mac sends a grey palette at the same depth.
 extern const unsigned VideoScreenDepths[6];
 static const unsigned VIDEO_SCREEN_DEPTHS = 6;
 
-// One size the display could offer, before the depths multiply it.
-struct TVideoScreenSize
-{
-    unsigned nWidth, nHeight;
-    u32      nId;               // whatever the engine's core calls it
-};
 
 // Upstream's own arithmetic, which rounds up rather than down: at one bit a
 // 641-pixel row is 81 bytes and not 80. Both trees carry it as
@@ -74,12 +70,23 @@ u32      VideoScreenShadowBytes (void);
  *  Which modes this output can show
  */
 
+// The sizes this display is offered: the standard list, then the display's own
+// size when it is at least 640x480, then the one the "screen" preference asks
+// for, in upstream's own spelling — win/640/480, dga/1280/720 — so a prefs file
+// brought over from a desktop Basilisk II means the same here; a 0 there is the
+// display's own width or height. The identifiers are the engine's
+// (video_sizes_circle.h). *pWantW and *pWantH receive the size to start in,
+// 640x480 when the preference says nothing.
+unsigned VideoScreenSizes (const u32 *pStandardIds, const u32 *pExtraIds,
+                           TVideoScreenSize *pOut,
+                           unsigned *pWantW, unsigned *pWantH);
+
 // Called once per surviving mode, in the order the sizes and depths are given.
 typedef void TVideoScreenSink (void *pContext, const TVideoScreenSize *pSize,
                                unsigned nBits, unsigned nBytesPerRow);
 
 // Every size that fits the output unscaled, at every depth that fits the frame
-// buffer. The filtering is the shared part; what each engine builds out of the
+// buffer, and a log line naming the sizes that survived. The filtering is the shared part; what each engine builds out of the
 // results is not, which is why this hands them over rather than returning a
 // table of its own.
 void VideoScreenEnumerate (const TVideoScreenSize *pSizes, unsigned nSizes,

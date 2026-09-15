@@ -23,11 +23,10 @@
 // What every engine adds on top of the Mac's RAM, so that the first claim is
 // big enough for the second engine too and the block is never re-taken.
 // SheepShaver needs the most: 5 MB of ROM area, a 64 KB interrupt stack, 512 KB
-// of SheepMem and four megabytes of frame buffer — 1024x768 in millions of
-// colours — plus up to a megabyte of alignment
-// (src/circle/sheepshaver/mac_layout.h). Sixteen covers it with room that costs
-// nothing next to 256.
-#define OKAPIA_MAC_BLOCK_OVERHEAD (16 * 1024 * 1024)
+// of SheepMem and sixteen megabytes of frame buffer — 2560x1440 in millions of
+// colours — plus up to a megabyte of alignment, 22.6 MB in all
+// (src/circle/sheepshaver/mac_layout.h). Twenty-four covers it.
+#define OKAPIA_MAC_BLOCK_OVERHEAD (24 * 1024 * 1024)
 
 // The block, or 0. A second call with the same or a smaller size answers the
 // same pointer and allocates nothing; a larger one is refused rather than

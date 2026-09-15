@@ -1,0 +1,75 @@
+video: let a port offer the sizes it can show, not only the ten upstream named
+
+SheepShaver's native video driver answers the Display Manager's
+cscGetNextResolution from VModes, but it stops at APPLE_ID_MAX, which is
+APPLE_CUSTOM: ten identifiers, all 4:3 or thereabouts, and a single free one.
+A port on a 16:9 display therefore cannot list 1280x720, 1600x900, 1920x1080
+or 2560x1440 beside each other, although nothing in the Mac's protocol limits
+the identifiers to those ten. Basilisk II's driver answers the same call and
+walks every identifier up to 0xff (BasiliskII/src/video.cpp:862).
+
+Three changes, none of which alters what an existing port sees:
+
+- APPLE_ID_MAX becomes 0xff. The walk still skips every identifier VModes
+  does not hold, so a port that only uses the named ten lists exactly what it
+  listed before.
+- The size reported for an identifier with no named case comes from VModes,
+  as APPLE_CUSTOM's already did. Named identifiers keep their written sizes
+  and refresh rates. cscGetModeTiming already had a default, timingUnknown and
+  valid, so the Monitors control panel shows the new sizes as it shows the
+  custom one.
+- VModes grows from 64 entries to VIDEO_MODES_MAX, 128, and says so in the
+  header: fifteen sizes at six depths is 90 entries, and a port has to know
+  the capacity to stay inside it.
+
+Okapia offers both of its Macintosh the same list of sizes, and this is what
+lets the PowerPC one carry it.
+
+diff --git a/SheepShaver/src/include/video.h b/SheepShaver/src/include/video.h
+index 678e5777..6ea6beba 100644
+--- a/SheepShaver/src/include/video.h
++++ b/SheepShaver/src/include/video.h
+@@ -35,6 +35,9 @@ struct VideoInfo {
+ 	uint32 viAppleID;		// Screen DisplayID
+ };
+ 
++// Room for every size a port offers at every depth, and the end marker.
++enum { VIDEO_MODES_MAX = 128 };
++
+ extern struct VideoInfo VModes[];	// List of available video modes
+ 
+ enum {	// viAppleMode
+@@ -92,7 +95,10 @@ enum {	// viAppleID
+ 	APPLE_1600x1200,
+ 	APPLE_CUSTOM,
+ 	APPLE_ID_MIN = APPLE_640x480,
+-	APPLE_ID_MAX = APPLE_CUSTOM
++	// A port may number sizes of its own past APPLE_CUSTOM: the driver lists
++	// whatever VModes holds, up to the same 0xff that Basilisk II's driver
++	// walks to (BasiliskII/src/video.cpp:862).
++	APPLE_ID_MAX = 0xff
+ };
+ 
+ enum {	// Display type
+diff --git a/SheepShaver/src/video.cpp b/SheepShaver/src/video.cpp
+index c4da320a..8727ecf0 100644
+--- a/SheepShaver/src/video.cpp
++++ b/SheepShaver/src/video.cpp
+@@ -58,7 +58,7 @@ bool keyfile_valid;		// Flag: Keyfile is valid, enable full-screen modes
+  *  Video mode information (constructed by VideoInit())
+  */
+ 
+-struct VideoInfo VModes[64];
++struct VideoInfo VModes[VIDEO_MODES_MAX];
+ 
+ 
+ /*
+@@ -848,7 +848,7 @@ static int16 VideoStatus(uint32 pb, VidLocals *csSave)
+ 					WriteMacInt32(param + csVerticalLines, 1200);
+ 					WriteMacInt32(param + csRefreshRate, 75<<16);
+ 					break;
+-				case APPLE_CUSTOM: {
++				default: {		// APPLE_CUSTOM, and any size a port numbered itself
+ 					uint32 x, y;
+ 					get_size_of_resolution(work_id, x, y);
+ 					WriteMacInt32(param + csHorizontalPixels, x);

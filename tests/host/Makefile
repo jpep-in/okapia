@@ -43,7 +43,7 @@ PLATFORM_CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c++14 \
     -I$(MACEMU)/Unix -I$(MACEMU)/uae_cpu_2021 -I$(LIBHFS) \
     -DDIRECT_ADDRESSING -DFPU_UAE
 PLATFORM_OBJS = p_prefs_circle.o p_hfs_volume_circle.o p_prefs.o p_prefs_items.o \
-                p_compositor_circle.o \
+                p_compositor_circle.o p_video_sizes_circle.o \
                 p_mac_layout.o
 HFS_SRCS      = $(wildcard $(LIBHFS)/*.c)
 HFS_OBJS      = $(addprefix hfs_,$(notdir $(HFS_SRCS:.c=.o)))

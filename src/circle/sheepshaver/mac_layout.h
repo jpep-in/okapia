@@ -44,11 +44,12 @@ enum
     // screen_base is one and QuickDraw writes pixels through it — so it is part
     // of the block and not something allocated beside it.
     //
-    // Four megabytes, which is 1024x768 in millions of colours with room to
-    // spare, and the largest mode the driver offers. Taken once at that size
-    // and never resized: a mode change must not allocate, and the Macintosh
-    // changes depth whenever a dialog wants more colours.
-    OKAPIA_FRAME_SIZE     = 0x400000
+    // Sixteen megabytes, the same cap as the other engine's heap buffer
+    // (video_circle.cpp, MAX_BUFFER): 2560x1440 in millions of colours, so both
+    // Macintosh are offered the same modes on the same display. Taken once at
+    // that size and never resized: a mode change must not allocate, and the
+    // Macintosh changes depth whenever a dialog wants more colours.
+    OKAPIA_FRAME_SIZE     = 0x1000000
 };
 
 // Fixed by the ROM, not by us, and the reason the block has a ceiling.

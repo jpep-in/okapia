@@ -85,22 +85,22 @@ static Circle_monitor_desc *s_pMonitor;
 /*
  *  Mode list
  *
- *  The sizes are this engine's — 512x384 is a Classic resolution SheepShaver
- *  has no identifier for — and so are the resolution_ids. Which of them survive
- *  is not: VideoScreenEnumerate applies the same rules to both engines.
+ *  The sizes are both engines' (video_sizes_circle.cpp); what is this engine's
+ *  is the resolution_id each goes by. Basilisk's driver numbers them from 0x80
+ *  and walks to 0xff (video.cpp:862), so they follow in list order. Which
+ *  modes survive is shared too: VideoScreenEnumerate applies the same rules.
  */
 
-static const TVideoScreenSize SIZES[] =
+static const u32 STANDARD_IDS[VIDEO_SCREEN_STANDARD] =
 {
-    { 512,  384,  0x80 },
-    { 640,  480,  0x81 },
-    { 800,  600,  0x82 },
-    { 1024, 768,  0x83 },
+    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C,
 };
+static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { 0x8D, 0x8E };
 
-// See VideoScreenEnumerate: a bigger guest buffer costs more than the pixels it
-// holds, so what is offered is capped rather than what is drawn.
-static const uint32 MAX_BUFFER = 1536 * 1024;
+// The largest guest frame offered, and therefore the size of the buffer and of
+// the shadow, both taken once. 16 MB holds 2560x1440 in millions of colours; a
+// 4K display gets its own size in thousands. See VideoScreenEnumerate.
+static const uint32 MAX_BUFFER = 16 * 1024 * 1024;
 
 static void AddMode (void *pContext, const TVideoScreenSize *pSize,
                      unsigned nBits, unsigned nBytesPerRow)
@@ -169,9 +169,13 @@ bool VideoInit (bool classic)
     }
     VideoScreenReadPrefs ();
 
+    TVideoScreenSize Sizes[VIDEO_SCREEN_SIZES_MAX];
+    unsigned nWantW, nWantH;
+    const unsigned nSizes = VideoScreenSizes (STANDARD_IDS, EXTRA_IDS, Sizes,
+                                              &nWantW, &nWantH);
+
     vector<video_mode> modes;
-    VideoScreenEnumerate (SIZES, sizeof SIZES / sizeof SIZES[0], MAX_BUFFER,
-                          AddMode, &modes);
+    VideoScreenEnumerate (Sizes, nSizes, MAX_BUFFER, AddMode, &modes);
     if (modes.empty ())
     {
         CLogger::Get ()->Write (FROM, LogError, "No Mac mode fits this output");
@@ -206,10 +210,27 @@ bool VideoInit (bool classic)
         }
     }
 
-    CLogger::Get ()->Write (FROM, LogNotice, "%u modes offered, %u KB guest buffer",
-                            (unsigned) modes.size (), (unsigned) (s_nMacBufferSize / 1024));
+    // 256 colours at the size the preferences ask for, or 640x480 — the mode
+    // every Macintosh of this era starts in. A size the display cannot show
+    // falls back rather than failing.
+    uint32 nDefaultId = 0x81;
+    for (unsigned i = 0; i < modes.size (); i++)
+    {
+        if (   modes[i].x == nWantW && modes[i].y == nWantH
+            && modes[i].depth == VDEPTH_8BIT)
+        {
+            nDefaultId = modes[i].resolution_id;
+            break;
+        }
+    }
+    if (nDefaultId == 0x81 && (nWantW != 640 || nWantH != 480))
+    {
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "screen asks for %ux%u, which this display cannot "
+                                "offer; starting in 640x480", nWantW, nWantH);
+    }
 
-    s_pMonitor = new Circle_monitor_desc (modes, VDEPTH_8BIT, 0x81);   // 640x480x8
+    s_pMonitor = new Circle_monitor_desc (modes, VDEPTH_8BIT, nDefaultId);
     VideoMonitors.push_back (s_pMonitor);
     s_pMonitor->switch_to_current_mode ();
     return true;

@@ -26,6 +26,7 @@
 #include "mac_layout.h"
 #include "mac_ram_circle.h"
 #include "compositor_circle.h"
+#include "video_sizes_circle.h"
 
 // prefs_circle.cpp. Declared here rather than in a header of its own: it has
 // exactly one caller in the kernel, SavePrefs(), a few lines below it.
@@ -205,10 +206,10 @@ static void CheckLayout (void)
     Expect (L.nHostBytes == (size_t) (L.nEnd - L.nRAMBase),
             "le bloc hôte couvre exactement l'invité, sans trou");
 
-    // 256 Mo + 5 (ROM) + 0,0625 (pile) + 0,5 (SheepMem) + 4 (écran).
+    // 256 Mo + 5 (ROM) + 0,0625 (pile) + 0,5 (SheepMem) + 16 (écran).
     Expect (L.nHostBytes == 256u * 1024 * 1024 + OKAPIA_ROM_AREA_SIZE
                             + OKAPIA_SIG_STACK_SIZE + OKAPIA_SHEEP_SIZE + OKAPIA_FRAME_SIZE,
-            "soit 265,6 Mo pour 256 Mo de RAM Mac");
+            "soit 277,6 Mo pour 256 Mo de RAM Mac");
     // Et le supplément que mac_ram_circle.h réclame pour les deux moteurs doit
     // couvrir cette disposition, sinon le second moteur redemande un bloc.
     Expect (L.nHostBytes - L.nRAMSize <= OKAPIA_MAC_BLOCK_OVERHEAD,
@@ -230,12 +231,88 @@ static void CheckLayout (void)
     // le bloc doit finir en dessous, pas seulement commencer en dessous.
     Expect (!MacLayoutPlan (0x58ffe000u, &M),
             "et une RAM qui atteindrait la Kernel Data de la ROM");
-    Expect (MacLayoutPlan (0x58000000u, &M) && M.nEnd < 0x68ffe000u,
+    // La plus grande RAM qui tient encore, calculée plutôt qu'écrite : elle
+    // bouge dès que l'écran ou la ROM change de taille.
+    const uint32_t nTail = OKAPIA_ROM_AREA_SIZE + OKAPIA_SIG_STACK_SIZE
+                         + OKAPIA_SHEEP_SIZE + OKAPIA_FRAME_SIZE;
+    const uint32_t nLargest = (OKAPIA_KERNEL_DATA_BASE - 0x10000000u - nTail) & ~0xFFFFFu;
+    Expect (MacLayoutPlan (nLargest, &M) && M.nEnd <= OKAPIA_KERNEL_DATA_BASE,
             "juste en dessous, cela passe encore");
+    Expect (!MacLayoutPlan (nLargest + 0x100000u, &M),
+            "et un mégaoctet de plus ne passe plus");
 }
+
+/*
+ *  Les résolutions proposées
+ *
+ *  Les deux Macintosh reçoivent la même liste ; seuls les identifiants
+ *  diffèrent. Une taille fixe garde son identifiant quel que soit l'écran,
+ *  parce que Mac OS 7.5 et suivants mémorisent le choix du tableau de bord
+ *  Moniteurs par identifiant.
+ */
+
+static void CheckSizes (void)
+{
+    printf ("\nles résolutions proposées aux deux Macintosh\n");
+
+    u32 Ids[VIDEO_SCREEN_STANDARD];
+    for (unsigned i = 0; i < VIDEO_SCREEN_STANDARD; i++)
+    {
+        Ids[i] = 0x100 + i;
+    }
+    const u32 Extra[VIDEO_SCREEN_EXTRA] = { 0x200, 0x201 };
+    TVideoScreenSize L[VIDEO_SCREEN_SIZES_MAX];
+
+    bool bOrdered = true;
+    for (unsigned i = 1; i < VIDEO_SCREEN_STANDARD; i++)
+    {
+        const unsigned *a = VideoScreenStandard[i - 1], *b = VideoScreenStandard[i];
+        bOrdered = bOrdered && (a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]));
+    }
+    Expect (bOrdered, "la liste fixe est rangée comme le tableau de bord Moniteurs, sans doublon");
+
+    unsigned n = VideoScreenSizeList (Ids, Extra, 2560, 1440, 1280, 720, L);
+    bool bSame = n == VIDEO_SCREEN_STANDARD;
+    for (unsigned i = 0; bSame && i < n; i++)
+    {
+        bSame = L[i].nWidth == VideoScreenStandard[i][0]
+             && L[i].nHeight == VideoScreenStandard[i][1] && L[i].nId == Ids[i];
+    }
+    Expect (bSame, "un écran 1440p et screen 1280/720 : la liste fixe seule, chaque taille sous son identifiant");
+
+    n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1280, 720, L);
+    Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1366
+            && L[n - 1].nHeight == 768 && L[n - 1].nId == 0x200,
+            "la taille propre d'un écran hors liste vient après, sous le premier identifiant libre");
+
+    n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1000, 700, L);
+    Expect (n == VIDEO_SCREEN_SIZES_MAX && L[n - 2].nId == 0x200
+            && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x201,
+            "puis celle que demandent les préférences, sous le second");
+
+    n = VideoScreenSizeList (Ids, Extra, 0, 0, 1000, 700, L);
+    Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x200,
+            "sans taille d'écran utilisable, la préférence prend le premier");
+
+    n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1366, 768, L);
+    Expect (n == VIDEO_SCREEN_STANDARD + 1, "une préférence égale à l'écran n'est pas proposée deux fois");
+
+    n = VideoScreenSizeList (Ids, Extra, 1920, 1080, 0, 0, L);
+    Expect (n == VIDEO_SCREEN_STANDARD, "sans préférence, rien de plus");
+}
+
+/*
+ *  Le gong, lu dans la ROM
+ *
+ *  Des ROM fabriquées ici, une par façon de garder le gong : la 'beep' 0 d'un
+ *  Power Macintosh, un 'snd ' échantillonné posé comme donnée (Quadra), la table
+ *  de la puce ASC (Macintosh II, IIci). Aucune ROM Apple dans le dépôt ; celles
+ *  du poste sont essayées en plus quand elles sont là.
+ */
 
 int main (void)
 {
+    CheckSizes ();
     CheckUnknownLines ();
     CheckFlavour ();
     CheckLayout ();

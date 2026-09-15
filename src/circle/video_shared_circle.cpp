@@ -158,11 +158,11 @@ u32 VideoScreenShadowBytes (void)
  *  is what keeps the image sharp, and a non-integer factor looks worse than a
  *  smaller picture.
  *
- *  The buffer cap is not tidiness either. Measured: at 640x480x8 a composite
- *  takes 270 us when the guest buffer holds 1.2 MB and 1270 us when it holds
- *  3 MB, for identical work. The reason is not understood — it is not the heap,
- *  since a Pi 3 has no high memory and both sizes take the same path. Until it
- *  is, cap what is offered rather than pay 5x for a mode nobody asked for.
+ *  Each engine caps the guest frame it offers, and the cap is what sizes the
+ *  buffer and the shadow. A 5x composite cost was once measured at 640x480x8
+ *  with a 3 MB buffer against a 1.2 MB one, and caps were kept small for it; it
+ *  did not come back (QEMU, 1280x960 output, 2026-09-13: 71-156 us at rest with
+ *  4.8 MB, 247 us with 1.5 MB), so the caps now follow the largest display.
  */
 
 void VideoScreenEnumerate (const TVideoScreenSize *pSizes, unsigned nSizes,
@@ -172,12 +172,17 @@ void VideoScreenEnumerate (const TVideoScreenSize *pSizes, unsigned nSizes,
     const unsigned nOutW = VideoScreenOutputWidth ();
     const unsigned nOutH = VideoScreenOutputHeight ();
 
+    unsigned nModes = 0;
+    char Names[256];
+    unsigned nAt = 0;
+    Names[0] = '\0';
     for (unsigned i = 0; i < nSizes; i++)
     {
         if (pSizes[i].nWidth > nOutW || pSizes[i].nHeight > nOutH)
         {
             continue;
         }
+        unsigned nDepths = 0;
         for (unsigned d = 0; d < VIDEO_SCREEN_DEPTHS; d++)
         {
             const unsigned nBits = VideoScreenDepths[d];
@@ -187,8 +192,49 @@ void VideoScreenEnumerate (const TVideoScreenSize *pSizes, unsigned nSizes,
                 continue;
             }
             pSink (pContext, &pSizes[i], nBits, nRow);
+            nDepths++;
         }
+        if (nDepths != 0 && nAt < sizeof Names)
+        {
+            nAt += (unsigned) snprintf (Names + nAt, sizeof Names - nAt, " %ux%u",
+                                        pSizes[i].nWidth, pSizes[i].nHeight);
+        }
+        nModes += nDepths;
     }
+
+    CLogger::Get ()->Write (FROM, LogNotice, "%u modes offered within %u KB, sizes%s",
+                            nModes, (unsigned) (nMaxBufferBytes / 1024), Names);
+}
+
+unsigned VideoScreenSizes (const u32 *pStandardIds, const u32 *pExtraIds,
+                           TVideoScreenSize *pOut,
+                           unsigned *pWantW, unsigned *pWantH)
+{
+    // Sizes that fill the display at twice or three times were offered once,
+    // and came out as 912x492 and 853x480: nobody's resolution. The display's
+    // own size is the one size that exists because of this display.
+    unsigned nDisplayW = VideoScreenOutputWidth ();
+    unsigned nDisplayH = VideoScreenOutputHeight ();
+    if (nDisplayW < 640 || nDisplayH < 480)
+    {
+        nDisplayW = nDisplayH = 0;
+    }
+
+    *pWantW = 640;
+    *pWantH = 480;
+    unsigned nPrefW = 0, nPrefH = 0;
+    const char *pValue = PrefsFindString ("screen");
+    int w, h;
+    if (pValue != 0 && sscanf (pValue, "%*[^/]/%d/%d", &w, &h) == 2 && w >= 0 && h >= 0)
+    {
+        nPrefW = w > 0 ? (unsigned) w : VideoScreenOutputWidth ();
+        nPrefH = h > 0 ? (unsigned) h : VideoScreenOutputHeight ();
+        *pWantW = nPrefW;
+        *pWantH = nPrefH;
+    }
+
+    return VideoScreenSizeList (pStandardIds, pExtraIds, nDisplayW, nDisplayH,
+                                nPrefW, nPrefH, pOut);
 }
 
 /*

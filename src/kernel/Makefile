@@ -110,6 +110,7 @@ else
 # timer, adb — and the rest is under sheepshaver/. Globbing src/circle would
 # drag in the other engine's video and main.
 PLATFORM_SRCS = $(OKAPIA)/compositor_circle.cpp $(OKAPIA)/video_shared_circle.cpp \
+                $(OKAPIA)/video_sizes_circle.cpp \
                 $(OKAPIA)/prefs_circle.cpp $(OKAPIA)/xpram_circle.cpp \
                 $(OKAPIA)/timer_circle.cpp $(OKAPIA)/tick_circle.cpp \
                 $(OKAPIA)/input_circle.cpp $(OKAPIA)/audio_circle.cpp \

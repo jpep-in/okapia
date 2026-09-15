@@ -46,14 +46,47 @@
 // wants more colours.
 extern uint32 MacFrameBufferGuest (void);
 
-// The sizes this engine offers. No 512x384: that is a Classic resolution and
-// SheepShaver has no Apple identifier for it.
-static const TVideoScreenSize SIZES[] =
+// The sizes are both engines' (video_sizes_circle.cpp); what is this engine's
+// is the Apple identifier each goes by. A size upstream names keeps its name,
+// so a Monitors choice stored by an earlier Okapia still means the same size,
+// and the Mac-reported size of a named identifier is written into the driver
+// (video.cpp:806) — which is why a named identifier must never go to any other
+// size. The rest are numbered past APPLE_CUSTOM, which patches/macemu/0011
+// lets the driver list. APPLE_CUSTOM itself goes to the first extra, the
+// display's own size or the preference's, as it did before.
+enum
 {
-    {  640, 480, APPLE_640x480  },
-    {  800, 600, APPLE_800x600  },
-    { 1024, 768, APPLE_1024x768 },
+    OKAPIA_512x384 = APPLE_CUSTOM + 1,
+    OKAPIA_1152x870,
+    OKAPIA_1280x720,
+    OKAPIA_1280x960,
+    OKAPIA_1600x900,
+    OKAPIA_1920x1080,
+    OKAPIA_1920x1200,
+    OKAPIA_2560x1440,
+    OKAPIA_EXTRA
 };
+
+static const u32 STANDARD_IDS[VIDEO_SCREEN_STANDARD] =
+{
+    OKAPIA_512x384,
+    APPLE_640x480,
+    APPLE_800x600,
+    APPLE_1024x768,
+    OKAPIA_1152x870,
+    OKAPIA_1280x720,
+    OKAPIA_1280x960,
+    APPLE_1280x1024,
+    OKAPIA_1600x900,
+    APPLE_1600x1200,
+    OKAPIA_1920x1080,
+    OKAPIA_1920x1200,
+    OKAPIA_2560x1440,
+};
+static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { APPLE_CUSTOM, OKAPIA_EXTRA };
+
+// The driver lists identifiers up to APPLE_ID_MAX and no further.
+static_assert ((unsigned) OKAPIA_EXTRA <= (unsigned) APPLE_ID_MAX, "an identifier the driver would not list");
 
 static bool     s_bReady;
 static uint32   s_nGuestBase;       // the Mac address of the frame buffer
@@ -130,6 +163,12 @@ static void AddMode (void *pContext, const TVideoScreenSize *pSize,
                      unsigned nBits, unsigned nBytesPerRow)
 {
     (void) pContext;
+    // One entry is the end marker. Fifteen sizes at six depths is 90 entries,
+    // inside the 128 the patch gives, so this only guards a longer list.
+    if (s_nModes + 1 >= VIDEO_MODES_MAX)
+    {
+        return;
+    }
     VideoInfo &M  = VModes[s_nModes++];
     M.viType      = DIS_SCREEN;
     M.viXsize     = pSize->nWidth;
@@ -155,9 +194,13 @@ bool VideoInit (void)
     }
     VideoScreenReadPrefs ();
 
+    TVideoScreenSize Sizes[VIDEO_SCREEN_SIZES_MAX];
+    unsigned nWantW, nWantH;
+    const unsigned nSizes = VideoScreenSizes (STANDARD_IDS, EXTRA_IDS, Sizes,
+                                              &nWantW, &nWantH);
+
     s_nModes = 0;
-    VideoScreenEnumerate (SIZES, sizeof SIZES / sizeof SIZES[0], s_nBufferBytes,
-                          AddMode, 0);
+    VideoScreenEnumerate (Sizes, nSizes, s_nBufferBytes, AddMode, 0);
     VModes[s_nModes].viType = DIS_INVALID;   // end of table
 
     if (s_nModes == 0)
@@ -173,14 +216,30 @@ bool VideoInit (void)
     // Mac corrected itself a few seconds later from its PRAM, but a screen that
     // starts wrong and fixes itself is a screen somebody will report.
     unsigned nDefault = 0;
-    for (unsigned i = 0; i < s_nModes; i++)
+    unsigned nPassFound = 2;
+    for (unsigned nPass = 0; nPass < 2; nPass++)
     {
-        if (VModes[i].viXsize == 640 && VModes[i].viYsize == 480
-            && VModes[i].viAppleMode == APPLE_8_BIT)
+        // The size the preferences ask for first, 640x480 if the display
+        // cannot offer it.
+        const unsigned w = nPass == 0 ? nWantW : 640;
+        const unsigned h = nPass == 0 ? nWantH : 480;
+        for (unsigned i = 0; i < s_nModes; i++)
         {
-            nDefault = i;
-            break;
+            if (VModes[i].viXsize == w && VModes[i].viYsize == h
+                && VModes[i].viAppleMode == APPLE_8_BIT)
+            {
+                nDefault = i;
+                nPassFound = nPass;
+                nPass = 2;
+                break;
+            }
         }
+    }
+    if (nPassFound != 0 && (nWantW != 640 || nWantH != 480))
+    {
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "screen asks for %ux%u, which this display cannot "
+                                "offer; starting in 640x480", nWantW, nWantH);
     }
 
     if (!SwitchTo (nDefault))
@@ -190,9 +249,8 @@ bool VideoInit (void)
 
     video_activated = true;
 
-    CLogger::Get ()->Write (FROM, LogNotice,
-                            "%u modes offered, %u KB frame buffer at 0x%08X",
-                            s_nModes, (unsigned) (s_nBufferBytes / 1024),
+    CLogger::Get ()->Write (FROM, LogNotice, "%u KB frame buffer at 0x%08X",
+                            (unsigned) (s_nBufferBytes / 1024),
                             (unsigned) s_nGuestBase);
     return true;
 }
