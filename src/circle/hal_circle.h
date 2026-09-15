@@ -220,4 +220,15 @@ void BoardChimePlay (void);
 void BoardChimeFinish (void);
 void BoardChimeStop (void);
 
+/*
+ *  Before halt()
+ *
+ *  A Raspberry Pi 4 cannot switch itself off, so a shut down ends with the
+ *  board stopped and the power still on. Left alone the GPU keeps showing the
+ *  last frame, which reads exactly as a machine that froze: this silences the
+ *  sound, clears the screen to black, asks the firmware to blank the display
+ *  and writes the log out.
+ */
+void BoardPowerOff (void);
+
 #endif

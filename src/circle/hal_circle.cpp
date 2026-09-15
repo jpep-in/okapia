@@ -915,3 +915,45 @@ void BoardChimeFinish (void)
     }
     BoardChimeStop ();
 }
+
+/*
+ *  Before halt() — see hal_circle.h
+ */
+
+// Not in Circle's list. The firmware's mailbox property interface, "Blank
+// screen": one u32, bit 0 set to blank.
+static const u32 PROPTAG_BLANK_SCREEN = 0x00040002;
+
+void BoardPowerOff (void)
+{
+    if (s_pBoardSound != 0)
+    {
+        s_pBoardSound->Cancel ();
+        // The DMA stops at the end of its current buffer; halt() disables the
+        // interrupts that would let it, so give it the few buffers it needs.
+        for (unsigned i = 0; i < 20 && s_pBoardSound->IsActive (); i++)
+        {
+            CTimer::Get ()->MsDelay (10);
+        }
+    }
+
+    CBcmFrameBuffer *pOutput = FwOutputClaim ();
+    if (pOutput != 0)
+    {
+        // One call over the whole buffer, as the PowerPC engine's stop already
+        // did: it starts aligned and is a whole number of 16-byte rows, which
+        // is what keeps a vectorised store off an alignment fault (docs/topics/display.md).
+        memset ((void *) (uintptr) pOutput->GetBuffer (), 0,
+                (size_t) pOutput->GetPitch () * pOutput->GetHeight ());
+    }
+
+    CBcmPropertyTags Tags;
+    TPropertyTagSimple Blank;
+    Blank.nValue = 1;
+    const bool bBlanked = Tags.GetTag (PROPTAG_BLANK_SCREEN, &Blank, sizeof Blank, 4);
+
+    CLogger::Get ()->Write (FROM, LogNotice,
+                            "Stopped: the power can be switched off (display %s)",
+                            bBlanked ? "blanked" : "cleared to black");
+    BoardLogFlush ();
+}

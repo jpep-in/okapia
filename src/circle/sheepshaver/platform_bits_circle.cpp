@@ -24,6 +24,12 @@
 #include "ether.h"
 #include "sigsegv.h"
 
+#include <string.h>
+
+#include "okapia_firmware.h"
+#include "okapia_input.h"
+#include "hal_circle.h"
+
 #define FROM "okapia-ppc"
 
 /*
@@ -96,27 +102,102 @@ void prefs_exit (void)
  *  it did, with no way back to the boot menu and the disk image never closed.
  *
  *  An ordinary boot produces exactly one reset, so the first is the cold start
- *  and every later one is the guest restarting — the same reading AGENTS.md
- *  records for the 68k engine, measured there rather than assumed here.
+ *  and every later one is the guest restarting — the same reading
+ *  docs/topics/startup-and-shutdown.md records for the 68k engine, measured there rather than assumed here.
  *
- *  Leaving through QuitEmulator() is deliberate: it is the one path that stops
- *  the tick, unwinds the interpreter and closes the drivers, and closing them
- *  is what flushes the disk. The board then resets, because this engine cannot
- *  be started a second time in place — SheepShaver exits the process upstream
- *  and pairs no InitAll with its ExitAll.
+ *  What happens then is the firmware's window, as on the other engine, but in
+ *  place: the Macintosh is halfway through its own reset and simply waits
+ *  inside this call. Answering "start the same volume" lets that reset carry
+ *  on, which is exactly what a desktop SheepShaver does on a Restart and takes
+ *  no time at all. It used to leave through QuitEmulator() and reset the board
+ *  every time: seven seconds of the Pi's own firmware for a restart the other
+ *  Macintosh does instantly.
+ *
+ *  Anything else still leaves that way, because this engine cannot be started
+ *  a second time in place — SheepShaver exits the process upstream and pairs no
+ *  InitAll with its ExitAll: another volume, the other Macintosh, another sound
+ *  output or a settings change reset the board, and Shut Down halts it. QuitEmulator() is the one
+ *  path that stops the tick, unwinds the interpreter and closes the disk.
+ *
+ *  Nothing the Macintosh had open is at risk meanwhile: it unmounted its
+ *  volumes before resetting, and the disk layer holds no cache (docs/topics/storage.md).
  */
+
+// input_circle.cpp and video_circle.cpp, this engine's copies.
+extern void InputRelease (void);
+extern void InputInit (void);
+extern void VideoReclaim (void);
+
+// The startup as the preferences state it: everything the firmware's answer
+// can change that this engine could not take in place.
+struct TStartup
+{
+    char  Disk[256];
+    char  Cdrom[256];
+    char  Sound[16];        // the device is chosen as the engine starts
+    bool  bNoSound;
+    int32 nBootDriver;
+};
+
+static void StartupRead (TStartup *pOut)
+{
+    const char *pDisk  = PrefsFindString ("disk", 0);
+    const char *pCdrom = PrefsFindString ("cdrom", 0);
+    strncpy (pOut->Disk,  pDisk  != 0 ? pDisk  : "", sizeof pOut->Disk - 1);
+    strncpy (pOut->Cdrom, pCdrom != 0 ? pCdrom : "", sizeof pOut->Cdrom - 1);
+    pOut->Disk[sizeof pOut->Disk - 1] = '\0';
+    pOut->Cdrom[sizeof pOut->Cdrom - 1] = '\0';
+    pOut->nBootDriver = PrefsFindInt32 ("bootdriver");
+    const char *pSound = PrefsFindString ("soundoutput");
+    strncpy (pOut->Sound, pSound != 0 ? pSound : "", sizeof pOut->Sound - 1);
+    pOut->Sound[sizeof pOut->Sound - 1] = '\0';
+    pOut->bNoSound = PrefsFindBool ("nosound");
+}
+
 void ether_reset (void)
 {
     static unsigned s_nResets;
 
-    if (++s_nResets > 1)
+    if (++s_nResets <= 1)
     {
-        extern bool g_bMacRestartWanted;
-        CLogger::Get ()->Write (FROM, LogNotice,
-                                "The Macintosh restarted itself (reset #%u)", s_nResets);
-        g_bMacRestartWanted = true;
-        QuitEmulator ();
+        return;
     }
+
+    CLogger::Get ()->Write (FROM, LogNotice,
+                            "The Macintosh restarted itself (reset #%u)", s_nResets);
+
+    TStartup Before, After;
+    StartupRead (&Before);
+
+    InputRelease ();
+    FwInputReclaim ();
+    BoardChimePlay ();          // a Macintosh chimes when it restarts
+    const TFirmwareResult Result = FirmwareRun (FirmwareEnginePowerPC);
+    StartupRead (&After);
+    // The Macintosh is about to feed the same device, and nothing on this path
+    // calls AudioInit(), which would otherwise wait for the chime.
+    BoardChimeFinish ();
+
+    if (   Result == FirmwareBoot
+        && FirmwareWantedEngine () == FirmwareEnginePowerPC
+        && strcmp (Before.Disk, After.Disk) == 0
+        && strcmp (Before.Cdrom, After.Cdrom) == 0
+        && Before.nBootDriver == After.nBootDriver
+        && strcmp (Before.Sound, After.Sound) == 0
+        && Before.bNoSound == After.bNoSound)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice, "Same startup: restarting in place");
+        InputInit ();
+        VideoReclaim ();
+        return;
+    }
+
+    extern bool g_bMacRestartWanted;
+    g_bMacRestartWanted = Result != FirmwareHalt;
+    CLogger::Get ()->Write (FROM, LogNotice, "%s",
+                            Result == FirmwareHalt ? "Shut down from the firmware"
+                                                   : "Another startup: resetting the board");
+    QuitEmulator ();
 }
 
 /*

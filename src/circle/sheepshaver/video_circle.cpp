@@ -255,6 +255,24 @@ bool VideoInit (void)
     return true;
 }
 
+/*
+ *  The firmware drew over the output while the Macintosh restarted in place
+ *  (platform_bits_circle.cpp): put the current mode back, borders included, and
+ *  redraw it whole — none of the guest's bytes changed, so the comparison would
+ *  otherwise find nothing to draw.
+ */
+void VideoReclaim (void)
+{
+    if (!s_bReady)
+    {
+        return;
+    }
+    const VideoInfo &Mode = VModes[cur_mode];
+    s_bReady = VideoScreenApply (Mac2HostAddr (s_nGuestBase), Mode.viXsize, Mode.viYsize,
+                                 Mode.viRowBytes, DepthBitsOf (Mode.viAppleMode));
+    VideoScreenInvalidate ();
+}
+
 void VideoExit (void)
 {
     video_activated = false;

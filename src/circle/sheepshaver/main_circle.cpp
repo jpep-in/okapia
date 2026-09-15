@@ -24,6 +24,7 @@
 #include "okapia_circle.h"
 #include "mac_ram_circle.h"
 #include "okapia_output.h"
+#include "hal_circle.h"
 
 // kpx_cpu/sheepshaver_glue.cpp
 extern void exit_emul_ppc (void);
@@ -393,10 +394,12 @@ void QuitEmulator (void)
     {
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "Restarted from Mac OS: disk closed, resetting the board");
+        BoardLogFlush ();
         reboot ();
     }
 
     CLogger::Get ()->Write (FROM, LogNotice, "Shut down cleanly, disk closed");
+    BoardPowerOff ();
     halt ();
 }
 

@@ -9,6 +9,7 @@
 #include <circle/startup.h>
 
 #include "okapia_boot.h"
+#include "hal_circle.h"
 
 #define FROM "okapia-boot"
 
@@ -37,10 +38,12 @@ int main (void)
             continue;
 
         case OkapiaReboot:
+            BoardLogFlush ();
             return EXIT_REBOOT;
 
         case OkapiaHalt:
         default:
+            BoardPowerOff ();
             halt ();
             return EXIT_HALT;
         }
