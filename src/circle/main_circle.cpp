@@ -87,11 +87,28 @@ uae_u32 direct_addressing_limit;
 static uae_u32 s_nFirstStray;
 static unsigned s_nStrayCount;
 
+// The Mac's own frame buffer lives on the heap past the block, so the first
+// stray is nearly always a pixel. Anything far beyond it — the I/O space of the
+// machine being emulated, most of all — is counted apart, because that is the
+// access that lands on the Pi's memory or on its peripherals.
+static const uae_u32 FAR_BEYOND = 0x40000000;
+static uae_u32 s_nFirstFar;
+static uae_u32 s_nLastFar;
+static unsigned s_nFarCount;
+
 void direct_addressing_fault (uaecptr addr)
 {
     if (s_nStrayCount++ == 0)
     {
         s_nFirstStray = addr;
+    }
+    if (addr >= FAR_BEYOND)
+    {
+        if (s_nFarCount++ == 0)
+        {
+            s_nFirstFar = addr;
+        }
+        s_nLastFar = addr;
     }
 }
 
@@ -107,6 +124,16 @@ void GuestBoundsReport (void)
                                 s_nStrayCount,
                                 (unsigned long) s_nFirstStray,
                                 (unsigned long) direct_addressing_limit);
+    }
+    static unsigned s_nFarReported;
+    if (s_nFarCount != s_nFarReported)
+    {
+        s_nFarReported = s_nFarCount;
+        CLogger::Get ()->Write (FROM, LogWarning,
+                                "guest address far beyond the block: %u so far, "
+                                "first at %08lx, last at %08lx",
+                                s_nFarCount, (unsigned long) s_nFirstFar,
+                                (unsigned long) s_nLastFar);
     }
 }
 #endif
