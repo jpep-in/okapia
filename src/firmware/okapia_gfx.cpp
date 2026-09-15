@@ -517,6 +517,49 @@ void GfxCircleFrame (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color,
                                      ? rRect.nWidth : rRect.nHeight) / 2, Color, nThickness);
 }
 
+void GfxTaper (TSurface *pSurface, float fX, float fY, float fLength, float fThickness,
+               float fSag, TOkapiaColor Color)
+{
+    if (fLength <= 0.0f || fThickness <= 0.0f)
+    {
+        return;
+    }
+    const unsigned nColor = Value (Color);
+    const int nX0 = (int) fX;
+    const int nX1 = (int) (fX + fLength) + 1;
+    const int nY0 = (int) fY - 1;
+    const int nY1 = (int) (fY + fThickness + (fSag > 0.0f ? fSag : 0.0f)) + 2;
+    const float fStep = 1.0f / (float) AA_SAMPLES;
+
+    for (int nY = nY0; nY < nY1; nY++)
+    {
+        for (int nX = nX0; nX < nX1; nX++)
+        {
+            int nHits = 0;
+            for (int sx = 0; sx < AA_SAMPLES; sx++)
+            {
+                const float u = ((float) nX + ((float) sx + 0.5f) * fStep - fX) / fLength;
+                if (u < 0.0f || u > 1.0f)
+                {
+                    continue;
+                }
+                const float fHalf = fThickness * 0.5f
+                                  * (1.0f - u * u * __builtin_sqrtf (__builtin_sqrtf (u)));
+                const float fCentre = fY + fThickness * 0.5f + fSag * u * u;
+                for (int sy = 0; sy < AA_SAMPLES; sy++)
+                {
+                    const float d = (float) nY + ((float) sy + 0.5f) * fStep - fCentre;
+                    if ((d < 0.0f ? -d : d) <= fHalf)
+                    {
+                        nHits++;
+                    }
+                }
+            }
+            Blend (pSurface, nX, nY, nColor, (float) nHits * fStep * fStep);
+        }
+    }
+}
+
 void GfxInvert (TSurface *pSurface, const TRect &rRect)
 {
     const unsigned nBlack = Value (ColorBlack);

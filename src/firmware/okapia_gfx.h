@@ -101,6 +101,14 @@ void GfxCircleFill (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color);
 void GfxCircleFrame (TSurface *pSurface, const TRect &rRect, TOkapiaColor Color,
                      unsigned nThickness);
 
+// A band that tapers to a point: from its root at (fX, fY) — the top of the
+// band — it runs fLength to the right, its centre dropping by fSag*u^2 and its
+// thickness narrowing as fThickness*(1 - u^2.25) at a fraction u of the way.
+// The logo's stripes, in sub-pixel units so they scale like the curves do;
+// scripts/gen-logo.py draws the same law and the two change together.
+void GfxTaper (TSurface *pSurface, float fX, float fY, float fLength, float fThickness,
+               float fSag, TOkapiaColor Color);
+
 // Swaps black and white, leaves the greys alone. This is the selection
 // highlight, and it is a primitive because C2DGraphics has no transfer mode.
 void GfxInvert (TSurface *pSurface, const TRect &rRect);

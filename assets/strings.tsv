@@ -84,7 +84,6 @@ info_card	SD card	Carte SD
 info_startup	Startup volume	Volume de démarrage
 info_none	none	aucun
 info_credits	Components and licences	Composants et licences
-info_author	Author	Auteur
 shut_down_title	Shut down?	Éteindre ?
 shut_down_body	The Macintosh has not started, so nothing is open and nothing can be lost. Okapia will stop, and the screen will go dark before you switch the power off.	Le Macintosh n’a pas démarré : rien n’est ouvert, rien ne peut être perdu. Okapia va s’arrêter, et l’écran s’éteindra avant que vous coupiez l’alimentation.
 forget_pram_title	Forget the parameter RAM?	Oublier la PRAM ?

@@ -153,6 +153,27 @@ static void Geometry (unsigned nScale)
         if (pW[i].Rect.nHeight == 0) nFlat++;
     }
     Expect (nFlat == 0, "informations : toutes les lignes ont leur place");
+    // Labels are exempt from the overlap check above, because a label's
+    // rectangle is a text box — which is exactly why the logo needs a check of
+    // its own: a value written under it would pass every other one.
+    unsigned nLogos = 0, nUnder = 0;
+    for (unsigned i = 0; i < n; i++)
+    {
+        if (pW[i].Type != WidgetIcon) continue;
+        nLogos++;
+        const TRect &L = pW[i].Rect;
+        for (unsigned j = 0; j < n; j++)
+        {
+            const TRect &R = pW[j].Rect;
+            if (   j != i && pW[j].Type != WidgetSeparator
+                && L.nX < R.nX + (int) R.nWidth  && R.nX < L.nX + (int) L.nWidth
+                && L.nY < R.nY + (int) R.nHeight && R.nY < L.nY + (int) L.nHeight)
+            {
+                nUnder++;
+            }
+        }
+    }
+    Expect (nLogos == 1 && nUnder == 0, "informations : le logo ne touche aucun texte");
 
     TConfirm Confirm;
     ConfirmSample (&Confirm);

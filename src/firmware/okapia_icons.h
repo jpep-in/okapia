@@ -57,6 +57,12 @@ void OkapiaPaintCaution (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 
 void OkapiaPaintStop (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 
+// Okapia's own logo: a compact Macintosh whose screen is the okapi's dark body
+// and whose chin carries its stripes. Painted from okapia_logo_shape.h, the
+// numbers assets/logo/ is drawn from, and fitted to the rectangle's height —
+// the case is taller than it is wide, so the rectangle's width is a bound.
+void OkapiaPaintLogo (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+
 // Content icons: the era belongs to these, not to the chrome around them.
 extern const TGlyphImage OkapiaIconSystem6;
 extern const TGlyphImage OkapiaIconSystem7;

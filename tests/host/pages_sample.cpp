@@ -52,9 +52,9 @@ void InfoSample (TInfo *p)
     InfoAdd (p, Str (StrInfoStartup), "Mac HD 7.6 (/machd76.image)");
 
     p->nCredits = 0;
-    InfoCredit (p, Str (StrInfoAuthor), "Jonathan Pepin");
-    InfoCredit (p, "Okapia",      "GPLv3+");
-    InfoCredit (p, "Basilisk II", "GPLv2+ · Christian Bauer et al.");
+    InfoCredit (p, "Okapia",      "GPLv3+ · Jonathan Pepin");
+    InfoCredit (p, "Basilisk II", "GPLv2+ · Christian Bauer et al., kanjitalk755");
+    InfoCredit (p, "SheepShaver", "GPLv2+ · Christian Bauer et al., kanjitalk755");
     InfoCredit (p, "Circle",      "GPLv3+ · Rene Stange");
     InfoCredit (p, "libhfs",      "GPLv2+ · Robert Leslie");
     InfoCredit (p, "Helvetica",   "X11 · Adobe Systems, Digital Equipment");

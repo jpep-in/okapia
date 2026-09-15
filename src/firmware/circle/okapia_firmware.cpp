@@ -558,9 +558,9 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
      *  a licence written from memory is a licence stated wrongly.
      */
     pInfo->nCredits = 0;
-    InfoCredit (pInfo, Str (StrInfoAuthor), OKAPIA_AUTHOR);
-    InfoCredit (pInfo, "Okapia",      "GPLv3+");
-    InfoCredit (pInfo, "Basilisk II", "GPLv2+ · Christian Bauer et al.");
+    InfoCredit (pInfo, "Okapia",      "GPLv3+ · " OKAPIA_AUTHOR);
+    InfoCredit (pInfo, "Basilisk II", "GPLv2+ · Christian Bauer et al., kanjitalk755");
+    InfoCredit (pInfo, "SheepShaver", "GPLv2+ · Christian Bauer et al., kanjitalk755");
     InfoCredit (pInfo, "Circle",      "GPLv3+ · Rene Stange");
     InfoCredit (pInfo, "libhfs",      "GPLv2+ · Robert Leslie");
     InfoCredit (pInfo, "Helvetica",   "X11 · Adobe Systems, Digital Equipment");

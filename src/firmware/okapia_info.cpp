@@ -6,6 +6,8 @@
  */
 
 #include "okapia_info.h"
+#include "okapia_icons.h"
+#include "okapia_logo_shape.h"
 #include "okapia_page.h"
 #include "okapia_strings.h"
 
@@ -54,12 +56,17 @@ bool InfoIsBack (int nIndex)
 
 // One row: its label on the left, its value beside it. Nothing here can be
 // operated, so nothing reserves the room a focus ring would want — this is a
-// page one reads.
-static void Line (TPage *pPage, unsigned nLabel, const TInfoLine *pLine)
+// page one reads. A row still beside the logo gives up the logo's width, so a
+// long value is cut short of it rather than written across it.
+static void Line (TPage *pPage, unsigned nLabel, const TInfoLine *pLine, const TRect &rLogo)
 {
     const TTheme *pTheme = &pPage->Theme;
     TRow R;
     RowBegin (&R, pTheme, LayoutRow (&pPage->Layout, pTheme->M.nLineHeight, StateNormal));
+    if (R.Free.nY < rLogo.nY + (int) rLogo.nHeight)
+    {
+        RowLast (&R, rLogo.nWidth, StateNormal);
+    }
     PageAdd (pPage, WidgetLabel, RowNext (&R, nLabel, StateNormal), pLine->Label,
              StateDisabled);
     PageAdd (pPage, WidgetLabel, RowRest (&R, StateNormal), pLine->Value, StateNormal);
@@ -96,9 +103,23 @@ void InfoDraw (TSurface *pSurface, TInfo *pInfo)
     }
     nLabel += pTheme->M.nGap;
 
+    // The logo stands beside what Okapia found, exactly as tall as those rows:
+    // sized from the rows rather than chosen, it scales with the interface and
+    // lines up with the first and the last of them at every scale.
+    const unsigned nRows = pInfo->nCount;
+    const unsigned nLogoH = nRows == 0 ? 0 : nRows * pTheme->M.nLineHeight
+                                           + (nRows - 1) * pTheme->M.nRowGap;
+    const unsigned nLogoW = (unsigned) ((float) nLogoH * LOGO_CASE_W / LOGO_CASE_H + 0.5f);
+    const TRect Logo = Rect (Layout.Free.nX + (int) Layout.Free.nWidth - (int) nLogoW,
+                             Layout.Free.nY, nLogoW, nLogoH);
+    if (nRows != 0)
+    {
+        PageAdd (&s_Page, WidgetIcon, Logo, 0, StateNormal)->Paint = OkapiaPaintLogo;
+    }
+
     for (unsigned i = 0; i < pInfo->nCount; i++)
     {
-        Line (&s_Page, nLabel, &pInfo->Lines[i]);
+        Line (&s_Page, nLabel, &pInfo->Lines[i], Logo);
     }
 
     if (pInfo->nCredits != 0)
@@ -111,7 +132,7 @@ void InfoDraw (TSurface *pSurface, TInfo *pInfo)
         LayoutRowGap (&Layout);
         for (unsigned i = 0; i < pInfo->nCredits; i++)
         {
-            Line (&s_Page, nLabel, &pInfo->Credits[i]);
+            Line (&s_Page, nLabel, &pInfo->Credits[i], Logo);
         }
     }
 

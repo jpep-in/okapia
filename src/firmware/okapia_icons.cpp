@@ -7,6 +7,7 @@
 
 #include "okapia_icons.h"
 #include "okapia_font.h"
+#include "okapia_logo_shape.h"
 
 /*
  *  Chrome icons, painted from the rectangle they are given
@@ -428,4 +429,55 @@ void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor In
     const TRect Box = Rect (rRect.nX, nTop, rRect.nWidth,
                             (unsigned) pFace->nCapHeight);
     GfxTextBox (pSurface, pFace, Box, "!", Ink, TextAlignCenter);
+}
+
+static int Round (float f)
+{
+    return (int) (f + 0.5f);
+}
+
+void OkapiaPaintLogo (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
+                      TOkapiaColor Back)
+{
+    const float kw = (float) rRect.nWidth / LOGO_CASE_W;
+    const float kh = (float) rRect.nHeight / LOGO_CASE_H;
+    const float k = kw < kh ? kw : kh;
+
+    // The case in whole pixels, and every other part scaled on the case's own
+    // two factors: an edge between two columns is a grey column, and the
+    // stroke is two or three pixels wide at the size the pane draws it.
+    const int nW = Round (LOGO_CASE_W * k);
+    const int nH = Round (LOGO_CASE_H * k);
+    if (nW < 8 || nH < 8)
+    {
+        return;
+    }
+    const int nX = rRect.nX + ((int) rRect.nWidth - nW) / 2;
+    const int nY = rRect.nY + ((int) rRect.nHeight - nH) / 2;
+    const float kx = (float) nW / LOGO_CASE_W;
+    const float ky = (float) nH / LOGO_CASE_H;
+
+    const int nStroke = Round (LOGO_STROKE * k) < 1 ? 1 : Round (LOGO_STROKE * k);
+    const int nInner = Round ((LOGO_CASE_RADIUS - LOGO_STROKE) * k);
+    // Concentric: the outer radius is the inner one plus the stroke, whatever
+    // each rounded to, or the corners thicken where the two disagree.
+    GfxRoundFill (pSurface, Rect (nX, nY, (unsigned) nW, (unsigned) nH),
+                  (unsigned) (nInner + nStroke), Ink);
+    GfxRoundFill (pSurface, Rect (nX + nStroke, nY + nStroke, (unsigned) (nW - 2 * nStroke),
+                                  (unsigned) (nH - 2 * nStroke)),
+                  (unsigned) nInner, Back);
+
+    for (const TLogoStripe &S : LOGO_STRIPES)
+    {
+        GfxTaper (pSurface, (float) nX + S.fX * kx, (float) nY + S.fY * ky,
+                  S.fLength * kx, S.fThickness * ky, S.fSag * ky, Ink);
+    }
+
+    const int nSX = nX + Round (LOGO_SCREEN_X * kx);
+    const int nSY = nY + Round (LOGO_SCREEN_Y * ky);
+    GfxRoundFill (pSurface,
+                  Rect (nSX, nSY,
+                        (unsigned) (nX + Round ((LOGO_SCREEN_X + LOGO_SCREEN_W) * kx) - nSX),
+                        (unsigned) (nY + Round ((LOGO_SCREEN_Y + LOGO_SCREEN_H) * ky) - nSY)),
+                  (unsigned) Round (LOGO_SCREEN_RADIUS * k), Ink);
 }
