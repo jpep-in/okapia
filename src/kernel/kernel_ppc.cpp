@@ -1,13 +1,11 @@
 //
 // kernel_ppc.cpp — Okapia: bring up the board, then hand it to a PowerMacintosh.
 //
-// The SheepShaver kernel, and deliberately the smallest one that can reach a
-// screen. It does what kernel.cpp does for the other engine, minus everything
-// phase 20 does not need to answer its one question: does the Macintosh start?
-// No shared folder, no clock refinement from the card, no volume repair, no
-// restart loop. Those are not hard, they are simply not the question, and each
-// of them is a place a first boot could fail for a reason that has nothing to
-// do with the engine.
+// The SheepShaver kernel, and deliberately smaller than the other one. What the
+// card is owed before any Macintosh opens it — the inventory, the clock floor,
+// the repair and the name of the startup volume — it does exactly as kernel.cpp
+// does, through card_circle.cpp: a card is not less at risk for starting the
+// other engine. No shared folder preparation and no restart loop yet.
 //
 // Copyright (C) 2026  Okapia contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -15,6 +13,7 @@
 #include "kernel_ppc.h"
 #include "okapia_input.h"
 #include "okapia_firmware.h"
+#include "card_circle.h"
 
 #include <stdio.h>
 
@@ -152,39 +151,19 @@ TOkapiaExit CKernelPPC::Run (bool bSwitched)
         return OkapiaHalt;
     }
 
-    // CDROMRefNum (cdrom.h:24), as the `bootdriver` preference states it.
-    static const int BOOT_DRIVER_CDROM = -62;
-
-    // Name the volume this Macintosh is about to start from.
-    //
-    // Not a nicety: run-test.sh judges whether a hard stop damaged a volume, and
-    // a test that picks its subject by guessing goes green on the wrong one
-    // (AGENTS.md). This engine does not choose — it has no inventory, unlike the
-    // 68k kernel — so what it can honestly report is what the preferences point
-    // the ROM at.
-    //
-    // The CD driver first, when that is what the machine is set to start from:
-    // `bootdriver` carries CDROMRefNum, -62 (cdrom.h:24), and SheepShaver reads
-    // it exactly as Basilisk does (SheepShaver/src/main.cpp:113). Asking the
-    // `disk` list here would name a disk the Mac never starts from — and
-    // LoadPrefs adds a default one when the card names none, so on a card that
-    // carries only a disc it named a file that is not even there.
-    const char *pFirstCd = PrefsFindString ("cdrom", 0);
-    const char *pFirstDisk = PrefsFindString ("disk", 0);
-    if (PrefsFindInt32 ("bootdriver") == BOOT_DRIVER_CDROM
-        && pFirstCd != 0 && pFirstCd[0] != '\0')
+    // What kernel.cpp does before its own InitAll, in the same order and by the
+    // same code: the inventory, the clock raised from it before anything can
+    // stamp a date, then the repair — which also names the volume this session
+    // is about, and run-test.sh judges the volume that line names.
+    CardInventory ();
+    CardRefineClock ();
+    if (!CardPrepareVolumes ())
     {
-        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s (CD-ROM)", pFirstCd);
+        return OkapiaHalt;
     }
-    else if (pFirstDisk != 0 && pFirstDisk[0] != '\0')
+    if (CardRepairOnly ())
     {
-        // A leading '*' means "mount read-only" and is not part of the path.
-        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s",
-                                pFirstDisk[0] == '*' ? pFirstDisk + 1 : pFirstDisk);
-    }
-    else
-    {
-        CLogger::Get ()->Write (FROM, LogWarning, "No disk configured to start from");
+        return OkapiaHalt;
     }
 
     CLogger::Get ()->Write (FROM, LogNotice, "Initialising the emulator");

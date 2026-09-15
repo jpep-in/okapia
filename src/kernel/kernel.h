@@ -36,9 +36,6 @@ public:
 private:
     void LoadPreferences (void);
     void ApplyTimeZone (void);
-    void RefineClock (void);
-    void ReportCardContents (void);
-    bool PrepareVolumes (void);
     void ApplyModelId (void);
     void PrepareSharedFolder (void);
     void LoadKeycodes (void);

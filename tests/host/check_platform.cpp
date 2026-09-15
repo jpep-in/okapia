@@ -685,6 +685,24 @@ int main (void)
         unlink (pPath);
     }
 
+    printf ("\nla date d'un volume, comme plancher de l'horloge\n");
+    {
+        // 2026-09-15 00:00, l'heure de construction dans le repère local.
+        const long nBuild = 1789430400L;
+        // drLsMod à $FFFFFFFF, tel que libhfs le rend (décalage de 2082844800).
+        const long nSaturated = (long) (0xFFFFFFFFul - 2082844800ul);
+        Expect (nSaturated == HFS_SATURATED_DATE, "la valeur saturée est bien 2040-02-06 06:28:15");
+        Expect (!HfsDateIsPlausible (nSaturated, nBuild),
+                "un drLsMod saturé est refusé (l'horloge restait bloquée en 2040)");
+        Expect (!HfsDateIsPlausible (nSaturated - 1, nBuild),
+                "une seconde avant aussi : dix ans après la construction, ce n'est pas un usage");
+        Expect (HfsDateIsPlausible (nBuild - 86400, nBuild), "hier est plausible");
+        Expect (HfsDateIsPlausible (nBuild + 5L * 365 * 86400, nBuild),
+                "cinq ans après la construction aussi : un noyau vieillit");
+        Expect (!HfsDateIsPlausible (nBuild + HFS_PLAUSIBLE_AHEAD + 1, nBuild),
+                "au-delà de la borne, refusé");
+    }
+
     printf ("\n%u écart(s)\n", s_nFailures);
     return s_nFailures == 0 ? 0 : 1;
 }

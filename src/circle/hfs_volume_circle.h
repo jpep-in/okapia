@@ -30,6 +30,22 @@ struct THfsVolumeInfo
     long          nLastModified;
 };
 
+// The largest drLsMod a volume can carry, $FFFFFFFF, in the same frame as
+// nLastModified: 2040-02-06 06:28:15, the end of the Macintosh's 32-bit clock
+// (Inside Macintosh: Operating System Utilities, "Date-Time Record").
+static const long HFS_SATURATED_DATE = 2212122495L;
+
+// How far past the kernel's build time a volume date is still believed.
+static const long HFS_PLAUSIBLE_AHEAD = 10L * 366 * 24 * 60 * 60;
+
+// Is nLastModified evidence of when the machine was last used, or a damaged
+// field? Both arguments in local seconds. The saturated value is refused
+// outright — it is what an all-ones field reads as — and so is anything more
+// than HFS_PLAUSIBLE_AHEAD past the build, because the clock never goes back:
+// one date accepted in error would hold the Macintosh there for good, while one
+// refused in error only costs a clock that starts at the build time.
+bool HfsDateIsPlausible (long nWhen, long nBuildLocal);
+
 // Read the MDB and say whether the volume was unmounted cleanly. Must run
 // before any mount, because mounting is what repairs the answer away.
 bool HfsInspect (const char *pPath);

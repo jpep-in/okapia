@@ -115,7 +115,8 @@ PLATFORM_SRCS = $(OKAPIA)/compositor_circle.cpp $(OKAPIA)/video_shared_circle.cp
                 $(OKAPIA)/timer_circle.cpp $(OKAPIA)/tick_circle.cpp \
                 $(OKAPIA)/input_circle.cpp $(OKAPIA)/audio_circle.cpp \
                 $(OKAPIA)/user_strings_circle.cpp $(OKAPIA)/extfs_sync_circle.cpp \
-                $(OKAPIA)/hfs_volume_circle.cpp $(OKAPIA)/mac_encoding_circle.cpp \
+                $(OKAPIA)/hfs_volume_circle.cpp $(OKAPIA)/card_circle.cpp \
+                $(OKAPIA)/mac_encoding_circle.cpp \
                 $(MACEMU)/CrossPlatform/video_blit.cpp \
                 $(wildcard $(OKAPIA)/sheepshaver/*.cpp)
 endif

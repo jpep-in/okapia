@@ -664,3 +664,14 @@ THfsSystemFlavour HfsFlavourOf (const THfsSystemVersion *pVersion)
     }
     return pVersion->bNativeCode ? HfsFlavourUniversal : HfsFlavour68k;
 }
+
+bool HfsDateIsPlausible (long nWhen, long nBuildLocal)
+{
+    // >=, not >: the saturated value is representable, and that is precisely
+    // why a first guard written as "beyond what HFS can hold" let it through.
+    if (nWhen >= HFS_SATURATED_DATE)
+    {
+        return false;
+    }
+    return nWhen <= nBuildLocal + HFS_PLAUSIBLE_AHEAD;
+}

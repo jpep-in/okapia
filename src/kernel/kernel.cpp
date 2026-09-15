@@ -20,6 +20,7 @@
 #include "xpram.h"
 #include "spcflags.h"
 #include "hfs_volume_circle.h"
+#include "card_circle.h"
 
 #define FROM "okapia"
 
@@ -54,9 +55,6 @@ extern "C" int fpu_selftest_extended (uint32 *first);
 // left is the floor below which a Mac cannot start at all, so that a typo in
 // "ramsize" produces a message instead of a failed allocation.
 static const uint32 MIN_MAC_RAM = 4 * 1024 * 1024;
-
-// The time-zone offset the timer actually accepted, in minutes east of UTC.
-static int s_nTimeZoneMinutes = 0;
 
 CKernel::CKernel (void)
 {
@@ -182,13 +180,13 @@ void CKernel::ApplyTimeZone (void)
             CLogger::Get ()->Write (FROM, LogWarning, "timezone %d is out of range, staying on UTC",
                             nMinutes);
             nMinutes = 0;
+            // Back to UTC in the timer too, whichever of the two calls refused:
+            // CardRefineClock() reads the zone from the timer, and an offset
+            // accepted there and then abandoned here would put the two frames
+            // it compares an hour or two apart.
+            CTimer::Get ()->SetTimeZone (0);
         }
     }
-
-    // What was actually applied, which is not always what the card asked for.
-    // RefineClock() compares a volume date against this, and reading the
-    // preference again there would use an offset the timer rejected.
-    s_nTimeZoneMinutes = nMinutes;
 
     // Circle's formatter has no %+d, so the sign is spelled out.
     const unsigned nAbs = (unsigned) (nMinutes < 0 ? -nMinutes : nMinutes);
@@ -196,329 +194,6 @@ void CKernel::ApplyTimeZone (void)
                     "Clock: %s (UTC%s%u:%02u), from the build time — no RTC and no NTP yet",
                     (const char *) *CTimer::Get ()->GetTimeString (),
                     nMinutes < 0 ? "-" : "+", nAbs / 60, nAbs % 60);
-}
-
-/*
- *  What the card carries
- *
- *  A file name says nothing about whether a Mac can start from an image, and
- *  guessing from one is how a boot failure ends up looking like an emulator
- *  bug. libhfs answers exactly: a non-zero blessed CNID is the System folder
- *  the ROM itself will look for. Read-only throughout — this describes the
- *  volumes, it does not touch them.
- */
-
-// Enough for any card worth booting from, and it costs 8 KB of stack-free BSS.
-static const unsigned MAX_VOLUMES = 8;
-static THfsVolumeInfo s_Volumes[MAX_VOLUMES];
-static unsigned s_nVolumes = 0;
-
-// The volume the Mac will start from: the first configured disk that is there.
-// Basilisk offers them to the ROM in the order disk.cpp reads them, so this is
-// the one whose System decides the model id.
-static char s_BootVolume[64] = "";
-
-void CKernel::ReportCardContents (void)
-{
-    // The scan itself always runs: the fallback boot volume and the clock below
-    // both depend on it. The preference only decides whether it is listed.
-    s_nVolumes = HfsInventory (s_Volumes, MAX_VOLUMES);
-
-    if (s_nVolumes == 0)
-    {
-        CLogger::Get ()->Write (FROM, LogWarning, "No HFS volume found on the card");
-        return;
-    }
-    if (!PrefsFindBool ("hfsinventory"))
-    {
-        return;
-    }
-
-    for (unsigned i = 0; i < s_nVolumes; i++)
-    {
-        const THfsVolumeInfo *pInfo = &s_Volumes[i];
-        CLogger::Get ()->Write (FROM, LogNotice,
-                        "%s: \"%s\", %lu MB, %lu MB free, %lu files, %lu folders, %s, %s",
-                        pInfo->Path, pInfo->Name,
-                        pInfo->TotalKB / 1024, pInfo->FreeKB / 1024,
-                        pInfo->NumFiles, pInfo->NumDirs,
-                        pInfo->Blessed != 0 ? "bootable" : "no System folder",
-                        pInfo->bClean ? "clean" : "in use");
-    }
-}
-
-/*
- *  Take the clock forward to the last time this machine was used
- *
- *  The build time is a floor, not an answer: it says when the kernel was made,
- *  not when the Mac last ran. The volumes on the card know better — a Mac
- *  stamps drLsMod every time it writes, so the most recent one is roughly when
- *  the machine was last switched off. That is a much better guess, it follows
- *  the user's own use rather than the developer's, and it costs one field of an
- *  inventory that already runs.
- *
- *  It is a floor too, never a correction: the clock only ever moves forward
- *  here. A volume dated in the past is simply older evidence, and a volume
- *  dated beyond what HFS can express is corrupt, not prescient.
- *
- *  Real sources still come first when they exist: an RTC, then NTP (plan §10).
- *  Both belong here, ahead of this, and nothing downstream will have to change.
- */
-
-void CKernel::RefineClock (void)
-{
-    // HFS keeps drLsMod as 32-bit seconds from 1904, which runs out in
-    // February 2040. Anything past that is a damaged field, not a date.
-    static const long HFS_LAST_DATE = 2212122496L;      // 2040-02-06 UTC
-
-    // Same frame on both sides: drLsMod is local time, the build time is UTC.
-    // Comparing them raw is how you end up an hour out, twice a year.
-    const long nOffset = (long) s_nTimeZoneMinutes * 60;
-    long nBest = (long) OKAPIA_BUILD_TIME + nOffset;
-    const char *pFrom = 0;
-
-    // And never behind the clock we are already keeping. This runs again after
-    // a restart from Mac OS, minutes into the session, and a floor made only of
-    // the build time would wind it back — which is precisely the drLsMod before
-    // drCrDate that fsck_hfs reports as "MDB needs minor repair".
-    const long nNow = (long) CTimer::Get ()->GetLocalTime ();
-    if (nNow > nBest)
-    {
-        nBest = nNow;
-    }
-
-    for (unsigned i = 0; i < s_nVolumes; i++)
-    {
-        const long nWhen = s_Volumes[i].nLastModified;
-        if (nWhen > HFS_LAST_DATE)
-        {
-            CLogger::Get ()->Write (FROM, LogWarning, "%s: last-modified date is out of range, ignored",
-                            s_Volumes[i].Path);
-            continue;
-        }
-        if (nWhen > nBest)
-        {
-            nBest = nWhen;
-            pFrom = s_Volumes[i].Path;
-        }
-    }
-
-    if (pFrom == 0)
-    {
-        return;                         // the build time already wins
-    }
-
-    // TRUE: nBest is local seconds, which is what SetTime stores.
-    if (!CTimer::Get ()->SetTime ((unsigned) nBest, TRUE))
-    {
-        CLogger::Get ()->Write (FROM, LogWarning, "Could not move the clock forward");
-        return;
-    }
-
-    CLogger::Get ()->Write (FROM, LogNotice, "Clock: %s, from %s — later than the build time",
-                    (const char *) *CTimer::Get ()->GetTimeString (), pFrom);
-}
-
-/*
- *  Get the configured volumes into a state the Mac will accept
- *
- *  A Mac refuses to start from a volume whose MDB still says "in use", and that
- *  is exactly what an interrupted session leaves behind — on real hardware too.
- *  Repairing it is what a second bootable System would do; doing it ourselves
- *  is why a hard stop here costs the boot and not the data. It writes to the
- *  user's volume, so "hfsrepair false" turns it off and the Mac is then left to
- *  show the question-mark floppy, which is the honest alternative.
- */
-
-// Does the inventory list this path as carrying a System folder? Unknown paths
-// answer no: the inventory covers every HFS volume in the card's root.
-static bool VolumeIsBootable (const char *pPath)
-{
-    for (unsigned i = 0; i < s_nVolumes; i++)
-    {
-        if (strcmp (s_Volumes[i].Path, pPath) == 0)
-        {
-            return s_Volumes[i].Blessed != 0;
-        }
-    }
-    return false;
-}
-
-// CDROMRefNum (cdrom.h:24), as the `bootdriver` preference states it. Not
-// included from there: this file is built for both engines and each has its own
-// cdrom.h, while the number is the Macintosh's and the same in both.
-static const int BOOT_DRIVER_CDROM = -62;
-
-// Is this path in the `cdrom` list? A volume can be in one list or the other,
-// never both, and the fallback below has to know: adding a `disk` line for an
-// image already opened as a CD-ROM would hand the same file to the Mac twice,
-// through two drivers, which is a mounted-twice volume and not a spare drive.
-static bool VolumeIsCdrom (const char *pPath)
-{
-    for (int i = 0; ; i++)
-    {
-        const char *pCd = PrefsFindString ("cdrom", i);
-        if (pCd == 0)
-        {
-            return false;
-        }
-        if (strcmp (pCd, pPath) == 0)
-        {
-            return true;
-        }
-    }
-}
-
-bool CKernel::PrepareVolumes (void)
-{
-    const bool bRepair = PrefsFindBool ("hfsrepair");
-    unsigned nUsable = 0;
-    char FirstPresent[sizeof s_BootVolume]  = "";
-    char FirstBootable[sizeof s_BootVolume] = "";
-
-    for (int i = 0; ; i++)
-    {
-        const char *pDisk = PrefsFindString ("disk", i);
-        if (pDisk == 0)
-        {
-            break;
-        }
-        if (*pDisk == '\0')
-        {
-            continue;
-        }
-
-        // A '*' prefix means read-only to Basilisk (disk.cpp:161); the path on
-        // the card starts after it.
-        const char *pPath = (*pDisk == '*') ? pDisk + 1 : pDisk;
-
-        FILE *pFile = fopen (pPath, "rb");
-        if (pFile == 0)
-        {
-            CLogger::Get ()->Write (FROM, LogError, "disk %s: not on the card", pPath);
-            continue;
-        }
-        fclose (pFile);
-        if (nUsable++ == 0)
-        {
-            snprintf (FirstPresent, sizeof FirstPresent, "%s", pPath);
-        }
-
-        // The ROM does not start from the first drive, it starts from the first
-        // one carrying a System — so a data volume listed ahead of the boot one
-        // must not be mistaken for it. The inventory already knows which is
-        // which, and getting this wrong would send ApplyModelId() to the wrong
-        // volume and run-test.sh to a volume the session never wrote.
-        if (FirstBootable[0] == '\0' && VolumeIsBootable (pPath))
-        {
-            snprintf (FirstBootable, sizeof FirstBootable, "%s", pPath);
-        }
-
-        if (HfsInspect (pPath))
-        {
-            continue;
-        }
-        if (!bRepair)
-        {
-            CLogger::Get ()->Write (FROM, LogWarning,
-                            "%s: left as it is (hfsrepair false); the Mac will refuse it",
-                            pPath);
-            continue;
-        }
-        HfsRepair (pPath);
-    }
-
-    // The CD-ROM drives are checked but never touched. CDROMInit() opens them
-    // read-only whatever anybody asks (cdrom.cpp:324), so a repair could not
-    // write to one, and offering to repair what cannot be written is the kind
-    // of promise this firmware does not make.
-    char FirstCd[sizeof s_BootVolume] = "";
-    for (int i = 0; ; i++)
-    {
-        const char *pCd = PrefsFindString ("cdrom", i);
-        if (pCd == 0)
-        {
-            break;
-        }
-        if (*pCd == '\0')
-        {
-            continue;
-        }
-        FILE *pFile = fopen (pCd, "rb");
-        if (pFile == 0)
-        {
-            CLogger::Get ()->Write (FROM, LogError, "cdrom %s: not on the card", pCd);
-            continue;
-        }
-        fclose (pFile);
-        if (FirstCd[0] == '\0')
-        {
-            snprintf (FirstCd, sizeof FirstCd, "%s", pCd);
-        }
-        CLogger::Get ()->Write (FROM, LogNotice, "cdrom %s", pCd);
-    }
-
-    // A Macintosh told to start from the CD driver starts from the first disc
-    // that driver offers, so that is the volume this session is about — and
-    // naming it is not decoration: run-test.sh judges what this line names, and
-    // ApplyModelId() reads its System. Answering with a disk here would judge a
-    // volume the session never wrote. `bootdriver` is CDROMRefNum, -62
-    // (cdrom.h:24), written into the parameter RAM at 0x7a by main.cpp:139.
-    if (PrefsFindInt32 ("bootdriver") == BOOT_DRIVER_CDROM && FirstCd[0] != '\0')
-    {
-        snprintf (s_BootVolume, sizeof s_BootVolume, "%s", FirstCd);
-        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s (CD-ROM)", s_BootVolume);
-        return true;
-    }
-
-    if (nUsable > 0)
-    {
-        // Named explicitly because it is not deducible from the card: with two
-        // images present, the one the Mac starts from is the first configured
-        // one *that carries a System*. scripts/run-test.sh judges this volume,
-        // and ApplyModelId() reads its System version, so naming the wrong one
-        // is worse than naming none.
-        if (FirstBootable[0] != '\0')
-        {
-            snprintf (s_BootVolume, sizeof s_BootVolume, "%s", FirstBootable);
-        }
-        else
-        {
-            // Nothing the inventory could open as a bootable volume. Say so
-            // rather than pass the first drive off as the boot one.
-            snprintf (s_BootVolume, sizeof s_BootVolume, "%s", FirstPresent);
-            CLogger::Get ()->Write (FROM, LogWarning,
-                            "No configured disk carries a System; assuming %s",
-                            s_BootVolume);
-        }
-        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s", s_BootVolume);
-        return true;
-    }
-
-    // Nothing the preferences name is actually there. The inventory already
-    // knows which images on the card a Mac could start from, so say so and use
-    // one rather than stopping at a question-mark floppy over a stale path.
-    for (unsigned i = 0; i < s_nVolumes; i++)
-    {
-        if (s_Volumes[i].Blessed == 0 || VolumeIsCdrom (s_Volumes[i].Path))
-        {
-            continue;
-        }
-        CLogger::Get ()->Write (FROM, LogWarning,
-                        "No configured disk exists; falling back to %s (\"%s\")",
-                        s_Volumes[i].Path, s_Volumes[i].Name);
-        CLogger::Get ()->Write (FROM, LogNotice, "Boot volume: %s", s_Volumes[i].Path);
-        PrefsAddString ("disk", s_Volumes[i].Path);
-        snprintf (s_BootVolume, sizeof s_BootVolume, "%s", s_Volumes[i].Path);
-        if (!s_Volumes[i].bClean && bRepair)
-        {
-            HfsRepair (s_Volumes[i].Path);
-        }
-        return true;
-    }
-
-    CLogger::Get ()->Write (FROM, LogError, "No bootable volume on the card");
-    return false;
 }
 
 /*
@@ -543,17 +218,18 @@ void CKernel::ApplyModelId (void)
                         (int) PrefsFindInt32 ("modelid"));
         return;
     }
-    if (s_BootVolume[0] == '\0')
+    const char *pBootVolume = CardBootVolume ();
+    if (pBootVolume[0] == '\0')
     {
         return;
     }
 
     THfsSystemVersion Version;
-    if (!HfsSystemVersion (s_BootVolume, &Version))
+    if (!HfsSystemVersion (pBootVolume, &Version))
     {
         CLogger::Get ()->Write (FROM, LogWarning,
                         "%s: no System version found, keeping model %d",
-                        s_BootVolume, (int) PrefsFindInt32 ("modelid"));
+                        pBootVolume, (int) PrefsFindInt32 ("modelid"));
         return;
     }
 
@@ -569,7 +245,7 @@ void CKernel::ApplyModelId (void)
 
     CLogger::Get ()->Write (FROM, LogNotice,
                     "%s: \"%s\" says System %u.%u.%u (%s), %s — model %d%s",
-                    s_BootVolume, Version.File,
+                    pBootVolume, Version.File,
                     Version.nMajor, Version.nMinor, Version.nBugfix,
                     Version.Short[0] != '\0' ? Version.Short : "no short version",
                     FlavourName[HfsFlavourOf (&Version)],
@@ -664,12 +340,12 @@ bool CKernel::StartMacintosh (void)
         return false;
     }
 
-    ReportCardContents ();
-    RefineClock ();
+    CardInventory ();
+    CardRefineClock ();
     PrepareSharedFolder ();
     LoadKeycodes ();
 
-    if (!PrepareVolumes ())
+    if (!CardPrepareVolumes ())
     {
         return false;
     }
@@ -677,16 +353,9 @@ bool CKernel::StartMacintosh (void)
     // Before InitAll: rom_patches.cpp reads modelid while patching the ROM.
     ApplyModelId ();
 
-    // A card carrying this marker asks for the repair and nothing else. It
-    // exists so a test can judge the volume in the state the repair leaves it:
-    // booting the Mac would remount it and mark it in use again within a couple
-    // of seconds, which is the honest behaviour but hides what we want to
-    // measure. scripts/run-test.sh uses it.
-    FILE *pMarker = fopen ("/repair-only", "r");
-    if (pMarker != 0)
+    // Before InitAll, after the repair: see card_circle.h.
+    if (CardRepairOnly ())
     {
-        fclose (pMarker);
-        CLogger::Get ()->Write (FROM, LogNotice, "Repair-only card: stopping here");
         return false;
     }
 
