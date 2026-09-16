@@ -11,7 +11,7 @@
  * and answers indices into it. Nothing here is drawn — that is still the
  * theme's job — and nothing here is remembered between screens.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_page_h

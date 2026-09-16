@@ -11,7 +11,7 @@
  * that wrong is a Macintosh that starts from the wrong System, or a volume
  * mounted for writing that was meant to be safe.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

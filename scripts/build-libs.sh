@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Configure and build circle-stdlib (newlib + Circle) for one target, and switch
 # between targets without rebuilding what was already built.
 #   usage: build-libs.sh qemu | pi3 | pi4 | pi5

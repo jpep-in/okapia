@@ -12,7 +12,7 @@
  * plain functions, and a host libc that defines them as macros turns those
  * declarations into a parse error.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_CIRCLE_H

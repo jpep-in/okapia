@@ -1,7 +1,7 @@
 //
 // okapia_input.cpp — the firmware's own keyboard and mouse, before the Mac has any.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 

@@ -1,7 +1,7 @@
 /*
  * render_pages.cpp — draw the settings, the information pane and a confirmation.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

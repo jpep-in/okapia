@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Boot the Mac OS 8.6 install CD, in a window, to install onto a volume.
 #   usage: run-cd.sh
 #

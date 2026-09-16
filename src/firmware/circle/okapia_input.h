@@ -15,7 +15,7 @@
 // claimed exactly once in the life of a boot. This file therefore keeps that
 // one registration and passes the reports on — FwInputPassMouseTo below.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #ifndef _okapia_input_h

@@ -3,7 +3,7 @@
  * <sys/utime.h> uses time_t without including <time.h>. Both are fixed here.
  * This file precedes newlib's on the include path.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_UTIME_H

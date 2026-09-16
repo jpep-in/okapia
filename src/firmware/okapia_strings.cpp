@@ -1,7 +1,7 @@
 /*
  * okapia_strings.cpp — everything the firmware says, in every language it speaks.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

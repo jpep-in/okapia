@@ -9,7 +9,7 @@
  * not more of it. A split decided by hand goes stale the first time a metric
  * changes; this one cannot.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

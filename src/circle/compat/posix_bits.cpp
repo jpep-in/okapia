@@ -6,7 +6,7 @@
  * They report instead of pretending to succeed — with the exception of sleep,
  * which has a real meaning here.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include <unistd.h>

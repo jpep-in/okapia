@@ -7,7 +7,7 @@
  * after: it is also what makes "correcting a part corrects it everywhere"
  * something one can watch happen.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_specimen_h

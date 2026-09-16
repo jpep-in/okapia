@@ -8,7 +8,7 @@
  * the presentation path, since a magnified canvas is what anyone will actually
  * see and it is where an off-by-one shows up first.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

@@ -9,7 +9,7 @@
  * unraised. Compiled once per engine, like the rest of the platform layer: each
  * copy reads its own engine's preferences.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_CARD_H

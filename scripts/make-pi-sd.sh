@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Stage the boot files for a real Raspberry Pi 4 card in rpi4-sd-contents/.
 #   usage: make-pi-sd.sh
 #

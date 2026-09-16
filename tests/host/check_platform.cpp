@@ -11,7 +11,7 @@
  * common_prefs_items and our platform_prefs_items are linked in, not mocked —
  * so a keyword added to either is covered by these checks the day it is added.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

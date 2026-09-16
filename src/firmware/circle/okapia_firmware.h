@@ -6,7 +6,7 @@
 // which is everything this needs. It claims the display, has its say, gives it
 // back, and answers what should happen next.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #ifndef _okapia_firmware_h

@@ -18,7 +18,7 @@
  *
  * Off unless src/kernel/Makefile passes OKAPIA_TRACE=1.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "sysdeps.h"

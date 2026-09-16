@@ -5,7 +5,7 @@
  * than repeated: see hal_circle.h for what this owns and what it deliberately
  * does not.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

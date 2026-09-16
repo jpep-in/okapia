@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Generate the MacRoman <-> Unicode table from Python's own mac_roman codec.
 
 The shared folder sits between a FAT card, whose long names are UTF-8, and a

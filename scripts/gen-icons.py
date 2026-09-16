@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Convert the design reference's LVGL icons into the firmware's own format.
 
 boot-menu/ ships the icons as LVGL 9 I1 descriptors — an eight-byte palette

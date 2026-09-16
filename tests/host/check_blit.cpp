@@ -11,7 +11,7 @@
  * inverted palette must come out inverted. A test using only the ordinary
  * black-on-white palette would pass on the faulty code.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

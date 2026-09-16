@@ -1,7 +1,7 @@
 //
 // specimen_main.cpp — entry point of the theme specimen kernel.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "specimen_kernel.h"

@@ -10,7 +10,7 @@
  * Nothing here is silent. A stub that matters says so when it is called; a stub
  * that cannot matter says why in a comment instead of at run time.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

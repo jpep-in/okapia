@@ -12,7 +12,7 @@
 // two engines lay their regions out differently inside it, which is their
 // business: this only owns the extent.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #ifndef _okapia_mac_ram_circle_h

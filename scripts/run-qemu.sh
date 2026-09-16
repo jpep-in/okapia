@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Run a built kernel under QEMU (Raspberry Pi 3, AArch64).
 #   usage: run-qemu.sh [path/to/kernel8.img] [extra qemu args...]
 #   -s -S can be appended to wait for GDB on :1234

@@ -1,3 +1,5 @@
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Which target the tree is currently built for — sourced, never run.
 #
 # One tree, one target at a time: circle-stdlib configures newlib and Circle for

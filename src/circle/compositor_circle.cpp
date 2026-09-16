@@ -4,7 +4,7 @@
  * Lifted out of the Basilisk video driver unchanged in behaviour: the 16x16
  * grid, the shadow copy, the three scaling paths. Only the plumbing moved.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

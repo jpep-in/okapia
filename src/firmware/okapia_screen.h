@@ -11,7 +11,7 @@
  * tested with synthetic events on a development machine — the first part of the
  * firmware that can be checked without a screen at all (tests/host/).
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_screen_h

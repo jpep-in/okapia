@@ -2,7 +2,7 @@
  * rom_chime.cpp — see rom_chime.h, and docs/notes/research/startup-chime.md for how each
  * layout was established.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

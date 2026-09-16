@@ -16,7 +16,7 @@
  * It is NSDivideRect and the Mac's own rectangle arithmetic, and nothing more:
  * no constraints, no solver, no second pass.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_layout_h

@@ -18,7 +18,7 @@
  * ROMAN.TXT — see scripts/gen-macroman.py. Typing 128 code points by hand is
  * how one accented letter in one language goes wrong for years.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

@@ -175,7 +175,7 @@ def header():
  * The logo in design units, the same numbers the README's SVG and PNGs are
  * drawn from. OkapiaPaintLogo() scales them to the rectangle it is given.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_logo_shape_h

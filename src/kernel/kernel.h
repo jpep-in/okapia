@@ -11,7 +11,7 @@
 //   4. drivers, input
 //   5. the emulator
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #ifndef _okapia_kernel_h

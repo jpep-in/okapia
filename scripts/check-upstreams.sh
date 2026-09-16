@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Report how far the pinned submodules lag behind upstream. Read-only: fetches,
 # never checks out, never commits. The one script that needs the network.
 set -euo pipefail

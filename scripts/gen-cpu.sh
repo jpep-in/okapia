@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Generate the UAE 68k opcode tables.
 #
 # Two-stage cross build: build68k and gencpu are compiled for THIS machine

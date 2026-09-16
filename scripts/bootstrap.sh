@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Fetch and pin the build dependencies. Idempotent: safe to re-run after a
 # network failure. Reference repos are NOT fetched here — see fetch-reference.sh.
 set -euo pipefail

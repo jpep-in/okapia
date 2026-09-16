@@ -11,7 +11,7 @@
  * specimen's layout would make every change of layout a change of test, and
  * would say nothing more.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

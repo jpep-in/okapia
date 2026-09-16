@@ -18,7 +18,7 @@
  * values and answers values; the caller reads and writes. That is what lets the
  * whole screen be driven by synthetic events on a development machine.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_settings_h

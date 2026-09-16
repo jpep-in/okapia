@@ -12,7 +12,7 @@
 // and depth are the display's, not ours, so the second claim could only ever
 // ask for exactly what the first one already has.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #ifndef _okapia_output_h

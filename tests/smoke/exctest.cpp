@@ -6,7 +6,7 @@
 // no upstream platform enables, hence one nobody tests). Choosing between them
 // should rest on a measurement, not on a guess — this is that measurement.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "exctest.h"

@@ -7,7 +7,7 @@
 // does, through card_circle.cpp: a card is not less at risk for starting the
 // other engine. No shared folder preparation and no restart loop yet.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "kernel_ppc.h"

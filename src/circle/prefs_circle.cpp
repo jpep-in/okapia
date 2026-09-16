@@ -11,7 +11,7 @@
  * This replaces dummy/prefs_dummy.cpp, which looked for the file relative to a
  * current directory the kernel never sets.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

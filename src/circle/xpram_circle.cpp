@@ -13,7 +13,7 @@
  * in it changes, called from the Mac's own PRAM access rather than from a
  * timer — see emul_op_hook_circle.cpp.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

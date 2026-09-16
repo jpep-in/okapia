@@ -8,7 +8,8 @@
 // On the Raspberry Pi 5 the requested resolution is ignored outright, so a test
 // that echoes its own request would be worse than no test at all.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by

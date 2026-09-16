@@ -9,7 +9,7 @@
  * this; without it the Finder shows every file as created in 1980, which is
  * what an all-zero FAT timestamp means.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "utime.h"

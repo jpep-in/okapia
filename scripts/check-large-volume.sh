@@ -12,7 +12,7 @@
 #
 # Needs about 7 GB free while it runs; everything is deleted afterwards.
 #
-# Copyright (C) 2026  Okapia contributors
+# Copyright (C) 2026  Jonathan Pepin
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 

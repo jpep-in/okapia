@@ -13,7 +13,7 @@
  * Avoided on purpose: bevels and gradients, striped title bars, Aqua gel, soft
  * shadows. A hard offset shadow stays undated, and costs one filled rectangle.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

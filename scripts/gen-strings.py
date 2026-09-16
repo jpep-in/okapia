@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Turn the translation table into C++ tables and an enumeration.
 
 The strings are typed once, in a file anyone can edit and diff, and the code

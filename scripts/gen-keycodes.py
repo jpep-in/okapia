@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Generate the USB HID -> Mac ADB key table from Basilisk II's own keycodes file.
 
 SDL2 scancodes *are* USB HID usage IDs — SDL defines its scancode set from the

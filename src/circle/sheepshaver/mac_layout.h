@@ -17,7 +17,7 @@
  * them into two static arrays for the hosts that cannot place them
  * (kpx_cpu/src/cpu/vm.hpp:207-218) and Okapia takes the same road.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_MAC_LAYOUT_H

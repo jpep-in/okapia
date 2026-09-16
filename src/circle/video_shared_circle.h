@@ -20,7 +20,7 @@
  * from — the heap on one side, a fixed area inside the Mac's own address space
  * on the other.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_VIDEO_SHARED_CIRCLE_H

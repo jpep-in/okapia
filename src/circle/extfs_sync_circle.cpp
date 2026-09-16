@@ -18,7 +18,7 @@
  * Hooked at link time rather than by patching external/ (docs/contributing/guide.md). Circle
  * invokes ld directly, so the flag is a bare --wrap.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

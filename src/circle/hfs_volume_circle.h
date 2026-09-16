@@ -1,7 +1,7 @@
 /*
  * hfs_volume_circle.h — what Okapia knows about the volumes on the card.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_HFS_VOLUME_H

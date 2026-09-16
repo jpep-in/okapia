@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Run Okapia under QEMU with a visible window, so the emulated Mac's screen can
 # be watched directly. Serial still goes to a log.
 #   usage: run-live.sh [seconds]   (no argument: runs until closed)

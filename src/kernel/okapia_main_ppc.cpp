@@ -4,7 +4,7 @@
 // The SheepShaver engine's one exported name; see okapia_main.cpp for why there
 // is exactly one.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "kernel_ppc.h"

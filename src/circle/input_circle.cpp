@@ -17,7 +17,7 @@
  * the emulation thread, where nothing else is looking. It is the shape
  * infinite-mac uses for the same reason (JS/input_js.cpp:15).
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

@@ -13,7 +13,7 @@
  * *is* the repair. Which of the two runs is a preference, never a default this
  * file decides on its own: see docs/topics/storage.md.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

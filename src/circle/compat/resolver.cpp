@@ -5,7 +5,7 @@
  * its own lookups. This exists so upstream's ether.cpp compiles unmodified, and
  * says so if it is ever actually called.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "config.h"

@@ -11,7 +11,7 @@
  * ones a dialogue does, because a frame that is nearly the dialogue's reads as
  * a mistake rather than as emphasis.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_confirm_h

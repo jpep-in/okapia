@@ -27,7 +27,7 @@
  * board_sound_circle.cpp rather than in hal_circle.cpp, which the theme
  * specimen kernel links and which therefore may name no emulator header.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_HAL_CIRCLE_H

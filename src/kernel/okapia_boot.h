@@ -10,7 +10,7 @@
 // engine so the two cores can share an image, and these two names are the
 // deliberate exception (scripts/merge-engines.sh).
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #ifndef _okapia_boot_h

@@ -50,8 +50,8 @@ The target is Quadra-class on a small board, not a workstation.
 - **English everywhere**: code, comments, log messages, documentation, commit messages.
 - **Follow each layer's convention**: `CClassName`/`m_member`/`pName` in Circle-side code, `snake_case` in Basilisk and
   SheepShaver code. Don't unify.
-- **Adapted upstream files carry their origin and the list of modifications in their header.** New files carry the
-  GPL-3.0-or-later SPDX line and "Okapia contributors".
+- **Adapted upstream files carry their origin and the list of modifications in their header.** Every other file
+  carries `Copyright (C) <year>  <author>` and `SPDX-License-Identifier: GPL-3.0-or-later` (see [Licence](#licence)).
 - **Comments say why**, with the measurement or the upstream `file:line` that settled it; they do not restate the code.
 - **Say what was actually obtained**: a mode, a device, a clock source — log what the firmware or the driver returned,
   never what was asked for.
@@ -69,6 +69,12 @@ The target is Quadra-class on a small board, not a workstation.
   ([Build](build.md#dependencies)).
 
 ## Licence
+
+- **Copyright stays with each author; there is no assignment and no CLA.** Every source file, script and Makefile
+  starts with `Copyright (C) <year>  <name>` and `SPDX-License-Identifier: GPL-3.0-or-later`. A new file carries its
+  author's name; a contributor who makes a substantial change to an existing file adds their own line below the
+  others, never replacing one. Adapted upstream files keep the upstream line first. Git history records the rest:
+  there is no `AUTHORS` file.
 
 - Circle is GPL-3.0; Basilisk II and SheepShaver are GPL v2 **or later**; libhfs is GPL v2 or later. The combined work
   is distributed under **GPLv3** (`LICENSE`).

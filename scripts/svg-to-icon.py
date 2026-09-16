@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Turn one of Okapia's own icon drawings into the LVGL descriptor the build reads.
 
 The system folder icons come from Apple artwork, captured as PNG and re-packed

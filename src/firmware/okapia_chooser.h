@@ -12,7 +12,7 @@
  * checked — and it is the same division that already holds between the drawing
  * primitives and the frame buffer.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_chooser_h

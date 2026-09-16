@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Fetch the X11 Adobe Helvetica bitmap faces and vendor the ones the firmware
 # uses into assets/fonts/, trimmed to the characters it can show.
 #

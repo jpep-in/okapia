@@ -10,7 +10,7 @@
  * The layout itself is in mac_layout.cpp, checked on a development machine.
  * This file allocates what that plan describes and says where it landed.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

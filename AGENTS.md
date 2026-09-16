@@ -83,6 +83,8 @@ Multicore (S1) is a goal, not implemented: everything runs on core 0 today.
 
 ## Code
 
+- **Licence header on every file**: `Copyright (C) <year>  <name>` + `SPDX-License-Identifier: GPL-3.0-or-later`;
+  a substantial change adds a line, never replaces one ([Licence](docs/contributing/guide.md#licence)).
 - **English everywhere**: code, comments, logs, documentation, commits.
 - Follow each layer's convention: `CClassName`/`m_member` in Circle-side code, `snake_case` in Basilisk and SheepShaver
   code. Don't unify. Adapted upstream files carry their origin and modification list in the header.

@@ -1,3 +1,5 @@
+// Copyright (C) 2026  Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The compositor times itself with this and nothing else. A counter that only
 // goes up is all the arithmetic needs; the numbers are meaningless here, and
 // the tests never read them.

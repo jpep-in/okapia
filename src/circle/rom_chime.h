@@ -19,7 +19,7 @@
  *
  * Pure: no Circle and no card, so tests/host checks it against ROMs it builds.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_ROM_CHIME_H

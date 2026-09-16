@@ -1,7 +1,7 @@
 //
 // specimen_kernel.cpp — a kernel that does nothing but show the interface.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 

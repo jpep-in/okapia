@@ -22,7 +22,7 @@ And one consequence worth knowing before hunting for a boot failure: a NewWorld
 ROM refuses every System older than 8.1, in so many words
 (SheepShaver/src/emul_op.cpp:426-434).
 
-Copyright (C) 2026  Okapia contributors
+Copyright (C) 2026  Jonathan Pepin
 SPDX-License-Identifier: GPL-3.0-or-later
 """
 import re

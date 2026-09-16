@@ -16,7 +16,7 @@
  * be drawn at the display's own resolution instead of being magnified: a face
  * is chosen for the size actually wanted, so nothing is ever blown up.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_font_h

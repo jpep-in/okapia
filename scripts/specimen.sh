@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Render the firmware's theme specimen under QEMU and capture the screen.
 #
 # No SD card is involved and no emulator is started: this kernel links Circle

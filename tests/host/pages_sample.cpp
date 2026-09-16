@@ -7,7 +7,7 @@
  * than either does alone. The values are the awkward ones on purpose — the
  * longest sentence, the fullest card, a model whose origin has to be explained.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

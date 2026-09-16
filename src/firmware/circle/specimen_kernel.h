@@ -11,7 +11,7 @@
 // of an interface rather than an interface: the focus ring, the pressed state
 // and the pointer only mean anything under someone's hands.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #ifndef _okapia_specimen_kernel_h

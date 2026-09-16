@@ -1,7 +1,7 @@
 //
 // okapia_firmware.cpp — the boot firmware, as the kernel sees it.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 

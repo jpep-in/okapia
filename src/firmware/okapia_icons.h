@@ -6,7 +6,7 @@
  * happen to be monochrome. Keeping them in okapia_theme.cpp made that file two
  * subjects long.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_icons_h

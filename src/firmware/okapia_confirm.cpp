@@ -1,7 +1,7 @@
 /*
  * okapia_confirm.cpp — see okapia_confirm.h.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

@@ -4,7 +4,7 @@
  * Shared by the renderer and the checks, because a picture and a measurement of
  * two different cards prove less together than either does alone.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

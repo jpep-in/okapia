@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Install the host tools needed to build Okapia. Idempotent: safe to re-run.
 set -euo pipefail
 

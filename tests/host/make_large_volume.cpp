@@ -12,7 +12,7 @@
  * writes. The kernel reads that System file's 'vers' resource before the
  * Macintosh starts, and says so in the log.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

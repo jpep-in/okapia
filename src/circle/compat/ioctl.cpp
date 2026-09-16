@@ -1,7 +1,7 @@
 /*
  * ioctl.cpp — see compat/sys/ioctl.h. A stub that says so.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include <sys/ioctl.h>

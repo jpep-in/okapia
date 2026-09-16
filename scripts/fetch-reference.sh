@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Clone one reference repository on demand, shallow, into reference/.
 # References are read-only study material: never build from them, never modify them.
 # Run without arguments to list what is known and what is already local.

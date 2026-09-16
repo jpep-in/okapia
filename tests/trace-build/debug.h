@@ -1,3 +1,5 @@
+// Copyright (C) 2026  Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*
  * debug.h — diagnostic override, not part of the build.
  *

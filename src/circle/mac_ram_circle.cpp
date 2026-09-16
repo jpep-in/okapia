@@ -1,7 +1,7 @@
 //
 // mac_ram_circle.cpp — see mac_ram_circle.h.
 //
-// Copyright (C) 2026  Okapia contributors
+// Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 #include "okapia_circle.h"

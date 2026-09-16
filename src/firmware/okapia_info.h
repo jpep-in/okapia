@@ -11,7 +11,7 @@
  * card, or a display: it lays out labels and values and nothing else, which is
  * what lets it be looked at without any of those existing.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_info_h

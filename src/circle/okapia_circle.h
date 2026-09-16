@@ -9,7 +9,7 @@
  *
  * Include this before any <circle/...> header in a platform file.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_CIRCLE_H

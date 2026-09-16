@@ -11,7 +11,7 @@
  * are printed and the asymmetries are failures, at every scale the theme
  * supports — a rule that holds at 1:1 and breaks at 2.25 is not a rule.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

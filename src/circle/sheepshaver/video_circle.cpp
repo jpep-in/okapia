@@ -22,7 +22,7 @@
  * lives inside the Mac's own address space, because screen_base is a Mac
  * address and QuickDraw writes through it.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

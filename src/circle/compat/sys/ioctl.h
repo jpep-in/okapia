@@ -6,7 +6,7 @@
  * Declaring it keeps the upstream file compiling unmodified; calling it fails
  * loudly rather than silently doing nothing.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_SYS_IOCTL_H

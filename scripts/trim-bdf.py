@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Keep only the characters the firmware can show, and drop the rest of a BDF.
 
 The X11 Helvetica faces carry the whole of ISO 10646 — 756 glyphs, most of a

@@ -11,7 +11,7 @@
  * the six of kpx_cpu — found **no portability problem at all**: every one
  * compiles unchanged. Only two things had to be said, and both are below.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_SS_CONFIG_H

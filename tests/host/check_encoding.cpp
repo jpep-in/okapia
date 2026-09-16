@@ -7,7 +7,7 @@
  * better than doing half. None of it needs a card, an emulator or a Macintosh,
  * so none of it has any reason to be discovered on a card.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

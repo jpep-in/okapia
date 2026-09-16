@@ -1,7 +1,7 @@
 /*
  * okapia_icons.cpp — the marks the chrome wears, painted from their rectangle.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

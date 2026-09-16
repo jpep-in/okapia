@@ -11,7 +11,7 @@
 # compile unchanged. Two things had to be said in src/circle/sheepshaver/config.h
 # and nothing else. If that ever stops being true, this says which file.
 #
-# Copyright (C) 2026  Okapia contributors
+# Copyright (C) 2026  Jonathan Pepin
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 

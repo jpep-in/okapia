@@ -5,7 +5,7 @@
  * macOS bundle format: a directory of band files, meaningless on a FAT card.
  * Declining cleanly lets the plain-image factory take over.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #include "sysdeps.h"

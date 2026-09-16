@@ -8,7 +8,7 @@
  * With this file in place, upstream's Unix/sysdeps.h works unchanged: no
  * Okapia-specific sysdeps.h is needed. See docs/topics/engine-68k.md, build glue.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_CONFIG_H

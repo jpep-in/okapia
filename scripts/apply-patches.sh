@@ -14,7 +14,7 @@
 # build rule wants: a kernel compiled against an unpatched tree would fail in
 # ways that point nowhere near the cause.
 #
-# Copyright (C) 2026  Okapia contributors
+# Copyright (C) 2026  Jonathan Pepin
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 

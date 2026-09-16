@@ -1,7 +1,7 @@
 /*
  * okapia_gfx.cpp — surface and drawing primitives for the firmware.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

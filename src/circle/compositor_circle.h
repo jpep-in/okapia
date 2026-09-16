@@ -13,7 +13,7 @@
  * palette expander for the one indexed mode it offers — because that is the
  * part that genuinely differs.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_COMPOSITOR_CIRCLE_H

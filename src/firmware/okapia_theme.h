@@ -21,7 +21,7 @@
  * display's own resolution, and nothing is ever magnified. ThemeMake() is where
  * that happens, and it is the only place a scale factor appears.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_theme_h

@@ -9,7 +9,7 @@
  *
  * Pure: no Circle, no macemu, so tests/host checks it.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef OKAPIA_VIDEO_SIZES_CIRCLE_H

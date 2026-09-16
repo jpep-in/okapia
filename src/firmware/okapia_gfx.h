@@ -16,7 +16,7 @@
  * and framed rounded rectangle, video inversion, and text with measurement.
  * Regions are absent on purpose — the firmware never overlaps anything.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 #ifndef _okapia_gfx_h

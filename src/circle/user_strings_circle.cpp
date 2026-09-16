@@ -9,7 +9,7 @@
  *
  * Replaces dummy/user_strings_dummy.cpp, whose platform table is empty.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

@@ -16,7 +16,7 @@
  * patches/macemu/0004 adds the call site; this is what it calls. Everything
  * here runs on the emulation core, between two PowerPC instructions.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

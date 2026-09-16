@@ -5,7 +5,7 @@
  * at it — and a made-up card can hold the awkward cases a real one rarely does:
  * a volume with no System, one left in use, one that is not mounted.
  *
- * Copyright (C) 2026  Okapia contributors
+ * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

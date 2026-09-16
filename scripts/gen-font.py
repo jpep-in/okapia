@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Turn the vendored BDF faces into the firmware's font tables.
 
 BDF is plain text, so this needs no rasteriser and no build dependency — which

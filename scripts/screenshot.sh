@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Boot headless on a throwaway card and capture what is actually on the Mac's screen.
 #   usage: screenshot.sh [seconds] [width height]
 #

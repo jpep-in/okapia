@@ -1,3 +1,5 @@
+// Copyright (C) 2026  Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
 // The integer names Circle gives its own code, for the host build.
 #ifndef _circle_types_h
 #define _circle_types_h
