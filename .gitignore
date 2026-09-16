@@ -69,3 +69,4 @@ rpi4-sd-contents/
 
 # French originals of the documentation, archived for reference and never cited
 archive-fr/
+tests/smoke/kernel8.lst

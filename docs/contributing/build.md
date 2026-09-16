@@ -38,7 +38,16 @@ which `env.sh` exports as `$MAKE`), `dtc` and `gnu-getopt` with Homebrew, and th
 |---|---|---|---|
 | `external/circle-stdlib` | `codeberg.org/larchcone/circle-stdlib` (GitHub is a read-only mirror) | a **tag** (`v20`) | newlib and libstdc++; **Circle lives in `libs/circle/`**, pinned by circle-stdlib, with its docs in `libs/circle/doc/` |
 | `external/macemu` | `github.com/kanjitalk755/macemu` | a **SHA** (upstream's last tags date from 2017) | Basilisk II and SheepShaver. Not `emaculation/macemu`, dormant since April 2022 |
-| `external/hfsutils` | `github.com/JotaRandom/hfsutils` | a SHA | libhfs, GPL v2 or later |
+| `external/hfsutils` | `github.com/JotaRandom/hfsutils` | a SHA | libhfs, GPL v2 or later. See below |
+
+**Why this fork of hfsutils.** Robert Leslie's last release is 3.2.6 (`mars.org/home/rob/proj/hfs/`); the other
+GitHub copies are frozen imports of it, and no other maintained libhfs exists. JotaRandom's is the only active fork —
+a work in progress, reworked in 2025 around the build system and `hfsck`. Only `libhfs/*.c` is compiled
+(`src/kernel/Makefile`, `tests/host/Makefile`), and there the pinned SHA differs from 3.2.6 by two signatures
+(`long *` becoming `unsigned long *` in `insertx` and `v_resolve`) and one line of `os.c`. Moving this pin therefore
+starts with `git diff <old>..<new> -- libhfs` read line by line: this is the code that repairs guest volumes. If the
+fork disappears, the fallbacks are the 3.2.6 tarball from mars.org or Debian's `hfsutils` source package (3.2.6 with
+its own patches).
 
 Never `git submodule update --remote`: it moves pins blindly. `scripts/check-upstreams.sh` (the one script that needs
 the network, read-only) shows each pin, its date and tag, and the upstream commits not taken.

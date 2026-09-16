@@ -79,3 +79,6 @@ AI agents: read [`AGENTS.md`](AGENTS.md) first.
 Okapia is written by Jonathan Pepin and released under GPLv3 or later. Circle is GPLv3 (Rene Stange); Basilisk II and
 SheepShaver are GPLv2-or-later (Christian Bauer, Marc Hellwig and contributors, carried on by kanjitalk755); libhfs is
 GPLv2-or-later (Robert Leslie). No Apple ROM or system software is included.
+
+Okapia is an independent project, not affiliated with, endorsed by or sponsored by Apple Inc. Apple, Macintosh, Mac
+OS, Power Macintosh and Quadra are trademarks of Apple Inc., registered in the U.S. and other countries.
