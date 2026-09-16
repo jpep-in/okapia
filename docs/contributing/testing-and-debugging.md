@@ -62,7 +62,12 @@ Every script checks the tree is built for QEMU ([Build](build.md)); a Pi kernel 
   few seconds.
 - **`specimen.sh`** — a kernel with Circle and the firmware's drawing code only: no card, no emulator, always safe
   alongside anything. Pages are reached with arrow keys through the monitor; `live` opens a window driven by hand
-  (Tab/Shift-Tab focus, Space operates, Return the default button, Left/Right turn the page).
+  (Tab/Shift-Tab focus, Space operates, Return the default button, Left/Right turn the page). It links the real
+  `hal_circle.cpp`, which is the point — it proves the firmware runs on a board and not on a copy of itself — and
+  the price is that **`hal_circle.cpp` may name no emulator header**: no `prefs.h`, no `sysdeps.h`, nothing from
+  `src/firmware/circle/` it does not compile. Anything on the board that needs a Macintosh behind it goes in
+  `board_sound_circle.cpp`, which only the Macintosh kernel links. Adding it to `hal_circle.cpp` does not break
+  `make -C src/kernel`; it breaks this script, and nothing else says so.
 - **`run-cd.sh`** — its own card, `qemu/sd-cd.img`, with the install disc, the PowerMac ROM and no volume; the target is
   made from the boot menu and the disc starts through `bootdriver -62`.
 - **`make-sd-image.sh`** — rebuilds `qemu/sd.img` from `qemu/sd-contents/`, sized to what is staged.

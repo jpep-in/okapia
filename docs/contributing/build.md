@@ -81,8 +81,9 @@ were built with (`install/.okapia-patches`); a target brought back with another 
    and misbehaves far from the cause (no `HasIdleTime()`, a `double` FPU register, no PowerPC seam).
 2. `ENGINE=basilisk objects` then `ENGINE=sheepshaver objects` into `emu-basilisk/` and `emu-sheepshaver/`; objects
    whose source left the build are removed, since the link takes a glob.
-3. `shared` — `SHARED_SRCS` into `obj-shared/`: the board (`hal_circle.cpp`), the Mac RAM block, the entry point
-   (`okapia_boot.cpp`), `rom_chime.cpp` and the firmware. Only these exist once
+3. `shared` — `SHARED_SRCS` into `obj-shared/`: the board (`hal_circle.cpp`), its sound, chime and power-off
+   (`board_sound_circle.cpp`), the Mac RAM block, the entry point (`okapia_boot.cpp`), `rom_chime.cpp` and the
+   firmware. Only these exist once
    ([Architecture](../project/architecture.md#what-exists-once-and-what-exists-twice)).
 4. `merge` — each engine is partially linked (`ld -r`, with `ENGINE_WRAPS`) into `engine-68k.o` and `engine-ppc.o`;
    every symbol the PowerPC half **defines**, plus the `__real_` references the linker fabricates, is listed into

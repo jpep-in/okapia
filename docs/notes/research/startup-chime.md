@@ -1,7 +1,7 @@
 # The startup chime, read from the ROM
 
 > Research of 2026-09-14, implemented the same day (`src/circle/rom_chime.{h,cpp}`, `BoardChime*` in
-> `src/circle/hal_circle.cpp`). The user-facing summary is in [Sound](../../topics/sound.md#startup-chime). **No Apple
+> `src/circle/board_sound_circle.cpp`). The user-facing summary is in [Sound](../../topics/sound.md#startup-chime). **No Apple
 > sound or code in the repository**: Okapia reads the chime from the ROM the user put on the card, at startup, and
 > nowhere else.
 

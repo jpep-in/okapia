@@ -2,8 +2,8 @@
 
 > Power-on to Mac OS, switching between the two Macintosh, restarting, and shutting down without losing
 > data. Main files: `src/kernel/okapia_boot.cpp`, `src/kernel/kernel.cpp`, `src/kernel/kernel_ppc.cpp`,
-> `src/circle/hal_circle.cpp`, `src/circle/main_circle.cpp`, `src/circle/sheepshaver/main_circle.cpp`,
-> `src/circle/sheepshaver/platform_bits_circle.cpp`.
+> `src/circle/hal_circle.cpp`, `src/circle/board_sound_circle.cpp`, `src/circle/main_circle.cpp`,
+> `src/circle/sheepshaver/main_circle.cpp`, `src/circle/sheepshaver/platform_bits_circle.cpp`.
 
 ## Using it
 
@@ -80,7 +80,7 @@ the emulator runs on, and `ExitAll()` — the only thing that closes the disk im
 Macintosh, which is the interpreter just taken down. Upstream survives the same order because it exits the
 process next. The two calls kept are the ones data safety depends on.
 
-**Both.** `BoardPowerOff()` (`hal_circle.cpp`) then cancels the sound device and waits for its DMA to stop,
+**Both.** `BoardPowerOff()` (`board_sound_circle.cpp`) then cancels the sound device and waits for its DMA to stop,
 clears the frame buffer to black, asks the firmware to blank the display (property tag `0x00040002`), writes
 the log out, and `halt()` stops the board. Under QEMU, `LEAVE_QEMU_ON_HALT` exits QEMU through
 semihosting — which needs `-semihosting` on the QEMU command line, or the kernel halts and QEMU waits.

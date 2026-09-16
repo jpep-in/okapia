@@ -15,7 +15,7 @@
                  │                                     │
                  └──────────────┬──────────────────────┘
                                 ▼
-          shared half: hal_circle (the board) · mac_ram · rom_chime
+     shared half: hal_circle (the board) · board_sound · mac_ram · rom_chime
                   okapia_boot (main) · src/firmware (boot menu)
                                 ▼
                  circle-stdlib (newlib + libstdc++) → Circle
@@ -57,8 +57,8 @@ Nothing in `external/` is touched.
 ## What exists once, and what exists twice
 
 `SHARED_SRCS` in `src/kernel/Makefile` is compiled once into `obj-shared/`: the board (`hal_circle.cpp`),
-the Mac RAM block (`mac_ram_circle.cpp`), the chime reader (`rom_chime.cpp`), the entry point, and the whole
-firmware. Everything else (`PLATFORM_SRCS`) is compiled once per engine, on purpose: it costs image size
+its sound, chime and power-off (`board_sound_circle.cpp`), the Mac RAM block (`mac_ram_circle.cpp`), the
+chime reader (`rom_chime.cpp`), the entry point, and the whole firmware. Everything else (`PLATFORM_SRCS`) is compiled once per engine, on purpose: it costs image size
 and no correctness.
 
 Two rules pull in opposite directions across that line:
@@ -83,7 +83,7 @@ restart does to it — and log the free heap per round; a number that does not m
 | Output frame buffer | `FwOutputClaim()` (`okapia_output.h`) | a claim per handover leaked 4.8 MB a round |
 | Mouse | `okapia_input.cpp`, forwarded by `FwInputPassMouseTo()` | `CMouseDevice::RegisterStatusHandler` asserts on a second claim (`mouse.cpp:85`) |
 | Microsecond timer and its IRQ | `BoardFineTick()` (`hal_circle.cpp`) | `ARM_IRQ_TIMER1` asserts when connected twice |
-| Sound device | `BoardSoundClaim()` (`hal_circle.cpp`) | a sound device deleted while its DMA runs asserts or crashes |
+| Sound device | `BoardSoundClaim()` (`board_sound_circle.cpp`) | a sound device deleted while its DMA runs asserts or crashes |
 | Mac RAM block | `MacRamClaim()` (`mac_ram_circle.cpp`) | a second 256 MB block is not there on a 1 GB board |
 | Periodic timer slots | Circle keeps four, with no way to return one | the fifth start asserts |
 

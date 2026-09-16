@@ -20,6 +20,13 @@
  * TickInit), because the Macintosh may go round more than once and a claim per
  * start leaks or asserts. Bringing them here would say the opposite.
  *
+ * The last three declarations below — the sound device, the chime and the
+ * power-off — are the board's all the same, and for the same reason: one
+ * device, claimed once, for two engines that go round. But they read the
+ * Macintosh's preferences and a Macintosh ROM, so they are implemented in
+ * board_sound_circle.cpp rather than in hal_circle.cpp, which the theme
+ * specimen kernel links and which therefore may name no emulator header.
+ *
  * Copyright (C) 2026  Okapia contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
  */

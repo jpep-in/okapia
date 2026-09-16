@@ -2,8 +2,9 @@
 
 > The Macintosh's sound on the jack, HDMI or USB: the board-owned device, the pull from the Mac's mixer,
 > volume, switching outputs, and the startup chime read from the ROM. Main files:
-> `src/circle/audio_circle.cpp` (compiled once per engine), `src/circle/hal_circle.{h,cpp}` (`BoardSoundClaim`,
-> `BoardChime*`), `src/circle/rom_chime.{h,cpp}`, `src/firmware/circle/okapia_firmware.cpp` (the setting).
+> `src/circle/audio_circle.cpp` (compiled once per engine), `src/circle/hal_circle.h` (the declarations)
+> and `src/circle/board_sound_circle.cpp` (`BoardSoundClaim`, `BoardChime*`), `src/circle/rom_chime.{h,cpp}`,
+> `src/firmware/circle/okapia_firmware.cpp` (the setting).
 
 ## Using it
 
@@ -28,7 +29,7 @@ buffer, and deleting the device before it has trips `CHDMISoundBaseDevice`'s des
 with the disk image still open. And `audio_circle.cpp` is compiled once per engine, so a device per engine would be
 two claims on one socket.
 
-So `BoardSoundClaim (pWhere, nQueueMsecs)` (`hal_circle.cpp`) creates the device once — 44.1 kHz, 16-bit signed
+So `BoardSoundClaim (pWhere, nQueueMsecs)` (`board_sound_circle.cpp`) creates the device once — 44.1 kHz, 16-bit signed
 stereo, a 100 ms queue — starts it, and hands the same one to every start of either Macintosh. A queue-mode device
 plays silence while its queue is empty, so an engine that stops feeding it is all a close is: `AudioExit()` forgets
 the pointer and deletes nothing.

@@ -143,8 +143,14 @@ FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
 #
 # Everything else is duplicated on purpose. It costs image size and no
 # correctness: each engine's platform layer talks only to its own core.
-SHARED_SRCS = $(OKAPIA)/hal_circle.cpp $(OKAPIA)/mac_ram_circle.cpp \
-              $(OKAPIA)/rom_chime.cpp \
+#
+# board_sound_circle.cpp is the board's sound, chime and power-off. They are
+# shared for the same reason as the rest — one sound device for both engines —
+# but they are not in hal_circle.cpp, because the theme specimen kernel links
+# that file and has neither the emulator's preferences nor the firmware's
+# frame buffer claim (src/firmware/circle/Makefile).
+SHARED_SRCS = $(OKAPIA)/hal_circle.cpp $(OKAPIA)/board_sound_circle.cpp \
+              $(OKAPIA)/mac_ram_circle.cpp $(OKAPIA)/rom_chime.cpp \
               okapia_boot.cpp $(FIRMWARE_SRCS)
 SHARED_OBJ  = obj-shared
 SHARED_OBJS = $(addprefix $(SHARED_OBJ)/,$(notdir $(SHARED_SRCS:.cpp=.o))) \
