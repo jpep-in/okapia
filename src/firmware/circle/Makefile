@@ -43,9 +43,10 @@ $(FONT_SRC): ../../../scripts/gen-font.py $(BDF)
 
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
 ICONDIR  = ../../../assets/icons
-$(ICON_SRC): ../../../scripts/gen-icons.py $(ICONDIR)/system-icons.c
+$(ICON_SRC): ../../../scripts/gen-icons.py $(ICONDIR)/system-icons.c \
+             $(ICONDIR)/cdrom-icon.c
 	@mkdir -p $(GEN)
-	@../../../scripts/gen-icons.py $@ $(ICONDIR)/system-icons.c
+	@../../../scripts/gen-icons.py $@ $(ICONDIR)/system-icons.c $(ICONDIR)/cdrom-icon.c
 
 STR_SRC = $(GEN)/okapia_strings_data.cpp
 STR_IDS = $(GEN)/okapia_strings_ids.h
