@@ -125,8 +125,6 @@ duration fitted by least squares — and approved by ear. See the
 - [ ] Hear the Quadra and IIci chimes on a Pi (validated on the host only)
 - [ ] Automatic output from the EDID (an HDMI sink declaring audio → `hdmi`, otherwise `jack`) — a proposal; note a
       sink may play audio its EDID does not declare
-- [ ] Chime of death, from the tables at `0x7178`–`0x71C4` and the recordings — with the Sad Mac
-      ([Startup and shutdown](startup-and-shutdown.md))
 - [ ] Other ROMs: LC, IIsi (the replacement routine at `0x45C0A`), Quadra AV `MARIOBOOTSOUND`, ROM-inator II
 - [ ] Headphone plug detection: the Pi 4 jack has none; nothing to read
 - [ ] Trials: system sounds, AIFF playback, games

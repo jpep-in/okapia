@@ -19,7 +19,7 @@
 | M9 | Reference measurements | **done**: 68k Quadra-class with margin, PowerPC close to a 6100/60 (2026-09-13) |
 | M10 | Optimised video, no tearing | partly: dirty tiles and whole-frame drawing done; vertical sync and a double buffer open |
 | M11 | Network and sound | sound **done** (2026-09-14); network not started |
-| M12 | Macintosh sequence: chime, Happy Mac, Sad Mac and its codes | chime **done** (2026-09-14); Happy Mac and Sad Mac open |
+| M12 | Macintosh sequence: startup chime | **done** (2026-09-14); Happy Mac and Sad Mac out of scope (2026-09-17) |
 | M13 | Okapia firmware: configuration with the mouse, no text file | **done** (2026-09-09) |
 | M14 | Provisioning: usable with nothing prepared | not started |
 | M15 | Appliance: power on → Mac OS | open |
@@ -29,12 +29,12 @@
 
 | Topic | Done | Open | Most important next |
 |---|---:|---:|---|
-| [Startup and shutdown](../topics/startup-and-shutdown.md) | 7 | 5 | Happy Mac and Sad Mac with documented error codes; appliance start |
-| [Boot menu](../topics/boot-menu.md) | 10 | 4 | Repair dialog instead of a silent scavenge |
+| [Startup and shutdown](../topics/startup-and-shutdown.md) | 7 | 3 | Appliance start |
+| [Boot menu](../topics/boot-menu.md) | 10 | 5 | Open the menu with the reason when the Macintosh cannot start; repair dialog |
 | [68k engine](../topics/engine-68k.md) | 7 | 6 | Understand the System 7.1 crash (unredirected ASC write hypothesis); remaining bottleneck ranks |
 | [PowerPC engine](../topics/engine-powerpc.md) | 11 | 7 | Mac OS 8.6 installs from its CD; a `kpx_cpu` bottleneck study (`Graf` at 63% of a 6100/60) |
 | [Display](../topics/display.md) | 9 | 7 | Vertical sync; compositor on core 2 once measured |
-| [Sound](../topics/sound.md) | 8 | 8 | System 7.1 sound (Sound Manager 3); hear the Quadra and IIci chimes on a Pi |
+| [Sound](../topics/sound.md) | 8 | 7 | System 7.1 sound (Sound Manager 3); hear the Quadra and IIci chimes on a Pi |
 | [Input](../topics/input.md) | 7 | 5 | `mousedpi` measured for a real mouse on the Pi 4 |
 | [Storage](../topics/storage.md) | 9 | 11 | Error cases (full card, SD write error, removal); FatFs fast seek |
 | [Shared folder](../topics/shared-folder.md) | 6 | 4 | A hint when the System needs the FSM 1.2 extension |
@@ -61,5 +61,6 @@ Found and not yet fixed — each is tracked in its topic:
 
 ## Out of scope unless measurements demand it
 
-A 68k JIT ([study](../notes/research/jit-68k.md)), NVMe, Mini vMac for System 1 to 7.5, a CRT mode. Later candidates:
+A 68k JIT ([study](../notes/research/jit-68k.md)), NVMe, a Happy Mac or Sad Mac drawn by Okapia (the ROM already draws
+its own; a Sad Mac would mean simulating a hardware failure), Mini vMac for System 1 to 7.5, a CRT mode. Later candidates:
 QuickDraw acceleration on the 68k, a shared clipboard, a ready-to-flash SD image, full Pi 5 support.

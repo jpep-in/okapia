@@ -153,6 +153,12 @@ levels — note, caution, stop — because they are a promise about consequences
 - [x] Forget the parameter RAM asks which Macintosh: an alert may carry a row of radio buttons, `TConfirm::pChoices`
       (2026-09-15)
 - [x] New volume; mount as hard disk, read-only or CD-ROM; a disc as startup volume (2026-09-09)
+- [ ] **Open the menu whenever the Macintosh cannot start**, with the reason on screen, instead of halting. Today
+      the menu opens by itself only for a missing configuration or no bootable volume; any other failure of
+      `CKernel::StartMacintosh()` — no `rom` line, ROM file missing, wrong size or unreadable, ROM refused by
+      `CheckROM()` (`MacROMLoad`, `src/circle/main_circle.cpp:190` and its SheepShaver twin), Mac RAM not
+      allocated — logs to the serial port only and ends in `OkapiaHalt` (`src/kernel/kernel.cpp:485`): a frozen
+      screen on a board with no UART attached. Both engines, and every restart, not only power-on
 - [ ] **Repair dialog** — today `HfsRepair` scavenges silently. Three states, not two: repair without asking,
       ask, never repair — through a second boolean `hfsrepairask`, without changing the type of `hfsrepair`
       (`prefs_circle.cpp`: the parser reads by declared type, an integer would read `0` on every existing card).

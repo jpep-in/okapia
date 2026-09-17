@@ -107,9 +107,6 @@ re-entering the Toolbox needs — telling the ROM the mouse resolution, for inst
 - [x] Clean shut down on both engines, disk closed, display blanked (2026-09-14)
 - [x] Startup chime at power-on and at every restart (2026-09-14)
 - [x] `Macintosh idle` boot signal on the 68k engine
-- [ ] Happy Mac drawn by Okapia between power-on and the ROM's own Happy Mac
-- [ ] Sad Mac with Okapia's documented error codes: ROM missing, ROM not recognised, no bootable disk,
-      unreadable card, not enough memory — plus the chime of death
 - [ ] Appliance start: power on → black screen → Happy Mac → Finder, no log on HDMI
 - [ ] Boot signal for the PowerPC engine
 - [ ] A PowerPC engine that can be entered a second time in place, so a different startup does not reset the
@@ -148,6 +145,9 @@ re-entering the Toolbox needs — telling the ROM the mouse resolution, for inst
 - **2026-09-14** — Restart freezes traced to the sound device deleted while its DMA ran (HDMI destructor
   assertion); the board now owns it. Shut down "froze" on the last frame because a halted Pi keeps scanning
   out its frame buffer: `BoardPowerOff()` clears and blanks it. PowerPC restart in place. Chime at restart.
+- **2026-09-17** — Happy Mac and Sad Mac drawn by Okapia taken out of scope: the ROM run by Basilisk II or
+  SheepShaver already draws its own Happy Mac, and a Sad Mac would mean the emulator simulating a failure of
+  the original hardware. The chime of death goes with it.
 
 ## References
 

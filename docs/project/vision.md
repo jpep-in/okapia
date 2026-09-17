@@ -67,7 +67,6 @@ Nothing on a board beyond 2 GB helps this project: 256 MB of Mac RAM plus the re
 In rough order, and each only when the one before is stable and measured:
 
 - **Networking** (Phase 13) and **NTP**.
-- **Happy Mac / Sad Mac** with Okapia's own documented error codes.
 - **Provisioning**: a persistent disk created on first boot, an online catalogue of Systems, a software
   library — so Okapia can be tried with nothing prepared.
 - **Appliance experience**: power on → Mac OS, logs only on the card and the UART.

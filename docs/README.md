@@ -44,7 +44,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 
 | Page | Subject |
 |---|---|
-| [Startup and shutdown](topics/startup-and-shutdown.md) | Power-on, engine switch, restart, shut down, Happy/Sad Mac |
+| [Startup and shutdown](topics/startup-and-shutdown.md) | Power-on, engine switch, restart, shut down |
 | [Boot menu](topics/boot-menu.md) | The Okapia firmware: chooser, settings, UI toolkit, translations |
 | [68k engine](topics/engine-68k.md) | Basilisk II: CPU, FPU, ROM, model ID, performance |
 | [PowerPC engine](topics/engine-powerpc.md) | SheepShaver: CPU, memory layout, ROMs, integration |

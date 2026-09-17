@@ -28,7 +28,7 @@ Working on a Raspberry Pi 4 and under QEMU:
 - USB keyboard and mouse as ADB, with the Mac's own acceleration; a shared folder on the card; the clock and PRAM kept
   across power cuts; volumes repaired after an interrupted session; clean restart and shut down.
 
-Not yet: networking, Happy Mac and Sad Mac screens, provisioning. See the [roadmap](docs/project/roadmap.md).
+Not yet: networking, provisioning. See the [roadmap](docs/project/roadmap.md).
 
 No Apple ROM, System or disk image ships with this project: you supply them.
 
