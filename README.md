@@ -28,7 +28,9 @@ Working on a Raspberry Pi 4 and under QEMU:
 - USB keyboard and mouse as ADB, with the Mac's own acceleration; a shared folder on the card; the clock and PRAM kept
   across power cuts; volumes repaired after an interrupted session; clean restart and shut down.
 
-Not yet: networking, provisioning. See the [roadmap](docs/project/roadmap.md).
+In progress: **the network**, by cable or Wi-Fi with the SSID and password in the preferences — implemented and
+checked under QEMU, not yet tried on a Pi ([Network](docs/topics/network.md)). Not yet: provisioning. See the
+[roadmap](docs/project/roadmap.md).
 
 No Apple ROM, System or disk image ships with this project: you supply them.
 

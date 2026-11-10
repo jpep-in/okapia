@@ -122,6 +122,27 @@ if [ -d "$CONTENTS" ]; then
     done < <(find "$CONTENTS" -mindepth 1 -maxdepth 1)
 fi
 
+# The Wi-Fi's firmware, for "ether wlan": the Broadcom files Circle's own
+# Makefile fetches at a pinned revision of RPi-Distro/firmware-nonfree, into
+# /firmware where wlan_circle.cpp looks. Optional, like the network itself, so
+# a missing one is said and not fatal. Downloaded, not in the repository.
+WLAN_FW="${REPO_ROOT}/external/circle-stdlib/libs/circle/addon/wlan/firmware"
+WLAN_FILES=(brcmfmac43455-sdio.bin brcmfmac43455-sdio.txt brcmfmac43455-sdio.clm_blob)
+wlan_missing=()
+for file in "${WLAN_FILES[@]}"; do
+    [ -f "${WLAN_FW}/${file}" ] || wlan_missing+=("$file")
+done
+if [ "${#wlan_missing[@]}" -eq 0 ]; then
+    mkdir -p "${OUT}/firmware"
+    for file in "${WLAN_FILES[@]}"; do
+        cp "${WLAN_FW}/${file}" "${OUT}/firmware/"
+    done
+else
+    printf 'No Wi-Fi firmware (%s): the card works, "ether wlan" will not.
+' "${wlan_missing[*]}" >&2
+    printf 'Download it (needs the network): make -C %s firmware\n' "${WLAN_FW#"${REPO_ROOT}/"}" >&2
+fi
+
 printf '\n==> %s\n' "${OUT#"${REPO_ROOT}/"}"
 (cd "$OUT" && find . -mindepth 1 -maxdepth 1 | sed 's|^\./|  |' | sort)
 printf '  %s KB total\n' "$(( $(du -sk "$OUT" | cut -f1) ))"

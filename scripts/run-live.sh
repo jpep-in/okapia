@@ -50,6 +50,8 @@ if command -v lsof >/dev/null && lsof -t -- "$SD" >/dev/null 2>&1; then
     exit 1
 fi
 
+okapia_qemu_net_args
+
 # OUTPUT_W/OUTPUT_H override this; keep them multiples of 640x480.
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" \
     -drive "file=${SD},if=sd,format=raw,cache=writethrough" \
@@ -58,7 +60,7 @@ qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" \
     -global "bcm2835-fb.xres=${OUTPUT_W:-1280}" -global "bcm2835-fb.yres=${OUTPUT_H:-960}" \
     -display cocoa \
     -monitor "unix:${MONITOR},server,nowait" \
-    -serial "file:${LOG}" &
+    -serial "file:${LOG}" "${OKAPIA_NET_ARGS[@]}" &
 QPID=$!
 
 if [ $# -ge 1 ]; then

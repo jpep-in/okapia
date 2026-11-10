@@ -84,13 +84,14 @@ CPU_SRCS    = $(KPX)/src/mathlib/ieeefp.cpp $(KPX)/src/mathlib/mathlib.cpp \
               $(MACEMU)/CrossPlatform/vm_alloc.cpp
 GEN_SRCS    =
 endif
-# audio_dummy.cpp, prefs_dummy.cpp and user_strings_dummy.cpp are replaced by
-# src/circle/*_circle.cpp; the others stay. prefs_dummy looks for its file
+# audio_dummy.cpp, ether_dummy.cpp, prefs_dummy.cpp and user_strings_dummy.cpp
+# are replaced by src/circle/*_circle.cpp; the others stay. prefs_dummy looks for its file
 # relative to a current directory the kernel never sets, so it never found one
 # on the card, user_strings_dummy's platform table is empty — which is what
 # names the shared volume — and xpram_dummy names its file relatively, so where
 # the Mac's PRAM landed was an accident.
 DUMMY_SRCS  = $(filter-out $(MACEMU)/dummy/audio_dummy.cpp \
+                           $(MACEMU)/dummy/ether_dummy.cpp \
                            $(MACEMU)/dummy/prefs_dummy.cpp \
                            $(MACEMU)/dummy/user_strings_dummy.cpp \
                            $(MACEMU)/dummy/xpram_dummy.cpp,\
@@ -118,7 +119,7 @@ PLATFORM_SRCS = $(OKAPIA)/compositor_circle.cpp $(OKAPIA)/video_shared_circle.cp
                 $(OKAPIA)/input_circle.cpp $(OKAPIA)/audio_circle.cpp \
                 $(OKAPIA)/user_strings_circle.cpp $(OKAPIA)/extfs_sync_circle.cpp \
                 $(OKAPIA)/hfs_volume_circle.cpp $(OKAPIA)/card_circle.cpp \
-                $(OKAPIA)/mac_encoding_circle.cpp \
+                $(OKAPIA)/mac_encoding_circle.cpp $(OKAPIA)/ether_circle.cpp \
                 $(MACEMU)/CrossPlatform/video_blit.cpp \
                 $(wildcard $(OKAPIA)/sheepshaver/*.cpp)
 endif
@@ -151,7 +152,13 @@ FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
 # but they are not in hal_circle.cpp, because the theme specimen kernel links
 # that file and has neither the emulator's preferences nor the firmware's
 # frame buffer claim (src/firmware/circle/Makefile).
+#
+# board_net_circle.cpp is the network interface, for the same reason: one
+# device for both engines, and for Wi-Fi one scheduler and one supplicant
+# (wlan_circle.cpp). net_config_circle.cpp is the pure part of it.
 SHARED_SRCS = $(OKAPIA)/hal_circle.cpp $(OKAPIA)/board_sound_circle.cpp \
+              $(OKAPIA)/board_net_circle.cpp $(OKAPIA)/wlan_circle.cpp \
+              $(OKAPIA)/net_config_circle.cpp \
               $(OKAPIA)/mac_ram_circle.cpp $(OKAPIA)/rom_chime.cpp \
               okapia_boot.cpp $(FIRMWARE_SRCS)
 SHARED_OBJ  = obj-shared
@@ -247,7 +254,20 @@ INCLUDE := $(EMU_INCLUDES) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
 DEFINE += $(EMU_DEFINES)
 # Circle's sound classes live in their own library, which circle-stdlib does
 # not put in the default link line. It depends on libcircle, so it comes first.
-LIBS := $(CIRCLEHOME)/lib/sound/libsound.a $(CIRCLE_STDLIB_LIBS)
+#
+# The on-board Wi-Fi and its WPA supplicant live in addon/wlan, which
+# circle-stdlib builds and does not link either. Their l2_packet member is
+# never pulled: wlan_circle.cpp defines every symbol it would provide.
+WLAN := $(CIRCLEHOME)/addon/wlan
+LIBS := $(CIRCLEHOME)/lib/sound/libsound.a \
+        $(WLAN)/hostap/wpa_supplicant/libwpa_supplicant.a $(WLAN)/libwlan.a \
+        $(CIRCLE_STDLIB_LIBS)
+
+# Wraps on the final link, for calls from the libraries rather than from an
+# engine. fopen: the supplicant reads its configuration from memory, never
+# from a file written on the card (wlan_circle.cpp); every other name goes
+# through untouched.
+FINAL_WRAPS = --wrap=fopen
 
 # Two upstream hooks that are part of the product, not diagnostics, so they are
 # always on. Mangled names: extfs_write(int, void*, size_t) for the shared
@@ -287,6 +307,10 @@ ENGINE_DEFINES += -DFPU_SELFTEST=1
 # the Sound Manager waits for its sound to finish, so a pull that never happens
 # is a "returned" line that never comes (audio_circle.cpp).
 ENGINE_DEFINES += -DSOUND_SELFTEST=1
+# An AARP request put in the network's receive ring once EtherTalk has its
+# address, and the Mac's answer watched for: the receive path proved under a
+# QEMU whose USB network never delivers a frame (ether_circle.cpp).
+ENGINE_DEFINES += -DNET_SELFTEST=1
 endif
 # Toggling OKAPIA_TRACE does not invalidate kernel8.img on its own:
 # rm kernel8.img kernel8.elf first, or you will run the previous kernel.
@@ -460,7 +484,7 @@ merge: $(SHARED_OBJS)
 	        print $$1 " " r }' > engine-ppc.rename
 	@$(PREFIX)objcopy --redefine-syms=engine-ppc.rename engine-ppc.o engine-ppc-renamed.o
 	@printf '  LD     kernel8.elf (%s symbols renamed)\n' "$$(wc -l < engine-ppc.rename | tr -d ' ')"
-	@$(LD) -o kernel8.elf -Map kernel8.map $(LDFLAGS) \
+	@$(LD) -o kernel8.elf -Map kernel8.map $(LDFLAGS) $(FINAL_WRAPS) \
 		-T $(CIRCLEHOME)/circle.ld $(CRTBEGIN) \
 		engine-68k.o engine-ppc-renamed.o $(SHARED_OBJS) \
 		--start-group $(LIBS) $(EXTRALIBS) --end-group $(CRTEND)

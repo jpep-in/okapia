@@ -1,6 +1,6 @@
 # Roadmap
 
-> Where Okapia stands, as of 2026-09-15. This page summarises; the checkboxes, with dates and details, live in each
+> Where Okapia stands, as of 2026-11-10. This page summarises; the checkboxes, with dates and details, live in each
 > topic's **Status** section and nowhere else. Update the topic first, then the line here.
 
 ## Milestones
@@ -18,7 +18,7 @@
 | M8 | Clock, PRAM, clean shutdown | **done** (2026-08-29; shutdown display blanking 2026-09-14) |
 | M9 | Reference measurements | **done**: 68k Quadra-class with margin, PowerPC close to a 6100/60 (2026-09-13) |
 | M10 | Optimised video, no tearing | partly: dirty tiles and whole-frame drawing done; vertical sync and a double buffer open |
-| M11 | Network and sound | sound **done** (2026-09-14); network not started |
+| M11 | Network and sound | sound **done** (2026-09-14); network by cable and Wi-Fi implemented (2026-11-10), not yet tried on a Pi |
 | M12 | Macintosh sequence: startup chime | **done** (2026-09-14); Happy Mac and Sad Mac out of scope (2026-09-17) |
 | M13 | Okapia firmware: configuration with the mouse, no text file | **done** (2026-09-09) |
 | M14 | Provisioning: usable with nothing prepared | not started |
@@ -39,7 +39,7 @@
 | [Storage](../topics/storage.md) | 9 | 11 | Error cases (full card, SD write error, removal); FatFs fast seek |
 | [Shared folder](../topics/shared-folder.md) | 6 | 4 | A hint when the System needs the FSM 1.2 extension |
 | [Clock and PRAM](../topics/clock-and-pram.md) | 9 | 4 | Clock writes from the Mac; an RTC |
-| [Network](../topics/network.md) | 0 | 7 | `ether_circle.cpp` sharing the Pi's MAC address |
+| [Network](../topics/network.md) | 5 | 11 | Trials on the Pi 4: DHCP by cable, Wi-Fi join and rekey; Mamba |
 | [Build](../contributing/build.md) | 5 | 3 | Continuous integration without Apple ROMs |
 | [Testing and debugging](../contributing/testing-and-debugging.md) | 4 | 5 | Automated QEMU boot check in CI; a PowerPC boot signal |
 | [Benchmarks](../contributing/benchmarks.md) | 3 | 7 | Five runs per configuration; attribute the seven changes |

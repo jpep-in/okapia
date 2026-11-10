@@ -46,3 +46,19 @@ okapia_require_target ()    # $1 = repository root, $2 = target wanted, $3 = wha
     printf 'The other build is kept in build/libs/, so switching back costs seconds.\n' >&2
     return 1
 }
+
+# A network card for the Macintosh under QEMU, when OKAPIA_QEMU_NET=1: a USB
+# CDC Ethernet adapter (Circle's CUSBCDCEthernetDevice) on QEMU's user-mode
+# network, which answers DHCP with 10.0.2.15 and routes to the host's. The card
+# must say "ether eth". OKAPIA_QEMU_PCAP=<file> also records every frame.
+# Off by default: a device the Mac is not set up to use is noise in every
+# other test. Fills the array OKAPIA_NET_ARGS.
+okapia_qemu_net_args ()
+{
+    OKAPIA_NET_ARGS=()
+    [ "${OKAPIA_QEMU_NET:-0}" = 1 ] || return 0
+    OKAPIA_NET_ARGS=(-device usb-net,netdev=okapianet -netdev user,id=okapianet)
+    if [ -n "${OKAPIA_QEMU_PCAP:-}" ]; then
+        OKAPIA_NET_ARGS+=(-object "filter-dump,id=okapiadump,netdev=okapianet,file=${OKAPIA_QEMU_PCAP}")
+    fi
+}

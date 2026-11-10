@@ -50,7 +50,20 @@ std::string UserPrefsPath;
  */
 
 prefs_desc platform_prefs_items[] = {
-	{"nonet", TYPE_BOOLEAN, false, "disable Ethernet (no networking yet: always true)"},
+	// Ignored: `ether` decides (board_net_circle.cpp). Declared so a desktop
+	// Basilisk II's file keeps it, and because every card written before the
+	// network existed says "nonet true".
+	{"nonet", TYPE_BOOLEAN, false, "ignored: ether decides"},
+#ifdef SHEEPSHAVER
+	// Basilisk II declares it in its common list; SheepShaver does not, and
+	// one card serves both. board_net_circle.cpp reads it.
+	{"ether", TYPE_STRING, false, "the Mac's network: eth (cable or USB adapter) or wlan (on-board Wi-Fi)"},
+#endif
+	// The Wi-Fi network, in the spirit of BlueSCSI's WiFiSSID and WiFiPassword:
+	// the value runs to the end of the line, so spaces, # and ; need no quotes.
+	{"wifissid", TYPE_STRING, false, "the Wi-Fi network's name, with ether wlan"},
+	{"wifipassword", TYPE_STRING, false, "its WPA2 passphrase (8 to 63 characters) or key (64 hex digits); empty for an open network"},
+	{"wificountry", TYPE_STRING, false, "two-letter country code for the Wi-Fi's channels, FR, DE, US..."},
 	{"timezone", TYPE_INT32, false, "minutes east of UTC; a Mac's clock is local time"},
 	{"extfsname", TYPE_STRING, false, "name of the shared folder's volume on the Mac desktop"},
 	{"hfsrepair", TYPE_BOOLEAN, false, "scavenge a volume left in use by an interrupted session"},
@@ -153,7 +166,10 @@ void AddPlatformPrefsDefaults(void)
 	PrefsReplaceBool("nosound", false);
 #endif
 
-	PrefsReplaceBool("nonet", true);	// networking comes later
+	// No network unless `ether` names one (board_net_circle.cpp): a device
+	// is claimed only when the Macintosh is meant to use it. nonet is not
+	// read; false is only what a new card is written with.
+	PrefsReplaceBool("nonet", false);
 
 	// The shared folder, as a path on the card. Upstream's Unix default is "/",
 	// which here would hand the Finder the ROM and every disk image — including
@@ -413,6 +429,26 @@ void SavePrefs(void)
 		"# Leave the sound hardware alone.\n"
 		"# nosound true\n"
 		"#\n"
+		"# The network. The Macintosh shares the Pi's hardware (MAC) address and\n"
+		"# is a machine of its own on the local network: MacTCP or Open Transport\n"
+		"# set to DHCP find the router as any computer would. eth is the Pi's port or\n"
+		"# a USB adapter; wlan is the on-board Wi-Fi, which needs the Broadcom\n"
+		"# firmware in /firmware on the card and the three lines after it.\n"
+		"# ether wlan\n"
+		"#\n"
+		"# The Wi-Fi network's name and its WPA2 password, written as they are:\n"
+		"# everything after the keyword is the value, spaces, # and ; included.\n"
+		"# Leave the password empty for an open network. The password is kept\n"
+		"# in clear on the card, as on a BlueSCSI; 64 hex digits (the key that\n"
+		"# wpa_passphrase prints) work as well. WPA3-only networks cannot be\n"
+		"# joined.\n"
+		"# wifissid My network\n"
+		"# wifipassword my password\n"
+		"#\n"
+		"# Where the Pi is, as two letters: it decides which channels the Wi-Fi\n"
+		"# may use. Without it, US: channels 12 and 13 are not reachable.\n"
+		"# wificountry FR\n"
+		"#\n"
 		"# The shared folder, as a directory on the card. It appears on the Mac's\n"
 		"# desktop as a volume. System 7.5 and later need nothing extra; 7.0 and 7.1\n"
 		"# need the File System Manager 1.2 extension. Leave it empty for\n"
@@ -433,7 +469,7 @@ void SavePrefs(void)
 		"# stops while each line goes out, about 1%% of its time.\n"
 		"# perfreport true\n"
 		"#\n"
-		"# Keywords below that Circle has nothing to do (scsi*, jit*, ether*,\n"
+		"# Keywords below that Circle has nothing to do (scsi*, jit*, etherconfig,\n"
 		"# seriala, serialb, mousewheel*, and the rest) are listed by upstream and\n"
 		"# written back unchanged. README.md says which ones and why.\n"
 		"\n");

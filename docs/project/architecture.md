@@ -84,6 +84,7 @@ restart does to it — and log the free heap per round; a number that does not m
 | Mouse | `okapia_input.cpp`, forwarded by `FwInputPassMouseTo()` | `CMouseDevice::RegisterStatusHandler` asserts on a second claim (`mouse.cpp:85`) |
 | Microsecond timer and its IRQ | `BoardFineTick()` (`hal_circle.cpp`) | `ARM_IRQ_TIMER1` asserts when connected twice |
 | Sound device | `BoardSoundClaim()` (`board_sound_circle.cpp`) | a sound device deleted while its DMA runs asserts or crashes |
+| Network interface, receive ring, Wi-Fi scheduler and supplicant | `BoardNetStart()` (`board_net_circle.cpp`) | `CScheduler` and `CBcm4343Device` assert on a second instance, and Circle cannot give a device back |
 | Mac RAM block | `MacRamClaim()` (`mac_ram_circle.cpp`) | a second 256 MB block is not there on a 1 GB board |
 | Periodic timer slots | Circle keeps four, with no way to return one | the fifth start asserts |
 
@@ -152,7 +153,8 @@ Time Manager, cursor blink and application delays all rest on it.
 ## Multicore
 
 **Status: not implemented.** `ARM_ALLOW_MULTI_CORE` is commented out (`sysconfig.h:158`) and both engines
-run on core 0 with the interrupts.
+run on core 0 with the interrupts. With Wi-Fi on, Circle's cooperative scheduler exists too and the emulation
+thread is its main task: the Wi-Fi's tasks run when the 1 kHz seam yields ([Network](../topics/network.md#wi-fi)).
 
 Circle's constraints (`doc/multicore.txt`): every peripheral IRQ is handled on core 0; the cooperative
 scheduler runs on core 0 only; `ARM_ALLOW_MULTI_CORE` costs a little even single-core; most classes need a

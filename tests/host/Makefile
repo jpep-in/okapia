@@ -164,6 +164,14 @@ check_encoding.o: check_encoding.cpp
 check_encoding: check_encoding.o p_mac_encoding_circle.o
 	$(CXX) -o $@ $^
 
+# The network preferences and the supplicant's configuration. Pure on
+# purpose (net_config_circle.h): no shim, no upstream table.
+check_net.o: check_net.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+check_net: check_net.o p_net_config_circle.o
+	$(CXX) -o $@ $^
+
 # The subject of scripts/check-large-volume.sh: not a check on its own, since
 # the defect it exposes lives in the kernel's C library, not on this machine.
 make_large_volume.o: make_large_volume.cpp
@@ -177,7 +185,7 @@ make_large_volume: make_large_volume.o $(HFS_OBJS)
 # behaviour joins them: what the focus does under a sequence of keys is decidable
 # on a machine with no keyboard, so there is no reason to go and look.
 check: check_geometry check_screen check_chooser check_pages check_platform check_blit \
-       check_encoding
+       check_encoding check_net
 	./check_geometry
 	./check_screen
 	./check_chooser
@@ -185,6 +193,7 @@ check: check_geometry check_screen check_chooser check_pages check_platform chec
 	./check_platform
 	./check_blit
 	./check_encoding
+	./check_net
 
 # Every page, the count being the flow's to decide: naming them here again is
 # how the second page went stale the day a third appeared.

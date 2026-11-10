@@ -72,6 +72,16 @@ Every script checks the tree is built for QEMU ([Build](build.md)); a Pi kernel 
   made from the boot menu and the disc starts through `bootdriver -62`.
 - **`make-sd-image.sh`** — rebuilds `qemu/sd.img` from `qemu/sd-contents/`, sized to what is staged.
 
+### QEMU network
+
+`OKAPIA_QEMU_NET=1` gives `run-qemu.sh`, `run-live.sh` and `screenshot.sh` a USB Ethernet adapter (`usb-net`, which
+Circle drives as `CUSBCDCEthernetDevice`) on QEMU's user network; the card must say `ether eth`.
+`OKAPIA_QEMU_PCAP=<file>` records every frame (`tcpdump -e -n -r <file>`). Stock QEMU **sends** the Mac's frames but
+never delivers one to it ([Network](../topics/network.md#pitfalls)), so the receive path is checked by the trace
+build's `NET_SELFTEST`: once EtherTalk has probed its address, an AARP request for it is put in the board's ring and
+the Mac's reply is watched for on the way out — `Network self-test: the Macintosh answered an AARP request` in the
+log. It needs a System with EtherTalk active (the Network control panel set to EtherTalk).
+
 ### Driving the Mac through the QEMU monitor
 
 `mouse_move dx dy`, `mouse_button 1|0`, `sendkey`, `screendump /tmp/x.ppm` — how the Finder is tested with nobody at
@@ -112,7 +122,8 @@ echo "screendump /tmp/x.ppm" | nc -U /tmp/okapia-monitor.sock
 | `trace_traps_circle.cpp` | A-line traps (`op_illg_1`) | Toolbox calls, `MountVol` results, `Control`/`Status` csCodes |
 | `trace_fpu_circle.cpp` | `fpuop_arithmetic` | FPU instructions executed |
 
-Plus `DIRECT_ADDRESSING_GUARD` (stray guest addresses, `patches/macemu/0007`), `FPU_SELFTEST` and `SOUND_SELFTEST`.
+Plus `DIRECT_ADDRESSING_GUARD` (stray guest addresses, `patches/macemu/0007`), `FPU_SELFTEST`, `SOUND_SELFTEST` and
+`NET_SELFTEST` ([QEMU network](#qemu-network)).
 Only calls crossing a translation unit are wrapped, and the wraps must be on the engine's partial link
 ([Build](build.md)).
 
@@ -145,7 +156,8 @@ the emulator quitting by itself.
 - **A QEMU window costs about a third of guest speed** (97% of the Mac's 60 Hz nominal headless, 61% windowed) and
   makes frame buffer writes 12× more expensive: run automated checks headless, never tune the compositor headless
   and assume it holds in a window.
-- **QEMU lies**: no sound output, no RTC, video modes a Pi refuses, no EDID. Validate on hardware.
+- **QEMU lies**: no sound output, no RTC, video modes a Pi refuses, no EDID, no Wi-Fi, and a USB network adapter
+  that never delivers a frame. Validate on hardware.
 - **A failed assertion inside a member constructor is a silent hang**: nothing has been logged yet. Suspect a
   constructor argument when a kernel produces no output at all.
 - **A test must name what it judged** (`Boot volume:`), or it can go green on the wrong subject.

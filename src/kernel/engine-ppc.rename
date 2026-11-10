@@ -57,6 +57,8 @@ _Z10SysCDPausePv ppc___Z10SysCDPausePv
 _Z10ThunksExitv ppc___Z10ThunksExitv
 _Z10ThunksInitv ppc___Z10ThunksInitv
 _Z10TimerResetv ppc___Z10TimerResetv
+_Z10ether_exitv ppc___Z10ether_exitv
+_Z10ether_initv ppc___Z10ether_initv
 _Z10ether_openP5queuePviiS1_ ppc___Z10ether_openP5queuePviiS1_
 _Z10ether_rsrvP5queue ppc___Z10ether_rsrvP5queue
 _Z10ether_wputP5queueP4msgb ppc___Z10ether_wputP5queueP4msgb
@@ -380,6 +382,7 @@ _Z9DecodeROMPhj ppc___Z9DecodeROMPhj
 _Z9DiskPrimejj ppc___Z9DiskPrimejj
 _Z9EtherExitv ppc___Z9EtherExitv
 _Z9EtherInitv ppc___Z9EtherInitv
+_Z9EtherPollv ppc___Z9EtherPollv
 _Z9ExtFSCommtjj ppc___Z9ExtFSCommtjj
 _Z9ExtFSExitv ppc___Z9ExtFSExitv
 _Z9ExtFSInitv ppc___Z9ExtFSInitv

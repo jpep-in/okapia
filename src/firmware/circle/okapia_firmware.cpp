@@ -15,6 +15,8 @@
 
 #include <wrap_fatfs.h>
 
+#include "board_net_circle.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -690,6 +692,9 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
             ScreenPresent (pShadow, pOutput, &Screen, pDriver->Repaint, bPointer, nX, nY,
                            pTheme->nIconScale);
         }
+        // The Wi-Fi's tasks run only when this thread lets them, and a menu
+        // left open must not cost the connection. Frames are dropped meanwhile.
+        BoardNetPoll ();
         CTimer::Get ()->MsDelay (10);
     }
     return nResult;
@@ -1226,6 +1231,7 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
         while (FwInputNext (&Event))
         {
         }
+        BoardNetPoll ();
         CTimer::Get ()->MsDelay (SLICE_MS);
 
         if (nStop == WINDOW_MS && (FwInputSeenModifiers () & ModOption))

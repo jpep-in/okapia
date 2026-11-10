@@ -36,6 +36,8 @@ WORK="$(mktemp -d -t okapiashot)"
 trap 'rm -rf "$WORK"' EXIT
 cp "$SD" "${WORK}/card.img"
 
+okapia_qemu_net_args
+
 GEOMETRY=()
 if [ $# -ge 3 ]; then
     GEOMETRY=(-global "bcm2835-fb.xres=$2" -global "bcm2835-fb.yres=$3")
@@ -44,7 +46,7 @@ fi
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial "file:${WORK}/serial.log" \
     -display none -drive "file=${WORK}/card.img,if=sd,format=raw,cache=writethrough" \
     -device usb-kbd -device usb-mouse -semihosting \
-    -monitor "unix:${WORK}/monitor.sock,server,nowait" "${GEOMETRY[@]}" &
+    -monitor "unix:${WORK}/monitor.sock,server,nowait" "${GEOMETRY[@]}" "${OKAPIA_NET_ARGS[@]}" &
 QPID=$!
 
 # Wait for the Mac to say it has started, and no longer than asked.

@@ -32,5 +32,7 @@ ARGS=(-M raspi3b -kernel "$KERNEL" -serial stdio -semihosting)
 # The mouse cursor does not work under QEMU (documented in Circle's doc/qemu.txt),
 # but the device is still enumerated and its events arrive.
 ARGS+=(-device usb-kbd -device usb-mouse)
+okapia_qemu_net_args
+ARGS+=("${OKAPIA_NET_ARGS[@]}")
 
 exec qemu-system-aarch64 "${ARGS[@]}" "$@"

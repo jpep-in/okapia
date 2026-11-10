@@ -88,7 +88,18 @@ the other way round. The same file serves both Macintosh; its name does not chan
 | `language` | `en` | the boot menu's language, a two-letter code (`en`, `fr`); an unknown code falls back to the first language |
 | `idlewait` | `true` | let the Mac's idle patch replace `SynchIdleTime`; its first call is logged as `Macintosh idle`, the boot-finished signal the test scripts wait for |
 | `perfreport` | `false` | print engine, video, input, sound and clock counters every five seconds (always on under QEMU) |
-| `nonet` | `true` | networking is not implemented yet |
+
+## Network
+
+See [Network](topics/network.md). Each value runs to the end of the line: spaces, `#` and `;` need no quotes.
+
+| Keyword | Default | Meaning |
+|---|---|---|
+| `ether` | — | `eth`: the Pi 4's port or a USB Ethernet adapter; `wlan`: the on-board Wi-Fi. Anything else, or nothing, is no network and no device claimed |
+| `wifissid` | — | the Wi-Fi network's name, 1 to 32 bytes |
+| `wifipassword` | — | its WPA2 passphrase, 8 to 63 printable ASCII characters, or the key as 64 hex digits; empty for an open network. Kept in clear on the card. WPA3-only networks cannot be joined |
+| `wificountry` | `US` when absent | two letters for the radio's channels (`FR`, `DE`, …); without it channels 12 and 13 are out of reach |
+| `nonet` | `false` | **ignored**: `ether` decides. Every card written before the network existed says `true` |
 
 ## Keywords that do nothing here
 
@@ -98,7 +109,8 @@ They are written back unchanged, so a value that seems ignored is ignored on pur
 |---|---|
 | `displaycolordepth`, `title`, `init_grab`, `hotkey`, `scale_*`, `mag_rate`, `gammaramp`, `sdlrender`, `nogui` | they configure a window on a host desktop; the Mac owns the frame buffer and Monitors picks the depth |
 | `jit*` | Circle marks everything past `_etext` non-executable; the interpreter is the only CPU here |
-| `ether`, `etherconfig`, `udptunnel`, `udpport`, `redir`, `host_domain` | no networking yet |
+| `etherconfig`, `redir`, `host_domain` | host network scripts and slirp's forwarding; the Mac is a node on the real network |
+| `udptunnel`, `udpport` | no UDP tunnel: `udptunnel true` means no network |
 | `seriala`, `serialb` | the Pi's usable UART carries Okapia's log |
 | `dsp`, `mixer`, `sound_buffer` | OSS device paths and host buffers; sound goes through Circle's device |
 | `scsi0`…`scsi6` | host SCSI pass-through; there is no host |

@@ -93,8 +93,10 @@ void prefs_exit (void)
 /*
  *  Ethernet, and the only notice this engine gets that the Macintosh restarted
  *
- *  The dummy driver has nothing to reset. What makes this worth keeping is
- *  where it is called from: OP_RESET, "early in MacOS reset" (emul_op.cpp:286),
+ *  The PowerPC side of ether_circle.cpp has nothing for it to reset: upstream's
+ *  ether_reset() clears the table of 68k protocol handlers, which this engine
+ *  does not have (Unix/ether_unix.cpp:783). What makes this worth keeping here
+ *  is where it is called from: OP_RESET, "early in MacOS reset" (emul_op.cpp:286),
  *  which is the one place a PowerPC Macintosh announces that it is going round
  *  again. The other engine has Basilisk's own reset opcode for this; here there
  *  is no equivalent, and without it a Restart from the Finder resets the
