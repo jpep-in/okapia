@@ -264,10 +264,11 @@ LIBS := $(CIRCLEHOME)/lib/sound/libsound.a \
         $(CIRCLE_STDLIB_LIBS)
 
 # Wraps on the final link, for calls from the libraries rather than from an
-# engine. fopen: the supplicant reads its configuration from memory, never
-# from a file written on the card (wlan_circle.cpp); every other name goes
-# through untouched.
-FINAL_WRAPS = --wrap=fopen
+# engine. f_open, f_gets, f_close: Circle's wpa_supplicant reads its
+# configuration through FatFs itself, and gets it from memory instead of from
+# a file written on the card (wlan_circle.cpp); every other file goes through
+# untouched.
+FINAL_WRAPS = --wrap=f_open --wrap=f_gets --wrap=f_close
 
 # Two upstream hooks that are part of the product, not diagnostics, so they are
 # always on. Mangled names: extfs_write(int, void*, size_t) for the shared

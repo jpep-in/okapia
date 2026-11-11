@@ -52,17 +52,20 @@ would want before the Mac starts (NTP, provisioning) must finish and hand the in
 the life of the board, and both engines' `ether_circle.cpp` call into that one copy
 ([Architecture](../project/architecture.md#resources-taken-once-for-the-life-of-the-board)).
 
-- **`BoardNetStart()`** (`board_net_circle.cpp:188`) reads the preferences on the first start of either Macintosh and
+- **`BoardNetStart()`** (`board_net_circle.cpp:195`) reads the preferences on the first start of either Macintosh and
   answers the same thereafter. Wired: the Pi 4's GENET (`CBcm54213Device`), else the first USB Ethernet device
   Circle registered — USB is attached before the Mac starts and not again, so it is there or not. Either way
   `UpdatePHY()` is called at once.
 - **The ring**: 64 slots of 1514 bytes, allocated at the first start (`board_net_circle.cpp:52`).
-  `BoardNetPoll()` (`:330`) takes up to 16 frames a visit off the device; frames received while no engine listens are
+  `BoardNetPoll()` (`:351`) takes up to 16 frames a visit off the device; frames received while no engine listens are
   dropped, as a closed driver would.
-- **Multicast**: up to 15 groups (`:76`), handed to `SetMulticastFilter()` whole whenever the list changes.
+- **Multicast**: up to 15 groups (`:83`), handed to `SetMulticastFilter()` whole whenever the list changes.
 - **The link** is looked at about once a second; on a cable `UpdatePHY()` every two seconds, as Circle's `CPHYTask`
   does. Frames dropped are reported every sixteen seconds at most.
-- **Short frames are padded to 60 bytes** (`BoardNetSend()`, `:418`): a Macintosh sends 36-byte AARP probes and
+- **Counters** every five seconds with `perfreport`: link, whether the Mac listens, frames received (to the Mac and to
+  the supplicant), sent and refused, multicast groups — `okapia-net: Wi-Fi up, Mac listening: rx …`. The link's
+  transitions are said once, at a moment a serial cable plugged in later never sees.
+- **Short frames are padded to 60 bytes** (`BoardNetSend()`, `:442`): a Macintosh sends 36-byte AARP probes and
   leaves the padding to its card.
 
 ### The Mac's half, per engine
@@ -96,13 +99,15 @@ Circle's own sample are supplied by `wlan_circle.cpp`:
   `BoardNetPoll()`, so from the engine seams and from the boot menu's loop (`okapia_firmware.cpp:697`, `:1234`).
 - **A link layer for the handshake.** Upstream's `l2_packet_circle.cpp` reaches EAPOL frames through
   `CNetSubSystem`'s link layer (`l2_packet_circle.cpp:66-72`), which would take every IP and ARP frame meant for the
-  Mac. `wlan_circle.cpp` defines every `l2_packet_*` symbol itself (`:183` on), so the linker never pulls upstream's
-  member out of `libwpa_supplicant.a`; the board routes frames of type `0x888E` to it (`WlanTakeEAPOL()`, `:111`)
+  Mac. `wlan_circle.cpp` defines every `l2_packet_*` symbol itself (`:227` on), so the linker never pulls upstream's
+  member out of `libwpa_supplicant.a`; the board routes frames of type `0x888E` to it (`WlanTakeEAPOL()`, `:155`)
   and nowhere else.
-- **A configuration that is never a file on the card.** The supplicant reads its networks with `fopen()`
-  (`config_file.c:339`). Writing one at every start would be a FAT and directory update a pulled plug can catch half
-  done ([Storage](storage.md)). `fopen` is wrapped on the final link (`FINAL_WRAPS`, `src/kernel/Makefile:270`):
-  one name is answered from memory with `fmemopen()` (`wlan_circle.cpp:70`), every other goes to newlib's.
+- **A configuration that is never a file on the card.** Circle's port of the supplicant reads its networks straight
+  through FatFs: `f_open()` (`config_file.c:336`), then `f_gets()` and `f_close()`, which hostap's `utils/config.h`
+  substitutes for `fgets` and `fclose`. Writing a file at every start would be a FAT and directory update a pulled
+  plug can catch half done ([Storage](storage.md)). The three are wrapped on the final link (`FINAL_WRAPS`,
+  `src/kernel/Makefile:271`): one name opens a file object read from memory (`wlan_circle.cpp:81`), every other file
+  goes to FatFs.
 
 The configuration (`NetWpaConfigBuild()`, `net_config_circle.cpp`) gives the SSID in hex and the **key**, derived
 from the passphrase with hostap's own `pbkdf2_sha1()`, never the passphrase: the supplicant's line reader cuts at a
@@ -124,11 +129,18 @@ a register read.
 - [x] Receive path verified under QEMU by the trace build's self-test: an AARP request put in the ring is answered
       by the Mac on the wire (`Network self-test: the Macintosh answered…`, 2026-11-10)
 - [x] Wi-Fi through Circle's `addon/wlan`: scheduler, supplicant, `l2_packet` replaced, configuration from the
-      preferences in memory, firmware staged by `make-pi-sd.sh`; built for the Pi 4, **not yet run on one** (2026-11-10)
-- [ ] Trials on the Pi 4: DHCP by cable; Wi-Fi join, a group rekey (an hour or more connected), reconnection after
-      the access point restarts
-- [ ] Trials: Mamba under System 7.1 with MacTCP and 7.6 with Open Transport, against macOS file sharing and Samba;
-      throughput against the BlueSCSI's 115 KB/s; AppleTalk over Wi-Fi (802.3 frames through the Broadcom firmware)
+      preferences in memory, firmware staged by `make-pi-sd.sh` (2026-11-10)
+- [x] On the Pi 4, Wi-Fi to a Freebox (WPA2, 2.4 and 5 GHz): join, DHCP from Open Transport on System 7.6.1, ping
+      from the LAN (2026-11-11)
+- [x] Mamba on System 7.6.1 over Wi-Fi: a 37 MB file copied from an SMB share in 268 s, **about 140 KB/s** — the
+      Freebox reports 1.2 Mbit/s; 103 frames a second reach the Mac, none dropped. The SE/30 with a BlueSCSI does
+      115 KB/s (2026-11-11)
+- [x] Network counters every five seconds with `perfreport` (2026-11-11)
+- [ ] Trials on the Pi 4: DHCP by cable; a group rekey (an hour or more connected); reconnection after the access
+      point restarts
+- [ ] Wi-Fi drops a few seconds after joining while the Macintosh starts (below), then rejoins: understand it
+- [ ] Trials: Mamba under System 7.1 with MacTCP, against Samba; AppleTalk over Wi-Fi (802.3 frames through the
+      Broadcom firmware)
 - [ ] PowerPC engine with Open Transport on Mac OS 8.6: compiled, never run
 - [ ] Restart from Mac OS five times and switch engines with the network on, free heap logged per round
 - [ ] The boot menu's Info page shows the network: interface, SSID, link
@@ -161,6 +173,16 @@ a register read.
   seconds.
 - **Hidden Wi-Fi networks need Circle 51.1 or later**: `scan_ssid=1` (`net_config_circle.cpp`) was always written,
   but Circle's supplicant driver made no directed scan before hostap `966cab4a`.
+- **Circle's supplicant reads its configuration through FatFs, not stdio** (`config_file.c:336`, `utils/config.h`): a
+  `--wrap=fopen` linked, and the supplicant logged `Failed to open config file …, error: 11` on the board. The QEMU
+  build compiles the Wi-Fi out, so only a board shows it.
+- **Open Transport asks for its address once, when TCP/IP loads.** At the first start the Wi-Fi was not joined yet,
+  and the Mac kept no address until it restarted with the link already up; opening the TCP/IP control panel did not
+  ask again.
+- **Wi-Fi drops while the Macintosh starts.** Seen on the Pi 4 at power-on (5 GHz, 3 s after joining) and after a
+  restart from Mac OS (4 s after `The Macintosh restarted`): `CTRL-EVENT-DISCONNECTED reason=0`, the firmware's own
+  disassociation (`ether4330.c`, `E_LINK` down or `E_DISASSOC_IND`), then a rejoin within 8 s. Not understood; the
+  start path's long stretches without a yield are the first suspect. A later power-on joined and held.
 - **One MAC address**: `CNetDevice` has no promiscuous mode (`netdevice.h:90` is the only filter it offers).
 - **Pi 1, 2 and 3 put Ethernet on USB**, shared with the keyboard and mouse: sustained traffic starves input. A Pi 4
   is the target for networking.
@@ -177,6 +199,10 @@ a register read.
   starts EtherTalk on the USB adapter; the self-test's AARP request is answered on the first try.
 - **2026-11-10** — Circle 51.1.1 (circle-stdlib v21): non-blocking receive on USB adapters with the link down, hidden
   networks, a fix for routers that append an optional IE after the RSN IE; `UpdatePHY()` now called at start.
+- **2026-11-11** — First run on the Pi 4, followed on the serial port (a 3.3 V USB adapter on GPIO 14 and 15). The
+  supplicant could not read its configuration (the FatFs pitfall above); fixed by wrapping `f_open`, `f_gets` and
+  `f_close`. Then: WPA2 joined on 5 GHz, DHCP after a restart of the Mac, ping 10/10 (14 to 379 ms), Wi-Fi held 48
+  minutes until the next power-on and from it through the copy, and Mamba copied 37 MB at about 140 KB/s.
 
 ## References
 

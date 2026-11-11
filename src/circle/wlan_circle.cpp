@@ -18,12 +18,14 @@
  *   libwpa_supplicant.a, because every symbol it would provide is already
  *   defined — and read from a queue the board fills.
  *
- * - The configuration file. wpa_supplicant reads its networks with fopen()
- *   (config_file.c:339). Writing one on the card at every start would be a
- *   FAT and directory update that a pulled plug can catch half done, which is
- *   the one thing the card's rules forbid (docs/topics/storage.md). fopen is
- *   wrapped at the final link instead: one name, CONFIG_NAME, is answered from
- *   memory, and every other name goes to newlib's own.
+ * - The configuration file. Circle's port of wpa_supplicant reads its networks
+ *   straight through FatFs: f_open() (config_file.c:336), then f_gets() and
+ *   f_close(), which hostap's utils/config.h substitutes for fgets and
+ *   fclose. Writing a file on the card at every start would be a FAT and
+ *   directory update that a pulled plug can catch half done, which is the one
+ *   thing the card's rules forbid (docs/topics/storage.md). The three are
+ *   wrapped at the final link instead: one name, CONFIG_NAME, opens a file
+ *   object that is read from memory, and every other file goes to FatFs.
  *
  * Copyright (C) 2026  Jonathan Pepin
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -36,8 +38,8 @@
 #include <circle/sched/scheduler.h>
 #include <wlan/bcm4343.h>
 #include <wlan/hostap/wpa_supplicant/wpasupplicant.h>
+#include <fatfs/ff.h>
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,7 +53,7 @@
 // them; the card mounts as "SD:" (hal_circle.cpp).
 static const char FIRMWARE_PATH[] = "SD:/firmware/";
 
-// Not a path FatFs could resolve: a name only __wrap_fopen() answers.
+// Not a path FatFs could resolve: a name only __wrap_f_open() answers.
 static const char CONFIG_NAME[] = "okapia:wpa_supplicant.conf";
 
 static CBcm4343Device  *s_pWLAN;
@@ -63,22 +65,64 @@ static size_t           s_nConfig;
 
 /*
  *  The configuration, from memory
+ *
+ *  The file object the supplicant passes to f_open() for CONFIG_NAME is
+ *  remembered, and f_gets() and f_close() on that object are answered here.
+ *  It is never handed to FatFs, so nothing in it needs to be valid.
  */
 
-extern "C" FILE *__real_fopen (const char *pName, const char *pMode);
+extern "C" FRESULT __real_f_open (FIL *pFile, const TCHAR *pPath, BYTE nMode);
+extern "C" TCHAR  *__real_f_gets (TCHAR *pBuffer, int nLength, FIL *pFile);
+extern "C" FRESULT __real_f_close (FIL *pFile);
 
-extern "C" FILE *__wrap_fopen (const char *pName, const char *pMode)
+static FIL    *s_pConfigFile;
+static size_t  s_nConfigRead;
+
+extern "C" FRESULT __wrap_f_open (FIL *pFile, const TCHAR *pPath, BYTE nMode)
 {
-    if (pName != 0 && strcmp (pName, CONFIG_NAME) == 0)
+    if (pPath != 0 && strcmp (pPath, CONFIG_NAME) == 0)
     {
-        if (s_nConfig == 0 || pMode == 0 || pMode[0] != 'r')
+        if (s_nConfig == 0 || (nMode & FA_WRITE) != 0)
         {
-            errno = ENOENT;
-            return 0;
+            return FR_NO_FILE;
         }
-        return fmemopen (s_Config, s_nConfig, "r");
+        s_pConfigFile = pFile;
+        s_nConfigRead = 0;
+        return FR_OK;
     }
-    return __real_fopen (pName, pMode);
+    return __real_f_open (pFile, pPath, nMode);
+}
+
+// As FatFs's own: up to nLength - 1 characters, the line's '\n' included,
+// and 0 when nothing is left.
+extern "C" TCHAR *__wrap_f_gets (TCHAR *pBuffer, int nLength, FIL *pFile)
+{
+    if (pFile == 0 || pFile != s_pConfigFile)
+    {
+        return __real_f_gets (pBuffer, nLength, pFile);
+    }
+    int n = 0;
+    while (n < nLength - 1 && s_nConfigRead < s_nConfig)
+    {
+        const char c = s_Config[s_nConfigRead++];
+        pBuffer[n++] = c;
+        if (c == '\n')
+        {
+            break;
+        }
+    }
+    pBuffer[n] = '\0';
+    return n > 0 ? pBuffer : 0;
+}
+
+extern "C" FRESULT __wrap_f_close (FIL *pFile)
+{
+    if (pFile != 0 && pFile == s_pConfigFile)
+    {
+        s_pConfigFile = 0;
+        return FR_OK;
+    }
+    return __real_f_close (pFile);
 }
 
 // hostap's own, in libwpa_supplicant.a (src/crypto/sha1-pbkdf2.c).

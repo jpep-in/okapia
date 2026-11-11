@@ -65,6 +65,13 @@ static u8         s_RxBuffer[FRAME_BUFFER_SIZE];
 // What did not reach the Macintosh, and why. Reported when it changes.
 static unsigned s_nDroppedFull, s_nDroppedLong, s_nReported;
 
+// Traffic, for the periodic report: frames off the interface, how many went to
+// the Macintosh and how many to the supplicant, frames sent and refused.
+static unsigned s_nRxFrames, s_nRxToMac, s_nRxEAPOL, s_nTxFrames, s_nTxFailed;
+
+// prefs_circle.cpp: whether the five-second reports go out.
+extern bool PerfReportWanted (void);
+
 /*
  *  Multicast groups
  *
@@ -315,6 +322,20 @@ static void WatchLink (void)
         }
     }
 
+    // With the other counters every five seconds: the transitions above are
+    // said once, at a moment a serial cable plugged in later never sees.
+    if ((s_nVisits / LINK_EVERY) % 5 == 0 && PerfReportWanted ())
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "%s %s, Mac %s: rx %u (%u to the Mac, %u EAPOL), "
+                                "tx %u (%u refused), %u groups",
+                                s_Kind == BoardNetWLAN ? "Wi-Fi" : "Ethernet",
+                                bUp ? "up" : "down",
+                                s_bListening ? "listening" : "not listening",
+                                s_nRxFrames, s_nRxToMac, s_nRxEAPOL,
+                                s_nTxFrames, s_nTxFailed, s_nGroups);
+    }
+
     // Every sixteen seconds at most: a Macintosh still starting drains nothing,
     // and a line a second would bury the rest of its boot.
     const unsigned nDropped = s_nDroppedFull + s_nDroppedLong;
@@ -346,6 +367,7 @@ void BoardNetPoll (void)
         {
             break;
         }
+        s_nRxFrames++;
         if (nLength < 14)
         {
             continue;
@@ -353,6 +375,7 @@ void BoardNetPoll (void)
         const u16 nType = (u16) (s_RxBuffer[12] << 8 | s_RxBuffer[13]);
         if (s_Kind == BoardNetWLAN && nType == WLAN_ETHERTYPE_EAPOL)
         {
+            s_nRxEAPOL++;
             WlanTakeEAPOL (s_RxBuffer, nLength);
             continue;
         }
@@ -374,6 +397,7 @@ void BoardNetPoll (void)
         memcpy (pSlot->Frame, s_RxBuffer, nLength);
         pSlot->nLength = nLength;
         s_nIn++;
+        s_nRxToMac++;
     }
 
     WatchLink ();
@@ -431,5 +455,11 @@ bool BoardNetSend (const u8 *pFrame, unsigned nLength)
         pFrame = Padded;
         nLength = sizeof Padded;
     }
-    return s_pDevice->SendFrame (pFrame, nLength);
+    s_nTxFrames++;
+    if (!s_pDevice->SendFrame (pFrame, nLength))
+    {
+        s_nTxFailed++;
+        return false;
+    }
+    return true;
 }
