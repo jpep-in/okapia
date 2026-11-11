@@ -69,7 +69,7 @@ libraries, not processors.
 ## Disk
 
 The first study blamed redundant `lseek`s; on Circle `lseek` is `f_lseek`, and seeking to the same place is free. The
-real cost is the **FAT chain walk**: with `FF_USE_FASTSEEK 0`, `f_lseek` follows the cluster chain (`ff.c:4665`) —
+real cost is the **FAT chain walk**: with `FF_USE_FASTSEEK 0`, `f_lseek` follows the cluster chain (`ff.c:4667`) —
 forwards from the current cluster, **backwards from the file's first cluster** — one `get_fat` per cluster, a sector
 read per 128 clusters. And `f_read` stops at every cluster boundary: a 1 MB Mac read becomes 256 SD commands at 4 KB
 clusters. A 500 MB image on 4 KB clusters spans 128,000 clusters over 1,000 FAT sectors. Unmeasured hypothesis: part of

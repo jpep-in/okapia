@@ -143,7 +143,16 @@ static CNetDevice *StartWired (void)
 #endif
     // A USB adapter, or QEMU's usb-net. USB is attached before the Macintosh
     // starts and not again (kernel.cpp), so it is there now or not at all.
-    return CNetDevice::GetNetDevice (NetDeviceTypeEthernet);
+    CNetDevice *pDevice = CNetDevice::GetNetDevice (NetDeviceTypeEthernet);
+    if (pDevice != 0)
+    {
+        // Since Circle 51.1, SMSC951x and LAN7800 receive nothing until a call
+        // to UpdatePHY() has seen the link: without this one, the first two
+        // seconds would be deaf and the log would report a link down that is
+        // not. QEMU's usb-net keeps the base class's, which does nothing.
+        pDevice->UpdatePHY ();
+    }
+    return pDevice;
 }
 
 static CNetDevice *StartWireless (void)

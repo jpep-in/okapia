@@ -5,8 +5,8 @@
 # network failure. Reference repos are NOT fetched here — see fetch-reference.sh.
 set -euo pipefail
 
-CIRCLE_STDLIB_URL="https://codeberg.org/larchcone/circle-stdlib.git"
-CIRCLE_STDLIB_REF="v20"                                       # upstream tags releases
+CIRCLE_STDLIB_URL="https://github.com/smuehlst/circle-stdlib.git"
+CIRCLE_STDLIB_REF="v21"                                       # upstream tags releases
 MACEMU_URL="https://github.com/kanjitalk755/macemu.git"
 MACEMU_REF="474ea0ab55cac933de35fa349820c9dd0944bf77"         # no useful tags: pin a SHA
 

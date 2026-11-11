@@ -36,7 +36,7 @@ which `env.sh` exports as `$MAKE`), `dtc` and `gnu-getopt` with Homebrew, and th
 
 | Submodule | Upstream | Pinned to | Notes |
 |---|---|---|---|
-| `external/circle-stdlib` | `codeberg.org/larchcone/circle-stdlib` (GitHub is a read-only mirror) | a **tag** (`v20`) | newlib and libstdc++; **Circle lives in `libs/circle/`**, pinned by circle-stdlib, with its docs in `libs/circle/doc/` |
+| `external/circle-stdlib` | `github.com/smuehlst/circle-stdlib` (back from Codeberg since August 2026; circle-newlib too) | a **tag** (`v21`, Circle Step51.1.1) | newlib and libstdc++; **Circle lives in `libs/circle/`**, pinned by circle-stdlib, with its docs in `libs/circle/doc/` |
 | `external/macemu` | `github.com/kanjitalk755/macemu` | a **SHA** (upstream's last tags date from 2017) | Basilisk II and SheepShaver. Not `emaculation/macemu`, dormant since April 2022 |
 | `external/hfsutils` | `github.com/JotaRandom/hfsutils` | a SHA | libhfs, GPL v2 or later. See below |
 
@@ -57,7 +57,8 @@ the network, read-only) shows each pin, its date and tag, and the upstream commi
 1. read the upstream commits (`check-upstreams.sh` lists them);
 2. check out the tag or SHA in the submodule;
 3. re-apply the patches — **one that no longer applies is the most useful information of the operation**; settle it
-   first;
+   first; for circle-stdlib, `build-libs.sh <target>` for every target in use (each is cleaned and rebuilt, its
+   stamp no longer matching) and `make -C src/kernel okapia-clean`;
 4. build for QEMU, run the host tests, boot Mac OS under QEMU, validate on hardware, compare with the
    [benchmarks](benchmarks.md);
 5. a dedicated commit whose message says **why**.
@@ -79,8 +80,10 @@ built for, and every script that runs a kernel checks it — a Pi 4 kernel addre
 `NO_SDHOST` and dies silently on a board.
 
 circle-stdlib's `configure` is run with `--kernel-max-size` 4 MB (Circle alone reserves 2 MB); newlib is built with
-`-O2` thanks to `patches/circle-stdlib/0001`. A target's libraries carry the digest of the circle-stdlib patches they
-were built with (`install/.okapia-patches`); a target brought back with another digest is built again.
+`-O2` thanks to `patches/circle-stdlib/0001`. A target's libraries carry a stamp of what they were built from
+(`install/.okapia-patches`): the digest of the circle-stdlib patches and the revisions of circle-stdlib, Circle,
+circle-newlib and hostap. A target brought back with another stamp is cleaned and built again, and so is the active
+one — Circle tracks no headers, so after a pin moves its old objects would link against the new classes.
 
 ### The merged image
 
@@ -177,7 +180,7 @@ applied is skipped.
   limit. Overflow shows as an obscure link error.
 - **A library patch is in the sources before it is in the libraries.** `apply-patches.sh --check` and the kernel's
   `patches-check` look at `external/`, not at `libcirclenewlib.a`: a target restored from `build/libs/` was built
-  before the patch. `build-libs.sh` compares the patch digest for that reason; on the active target, rebuild with
+  before the patch. `build-libs.sh` compares its stamp for that reason; on the active target, rebuild with
   `make -C external/circle-stdlib newlib`, then relink the kernel.
 - **`DEPTH` is compiled into `libcircle.a`**: `-DDEPTH=8` in an application Makefile does nothing.
 - **`config.h` declares, it never includes**; it comes before everything else.

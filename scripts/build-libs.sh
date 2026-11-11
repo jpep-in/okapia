@@ -172,15 +172,21 @@ if [ "$CURRENT" != "$TARGET" ]; then
     fi
 fi
 
-# The patches the libraries were built with. A restored build is only finished
-# if they are still the ones in patches/circle-stdlib: a patch added since —
-# the _lseek fix was one — would otherwise be missing from a board's libraries
-# without a word, because the source tree says "applied" either way. Kept in
-# install/, which travels with the target.
+# What the libraries were built from: the patches in patches/circle-stdlib and
+# the revision of every tree that goes into them. A restored build is only
+# finished if both still match. A patch added since — the _lseek fix was one —
+# would otherwise be missing from a board's libraries without a word, because
+# the source tree says "applied" either way; and after a pin moves, Circle's
+# objects, which track no headers, would link last version's code against this
+# version's classes. Kept in install/, which travels with the target.
 PATCH_STAMP="${STDLIB}/install/.okapia-patches"
-patch_digest ()
+build_stamp ()
 {
+    local tree
     cat "${REPO_ROOT}"/patches/circle-stdlib/*.patch 2>/dev/null | shasum | cut -d' ' -f1
+    for tree in . libs/circle libs/circle-newlib libs/circle/addon/wlan/hostap; do
+        printf '%s %s\n' "$(git -C "${STDLIB}/${tree}" rev-parse HEAD 2>/dev/null)" "$tree"
+    done
 }
 
 check_libraries ()          # 0 when every library this project links is there
@@ -217,8 +223,8 @@ ready ()
 # turns a switch into a rename. --rebuild forces the long way.
 if [ "$RESTORED" = yes ] && [ "${2:-}" != --rebuild ]; then
     printf '\n==> Checking the restored libraries\n'
-    if [ "$(cat "$PATCH_STAMP" 2>/dev/null)" != "$(patch_digest)" ]; then
-        printf '==> Built with other patches than patches/circle-stdlib: building after all\n'
+    if [ "$(cat "$PATCH_STAMP" 2>/dev/null)" != "$(build_stamp)" ]; then
+        printf '==> Built from other sources or patches: building after all\n'
     elif check_libraries; then
         ready
     else
@@ -226,8 +232,21 @@ if [ "$RESTORED" = yes ] && [ "${2:-}" != --rebuild ]; then
     fi
 fi
 
-printf '\n==> Configuring circle-stdlib for %s\n' "$TARGET"
 cd "$STDLIB"
+
+# A tree built from other sources is emptied first: make would only rebuild
+# what changed, Circle cannot tell that a header did, and newlib's autoconf
+# cache refuses a host that has changed since (a macOS update is one). mrproper,
+# not clean: only it empties build/circle-newlib, where that cache lives. A
+# configured tree with no stamp at all counts: it was built before stamps
+# existed, which is exactly when its sources are unknown — the Pi 4 libraries
+# of 2026-09 failed that way, on a cache from the macOS before.
+if [ -f Config.mk ] && [ "$(cat "$PATCH_STAMP" 2>/dev/null)" != "$(build_stamp)" ]; then
+    printf '\n==> Built from other sources or patches: cleaning first\n'
+    "$MAKE" mrproper
+fi
+
+printf '\n==> Configuring circle-stdlib for %s\n' "$TARGET"
 "$BASH5" ./configure --aarch64 -p aarch64-none-elf- "${CONFIGURE_ARGS[@]}"
 
 printf '\n==> Building newlib and Circle\n'
@@ -235,6 +254,6 @@ printf '\n==> Building newlib and Circle\n'
 
 printf '\n==> Checking libraries\n'
 check_libraries || { echo "Build incomplete." >&2; exit 1; }
-patch_digest > "$PATCH_STAMP"
+build_stamp > "$PATCH_STAMP"
 
 ready

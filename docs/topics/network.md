@@ -52,16 +52,17 @@ would want before the Mac starts (NTP, provisioning) must finish and hand the in
 the life of the board, and both engines' `ether_circle.cpp` call into that one copy
 ([Architecture](../project/architecture.md#resources-taken-once-for-the-life-of-the-board)).
 
-- **`BoardNetStart()`** (`board_net_circle.cpp:179`) reads the preferences on the first start of either Macintosh and
-  answers the same thereafter. Wired: the Pi 4's GENET (`CBcm54213Device`, then `UpdatePHY()`), else the first USB
-  Ethernet device Circle registered — USB is attached before the Mac starts and not again, so it is there or not.
+- **`BoardNetStart()`** (`board_net_circle.cpp:188`) reads the preferences on the first start of either Macintosh and
+  answers the same thereafter. Wired: the Pi 4's GENET (`CBcm54213Device`), else the first USB Ethernet device
+  Circle registered — USB is attached before the Mac starts and not again, so it is there or not. Either way
+  `UpdatePHY()` is called at once.
 - **The ring**: 64 slots of 1514 bytes, allocated at the first start (`board_net_circle.cpp:52`).
-  `BoardNetPoll()` (`:321`) takes up to 16 frames a visit off the device; frames received while no engine listens are
+  `BoardNetPoll()` (`:330`) takes up to 16 frames a visit off the device; frames received while no engine listens are
   dropped, as a closed driver would.
 - **Multicast**: up to 15 groups (`:76`), handed to `SetMulticastFilter()` whole whenever the list changes.
 - **The link** is looked at about once a second; on a cable `UpdatePHY()` every two seconds, as Circle's `CPHYTask`
   does. Frames dropped are reported every sixteen seconds at most.
-- **Short frames are padded to 60 bytes** (`BoardNetSend()`, `:409`): a Macintosh sends 36-byte AARP probes and
+- **Short frames are padded to 60 bytes** (`BoardNetSend()`, `:418`): a Macintosh sends 36-byte AARP probes and
   leaves the padding to its card.
 
 ### The Mac's half, per engine
@@ -89,7 +90,7 @@ the life of the board, and both engines' `ether_circle.cpp` call into that one c
 Circle's `addon/wlan` is a port of Plan 9's driver and of `wpa_supplicant`. Three things it takes from elsewhere in
 Circle's own sample are supplied by `wlan_circle.cpp`:
 
-- **A scheduler.** The driver runs `wifireader` and `wifitimer` as Circle tasks (`ether4330.c:2583`), and the
+- **A scheduler.** The driver runs `wifireader` and `wifitimer` as Circle tasks (`ether4330.c:2616`), and the
   supplicant is a third. `WlanStart()` (`wlan_circle.cpp:279`) creates the `CScheduler` the first time Wi-Fi is asked
   for; the emulation thread becomes its main task, and the tasks run only when it yields: `WlanYield()` from
   `BoardNetPoll()`, so from the engine seams and from the boot menu's loop (`okapia_firmware.cpp:697`, `:1234`).
@@ -151,9 +152,15 @@ a register read.
   starves the supplicant and can lose the connection; the boot menu's two loops call it.
 - **The supplicant must run for the whole session**, not only to join: routers renew the group key, typically every
   hour.
-- **Circle's driver refuses to join without a country** (`driver_circle.cpp:532`, "Country code not set").
+- **Circle's driver refuses to join without a country** (`driver_circle.cpp:563`, "Country code not set").
 - **Interrupting the Mac before its driver is open allocates in a System heap that may not exist yet**
   (`ether.cpp:468-481`): wait for a protocol handler.
+- **SMSC951x and LAN7800 receive nothing until `UpdatePHY()` has seen the link** (Circle 51.1, `e0d10bba`): their
+  `ReceiveFrame()` no longer submits a blocking bulk-IN with the cable out, which used to stall the caller — our
+  1 kHz seam. The link state is now only what the last `UpdatePHY()` read, hence the call at start and every two
+  seconds.
+- **Hidden Wi-Fi networks need Circle 51.1 or later**: `scan_ssid=1` (`net_config_circle.cpp`) was always written,
+  but Circle's supplicant driver made no directed scan before hostap `966cab4a`.
 - **One MAC address**: `CNetDevice` has no promiscuous mode (`netdevice.h:90` is the only filter it offers).
 - **Pi 1, 2 and 3 put Ethernet on USB**, shared with the keyboard and mouse: sustained traffic starves input. A Pi 4
   is the target for networking.
@@ -168,6 +175,8 @@ a register read.
 - **2026-11-10** — Implemented, cable and Wi-Fi, now that Mamba mounts an SMB share from the Chooser over TCP/IP alone.
   Configuration modelled on BlueSCSI's `WiFiSSID`/`WiFiPassword` (`BlueSCSI.cpp:1039`). Under QEMU, System 7.6
   starts EtherTalk on the USB adapter; the self-test's AARP request is answered on the first try.
+- **2026-11-10** — Circle 51.1.1 (circle-stdlib v21): non-blocking receive on USB adapters with the link down, hidden
+  networks, a fix for routers that append an optional IE after the RSN IE; `UpdatePHY()` now called at start.
 
 ## References
 
