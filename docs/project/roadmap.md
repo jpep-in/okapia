@@ -29,12 +29,12 @@
 
 | Topic | Done | Open | Most important next |
 |---|---:|---:|---|
-| [Startup and shutdown](../topics/startup-and-shutdown.md) | 7 | 3 | Appliance start |
+| [Startup and shutdown](../topics/startup-and-shutdown.md) | 7 | 4 | The 7.6.1 → 7.1.2 restart freeze; appliance start |
 | [Boot menu](../topics/boot-menu.md) | 10 | 5 | Open the menu with the reason when the Macintosh cannot start; repair dialog |
 | [68k engine](../topics/engine-68k.md) | 7 | 6 | Understand the System 7.1 crash (unredirected ASC write hypothesis); remaining bottleneck ranks |
 | [PowerPC engine](../topics/engine-powerpc.md) | 11 | 7 | Mac OS 8.6 installs from its CD; a `kpx_cpu` bottleneck study (`Graf` at 63% of a 6100/60) |
 | [Display](../topics/display.md) | 9 | 7 | Vertical sync; compositor on core 2 once measured |
-| [Sound](../topics/sound.md) | 8 | 7 | System 7.1 sound (Sound Manager 3); hear the Quadra and IIci chimes on a Pi |
+| [Sound](../topics/sound.md) | 9 | 7 | Understand the System 7.1 crash; hear the Quadra and IIci chimes on a Pi |
 | [Input](../topics/input.md) | 7 | 5 | `mousedpi` measured for a real mouse on the Pi 4 |
 | [Storage](../topics/storage.md) | 9 | 11 | Error cases (full card, SD write error, removal); FatFs fast seek |
 | [Shared folder](../topics/shared-folder.md) | 6 | 4 | A hint when the System needs the FSM 1.2 extension |
@@ -48,8 +48,10 @@
 
 Found and not yet fixed — each is tracked in its topic:
 
-- **System 7.1: no sound, and one crash with odd sound from the jack** ([Sound](../topics/sound.md),
-  [68k engine](../topics/engine-68k.md)).
+- **System 7.1: one crash with odd sound from the jack** ([Sound](../topics/sound.md),
+  [68k engine](../topics/engine-68k.md)); System 7.0 and 7.1 have no sound without the Sound Manager 3
+  extension.
+- **A restart from System 7.6.1 to 7.1.2 froze in the ROM** ([Startup and shutdown](../topics/startup-and-shutdown.md)).
 
 ## Proposals under consideration
 

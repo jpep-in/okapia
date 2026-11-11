@@ -114,6 +114,6 @@ no RTC, and accepts video modes a real Pi refuses: validate on hardware.
 | A blank "Welcome to Macintosh" box on System 7.1 | the wrong `modelid` for that System; leave `modelidauto true` — see [68k engine](topics/engine-68k.md#model-id) |
 | "System 6.0.8 does not work with 32-bit addressing" after forgetting the PRAM | the startup disk fell back to the first `disk` line; pick the volume again in the boot menu |
 | No shared volume on the desktop under System 7.0 or 7.1 | install the File System Manager 1.2 extension — see [Shared folder](topics/shared-folder.md) |
-| No sound under System 7.1 | install the Sound Manager 3.x extension — see [Sound](topics/sound.md) |
+| No sound under System 7.0 or 7.1: no volume slider, the menu bar flashes for an alert | install the Sound Manager 3.1 extension, and QuickTime first on 7.0 — see [Sound](topics/sound.md#using-it) |
 | The picture uses only part of the screen | the Mac's resolution is smaller than the output; pick another in Monitors or set `screen` |
 | Wrong fonts in menus and icon labels | a damaged System — restage the volume before suspecting video |

@@ -14,8 +14,16 @@
 - **Volume**: the Sound control panel's slider and mute work on every output; the volume is applied to the samples.
 - **Startup chime**: played at power-on and at every restart, from the ROM of the Macintosh about to start.
   Silent when the output is `off`.
-- **System 7.1**: Basilisk's sound driver is a Sound Manager 3 component; a bare System 7.1 predates it, and
-  gives no sound (see Status).
+- **System 7.0.x and 7.1.x need the Sound Manager 3 extension.** Basilisk's sound driver is a Sound Manager 3
+  component; Mac OS 7.5 and later carry Sound Manager 3, earlier Systems do not, and then there is no volume slider
+  in the Sound control panel and an alert sound is a flash of the menu bar. Install **Sound Manager 3.1** — the
+  extension and its Sound control panel, dropped on the System Folder, then a restart — found as
+  `Sound_Manager_3.1.sea.hqx` in the classic Mac archives, or in Macintosh Garden's "Helper extensions BII"
+  (<https://macintoshgarden.org/apps/helper-extensions-bii>), a set prepared for Basilisk II.
+  - **7.1.x**: the extension is enough. Verified on a Pi 4 with French System 7.1.2 (2026-11-11).
+  - **7.0.x**: Sound Manager 3 rests on the Component Manager, which System 7.0 has only with QuickTime installed
+    ([develop 16](https://gferrara.github.io/apple-develop-articles/1993/december_93_somewhere_in_quicktime.html)):
+    install QuickTime first. Not verified here.
 - **Under QEMU** there is no sound output to hear; `discard` exercises the whole pull and throws the samples away.
 
 ## How it works
@@ -118,7 +126,8 @@ duration fitted by least squares — and approved by ear. See the
 - [x] Volume and mute applied to the samples (2026-09-14)
 - [x] Output switched from the boot menu without powering off (2026-09-14)
 - [x] Startup chime from the ROM, three forms, fallback ROM, replay at every restart (2026-09-14)
-- [ ] System 7.1: no sound. Check Sound Manager 3.0 installed as an extension, as the shared folder needs FSM 1.2
+- [x] System 7.1.2: sound with the Sound Manager 3 extension installed, on a Pi 4 (2026-11-11)
+- [ ] System 7.0.1 with QuickTime and Sound Manager 3: untried
 - [ ] System 7.1 crash with odd sound from the jack, then a restart to the boot menu (2026-09-14): leading
       hypothesis a guest write through the unredirected ASC address
       ([68k engine](engine-68k.md#memory)), unconfirmed

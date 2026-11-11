@@ -109,6 +109,9 @@ re-entering the Toolbox needs — telling the ROM the mouse resolution, for inst
 - [x] `Macintosh idle` boot signal on the 68k engine
 - [ ] Appliance start: power on → black screen → Happy Mac → Finder, no log on HDMI
 - [ ] Boot signal for the PowerPC engine
+- [ ] A 68k restart from System 7.6.1 to 7.1.2, chosen in the boot menu, froze in the ROM on a Pi 4 (2026-11-11):
+      `Mac Ticks` stuck at 8, the emulator still running; Wi-Fi and HDMI sound on. A cold start of the same 7.1.2
+      with both on reached the Finder. Next: the same restart with `ether` off, and with `soundoutput off`
 - [ ] A PowerPC engine that can be entered a second time in place, so a different startup does not reset the
       board (a second `InitAll()` over a torn-down nanokernel is untested upstream)
 
