@@ -132,6 +132,8 @@ duration fitted by least squares — and approved by ear. See the
       hypothesis a guest write through the unredirected ASC address
       ([68k engine](engine-68k.md#memory)), unconfirmed
 - [ ] Hear the Quadra and IIci chimes on a Pi (validated on the host only)
+- [ ] On HDMI, the chime waits until the stream has run 2.5 s (`HDMI_SETTLE_USEC`): heard at power-on and after a
+      restart from the boot menu? Before, only a restart from the Finder was heard (2026-11-12)
 - [ ] Automatic output from the EDID (an HDMI sink declaring audio → `hdmi`, otherwise `jack`) — a proposal; note a
       sink may play audio its EDID does not declare
 - [ ] Other ROMs: LC, IIsi (the replacement routine at `0x45C0A`), Quadra AV `MARIOBOOTSOUND`, ROM-inator II
@@ -140,6 +142,10 @@ duration fitted by least squares — and approved by ear. See the
 
 ## Pitfalls
 
+- **A screen hears nothing of a new HDMI audio stream for a second or two.** The chime is 1.4 s: at power-on, and
+  after any restart of the board, it was played whole into that silence — the log said `Chime: playing on hdmi` and
+  nothing was heard — while a restart from the Finder, the stream long running, was. The device plays silence
+  until the chime starts, which is what lets the screen lock on.
 - **Never claim a device the guest cannot use.** Sound reported open while QEMU models no output made the Mac play
   its alert, wait for a completion that never came, and freeze — and the hard stop cost a card. A device that will not
   start leaves the platform exactly as `src/dummy/` does (`audio_open` false), decided at init, not in a hook the 68k

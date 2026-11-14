@@ -30,6 +30,7 @@
  */
 
 #include "hal_circle.h"
+#include "clock_circle.h"
 
 #include <circle/bcmpropertytags.h>
 #include <circle/logger.h>
@@ -59,6 +60,8 @@ static const unsigned SOUND_SAMPLE_RATE = 44100;
 static CSoundBaseDevice *s_pBoardSound;
 static char              s_BoardSoundWhere[8];
 static bool              s_bBoardSoundTried;
+static unsigned          s_nBoardSoundStarted;    // µs, CTimer::GetClockTicks()
+static bool              s_bBoardSoundHDMI;
 
 CSoundBaseDevice *BoardSoundClaim (const char *pWhere, unsigned nQueueMsecs)
 {
@@ -142,6 +145,8 @@ CSoundBaseDevice *BoardSoundClaim (const char *pWhere, unsigned nQueueMsecs)
     }
 
     s_pBoardSound = pSound;
+    s_nBoardSoundStarted = CTimer::GetClockTicks ();
+    s_bBoardSoundHDMI = strcmp (pWhere, "hdmi") == 0;
     CLogger::Get ()->Write (FROM, LogNotice, "Sound device %s claimed",
                             pWhere);
     return s_pBoardSound;
@@ -180,12 +185,25 @@ static u8 *s_pChimeRom;
 // A kernel timer, so at interrupt level on core 0: no allocation, no log, no
 // card. Whatever room the queue has, then again in two ticks until the last
 // frame.
+// What a screen takes to lock onto an HDMI audio stream it has just been
+// given. Until then it plays nothing, and the chime is 1.4 s: at power-on and
+// after a restart of the board it was played whole into that silence, while
+// a restart from the Finder, with the stream long running, was heard. The
+// device plays silence meanwhile, which is what lets the screen lock on.
+static const unsigned HDMI_SETTLE_USEC = 2500000;
+
 static void ChimeTick (TKernelTimerHandle hTimer, void *pParam, void *pContext)
 {
     s_hChimeTimer = 0;
     if (s_bChimeStop || s_pBoardSound == 0 || s_nChimeOut >= s_nChimeFrames)
     {
         s_bChimePlaying = false;
+        return;
+    }
+    if (   s_bBoardSoundHDMI && s_nChimeOut == 0
+        && CTimer::GetClockTicks () - s_nBoardSoundStarted < HDMI_SETTLE_USEC)
+    {
+        s_hChimeTimer = CTimer::Get ()->StartKernelTimer (2, ChimeTick, 0, 0);
         return;
     }
 
@@ -418,7 +436,7 @@ void BoardChimeStop (void)
 
 void BoardChimeFinish (void)
 {
-    for (unsigned i = 0; i < 400 && s_bChimePlaying; i++)
+    for (unsigned i = 0; i < 600 && s_bChimePlaying; i++)
     {
         CTimer::Get ()->MsDelay (10);
     }
@@ -435,6 +453,10 @@ static const u32 PROPTAG_BLANK_SCREEN = 0x00040002;
 
 void BoardPowerOff (void)
 {
+    // Every halt passes here, from the menu or from Mac OS: the last moment
+    // the card is still ours.
+    ClockSessionEnd ();
+
     if (s_pBoardSound != 0)
     {
         s_pBoardSound->Cancel ();
