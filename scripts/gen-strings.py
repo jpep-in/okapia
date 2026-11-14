@@ -21,12 +21,17 @@ def identifier(key):
 
 
 def escape(text):
+    # In the table, the two characters \n are a line break: a cell holds one
+    # line, and a note that is one block of text cannot be read as paragraphs.
     out = []
-    for ch in text:
-        if ch == "\\" or ch == '"':
-            out.append("\\" + ch)
-        else:
-            out.append(ch)
+    for part_index, part in enumerate(text.split("\\n")):
+        if part_index:
+            out.append("\\n")
+        for ch in part:
+            if ch == "\\" or ch == '"':
+                out.append("\\" + ch)
+            else:
+                out.append(ch)
     return "".join(out)
 
 

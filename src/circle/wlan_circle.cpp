@@ -45,6 +45,7 @@
 #include <string.h>
 
 #include "net_config_circle.h"
+#include "wlan_hostap.h"
 
 #define FROM "okapia-wlan"
 
@@ -320,6 +321,36 @@ int l2_packet_set_packet_filter (l2_packet_data *l2, int type)
  *  Starting it
  */
 
+// The configuration the supplicant will read, into s_Config. No SSID is not an
+// error: the boot menu starts the Wi-Fi to list the networks before one has
+// been chosen, and the supplicant then runs with the country alone.
+static bool BuildConfig (const char *pSSID, const char *pPassword, const char *pCountry)
+{
+    const char *pError = 0;
+    const bool bNone = pSSID == 0 || pSSID[0] == '\0';
+    const bool bOK = bNone
+                   ? NetWpaConfigNoNetwork (s_Config, sizeof s_Config, pCountry, &pError)
+                   : NetWpaConfigBuild (s_Config, sizeof s_Config, pSSID, pPassword, pCountry,
+                                        DerivePSK, &pError);
+    if (!bOK)
+    {
+        CLogger::Get ()->Write (FROM, LogError, "Wi-Fi configuration refused: %s", pError);
+        return false;
+    }
+    s_nConfig = strlen (s_Config);
+    NetCopyValue (s_SSID, sizeof s_SSID, bNone ? "" : pSSID);
+    return true;
+}
+
+bool WlanAvailable (void)
+{
+#if defined (CIRCLE_QEMU) || (RASPPI <= 3 && defined (NO_SDHOST))
+    return false;
+#else
+    return true;
+#endif
+}
+
 CNetDevice *WlanStart (const char *pSSID, const char *pPassword, const char *pCountry)
 {
     if (s_bTried)
@@ -338,15 +369,10 @@ CNetDevice *WlanStart (const char *pSSID, const char *pPassword, const char *pCo
 #endif
 
     // Everything that can be refused is refused before the hardware is touched.
-    const char *pError = 0;
-    if (!NetWpaConfigBuild (s_Config, sizeof s_Config, pSSID, pPassword, pCountry,
-                            DerivePSK, &pError))
+    if (!BuildConfig (pSSID, pPassword, pCountry))
     {
-        pLog->Write (FROM, LogError, "Wi-Fi not started: %s", pError);
         return 0;
     }
-    s_nConfig = strlen (s_Config);
-    NetCopyValue (s_SSID, sizeof s_SSID, pSSID);
 
     if (!CScheduler::IsActive ())
     {
@@ -374,10 +400,55 @@ CNetDevice *WlanStart (const char *pSSID, const char *pPassword, const char *pCo
 
     CString MAC;
     s_pWLAN->GetMACAddress ()->Format (&MAC);
-    pLog->Write (FROM, LogNotice, "Wi-Fi %s, joining \"%s\" (%s, country %s)",
-                 (const char *) MAC, s_SSID,
-                 pPassword == 0 || pPassword[0] == '\0' ? "open" : "WPA2", pCountry);
+    if (s_SSID[0] == '\0')
+    {
+        pLog->Write (FROM, LogNotice, "Wi-Fi %s, no network chosen (country %s)",
+                     (const char *) MAC, pCountry);
+    }
+    else
+    {
+        pLog->Write (FROM, LogNotice, "Wi-Fi %s, joining \"%s\" (%s, country %s)",
+                     (const char *) MAC, s_SSID,
+                     pPassword == 0 || pPassword[0] == '\0' ? "open" : "WPA2", pCountry);
+    }
     return s_pWLAN;
+}
+
+bool WlanApply (const char *pSSID, const char *pPassword, const char *pCountry)
+{
+    if (s_pWLAN == 0 || s_pSupplicant == 0)
+    {
+        return false;
+    }
+    if (!BuildConfig (pSSID, pPassword, pCountry))
+    {
+        return false;
+    }
+    // The supplicant reads it again through the same wrap, drops the network
+    // it had and goes after this one.
+    if (!okapia_wlan_reload ())
+    {
+        CLogger::Get ()->Write (FROM, LogError, "The WPA supplicant did not take the new network");
+        return false;
+    }
+    CLogger::Get ()->Write (FROM, LogNotice, "Wi-Fi: now joining \"%s\" (%s, country %s)", s_SSID,
+                            pPassword == 0 || pPassword[0] == '\0' ? "open" : "WPA2", pCountry);
+    return true;
+}
+
+bool WlanScan (void)
+{
+    return s_pWLAN != 0 && okapia_wlan_scan () != 0;
+}
+
+unsigned WlanSeen (okapia_wlan_bss *pOut, unsigned nMax)
+{
+    return s_pWLAN != 0 ? okapia_wlan_seen (pOut, nMax) : 0;
+}
+
+int WlanState (char *pSSID, unsigned nSize, int *pDbm)
+{
+    return okapia_wlan_state (pSSID, nSize, pDbm);
 }
 
 void WlanYield (void)

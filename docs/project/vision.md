@@ -19,7 +19,7 @@ The virtual machine it presents:
 
 | | |
 |---|---|
-| CPU | 68040 or PowerPC, interpreted — **no JIT** |
+| CPU | 68040 or PowerPC, interpreted — no JIT by default (an experimental 68k one: `OKAPIA_JIT=1`) |
 | RAM | 256 MB, the native ceiling of a Quadra 900/950 |
 | Video | a virtual display card, several resolutions and all six depths, switchable live from Monitors |
 | Input | USB keyboard and mouse presented as ADB devices |

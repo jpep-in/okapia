@@ -49,6 +49,9 @@ static unsigned s_nVBLsSinceComposite;
 static unsigned s_nVBLs;
 static unsigned s_nLastReport;
 static unsigned s_nLastWindow;
+static unsigned s_nLastComposite;
+static unsigned s_CompositeIntervals[101];  // milliseconds, last bucket is 100+
+static bool s_bReport;
 
 unsigned VideoScreenRowBytes (unsigned nWidth, unsigned nBits)
 {
@@ -132,6 +135,8 @@ bool VideoScreenShadow (u32 nBytes)
 
 void VideoScreenClose (void)
 {
+    s_nLastComposite = 0;
+    memset (s_CompositeIntervals, 0, sizeof s_CompositeIntervals);
     // The output was never ours to release, and the shadow stays: see above.
     s_bReady = false;
 }
@@ -381,6 +386,7 @@ void VideoScreenReadPrefs (void)
     const int32 nSkip = PrefsFindInt32 ("frameskip");
     s_bDynamic   = (nSkip <= 0);
     s_nFrameSkip = s_bDynamic ? 1 : (unsigned) nSkip;
+    s_bReport    = PerfReportWanted ();
 }
 
 /*
@@ -450,6 +456,16 @@ bool VideoScreenVBL (void)
         s_nVBLsSinceComposite = 0;
         CompositorRun (&s_Compositor);
         bComposited = true;
+        if (s_bReport)
+        {
+            const unsigned nTime = CTimer::GetClockTicks ();
+            if (s_nLastComposite)
+            {
+                const unsigned ms = (nTime - s_nLastComposite) / 1000;
+                ++s_CompositeIntervals[ms < 100 ? ms : 100];
+            }
+            s_nLastComposite = nTime;
+        }
     }
     s_nVBLs++;
 
@@ -479,18 +495,29 @@ bool VideoScreenVBL (void)
 
     // s_nVBLs counts vertical blanks, not composites. Reporting the VBL rate as
     // "fps" once hid a 9 Hz display behind a reassuring 55.
-    if (PerfReportWanted ())
+    if (s_bReport)
     {
+        unsigned nSamples = 0;
+        for (unsigned count : s_CompositeIntervals)
+            nSamples += count;
+        const unsigned nRank = (95 * nSamples + 99) / 100;
+        unsigned nCumulative = s_CompositeIntervals[0];
+        unsigned nP95 = 0;
+        while (nCumulative < nRank && nP95 < 100)
+            nCumulative += s_CompositeIntervals[++nP95];
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "%u VBL (%u/s), screen %u/s, composite %u us "
-                                "(%u.%u%% of wall), %u/256 boxes, %u full scans, "
+                                "(%u.%u%% of wall), p95 screen interval %u ms, "
+                                "%u/256 boxes, %u full scans, "
                                 "guest buffer %s",
                                 s_nVBLs, s_nVBLs / (nNow ? nNow : 1),
                                 nScreenRate, nPerComposite,
                                 nLoadPerMille / 10, nLoadPerMille % 10,
+                                nP95,
                                 nBoxesPer, s_Compositor.nFullScans,
                                 GuestHasContent () ? "has content" : "still blank");
     }
+    memset (s_CompositeIntervals, 0, sizeof s_CompositeIntervals);
 
     s_Compositor.nUsec       = 0;
     s_Compositor.nFrames     = 0;

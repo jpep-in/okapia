@@ -1,0 +1,35 @@
+compemu_support_arm: a RAM block's interpreter warm-up happens once, then it is compiled
+
+compile_block() gives a block in RAM an interpreter-dispatch first generation
+(optlevel 0, "bi->count = 9"), meaning to escalate to native code "on the next
+count expiry after 10 dispatches". The branch that sets that count tests only
+`optlev == 0`, and a block that has run out its countdown is still at optlevel
+0, so the same branch is taken again: another optlevel-0 generation, another 9,
+for ever. The branch that escalates (`optlev < max_optlev`) is never reached
+from level 0.
+
+Measured on a Raspberry Pi 4 running Speedometer in System 7.6.1, in 187 s:
+220,000 first compilations, 6.67 million recompilations after a countdown
+expired, 6.3 million of them at optlevel 0 and 30,000 above it. A block of 3.5
+instructions is rebuilt every ten executions and never becomes native code;
+every rebuild emits a new stub into the cache, which was therefore full and
+flushed every few seconds. Strict mode (B2_JIT_STRICT_FULL) does not pass
+through this branch, which is why its figures, and the fork's, look as they do.
+
+Warm up once: the interpreter generation is chosen only for a block that was
+invalid, and a block that comes back with a countdown expired takes the
+existing escalation.
+
+diff --git a/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp b/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp
+index e8d3ea35..5520afb2 100644
+--- a/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp
++++ b/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp
+@@ -7748,7 +7748,7 @@ void compile_block(cpu_history* pc_hist, int blocklen, int totcycles)
+                         (force_l2_ram && *force_l2_ram && strcmp(force_l2_ram, "0") != 0)) {
+                         optlev = max_optlev;
+                         bi->count = -2;
+-                    } else if (optlev == 0) {
++                    } else if (optlev == 0 && bi_was_invalid) {
+                         /* RAM: use interpreter dispatch initially. Transient code
+                            (memclear) runs once per address and never escalates.
+                            Hot loops run many times and will escalate on the next

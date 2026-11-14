@@ -66,6 +66,75 @@ void OkapiaPaintSettings (TSurface *pSurface, const TRect &rRect, TOkapiaColor I
     }
 }
 
+void OkapiaPaintLock (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
+                      TOkapiaColor Back)
+{
+    // A body two thirds of the height and a shackle above it, both fractions
+    // of the square: at sixteen pixels the shackle is three rows and still an
+    // arch.
+    const int N = (int) (rRect.nWidth < rRect.nHeight ? rRect.nWidth : rRect.nHeight);
+    const int t = N / 10 < 1 ? 1 : N / 10;
+    const int nBodyW = N * 5 / 8, nBodyH = N * 7 / 16;
+    const int nX = rRect.nX + ((int) rRect.nWidth - nBodyW) / 2;
+    const int nY = rRect.nY + (int) rRect.nHeight - nBodyH - N / 8;
+    const int nShackleW = nBodyW * 5 / 8;
+    const int nShackleH = N * 3 / 8 + t;
+    const TRect Shackle = Rect (nX + (nBodyW - nShackleW) / 2, nY - nShackleH + t,
+                                (unsigned) nShackleW, (unsigned) (2 * nShackleH));
+    GfxRoundFrame (pSurface, Shackle, (unsigned) (nShackleW / 2), Ink, (unsigned) t);
+    const TRect Body = Rect (nX, nY, (unsigned) nBodyW, (unsigned) nBodyH);
+    GfxRoundFill (pSurface, Body, (unsigned) (t > 1 ? t : 1), Ink);
+    (void) Back;
+}
+
+// Four bars rising from the bottom-left; nLit of them filled.
+static void Signal (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink, unsigned nLit)
+{
+    const int N = (int) (rRect.nWidth < rRect.nHeight ? rRect.nWidth : rRect.nHeight);
+    const int t = N / 16 < 1 ? 1 : N / 16;
+    // Four bars and three gaps across the square, the gap half a bar.
+    const int nBar = (2 * N) / 11 < 2 ? 2 : (2 * N) / 11;
+    const int nGap = nBar / 2 < 1 ? 1 : nBar / 2;
+    const int nSpan = 4 * nBar + 3 * nGap;
+    const int nX0 = rRect.nX + ((int) rRect.nWidth - nSpan) / 2;
+    const int nBottom = rRect.nY + ((int) rRect.nHeight + N) / 2 - N / 8;
+    const int nTop = rRect.nY + ((int) rRect.nHeight - N) / 2 + N / 8;
+    for (unsigned i = 0; i < 4; i++)
+    {
+        const int nH = (nBottom - nTop) * (int) (i + 1) / 4;
+        const TRect Bar = Rect (nX0 + (int) i * (nBar + nGap), nBottom - nH,
+                                (unsigned) nBar, (unsigned) nH);
+        if (i < nLit)
+        {
+            GfxFill (pSurface, Bar, Ink);
+        }
+        else
+        {
+            GfxFrame (pSurface, Bar, Ink, (unsigned) t);
+        }
+    }
+}
+
+void OkapiaPaintSignal1 (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink, TOkapiaColor)
+{
+    Signal (pSurface, rRect, Ink, 1);
+}
+
+void OkapiaPaintSignal2 (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink, TOkapiaColor)
+{
+    Signal (pSurface, rRect, Ink, 2);
+}
+
+void OkapiaPaintSignal3 (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink, TOkapiaColor)
+{
+    Signal (pSurface, rRect, Ink, 3);
+}
+
+void OkapiaPaintSignal4 (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink, TOkapiaColor)
+{
+    Signal (pSurface, rRect, Ink, 4);
+}
+
 void OkapiaPaintPram (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink, TOkapiaColor)
 {
     // A memory chip. The first version was the backup battery the parameter RAM

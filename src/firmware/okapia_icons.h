@@ -63,6 +63,20 @@ void OkapiaPaintStop (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 // the case is taller than it is wide, so the rectangle's width is a bound.
 void OkapiaPaintLogo (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 
+/*
+ *  The marks a Wi-Fi network wears in a list
+ *
+ *  A padlock for a network that asks for a password, and four bars of rising
+ *  height for its signal — the convention every machine since has used, which
+ *  is why it needs no legend. Bars not reached are outlined rather than left
+ *  out, so a weak network reads as weak and not as a smaller mark.
+ */
+void OkapiaPaintLock (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+void OkapiaPaintSignal1 (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+void OkapiaPaintSignal2 (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+void OkapiaPaintSignal3 (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+void OkapiaPaintSignal4 (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+
 // Content icons: the era belongs to these, not to the chrome around them.
 extern const TGlyphImage OkapiaIconSystem6;
 extern const TGlyphImage OkapiaIconSystem7;

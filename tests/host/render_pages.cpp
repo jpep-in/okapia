@@ -6,10 +6,13 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 #include "okapia_confirm.h"
+#include "okapia_datetime.h"
 #include "okapia_info.h"
+#include "okapia_network.h"
 #include "okapia_newvolume.h"
 #include "okapia_screen.h"
 #include "okapia_settings.h"
@@ -17,7 +20,9 @@
 
 void SettingsSample (TSettings *p);
 void InfoSample (TInfo *p);
+void NetworkSample (TNetwork *p);
 void ConfirmSample (TConfirm *p);
+void ShutDownSample (TConfirm *p);
 void NewVolumeSample (TNewVolume *p);
 
 static bool WritePPM (const char *pPath, const unsigned *pPixels, unsigned w, unsigned h)
@@ -74,6 +79,16 @@ int main (int argc, char **argv)
     if (!WritePPM (Path, px, w, h)) return 1;
     printf ("%s\n", Path);
 
+    TNetwork Network;
+    NetworkSample (&Network);
+    NetworkDraw (&s, &Network);
+    Settle (&s, NetworkWidgets);
+    NetworkRepaint (&s);
+    nAt = StrAppend (Path, sizeof Path, 0, pStem);
+    StrAppend (Path, sizeof Path, nAt, "-network.ppm");
+    if (!WritePPM (Path, px, w, h)) return 1;
+    printf ("%s\n", Path);
+
     TInfo Info;
     InfoSample (&Info);
     InfoDraw (&s, &Info);
@@ -104,11 +119,33 @@ int main (int argc, char **argv)
         {
             Confirm.nChoices = 0;
         }
+        // The note is the shut down alert, with its Restart.
+        if (Confirm.Level == ConfirmNote)
+        {
+            ShutDownSample (&Confirm);
+        }
         ConfirmDraw (&s, &Confirm);
         Settle (&s, ConfirmWidgets);
         ConfirmRepaint (&s);
         nAt = StrAppend (Path, sizeof Path, 0, pStem);
         StrAppend (Path, sizeof Path, nAt, Levels[i].pSuffix);
+        if (!WritePPM (Path, px, w, h)) return 1;
+        printf ("%s\n", Path);
+    }
+
+    // The date's (i): a note in paragraphs, with one answer.
+    {
+        TConfirm Help;
+        memset (&Help, 0, sizeof Help);
+        Help.Level  = ConfirmNote;
+        Help.pTitle = Str (StrClockGroup);
+        Help.pBody  = Str (StrClockHelp);
+        Help.pYes   = Str (StrOk);
+        ConfirmDraw (&s, &Help);
+        Settle (&s, ConfirmWidgets);
+        ConfirmRepaint (&s);
+        nAt = StrAppend (Path, sizeof Path, 0, pStem);
+        StrAppend (Path, sizeof Path, nAt, "-clock-note.ppm");
         if (!WritePPM (Path, px, w, h)) return 1;
         printf ("%s\n", Path);
     }

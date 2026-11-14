@@ -10,12 +10,17 @@
 #include <circle/bcmframebuffer.h>
 #include <circle/logger.h>
 #include <circle/machineinfo.h>
+#include <circle/sched/scheduler.h>
 #include <circle/timer.h>
 #include <circle/types.h>
 
 #include <wrap_fatfs.h>
 
 #include "board_net_circle.h"
+#include "clock_circle.h"
+#include "net_bench_circle.h"
+#include "net_config_circle.h"
+#include "wlan_circle.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -30,8 +35,11 @@
 
 #include "okapia_chooser.h"
 #include "okapia_confirm.h"
+#include "okapia_datetime.h"
 #include "okapia_info.h"
+#include "okapia_network.h"
 #include "okapia_newvolume.h"
+#include "okapia_page.h"
 #include "okapia_settings.h"
 #include "okapia_gfx.h"
 #include "okapia_screen.h"
@@ -64,6 +72,21 @@ static const unsigned SLICE_MS = 20;
 // is no logical key to give them and inventing one would be worse.
 static const unsigned char KEY_P = 0x13;
 static const unsigned char KEY_R = 0x15;
+
+// A pause that lets the Wi-Fi run. Its driver and supplicant are tasks of
+// Circle's cooperative scheduler, and a menu waiting in CTimer::MsDelay holds
+// them still: a scan asked for from the network page would never come back.
+static void FwSleep (unsigned nMs)
+{
+    if (CScheduler::IsActive ())
+    {
+        CScheduler::Get ()->MsSleep (nMs);
+    }
+    else
+    {
+        CTimer::Get ()->MsDelay (nMs);
+    }
+}
 
 /*
  *  What the card holds, as the chooser wants it
@@ -343,6 +366,9 @@ static void ForgetPram (const char *pWhy, bool b68k, bool bPowerPC)
 // falls back to rather than silently offering no volume at all.
 static const char SHARED_PATH[] = "/shared";
 
+// What an emptied server field falls back to: the preferences' own default.
+static const char TIME_SERVER[] = "pool.ntp.org";
+
 // The names TSoundOutput carries in the file, in its own order. One table, read
 // by both directions: two would drift.
 static const char *const SOUND_NAMES[SoundOutputCount] = { "off", "hdmi", "jack", "usb" };
@@ -399,7 +425,9 @@ static void LoadSettings (TSettings *pSettings)
     pSettings->Opened = pSettings->V;
 }
 
-static void SaveSettings (const TSettings *pSettings)
+// Into the preferences in memory; ApplyVolumes() writes the file once for
+// everything the window changed.
+static void StoreSettings (const TSettings *pSettings)
 {
     PrefsReplaceInt32 ("ramsize", (int32) pSettings->V.nMemoryMB * 1024 * 1024);
     PrefsReplaceInt32 ("frameskip", pSettings->V.nFrameSkip);
@@ -418,7 +446,6 @@ static void SaveSettings (const TSettings *pSettings)
                                     ? pSettings->V.SharedPath : SHARED_PATH)
                                  : "");
     PrefsReplaceString ("extfsname", pSettings->V.SharedName);
-    SavePrefs ();
 
     CLogger::Get ()->Write (FROM, LogNotice,
                             "Settings: %u MB, frameskip %d, sound %s, language %s, %s, %s",
@@ -429,6 +456,100 @@ static void SaveSettings (const TSettings *pSettings)
                                                  : "no shared folder",
                             pSettings->V.bBootMenu ? "boot menu always"
                                                    : "boot menu on Option");
+}
+
+/*
+ *  The date and time page
+ */
+static void LoadDateTime (TDateTime *p)
+{
+    // The zone the card names, the fixed offset of an older card as itself, and
+    // UTC when there is neither — what the clock itself does (clock_circle.cpp).
+    const int nZone = ClockZoneFind (PrefsFindString ("zone"));
+    p->V.nFixedMinutes = (int) PrefsFindInt32 ("timezone");
+    p->V.nZone = nZone >= 0 ? (unsigned) nZone
+               : (p->V.nFixedMinutes != 0 ? ClockZoneCount () : (unsigned) ClockZoneFind ("utc"));
+
+    // As the shared folder's path: the server is kept when the box is off, so
+    // ticking it again does not lose which one it was.
+    const char *pServer = PrefsFindString ("ntp");
+    p->V.bNetTime = pServer != 0 && pServer[0] != '\0';
+    p->V.Server[0] = '\0';
+    StrAppend (p->V.Server, DATETIME_SERVER, 0, p->V.bNetTime ? pServer : TIME_SERVER);
+    p->Opened = p->V;
+}
+
+static const char *ServerOf (const TDateTime *p)
+{
+    return !p->V.bNetTime ? "" : (p->V.Server[0] != '\0' ? p->V.Server : TIME_SERVER);
+}
+
+// What the page shows is what the clock does: both are told at once, so the
+// hour on the page moves with the zone chosen.
+static void ApplyDateTime (const TDateTime *p)
+{
+    if (p->V.nZone < ClockZoneCount ())
+    {
+        ClockSetZone (ClockZoneKey (p->V.nZone), 0);
+    }
+    else
+    {
+        ClockSetZone ("", p->V.nFixedMinutes);
+    }
+    ClockSetServer (ServerOf (p));
+}
+
+// Into the preferences in memory; ApplyVolumes() writes the file.
+static void StoreDateTime (const TDateTime *p)
+{
+    // A city replaces the fixed offset for good; keeping the fixed offset
+    // touches neither key.
+    if (p->V.nZone < ClockZoneCount ())
+    {
+        PrefsReplaceString ("zone", ClockZoneKey (p->V.nZone));
+        PrefsReplaceInt32 ("timezone", 0);
+    }
+    PrefsReplaceString ("ntp", ServerOf (p));
+    ApplyDateTime (p);
+    CLogger::Get ()->Write (FROM, LogNotice, "Date and time: zone %s, time server %s",
+                            p->V.nZone < ClockZoneCount () ? ClockZoneKey (p->V.nZone) : "fixed",
+                            p->V.bNetTime ? ServerOf (p) : "none");
+}
+
+// The hour, and the sentence saying where it came from, with the offset in
+// force — which is how summer time shows itself.
+
+static void DateTimeNow (TDateTime *p)
+{
+    p->nLocal = CTimer::Get ()->GetLocalTime ();
+    const char *pDetail;
+    const TClockSource Source = ClockSource (&pDetail);
+    unsigned n = 0;
+    p->Source[0] = '\0';
+    switch (Source)
+    {
+    case ClockFromNetwork:
+        n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromNtp));
+        n = StrAppend (p->Source, sizeof p->Source, n, " ");
+        n = StrAppend (p->Source, sizeof p->Source, n, pDetail);
+        break;
+
+    case ClockFromMac:
+        n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromMac));
+        break;
+
+    case ClockFromVolume:
+        n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromVolume));
+        n = StrAppend (p->Source, sizeof p->Source, n, " ");
+        n = StrAppend (p->Source, sizeof p->Source, n, pDetail);
+        break;
+
+    default:
+        n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromBuild));
+        break;
+    }
+    n = StrAppend (p->Source, sizeof p->Source, n, " · ");
+    ClockOffsetText (p->Source + n, sizeof p->Source - n, CTimer::Get ()->GetTimeZone ());
 }
 
 /*
@@ -598,6 +719,10 @@ struct TPageDriver
     // anywhere in particular, which is why an alert offers no navigation at
     // all.
     int      (*Cancel) (void);
+    // Asked four times a second, for a page whose model changes on its own —
+    // the networks in range, a link coming up. True when it did, and the page
+    // is drawn again. May be 0.
+    bool     (*Tick) (void);
 };
 
 static const int PageRelayout = -1;
@@ -669,10 +794,10 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
                     ScreenInit (&Screen, pTheme, pWidgets, nCount);
                     Screen.Background = ColorWhite;
                     Screen.Bounds     = Rect (0, 0, pOutput->nWidth, pOutput->nHeight);
-                    if (nFocus >= 0 && nFocus < (int) nCount)
-                    {
-                        ScreenTouch (&Screen, nFocus);
-                    }
+                    // Where the hand was, not where the layout would start it:
+                    // a tabbed page declares Start, and the language popup
+                    // that caused this is three rows away from it.
+                    ScreenFocus (&Screen, nFocus);
                 }
                 else if (nAnswer != 0 && nAnswer != PageRelayout)
                 {
@@ -685,6 +810,12 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
             }
         }
 
+        if (pDriver->Tick != 0 && nTick % 25 == 0 && pDriver->Tick ())
+        {
+            Screen.bDirtyAll = true;
+            bChanged = true;
+        }
+
         if (bChanged || (nTick % (500 / SLICE_MS) == 0 && ScreenBlinkCaret (&Screen))
             || bPointer)
         {
@@ -695,7 +826,8 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
         // The Wi-Fi's tasks run only when this thread lets them, and a menu
         // left open must not cost the connection. Frames are dropped meanwhile.
         BoardNetPoll ();
-        CTimer::Get ()->MsDelay (10);
+        ClockPoll ();
+        FwSleep (10);
     }
     return nResult;
 }
@@ -715,12 +847,286 @@ TFirmwareEngine FirmwareWantedEngine (void)
                                                            : FirmwareEngine68k;
 }
 static TSettings  s_Settings;
+static TNetwork   s_Network;
 static TInfo      s_Info;
+// Where the keyboard was when the footer's tick box was pressed: pressing it
+// lays the window out again, and the hand should find it where it left it.
+static bool       s_bFocusBootMenu;
 static TConfirm   s_Confirm;
 static TNewVolume s_NewVolume;
 
+/*
+ *  The network, between the board and the page
+ *
+ *  The page is handed what the board found and answers what was asked; this is
+ *  where the Wi-Fi is started, scanned and told which network to join, and
+ *  where `ether` and the three `wifi` preferences are read and written.
+ */
+static const char *const ETHER_NAMES[NetworkKindCount] = { "", "eth", "wlan" };
+
+// Set when the page has asked for a connection and the board has none yet. The
+// start happens on the next tick, after "Starting the Wi-Fi…" is on the
+// screen: loading the chip's firmware holds this thread for a second or two.
+static bool s_bNetStartPending;
+static unsigned s_nNetTicks;
+
+static unsigned RunningKind (void)
+{
+    switch (BoardNetKind ())
+    {
+    case BoardNetWired: return NetworkCable;
+    case BoardNetWLAN:  return NetworkWiFi;
+    default:            return NetworkOff;
+    }
+}
+
+static void LoadNetwork (TNetwork *p)
+{
+    memset (p, 0, sizeof *p);
+    switch (NetEtherKindOf (PrefsFindString ("ether")))
+    {
+    case NetEtherWired: p->V.nKind = NetworkCable; break;
+    case NetEtherWLAN:  p->V.nKind = NetworkWiFi;  break;
+    default:            p->V.nKind = NetworkOff;   break;
+    }
+    NetCopyValue (p->V.SSID, sizeof p->V.SSID, PrefsFindString ("wifissid"));
+    NetCopyValue (p->V.Password, sizeof p->V.Password, PrefsFindString ("wifipassword"));
+    NetCopyValue (p->V.Country, sizeof p->V.Country, PrefsFindString ("wificountry"));
+    for (char *c = p->V.Country; *c != '\0'; c++)
+    {
+        if (*c >= 'a' && *c <= 'z')
+        {
+            *c = (char) (*c - 'a' + 'A');
+        }
+    }
+    if (p->V.Country[0] == '\0')
+    {
+        // The supplicant needs one. The language is the only hint there is,
+        // and it is shown on the page to be corrected.
+        strcpy (p->V.Country, StringsLanguage () == LangFR ? "FR" : "US");
+    }
+
+    p->nAvailable = (1u << NetworkOff) | (1u << NetworkCable)
+                  | (WlanAvailable () ? 1u << NetworkWiFi : 0);
+    p->nRunning   = RunningKind ();
+    // A start that failed is final for this boot: Circle cannot give a device
+    // back to try again.
+    p->State = BoardNetTried () && p->nRunning == NetworkOff ? NetStateUnavailable
+                                                             : NetStateIdle;
+    p->Opened = p->V;
+
+    // The connection the card names, started when the page is first turned to
+    // (the tick runs on that page only): a Wi-Fi page that waits for a click
+    // on a radio already ticked lists nothing — seen on the Pi 4.
+    s_bNetStartPending = false;
+    if (p->V.nKind != NetworkOff && !BoardNetTried ()
+        && (p->nAvailable & (1u << p->V.nKind)) != 0)
+    {
+        p->State = p->V.nKind == NetworkWiFi ? NetStateStarting : NetStateIdle;
+        s_bNetStartPending = true;
+    }
+}
+
+static bool NetworkChanged (const TNetwork *p)
+{
+    return p->V.nKind != p->Opened.nKind
+        || strcmp (p->V.SSID, p->Opened.SSID) != 0
+        || strcmp (p->V.Password, p->Opened.Password) != 0
+        || strcmp (p->V.Country, p->Opened.Country) != 0;
+}
+
+static void StoreValue (const char *pName, const char *pValue)
+{
+    // An empty value is no line at all: a card that never had Wi-Fi does not
+    // gain three blank ones because the page was opened.
+    if (pValue[0] == '\0')
+    {
+        while (PrefsFindString (pName, 0) != 0)
+        {
+            PrefsRemoveItem (pName, 0);
+        }
+    }
+    else
+    {
+        PrefsReplaceString (pName, pValue);
+    }
+}
+
+// Into the preferences in memory, which is also what BoardNetStart() reads.
+// Opened follows: it stands for what the preferences hold, so SaveAll() can
+// tell a change made since. Left at the card's values, a cable started from
+// the page and the Wi-Fi chosen again compared equal to the card, nothing was
+// stored, and the file was written with the cable's `ether eth` — seen on the
+// Pi 4.
+static void StoreNetwork (TNetwork *p)
+{
+    StoreValue ("ether", ETHER_NAMES[p->V.nKind]);
+    StoreValue ("wifissid", p->V.SSID);
+    StoreValue ("wifipassword", p->V.Password);
+    StoreValue ("wificountry", p->V.Country);
+    // Never the password, in any form.
+    CLogger::Get ()->Write (FROM, LogNotice, "Network: ether \"%s\", Wi-Fi \"%s\", %s, country %s",
+                            ETHER_NAMES[p->V.nKind], p->V.SSID,
+                            p->V.Password[0] == '\0' ? "no password" : "a password",
+                            p->V.Country);
+    p->Opened = p->V;
+}
+
+// The connection chosen, started now if the board has none yet. Once one is
+// running the page says a restart is due instead.
+static void NetworkStartWanted (TNetwork *p)
+{
+    if (BoardNetTried () || p->V.nKind == NetworkOff
+        || (p->nAvailable & (1u << p->V.nKind)) == 0)
+    {
+        return;
+    }
+    StoreNetwork (p);
+    p->State = p->V.nKind == NetworkWiFi ? NetStateStarting : NetStateIdle;
+    s_bNetStartPending = true;
+}
+
+static void NetworkJoinNow (TNetwork *p)
+{
+    snprintf (p->Subject, sizeof p->Subject, "%s", p->V.SSID);
+    if (p->nRunning == NetworkWiFi)
+    {
+        p->State = WlanApply (p->V.SSID, p->V.Password, p->V.Country) ? NetStateJoining
+                                                                      : NetStateRefused;
+        return;
+    }
+    NetworkStartWanted (p);
+}
+
+static TNetworkState StateOfWlan (int nState, unsigned nSeen)
+{
+    switch (nState)
+    {
+    case OKAPIA_WLAN_SEARCHING: return NetStateSearching;
+    case OKAPIA_WLAN_JOINING:   return NetStateJoining;
+    case OKAPIA_WLAN_CONNECTED: return NetStateConnected;
+    case OKAPIA_WLAN_REFUSED:   return NetStateRefused;
+    case OKAPIA_WLAN_LOST:      return NetStateLost;
+    case OKAPIA_WLAN_IDLE:      return nSeen == 0 ? NetStateSearching : NetStateReady;
+    default:                    return NetStateStarting;
+    }
+}
+
+static bool NetworkTick (void)
+{
+    TNetwork *p = &s_Network;
+    const TNetwork Was = *p;
+    s_nNetTicks++;
+
+    if (s_bNetStartPending)
+    {
+        s_bNetStartPending = false;
+        const bool bOK = BoardNetStart ();
+        p->nRunning = RunningKind ();
+        if (!bOK)
+        {
+            p->State = NetStateUnavailable;
+        }
+        else if (p->nRunning == NetworkWiFi)
+        {
+            WlanScan ();
+        }
+    }
+
+    if (p->nRunning == NetworkWiFi)
+    {
+        static okapia_wlan_bss Found[48];
+        static TNetworkSeen    Seen[48];
+        const unsigned nFound = WlanSeen (Found, 48);
+        for (unsigned i = 0; i < nFound; i++)
+        {
+            memcpy (Seen[i].SSID, Found[i].ssid, sizeof Seen[i].SSID);
+            Seen[i].nDbm     = Found[i].dbm;
+            Seen[i].bSecured = Found[i].secured != 0;
+        }
+        p->nSeen = NetworkSortSeen (Seen, nFound);
+        memcpy (p->Seen, Seen, p->nSeen * sizeof Seen[0]);
+
+        char Subject[NETWORK_SSID];
+        int nDbm = 0;
+        const int nState = WlanState (Subject, sizeof Subject, &nDbm);
+        p->State = StateOfWlan (nState, p->nSeen);
+        p->nDbm  = nDbm;
+        if (Subject[0] != '\0')
+        {
+            memcpy (p->Subject, Subject, sizeof p->Subject);
+        }
+        // Nobody else scans while nothing is joined, and a list that stops
+        // changing reads as a list that is complete.
+        if (s_nNetTicks % 40 == 0
+            && (p->State == NetStateReady || p->State == NetStateLost
+                || p->State == NetStateRefused || p->State == NetStateSearching))
+        {
+            WlanScan ();
+        }
+    }
+    else if (p->nRunning == NetworkCable && s_nNetTicks % 4 == 0)
+    {
+        unsigned nMbps = 0;
+        p->State = BoardNetLinkUp (&nMbps) ? NetStateCableUp : NetStateCableDown;
+        p->nMbps = nMbps;
+    }
+
+    if (memcmp (&Was, p, sizeof Was) == 0)
+    {
+        return false;
+    }
+    NetworkSync (p);
+    return true;
+}
+
+/*
+ *  The window
+ */
+static TPageTab s_Tab = PageTabSystem;
+static bool     s_bFocusTabs;
+static TSurface *s_pOutputForInfo;
+
+static bool RestartWanted (void)
+{
+    return SettingsNeedsRestart (&s_Settings) || NetworkNeedsRestart (&s_Network);
+}
+
+static void DrawTab (TSurface *pSurface)
+{
+    PageChromeSet (RestartWanted (), s_bFocusTabs,
+                   s_Chooser.nStartup >= 0 || RestartWanted ());
+    PageChromeBootMenu (s_Settings.V.bBootMenu, s_bFocusBootMenu);
+    switch (s_Tab)
+    {
+    case PageTabSystem:      ChooserDraw (pSurface, &s_Chooser);   break;
+    case PageTabSettings:
+        DateTimeNow (&s_Settings.Clock);
+        SettingsDraw (pSurface, &s_Settings);
+        break;
+    case PageTabNetwork:     NetworkDraw (pSurface, &s_Network);   break;
+    default:
+        // Gathered as the page is turned to: the startup volume it names is
+        // whatever the first page says now.
+        GatherInfo (&s_Info, &s_Chooser, s_pOutputForInfo);
+        InfoDraw (pSurface, &s_Info);
+        break;
+    }
+}
+
+static void RelayoutTab (TSurface *pSurface)
+{
+    s_bFocusTabs = false;
+    DrawTab (pSurface);
+}
+
 static int ChooserAdapter (int nIndex)
 {
+    const int nChrome = PageChromeAnswer (nIndex);
+    if (nChrome != PageAnswerNone)
+    {
+        return nChrome;
+    }
     // ChooserNothing is zero, which is what the driver reads as "stay here".
     return (int) ChooserOperate (&s_Chooser, nIndex, s_nCell);
 }
@@ -730,32 +1136,93 @@ static void ChooserChanged (void)
     ChooserSync (&s_Chooser);
 }
 
+// Answered by the settings page and handled by the window, which owns the
+// alerts. Far from the page chrome's and the chooser's answers.
+static const int AnswerClockHelp = 2000;
+
 static int SettingsAdapter (int nIndex)
 {
-    const TSettingsAction A = SettingsOperate (&s_Settings, nIndex);
-    return A == SettingsRelayout ? PageRelayout : (int) A;
+    const int nChrome = PageChromeAnswer (nIndex);
+    if (nChrome != PageAnswerNone)
+    {
+        return nChrome;
+    }
+    switch (SettingsOperate (&s_Settings, nIndex))
+    {
+    case SettingsRelayout:
+        return PageRelayout;
+
+    case SettingsClockHelp:
+        return AnswerClockHelp;
+
+    case SettingsClock:
+        // What the page shows is what the clock does: the hour moves with
+        // the zone chosen.
+        ApplyDateTime (&s_Settings.Clock);
+        DateTimeNow (&s_Settings.Clock);
+        DateTimeSync (&s_Settings.Clock);
+        return 0;
+
+    default:
+        return 0;
+    }
 }
 
-static void SettingsRelayoutPage (TSurface *pSurface)
+static int NetworkAdapter (int nIndex)
 {
-    SettingsDraw (pSurface, &s_Settings);
+    const int nChrome = PageChromeAnswer (nIndex);
+    if (nChrome != PageAnswerNone)
+    {
+        return nChrome;
+    }
+    switch (NetworkOperate (&s_Network, nIndex))
+    {
+    case NetworkRelayout:
+        return PageRelayout;
+
+    case NetworkKindChanged:
+        NetworkStartWanted (&s_Network);
+        NetworkSync (&s_Network);
+        break;
+
+    case NetworkSearch:
+        if (WlanScan ())
+        {
+            s_Network.State = NetStateSearching;
+        }
+        NetworkSync (&s_Network);
+        break;
+
+    case NetworkJoin:
+        NetworkJoinNow (&s_Network);
+        NetworkSync (&s_Network);
+        break;
+
+    default:
+        break;
+    }
+    return 0;
 }
 
 static int InfoAdapter (int nIndex)
 {
-    return InfoIsBack (nIndex) ? 1 : 0;
+    return PageChromeAnswer (nIndex);
 }
 
-// A page one turns to is a page one comes back from, and Escape is how: it
-// costs nothing to offer and its absence is felt the first time somebody tries.
-static int InfoCancelled (void)
+// The minute turned, the network answered, summer time began: the page again.
+static bool SettingsTick (void)
 {
-    return 1;
-}
-
-static int SettingsCancelled (void)
-{
-    return (int) SettingsBack;
+    TDateTime *p = &s_Settings.Clock;
+    const unsigned nMinute = p->nLocal / 60;
+    char Was[sizeof p->Source];
+    memcpy (Was, p->Source, sizeof Was);
+    DateTimeNow (p);
+    if (p->nLocal / 60 == nMinute && strcmp (Was, p->Source) == 0)
+    {
+        return false;
+    }
+    DateTimeSync (p);
+    return true;
 }
 
 static int ConfirmAdapter (int nIndex)
@@ -948,17 +1415,55 @@ static void RunNewVolume (TSurface *pOutput, TSurface *pShadow, const TTheme *pT
  *  Asking before doing
  */
 // With choices, *pnChoice is the one marked on the way in and the one marked
-// when the assent came on the way out.
+// when the assent came on the way out. AskThree() offers a third answer, at the
+// left, and says which of the three came.
+static TConfirmAnswer AskThree (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
+                                TConfirmLevel Level, TStringId Title, TStringId Body,
+                                TStringId Yes, const char *pOther,
+                                const TStringId *pChoices = 0, unsigned nChoices = 0,
+                                unsigned *pnChoice = 0);
+
+// A note with one answer: something to read, nothing to decide.
+static void Tell (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
+                  TStringId Title, TStringId Body)
+{
+    s_Confirm.Level    = ConfirmNote;
+    s_Confirm.pTitle   = Str (Title);
+    s_Confirm.pBody    = Str (Body);
+    s_Confirm.pYes     = Str (StrOk);
+    s_Confirm.pNo      = 0;
+    s_Confirm.pOther   = 0;
+    s_Confirm.nChoices = 0;
+    s_Confirm.nChoice  = 0;
+    ConfirmDraw (pShadow, &s_Confirm);
+    static const TPageDriver Driver =
+    {
+        ConfirmRepaint, ConfirmWidgets, ConfirmAdapter, 0, 0, ConfirmCancelled
+    };
+    RunPage (pOutput, pShadow, pTheme, &Driver);
+}
+
 static bool Ask (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
                  TConfirmLevel Level, TStringId Title, TStringId Body, TStringId Yes,
                  const TStringId *pChoices = 0, unsigned nChoices = 0,
                  unsigned *pnChoice = 0)
+{
+    return AskThree (pOutput, pShadow, pTheme, Level, Title, Body, Yes, 0,
+                     pChoices, nChoices, pnChoice) == ConfirmYes;
+}
+
+static TConfirmAnswer AskThree (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
+                                TConfirmLevel Level, TStringId Title, TStringId Body,
+                                TStringId Yes, const char *pOther,
+                                const TStringId *pChoices, unsigned nChoices,
+                                unsigned *pnChoice)
 {
     s_Confirm.Level  = Level;
     s_Confirm.pTitle = Str (Title);
     s_Confirm.pBody  = Str (Body);
     s_Confirm.pYes   = Str (Yes);
     s_Confirm.pNo    = Str (StrCancel);
+    s_Confirm.pOther = pOther;
     s_Confirm.nChoices = pChoices == 0 ? 0 : nChoices;
     s_Confirm.nChoice  = pnChoice == 0 ? 0 : *pnChoice;
     for (unsigned i = 0; i < s_Confirm.nChoices && i < CONFIRM_CHOICES; i++)
@@ -971,62 +1476,37 @@ static bool Ask (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
     {
         ConfirmRepaint, ConfirmWidgets, ConfirmAdapter, 0, 0, ConfirmCancelled
     };
-    const bool bYes = RunPage (pOutput, pShadow, pTheme, &Driver) == (int) ConfirmYes;
+    const TConfirmAnswer Answer = (TConfirmAnswer) RunPage (pOutput, pShadow, pTheme, &Driver);
     if (pnChoice != 0)
     {
         *pnChoice = ConfirmChoice ();
     }
-    return bYes;
+    return Answer;
 }
 
 /*
- *  The settings, and the information pane behind them
+ *  The window, for as long as the user wants it
  */
-// What Okapia found, on its own page. Reached from the main screen, which is
-// where it is wanted: a machine that will not start is not a machine whose owner
-// wants to go two clicks deep to find out why.
-static void RunInfo (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme)
+// Everything the window changed, into the file once. Called when the Macintosh
+// starts and when the board shuts down: the pages are a control panel's, and a
+// control panel keeps what was set in it.
+static void SaveAll (void)
 {
-    GatherInfo (&s_Info, &s_Chooser, pOutput);
-    InfoDraw (pShadow, &s_Info);
-
-    static const TPageDriver Driver =
+    if (memcmp (&s_Settings.V, &s_Settings.Opened, sizeof s_Settings.V) != 0)
     {
-        InfoRepaint, InfoWidgets, InfoAdapter, 0, 0, InfoCancelled
-    };
-    RunPage (pOutput, pShadow, pTheme, &Driver);
-}
-
-static TFirmwareResult RunSettings (TSurface *pOutput, TSurface *pShadow,
-                                    const TTheme *pTheme)
-{
-    LoadSettings (&s_Settings);
-
-    static const TPageDriver SettingsDriver =
-    {
-        SettingsRepaint, SettingsWidgets, SettingsAdapter, 0, SettingsRelayoutPage,
-        SettingsCancelled
-    };
-    for (;;)
-    {
-        SettingsDraw (pShadow, &s_Settings);
-        const int nAnswer = RunPage (pOutput, pShadow, pTheme, &SettingsDriver);
-
-        if (nAnswer == (int) SettingsSave || nAnswer == (int) SettingsSaveRestart)
-        {
-            SaveSettings (&s_Settings);
-            if (nAnswer == (int) SettingsSaveRestart)
-            {
-                return FirmwareReboot;
-            }
-        }
-        return FirmwareBoot;            // Back, or saved and staying
+        StoreSettings (&s_Settings);
     }
+    if (NetworkChanged (&s_Network))
+    {
+        StoreNetwork (&s_Network);
+    }
+    if (memcmp (&s_Settings.Clock.V, &s_Settings.Clock.Opened, sizeof s_Settings.Clock.V) != 0)
+    {
+        StoreDateTime (&s_Settings.Clock);
+    }
+    ApplyVolumes (&s_Chooser);          // and SavePrefs(), once, for all three
 }
 
-/*
- *  The firmware's screens, for as long as the user wants them
- */
 static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
 {
     // The card was read before the window opened, because whether there is
@@ -1046,36 +1526,86 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
         return FirmwareBoot;
     }
 
-    static const TPageDriver ChooserDriver =
+    LoadSettings (&s_Settings);
+    LoadNetwork (&s_Network);
+    LoadDateTime (&s_Settings.Clock);
+    s_pOutputForInfo = pOutput;
+    s_Tab = PageTabSystem;
+    s_bFocusTabs = false;
+
+    static const TPageDriver Drivers[PageTabCount] =
     {
-        ChooserRepaint, ChooserWidgets, ChooserAdapter, ChooserChanged, 0
+        { ChooserRepaint,  ChooserWidgets,  ChooserAdapter,  ChooserChanged, RelayoutTab, 0, 0 },
+        { SettingsRepaint, SettingsWidgets, SettingsAdapter, 0,              RelayoutTab, 0,
+          SettingsTick },
+        { NetworkRepaint,  NetworkWidgets,  NetworkAdapter,  0,              RelayoutTab, 0,
+          NetworkTick },
+        { InfoRepaint,     InfoWidgets,     InfoAdapter,     0,              RelayoutTab, 0, 0 }
     };
 
     TFirmwareResult Result = FirmwareBoot;
     bool bDone = false;
     while (!bDone)
     {
-        ChooserDraw (&Shadow, &s_Chooser);
-        switch ((TChooserAction) RunPage (pOutput, &Shadow, pTheme, &ChooserDriver))
+        DrawTab (&Shadow);
+        const int nAnswer = RunPage (pOutput, &Shadow, pTheme, &Drivers[s_Tab]);
+        s_bFocusTabs = false;
+        s_bFocusBootMenu = false;
+
+        if (nAnswer >= PageAnswerTab && nAnswer < PageAnswerTab + (int) PageTabCount)
         {
-        case ChooserStart:
-            ApplyVolumes (&s_Chooser);
-            bDone = true;
+            // The page turns and the keyboard stays on the strip, so the arrows
+            // go on turning pages.
+            s_Tab = (TPageTab) (nAnswer - PageAnswerTab);
+            s_bFocusTabs = true;
+            continue;
+        }
+
+        switch (nAnswer)
+        {
+        case AnswerClockHelp:
+            Tell (pOutput, &Shadow, pTheme, StrClockGroup, StrClockHelp);
             break;
 
-        case ChooserShutDown:
+        case PageAnswerBootMenu:
+            s_Settings.V.bBootMenu = !s_Settings.V.bBootMenu;
+            s_bFocusBootMenu = true;
+            break;
+
+        case PageAnswerStart:
+            SaveAll ();
+            Result = RestartWanted () ? FirmwareReboot : FirmwareBoot;
+            bDone  = true;
+            break;
+
+        case PageAnswerShutDown:
             // A note: the Macintosh has not started, so nothing is open and
             // nothing can be lost. A caution mark here would be crying wolf,
             // and the next one would be believed a little less.
-            if (Ask (pOutput, &Shadow, pTheme, ConfirmNote, StrShutDownTitle,
-                     StrShutDownBody, StrShutDown))
+            //
+            // Restart beside it: nothing is lost either way, and the board
+            // comes back to this window — what Save and restart does.
+            switch (AskThree (pOutput, &Shadow, pTheme, ConfirmNote, StrShutDownTitle,
+                              StrShutDownBody, StrShutDown, Str (StrRestart)))
             {
+            case ConfirmYes:
+                SaveAll ();
                 Result = FirmwareHalt;
                 bDone  = true;
+                break;
+
+            case ConfirmOther:
+                SaveAll ();
+                Result = FirmwareReboot;
+                bDone  = true;
+                break;
+
+            default:
+                break;
             }
             break;
 
-        case ChooserForgetPram:
+        case PageAnswerForgetPram:
             {
                 // A caution: it changes something the Macintosh will not get
                 // back, even though it touches none of the user's files.
@@ -1100,22 +1630,10 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
             }
             break;
 
-        case ChooserInformation:
-            RunInfo (pOutput, &Shadow, pTheme);
-            break;
-
-        case ChooserNewVolume:
-            RunNewVolume (pOutput, &Shadow, pTheme);
-            break;
-
-        case ChooserSettings:
+        case (int) ChooserNewVolume:
+            if (s_Tab == PageTabSystem)
             {
-                const TFirmwareResult R = RunSettings (pOutput, &Shadow, pTheme);
-                if (R != FirmwareBoot)
-                {
-                    Result = R;
-                    bDone  = true;
-                }
+                RunNewVolume (pOutput, &Shadow, pTheme);
             }
             break;
 
@@ -1130,6 +1648,10 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
 
 TFirmwareResult FirmwareRun (TFirmwareEngine Built)
 {
+    // Before the window, once per power-on, and only when `netbench` asks:
+    // the network measured with nothing else running.
+    NetBenchRun ();
+
     // Claimed once for the life of the board and lent out, never taken and given
     // back: this runs again after every restart from Mac OS, and a mailbox
     // transaction repeated at each handover is one that has to succeed every
@@ -1232,7 +1754,7 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
         {
         }
         BoardNetPoll ();
-        CTimer::Get ()->MsDelay (SLICE_MS);
+        FwSleep (SLICE_MS);
 
         if (nStop == WINDOW_MS && (FwInputSeenModifiers () & ModOption))
         {

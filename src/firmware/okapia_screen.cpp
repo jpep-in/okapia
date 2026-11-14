@@ -692,6 +692,27 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
     switch (pEvent->nKey)
     {
     case OkKeyTab:
+        // Control-Tab turns the page, wherever the keyboard is: the strip of
+        // tabs is one control among many, and walking to it to turn a page is
+        // a long way round.
+        if (pEvent->nModifiers & ModControl)
+        {
+            for (unsigned i = 0; i < pScreen->nCount; i++)
+            {
+                TWidget *pTabs = &pScreen->pWidgets[i];
+                if (pTabs->Type != WidgetTabs || pTabs->nItems < 2
+                    || (pTabs->nState & StateDisabled))
+                {
+                    continue;
+                }
+                const int nCount = (int) pTabs->nItems;
+                const int nStep = (pEvent->nModifiers & ModShift) ? nCount - 1 : 1;
+                pTabs->nChoice = ((pTabs->nChoice < 0 ? 0 : pTabs->nChoice) + nStep) % nCount;
+                ScreenTouch (pScreen, (int) i);
+                return Reply (ScreenActivated, (int) i);
+            }
+            return Reply (ScreenIdle, -1);
+        }
         {
             const int nStep = (pEvent->nModifiers & ModShift) ? -1 : +1;
             const int nNext = NextFocus (pScreen, pScreen->nFocus, nStep);
@@ -705,6 +726,19 @@ static TScreenReply HandleKey (TScreen *pScreen, const TEvent *pEvent)
 
     case OkKeyLeft:
     case OkKeyRight:
+        // Along a strip of tabs, which turns the page as it goes — Mac OS 8's
+        // tab control did the same, and there is nothing to confirm.
+        if (nFocused >= 0 && p->Type == WidgetTabs)
+        {
+            const int nNow = p->nChoice + (pEvent->nKey == OkKeyRight ? +1 : -1);
+            if (nNow < 0 || nNow >= (int) p->nItems)
+            {
+                return Reply (ScreenIdle, -1);
+            }
+            p->nChoice = nNow;
+            ScreenTouch (pScreen, nFocused);
+            return Reply (ScreenActivated, nFocused);
+        }
         // Across the columns of a list, and nowhere else — a field's caret is
         // handled before this, inside the field. Without it a list of tick
         // boxes would be a thing only a mouse can operate, and the three
@@ -945,6 +979,21 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
                 }
                 pList->nCell = 0;
             }
+            // A tab answers on the press, like a row: there is nothing to take
+            // back, and a page that waits for the release feels slow to turn.
+            if (pScreen->pWidgets[nHit].Type == WidgetTabs)
+            {
+                TWidget *pTabs = &pScreen->pWidgets[nHit];
+                const int nTab = WidgetTabAt (pTabs, pScreen->pTheme, pEvent->nX, pEvent->nY);
+                pScreen->nPressed = -1;
+                if (nTab < 0 || nTab == pTabs->nChoice)
+                {
+                    return Reply (ScreenChanged, -1);
+                }
+                pTabs->nChoice = nTab;
+                ScreenTouch (pScreen, nHit);
+                return Reply (ScreenActivated, nHit);
+            }
             // A click on a pop-up opens its menu, which then has every event
             // until it is done with.
             if (pScreen->pWidgets[nHit].Type == WidgetPopup
@@ -995,5 +1044,14 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent)
 
     default:
         return Reply (ScreenIdle, -1);
+    }
+}
+
+void ScreenFocus (TScreen *pScreen, int nIndex)
+{
+    if (nIndex >= 0 && nIndex < (int) pScreen->nCount
+        && WidgetFocusable (&pScreen->pWidgets[nIndex]))
+    {
+        SetFocus (pScreen, nIndex);
     }
 }

@@ -27,11 +27,15 @@
   engine symbol but `memcmp`).
 - **Would reopen**: an upstream change that makes the rename list unmanageable.
 
-### `KERNEL_MAX_SIZE` of 4 MB stands
+### `KERNEL_MAX_SIZE` of 16 MB
 
-- **Why**: it is circle-stdlib's default hole between the load address and the stacks, not a hardware
-  limit (`memorymap.h:47`); the merged image measures about 2,880 KB.
-- **Would reopen**: an image approaching 4 MB — raising it is a flag and a library rebuild.
+- **Decision** (2026-11-14): 16 MB, `KERNEL_MAX_SIZE_MB` in `scripts/build-libs.sh`. It was 4 MB, circle-stdlib's
+  default, kept for want of a reason to move it.
+- **Why**: the hole between the load address and the stacks is not a hardware limit (`memorymap.h:47`) and nothing
+  else asks for it; the 68k JIT's tables alone are 4.9 MB of `.bss`, which the check on `_end` counts
+  (`sysinit.cpp:340`, a halt before any log exists). The image itself stays near 3.4 MB without the JIT.
+- **Cost**: a library rebuild per target, and a Pi 4 card needs its libraries rebuilt (`build-libs.sh pi4`); the stamp
+  makes `build-libs.sh` notice.
 
 ## Emulation
 
@@ -65,13 +69,16 @@
 - **Verdict instrument**: `fpu_selftest_extended()`, never a boot — System 7.1 reaches the Finder in four
   FPU instructions.
 
-### No JIT
+### No JIT by default; an experimental one behind `OKAPIA_JIT=1`
 
-- **Why**: Circle sets `PXN=1` past `_etext` (`lib/translationtable64.cpp`), so the heap is not executable;
-  the interpreter already outruns a Quadra. SheepShaver's interpreter needs no executable heap (its decode
-  cache is data).
-- **Would reopen**: measurements showing the interpreter is the limit for a target System — see
-  [68k JIT study](../notes/research/jit-68k.md).
+- **Why not by default**: the interpreter already outruns a Quadra (5.22× a Quadra 650 on CPU, [Benchmarks](../contributing/benchmarks.md)),
+  and the JIT's speed in ordinary mode has never been measured on a Pi. The original reason, that Circle sets
+  `PXN=1` past `_etext`, does not hold: Okapia clears it for one arena (`execmem_circle.cpp`, proved under QEMU).
+- **What exists** (2026-11-14): `OKAPIA_JIT=1` builds the 68k core of `rcarmo/macemu-jit` (`external/macemu-jit`,
+  pinned) in place of `uae_cpu_2021`; with `jit true` in the preferences System 7.1 reaches the Finder under QEMU and
+  a hard kill is repaired as without it. See [68k JIT study](../notes/research/jit-68k.md#first-boot-2026-11-14).
+- **Would become the default**: a Speedometer gain on the Pi 4 at least 2× the interpreter's CPU score, the
+  [durability tests](../contributing/testing-and-debugging.md) green with it on, and a clean Shut Down and restart.
 
 ### ROM: the 1993 Quadra/Centris ROM for the 68k engine
 

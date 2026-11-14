@@ -5,23 +5,51 @@
 # a key renamed or removed breaks the build instead of leaving an empty label on
 # the screen.
 #
-# Columns are tab-separated: key, then one column per language. The heading row
-# names them, and its names become LangEN, LangFR and so on.
+# Columns are tab-separated: key, then one column per language. The heading
+# row names them, and its names become LangEN, LangFR and so on. Inside a cell,
+# the two characters \n are a line break.
 #
 # English first because the code is English and because a label written in the
 # language the layout was tuned to is the one that never overflows. French is
 # the longer of the two almost everywhere, which is exactly why both are
 # measured (tests/host/check_geometry.cpp).
 key	en	fr
-choose_system	Choose a system	Choisissez un système
 start	Start	Démarrer
+tab_system	System	Système
+tab_settings	Settings	Réglages
+tab_network	Network	Réseau
+tab_information	Information	Informations
+net_connection	Connection	Connexion
+net_off	None	Aucune
+net_cable	Ethernet cable	Câble Ethernet
+net_wifi	Wi-Fi	Wi-Fi
+net_name	Network	Réseau
+net_password	Password	Mot de passe
+net_show	Show	Afficher
+net_country	Country	Pays
+net_search	Search	Rechercher
+net_join	Join	Se connecter
+net_st_off	The Macintosh will have no network.	Le Macintosh n’aura pas de réseau.
+net_st_starting	Starting the Wi-Fi…	Démarrage du Wi-Fi…
+net_st_no_wifi	This board has no Wi-Fi Okapia can use.	Cette carte n’a pas de Wi-Fi utilisable par Okapia.
+net_st_no_cable	No Ethernet port was found.	Aucun port Ethernet n’a été trouvé.
+net_st_searching	Searching for networks…	Recherche des réseaux…
+net_st_choose	Choose a network, type its password, then Join.	Choisissez un réseau, tapez son mot de passe, puis Se connecter.
+net_st_joining	Joining	Connexion à
+net_st_connected	Connected to	Connecté à
+net_st_refused	The password was refused by	Mot de passe refusé par
+net_st_lost	Not connected to	Non connecté à
+net_st_cable_up	Cable connected	Câble branché
+net_st_cable_down	Cable unplugged	Câble débranché
+net_st_restart	Okapia will restart to change the connection.	Okapia redémarrera pour changer de connexion.
+net_st_bad_password	A password is 8 to 63 characters, without accents.	Un mot de passe fait de 8 à 63 caractères, sans accents.
+net_st_no_name	Choose a network, or type its name.	Choisissez un réseau, ou tapez son nom.
 settings	Settings	Réglages
-back	Back	Retour
-save	Save	Enregistrer
 save_restart	Save and restart	Enregistrer et redémarrer
-restart_required	* Okapia restart required after changing this	* Redémarrage d’Okapia requis après modification
+restart_required	* Restart required	* À redémarrer
 restarting	Restarting Okapia…	Redémarrage d’Okapia…
 shut_down	Shut down	Éteindre
+restart	Restart	Redémarrer
 forget_pram	Forget the parameter RAM	Oublier la PRAM
 rescue_disk	Rescue disk	Disque de secours
 read_only	Read-only	Lecture seule
@@ -44,14 +72,43 @@ emulator	Emulator	Émulateur
 emulator_68k	68k (Basilisk II)	68k (Basilisk II)
 emulator_powerpc	PowerPC (SheepShaver)	PowerPC (SheepShaver)
 volume_name	Volume name	Nom du volume
-shared_folder	Shared folder	Dossier partagé
+shared_group	Folder sharing	Partage de dossier
+share	Share	Partager
+clock_group	Date & Time	Date et heure
+clock_help	Okapia sets the Macintosh’s clock each time it starts.\n\n– Network on (Ethernet cable or Wi-Fi connected, and “Time from the network” selected): Okapia asks the time server for the time as soon as the network is connected, then once a day.\n\n– Network off (no Internet, or “Time from the network” deselected): the clock continues from the last time the volumes were used.\n\n– Setting the time yourself: use the Date & Time control panel on the Macintosh. Okapia keeps the time you set.	Okapia règle l’horloge du Macintosh à chaque démarrage.\n\n– Réseau actif (câble Ethernet ou Wi-Fi connecté, et « Heure par le réseau » cochée) : Okapia demande l’heure au serveur de temps indiqué dès que la connexion est établie, puis une fois par jour.\n\n– Réseau inactif (pas d’Internet, ou « Heure par le réseau » décochée) : l’horloge reprend à partir de la dernière utilisation des volumes.\n\n– Réglage manuel : utilisez le tableau de bord « Date et heure » du Macintosh. Okapia conservera l’heure que vous réglez.
+ok	OK	OK
 screen_refresh	Screen refresh	Rafraîchissement
 dynamic	Dynamic	Dynamique
 mouse_dpi	Mouse	Souris
 sound	Sound	Son
 sound_off	Off	Coupé
 language	Language	Langue
-boot_menu	Always show this menu at startup	Toujours afficher ce menu au démarrage
+boot_menu	Show this menu at startup	Afficher ce menu au démarrage
+time_zone	Time zone	Fuseau horaire
+net_time	Time from the network	Heure par le réseau
+zone_fixed	fixed, from the preferences	fixe, d’après les préférences
+zone_utc	Coordinated Universal Time	Temps universel coordonné
+zone_london	London, Dublin, Lisbon	Londres, Dublin, Lisbonne
+zone_paris	Paris, Brussels, Berlin, Madrid, Rome	Paris, Bruxelles, Berlin, Madrid, Rome
+zone_athens	Athens, Helsinki, Kyiv	Athènes, Helsinki, Kyiv
+zone_moscow	Istanbul, Moscow	Istanbul, Moscou
+zone_dubai	Dubai, Réunion	Dubaï, La Réunion
+zone_delhi	Delhi, Mumbai	New Delhi, Bombay
+zone_bangkok	Bangkok, Jakarta	Bangkok, Jakarta
+zone_beijing	Beijing, Singapore, Perth	Pékin, Singapour, Perth
+zone_tokyo	Tokyo, Seoul	Tokyo, Séoul
+zone_brisbane	Brisbane	Brisbane
+zone_sydney	Sydney, Melbourne	Sydney, Melbourne
+zone_noumea	Nouméa	Nouméa
+zone_auckland	Auckland	Auckland
+zone_saopaulo	São Paulo, Buenos Aires	São Paulo, Buenos Aires
+zone_martinique	Martinique, Guadeloupe	Martinique, Guadeloupe
+zone_newyork	New York, Montreal	New York, Montréal
+zone_chicago	Chicago, Winnipeg	Chicago, Winnipeg
+zone_denver	Denver, Calgary	Denver, Calgary
+zone_losangeles	Los Angeles, Vancouver	Los Angeles, Vancouver
+zone_anchorage	Anchorage	Anchorage
+zone_honolulu	Honolulu, Tahiti	Honolulu, Tahiti
 repair_title	Repair the volume?	Réparer le volume ?
 repair_body	This volume was not unmounted properly. Okapia can repair it before starting, which takes a few seconds and does not touch your files.	Ce volume n’a pas été démonté proprement. Okapia peut le réparer avant de démarrer, ce qui prend quelques secondes et ne touche pas à vos fichiers.
 repair_now	Repair	Réparer
@@ -72,7 +129,6 @@ sound_jack	Headphone jack	Prise casque
 sound_usb	USB	USB
 unit_hz	Hz	Hz
 unit_mb	MB	Mo
-settings_title	Settings	Réglages
 info_version	Okapia	Okapia
 info_machine	Board	Carte mère
 info_display	Display	Écran
@@ -82,6 +138,29 @@ info_model_auto	from the system installed	d’après le système installé
 info_model_pref	from the preferences	d’après les préférences
 info_card	SD card	Carte SD
 info_startup	Startup volume	Volume de démarrage
+clock_from_ntp	Given by	Donnée par
+clock_from_mac	Set on the Macintosh	Réglée sur le Macintosh
+clock_from_volume	From the last use of	D’après la dernière utilisation de
+clock_from_build	From the date Okapia was built	D’après la date de compilation d’Okapia
+day_sunday	Sunday	dimanche
+day_monday	Monday	lundi
+day_tuesday	Tuesday	mardi
+day_wednesday	Wednesday	mercredi
+day_thursday	Thursday	jeudi
+day_friday	Friday	vendredi
+day_saturday	Saturday	samedi
+month_january	January	janvier
+month_february	February	février
+month_march	March	mars
+month_april	April	avril
+month_may	May	mai
+month_june	June	juin
+month_july	July	juillet
+month_august	August	août
+month_september	September	septembre
+month_october	October	octobre
+month_november	November	novembre
+month_december	December	décembre
 info_none	none	aucun
 info_credits	Components and licences	Composants et licences
 shut_down_title	Shut down?	Éteindre ?
@@ -97,6 +176,7 @@ spec_choices	Tick boxes and radio buttons	Cases et boutons radio
 spec_list	List, scroller, field	Liste, ascenseur, saisie
 spec_alert	Alert	Alerte
 spec_progress	Progress	Progression
+spec_tabs	Tabs	Onglets
 spec_typography	Typography	Typographie
 spec_states	One label, all its states	Un même libellé, tous ses états
 spec_normal	Normal	Normal

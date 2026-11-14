@@ -22,6 +22,7 @@
 #include "sysdeps.h"
 #include "okapia_circle.h"
 #include "hal_circle.h"
+#include "clock_circle.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -122,6 +123,15 @@ static void OneSecond (void)
                                 "1 Hz #%u: Mac Ticks %u (expect ~%u), Microseconds %lu s",
                                 s_nSeconds, (unsigned) macTicks, s_nSeconds * 60,
                                 (unsigned long) (us / 1000000));
+    }
+
+    // The Macintosh's clock, as every upstream port keeps it: nothing in the
+    // emulated machine advances the Time global on its own. The same look says
+    // when the Macintosh set it itself (clock_circle.cpp).
+    uint32 nTime;
+    if (ClockMacSecond (ReadMacInt32 (0x20c), &nTime))
+    {
+        WriteMacInt32 (0x20c, nTime);
     }
 
     // The two engines number their flags differently, and SheepShaver has no
@@ -229,8 +239,28 @@ static void PeriodicHandler (void)
     }
 }
 
+#ifdef OKAPIA_JIT
+/*
+ *  One Mac tick, asked for by the engine instead of the timer.
+ *
+ *  The JIT's dispatch loop sets tick_inhibit for as long as it runs and drives
+ *  the 60 Hz itself from the clock, at the one place where the guest's registers
+ *  and flags are all back in memory (uae_cpu_2026/compiler/compemu_support.cpp,
+ *  "Synchronous tick model"). The two handlers above then stand down, and this
+ *  is what the loop calls. Same work, on the engine's core.
+ */
+void TickFromEngine (void)
+{
+    if (s_bRunning)
+    {
+        OneTick ();
+    }
+}
+#endif
+
 void TickInit (void)
 {
+    ClockMacStart ();
     s_nAccumulator = 0;
     s_nTickCounter = 0;
     s_bRunning = false;
@@ -272,6 +302,12 @@ void TickStart (void)
 {
     // Held back until the emulator is ready: an interrupt raised before the Mac
     // can service it is lost, and a lost first VBL is hard to tell from a hang.
+#ifdef OKAPIA_JIT
+    // The JIT's loop leaves it set when it returns, and the Macintosh goes round
+    // more than once: an interpreted start after a compiled one would get no
+    // tick at all.
+    tick_inhibit = false;
+#endif
     s_bRunning = true;
 }
 

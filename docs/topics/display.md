@@ -99,6 +99,70 @@ output test in `tests/host/check_platform.cpp` covers odd origins and pitches th
 cursor into its own buffer, so the pointer can never move more often than the compositor runs: a 10 Hz screen reads
 as a laggy mouse. Report the composite rate, not the VBL rate — calling 55 VBL/s "fps" once hid a 9 Hz screen.
 
+### 68k QuickDraw
+
+The [Color QuickDraw call map](../notes/research/quickdraw-8bit.md) follows
+the drawing procedures to their pixel loops and lists the 8-bit coverage work.
+
+`qdaccel sync` uses ARM64 for eligible boolean transfers and repeating
+patterns at 8 bits. It also handles eligible rectangular `srcCopy` and
+solid `patCopy` at 16 and 32 bits. The default is `off`. This experiment uses the
+`uae_cpu_2021` interpreter and ROM `F1ACAD13`. At first guest idle,
+`quickdraw_circle.cpp` installs a system-heap trampoline for the private
+`BitBlt` Toolbox trap (`$AB00`) if it still points to the ROM original.
+The ROM caller returns to `ROMBaseMac + $36e40`. For the RAM caller,
+Okapia resolves the live `StretchBits` trap (`$AB27`) and fingerprints the
+code from entry through the return branch. The System 7.1 and 7.6.1 images
+used for testing load the same routine at different addresses. Both use its
+relative return offset `$6de`. Systems with a different patch signature
+fall back to the guest handler for their RAM calls.
+Both callers do palette selection, clipping and cursor protection before
+the call and finish it afterwards. Unknown callers and unsupported transfers
+tail-jump to the original handler with the saved registers and flags.
+
+`quickdraw_blit.cpp` validates the full pixel spans against ordinary Mac RAM
+and the active guest framebuffer. It takes the final clip and expanded
+pattern from the verified `StretchBits` frame. The 8-bit `RgnBlt` hook
+intersects the three region streams and shares the span writer. Overlapping
+copies on one surface use ordered rows and a saved source row for region
+spans. The `DrawSlab` hook handles the verified ROM call sites and four
+ROM mode dispatchers that use a byte mask and a short pattern.
+`ScaleBlt` (`$AB96`) handles same-size RGB32-to-indexed-8 `srcCopy` with
+the current device's valid RGB inverse table and the guest's clip.
+`stScanLoop` (`$AB99`) handles same-palette indexed-8 `srcCopy` with
+a same-size 1-bit stencil or an unmasked full-rectangle expansion by
+factors of 1, 2 or 4 on each axis. It returns through QuickDraw's own
+cleanup. The ROM and the known RAM paths have separate frame checks.
+Dithering, palette remapping, gray inverse tables, other resizes and
+masks, alpha and indexed arithmetic continue through the guest.
+The compositor continues to see all guest drawing through its shadow scan.
+
+To build the experimental worker, run
+`OKAPIA_QD_MULTICORE=1 ./scripts/build-libs.sh pi4`, then run
+`make -C src/kernel okapia-clean` and rebuild the kernel.
+Set `qdaccel parallel` on the card. For non-overlapping copies and fills
+of at least 256 KiB, cores 0 and 2 split the rows and join before the guest
+returns. Other builds and smaller transfers use the synchronous path.
+The worker is board-owned, starts once and survives guest restarts.
+
+Use `perfreport true` to log eligible calls, native copies, overlapping
+copies, fills, split jobs, bytes and native drawing time. Video reports
+include compositor cost and a rolling 95th-percentile screen interval.
+Each rejected `BitBlt` is counted once at the first check it fails.
+The five-second report includes one example per reason, with the internal
+transfer mode, register depths and translation flags when the frame is valid.
+`ScaleBlt` and `stScanLoop` report total and native calls separately.
+Use `qdaccel probe` for coverage with the guest drawing, `off` as the
+baseline and `sync` or `parallel` for timed runs. On the Pi 4, compare five
+alternating runs at fixed CPU frequency, resolution, depth and `frameskip 1`.
+Measure repeated large same-format `CopyBits`, Finder list scrolling or
+Speedometer Graf, using the same version for both runs (3 under System 7.1).
+The targets are 2× on eligible 8-bit copies and 20%
+on scrolling or Graf. Keep the parallel mode experimental unless large
+transfers improve by 15% over `sync` with at most 5% higher p95 screen interval.
+For QEMU durability use
+`OKAPIA_EXTRA_PREFS='qdaccel sync' ./scripts/run-test.sh 40 qemu/sd-contents/boot71.img`.
+
 ## Status
 
 - [x] Fixed output frame buffer, integer scaling, centring (2026-08-26)

@@ -79,7 +79,8 @@ built for, and every script that runs a kernel checks it — a Pi 4 kernel addre
 `raspi3b` puts them at `0x3F000000`, so the wrong build does not fail, it goes quiet. A QEMU build also carries
 `NO_SDHOST` and dies silently on a board.
 
-circle-stdlib's `configure` is run with `--kernel-max-size` 4 MB (Circle alone reserves 2 MB); newlib is built with
+circle-stdlib's `configure` is run with `--kernel-max-size` 16 MB (Circle alone reserves 2 MB; the stamp below
+includes it); newlib is built with
 `-O2` thanks to `patches/circle-stdlib/0001`. A target's libraries carry a stamp of what they were built from
 (`install/.okapia-patches`): the digest of the circle-stdlib patches and the revisions of circle-stdlib, Circle,
 circle-newlib and hostap. A target brought back with another stamp is cleaned and built again, and so is the active
@@ -176,8 +177,12 @@ applied is skipped.
 - **Circle invokes `ld` directly**: `--wrap=<mangled name>`, never `-Wl,--wrap`. Only calls crossing a translation unit
   are wrapped.
 - **Kernel size**: Circle reserves `KERNEL_MAX_SIZE` (`sysconfig.h:38`) between the load address and the stacks
-  (`memorymap.h:47`); circle-stdlib's `configure` passes 4 MB. It is a flag and a library rebuild, not a hardware
-  limit. Overflow shows as an obscure link error.
+  (`memorymap.h:47`); `build-libs.sh` passes 16 MB. It is a flag and a library rebuild, not a hardware
+  limit. The check is on `_end`, `.bss` included, and is a halt before any log exists.
+- **The JIT build** is `make -C src/kernel OKAPIA_JIT=1`, after `scripts/gen-cpu.sh jit` (the opcode tables and
+  the JIT's compile handlers, into `build/generated-jit`) and `okapia-clean` — objects do not know which core they
+  were built from. It needs `external/macemu-jit` (`bootstrap.sh` clones it at its pinned commit) and the patches of
+  `patches/macemu-jit/`. Without `OKAPIA_JIT` nothing of it is compiled.
 - **A library patch is in the sources before it is in the libraries.** `apply-patches.sh --check` and the kernel's
   `patches-check` look at `external/`, not at `libcirclenewlib.a`: a target restored from `build/libs/` was built
   before the patch. `build-libs.sh` compares its stamp for that reason; on the active target, rebuild with

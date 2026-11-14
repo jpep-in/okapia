@@ -131,7 +131,9 @@ path and fixes what upstream disabled it for. `fpu_selftest_extended()` runs at 
       the unredirected ASC address is the leading hypothesis, unconfirmed
 - [ ] System 6 in 24-bit mode as a third engine configuration — see the [study](../notes/research/system6-24bit.md)
 - [ ] Automatic ROM selection, as `modelid` is automatic
-- [ ] 68k JIT — out of scope unless measurements demand it ([study](../notes/research/jit-68k.md))
+- [ ] 68k JIT — experimental behind `OKAPIA_JIT=1`; boots System 7.1 under QEMU. Open: Shut Down and restart,
+      the Pi 4 (cache flush, Speedometer), the carried patches 0009 and 0010
+      ([study](../notes/research/jit-68k.md#first-boot-2026-11-14))
 
 ## Pitfalls
 

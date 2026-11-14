@@ -40,8 +40,10 @@ tests/host/check_pages
 tests/host/check_platform
 tests/host/check_platform.tmp
 tests/host/check_blit
+tests/host/check_quickdraw
 tests/host/check_encoding
 tests/host/check_net
+tests/host/check_clock
 tests/host/make_large_volume
 tests/host/render_chooser
 tests/host/render_pages

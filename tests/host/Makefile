@@ -169,7 +169,12 @@ check_encoding: check_encoding.o p_mac_encoding_circle.o
 check_net.o: check_net.cpp
 	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
 
-check_net: check_net.o p_net_config_circle.o
+check_net: check_net.o p_net_config_circle.o p_net_clock.o
+	$(CXX) -o $@ $^
+
+# Time zones, summer time and the date in words: the firmware's own code, so
+# it links with the firmware's objects.
+check_clock: $(LIBOBJS) check_clock.o
 	$(CXX) -o $@ $^
 
 # The subject of scripts/check-large-volume.sh: not a check on its own, since
@@ -184,8 +189,11 @@ make_large_volume: make_large_volume.o $(HFS_OBJS)
 # asymmetry of one pixel is invisible on a screenshot and obvious at three. The
 # behaviour joins them: what the focus does under a sequence of keys is decidable
 # on a machine with no keyboard, so there is no reason to go and look.
+check_quickdraw: check_quickdraw.cpp ../../src/circle/quickdraw_blit.cpp ../../src/circle/quickdraw_blit.h
+	$(CXX) $(CXXFLAGS) -I../../src/circle -o $@ $(filter %.cpp,$^)
+
 check: check_geometry check_screen check_chooser check_pages check_platform check_blit \
-       check_encoding check_net
+       check_encoding check_net check_clock check_quickdraw
 	./check_geometry
 	./check_screen
 	./check_chooser
@@ -194,6 +202,8 @@ check: check_geometry check_screen check_chooser check_pages check_platform chec
 	./check_blit
 	./check_encoding
 	./check_net
+	./check_clock
+	./check_quickdraw
 
 # Every page, the count being the flow's to decide: naming them here again is
 # how the second page went stale the day a third appeared.
@@ -209,7 +219,7 @@ view: render_specimen
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
 	      check_chooser check_pages check_platform check_platform.tmp check_blit \
-	      check_encoding make_large_volume \
+	      check_encoding check_quickdraw make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean

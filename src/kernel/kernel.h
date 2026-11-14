@@ -35,7 +35,6 @@ public:
 
 private:
     void LoadPreferences (void);
-    void ApplyTimeZone (void);
     void ApplyModelId (void);
     void PrepareSharedFolder (void);
     void LoadKeycodes (void);

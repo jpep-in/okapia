@@ -50,6 +50,7 @@ the other way round. The same file serves both Macintosh; its name does not chan
 |---|---|---|
 | `screen` | — | upstream's spelling, `win/<width>/<height>` (or `dga/…`): the resolution to start in. `0` means the display's own width or height. The size is also added to the Monitors list if missing |
 | `frameskip` | `0` | `0` = dynamic (default), `1` = every VBL, `2` = 30 Hz, `4` = 15 Hz, `6` = 10 Hz. The Mac draws its own cursor, so a low rate reads as a laggy mouse — see [Display](topics/display.md) |
+| `qdaccel` | `off` | Experimental 68k QuickDraw. `sync` accelerates eligible copies and solid fills; `parallel` also uses core 2 for large transfers with a multicore Pi 4 build; `probe` logs eligibility and executes the original guest code. See [QuickDraw](topics/display.md#68k-quickdraw). |
 
 ## Sound
 
@@ -77,7 +78,9 @@ the other way round. The same file serves both Macintosh; its name does not chan
 
 | Keyword | Default | Meaning |
 |---|---|---|
-| `timezone` | `0` | minutes east of UTC — `60` for CET, `120` for CEST, `-300` for EST. A Mac of this era has no time zone: its clock *is* local time |
+| `zone` | — | the time zone, one of the boot menu's 22: `utc`, `london`, `paris`, `athens`, `moscow`, `dubai`, `delhi`, `bangkok`, `beijing`, `tokyo`, `brisbane`, `sydney`, `noumea`, `auckland`, `saopaulo`, `martinique`, `newyork`, `chicago`, `denver`, `losangeles`, `anchorage`, `honolulu`. Summer time follows on its own. A Mac of this era has no time zone: its clock *is* local time ([Clock and PRAM](topics/clock-and-pram.md#time-zones-and-summer-time)) |
+| `timezone` | `0` | minutes east of UTC, **without summer time** — the older way, read only when `zone` is empty. The boot menu offers it as itself until a city replaces it |
+| `ntp` | `pool.ntp.org` | the time server, a name or an address, asked a few seconds after the network is up and once a day; empty for none ([Clock and PRAM](topics/clock-and-pram.md#time-from-the-network)) |
 | `yearofs`, `dayofs` | `0` | offsets on the Mac's clock |
 
 ## Boot menu and diagnostics
@@ -91,14 +94,17 @@ the other way round. The same file serves both Macintosh; its name does not chan
 
 ## Network
 
-See [Network](topics/network.md). Each value runs to the end of the line: spaces, `#` and `;` need no quotes.
+See [Network](topics/network.md). The boot menu's Network page writes all four; by hand, each value runs to the end
+of the line: spaces, `#` and `;` need no quotes. The page removes a key it would leave empty rather than writing a
+blank line.
 
 | Keyword | Default | Meaning |
 |---|---|---|
 | `ether` | — | `eth`: the Pi 4's port or a USB Ethernet adapter; `wlan`: the on-board Wi-Fi. Anything else, or nothing, is no network and no device claimed |
 | `wifissid` | — | the Wi-Fi network's name, 1 to 32 bytes |
 | `wifipassword` | — | its WPA2 passphrase, 8 to 63 printable ASCII characters, or the key as 64 hex digits; empty for an open network. Kept in clear on the card. WPA3-only networks cannot be joined |
-| `wificountry` | `US` when absent | two letters for the radio's channels (`FR`, `DE`, …); without it channels 12 and 13 are out of reach |
+| `wificountry` | `US` when absent (the boot menu offers `FR` in French, `US` otherwise) | two letters for the radio's channels (`FR`, `DE`, …); without it channels 12 and 13 are out of reach |
+| `netbench` | — | the address of a machine running `scripts/netbench.py`, then this board's own when nothing on the cable serves DHCP (`192.168.2.1 192.168.2.2`): the network is measured once at power-on, before the window ([Network](topics/network.md#the-bench)). Empty: never |
 | `nonet` | `false` | **ignored**: `ether` decides. Every card written before the network existed says `true` |
 
 ## Keywords that do nothing here

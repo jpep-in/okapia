@@ -399,6 +399,51 @@ static bool EtherListening (void)
     return ether_driver_opened;
 }
 
+/*
+ *  What Open Transport does with the driver, said in the log
+ *
+ *  SheepShaver's DLPI module (ether.cpp) is entered by the PowerPC Mac
+ *  through native operations (sheepshaver_glue.cpp): InitStreamModule when
+ *  Open Transport loads it, ether_open for every stream. Upstream says nothing
+ *  outside a debug build, and "Open Transport does not load" has many causes —
+ *  a missing OT library symbol fails InitStreamModule, a driver never asked for
+ *  means the System did not pick the ethernet node. Wrapped (ENGINE_WRAPS), so
+ *  external/ stays untouched.
+ */
+
+extern uint8 __real__Z16InitStreamModulePv (void *theID) __asm__ ("__real__Z16InitStreamModulePv");
+extern void  __real__Z21TerminateStreamModulev (void) __asm__ ("__real__Z21TerminateStreamModulev");
+extern int   __real__Z10ether_openP5queuePviiS1_ (queue_t *rdq, void *dev, int flag, int sflag,
+                                                  void *creds) __asm__ ("__real__Z10ether_openP5queuePviiS1_");
+
+extern "C" uint8 __wrap__Z16InitStreamModulePv (void *theID)
+{
+    const uint8 nResult = __real__Z16InitStreamModulePv (theID);
+    CLogger::Get ()->Write (FROM, LogNotice, "Open Transport loaded the Ethernet driver: %s",
+                            nResult ? "ready" : "refused (an Open Transport library symbol is missing, "
+                                                "or the network did not start)");
+    return nResult;
+}
+
+extern "C" void __wrap__Z21TerminateStreamModulev (void)
+{
+    CLogger::Get ()->Write (FROM, LogNotice, "Open Transport unloaded the Ethernet driver");
+    __real__Z21TerminateStreamModulev ();
+}
+
+extern "C" int __wrap__Z10ether_openP5queuePviiS1_ (queue_t *rdq, void *dev, int flag, int sflag,
+                                                     void *creds)
+{
+    const int nResult = __real__Z10ether_openP5queuePviiS1_ (rdq, dev, flag, sflag, creds);
+    static unsigned s_nOpens;
+    if (++s_nOpens <= 8)
+    {
+        CLogger::Get ()->Write (FROM, LogNotice, "Open Transport opened an Ethernet stream: %d (%s)",
+                                nResult, net_open ? "network on" : "no network");
+    }
+    return nResult;
+}
+
 #endif  // SHEEPSHAVER
 
 /*

@@ -334,6 +334,29 @@ static void SectionProgress (TLayout *pLayout)
     }
 }
 
+// The strip that turns the pages of a window, once with the keyboard on it.
+static void SectionTabs (TLayout *pLayout)
+{
+    const TTheme *pTheme = pLayout->pTheme;
+    Heading (pLayout, Str (StrSpecTabs));
+    static TListItem Tabs[3];
+    Tabs[0].pText = Str (StrTabSystem);
+    Tabs[1].pText = Str (StrTabSettings);
+    Tabs[2].pText = Str (StrTabNetwork);
+    for (unsigned i = 0; i < 2; i++)
+    {
+        TWidget *p = Add (WidgetTabs, LayoutTop (pLayout, ThemeTabsHeight (pTheme)), 0,
+                          i == 0 ? StateNormal : StateFocused);
+        p->pItems  = Tabs;
+        p->nItems  = 3;
+        p->nChoice = (int) i;
+        if (i == 0)
+        {
+            LayoutRowGap (pLayout);
+        }
+    }
+}
+
 static void SectionTypography (TLayout *pLayout)
 {
     const TTheme *pTheme = pLayout->pTheme;
@@ -373,7 +396,7 @@ typedef void TSection (TLayout *pLayout);
 static TSection *const s_Sections[] =
 {
     SectionButtons, SectionChoices, SectionList, SectionAlert,
-    SectionProgress, SectionTypography, SectionStates
+    SectionProgress, SectionTabs, SectionTypography, SectionStates
 };
 static const unsigned SECTIONS = sizeof s_Sections / sizeof s_Sections[0];
 

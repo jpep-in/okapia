@@ -20,6 +20,7 @@
 
 #include "okapia_circle.h"
 #include "mac_ram_circle.h"
+#include "quickdraw_circle.h"
 #include <stdio.h>
 
 #include "cpu_emulation.h"
@@ -252,6 +253,19 @@ void ClearInterruptFlag (uint32 flag)
     s_IntFlagsLock.Release ();
 }
 
+#ifdef OKAPIA_JIT
+// uae_cpu_2026 reads and clears the pending interrupts in one step when its
+// deferred model is on (jit_circle.cpp turns it off, as its own platform does).
+uint32 ConsumeInterruptFlags (void)
+{
+    s_IntFlagsLock.Acquire ();
+    const uint32 flags = InterruptFlags;
+    InterruptFlags = 0;
+    s_IntFlagsLock.Release ();
+    return flags;
+}
+#endif
+
 /*
  *  Mutexes. Circle's scheduler is cooperative, so a spinlock is both correct
  *  and the cheapest thing that works across cores.
@@ -350,6 +364,20 @@ bool QuitRequested (void)
 
 void FlushCodeCache (void *start, uint32 size)
 {
+#ifdef OKAPIA_JIT
+    // The guest changed 68k code: every translation of that range is stale, and
+    // a stale block runs old code. This is the invalidation, not a cache flush —
+    // the JIT publishes what it emits itself.
+    extern bool UseJIT;
+    extern void flush_icache_range (uint8 *start, uint32 size);
+    extern volatile unsigned g_nJitFlushRequests;
+    if (UseJIT)
+    {
+        g_nJitFlushRequests++;
+        flush_icache_range ((uint8 *) start, size);
+        return;
+    }
+#endif
     InvalidateInstructionCache ();
 }
 
@@ -390,6 +418,7 @@ void idle_wait (void)
     // Does its work once and returns immediately ever after.
     extern void TellMacTheMouseResolution (void);
     TellMacTheMouseResolution ();
+    QDInstall ();
 #if SOUND_SELFTEST
     extern void AudioSelfTest (void);
     AudioSelfTest ();

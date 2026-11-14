@@ -21,6 +21,8 @@
 #include "spcflags.h"
 #include "hfs_volume_circle.h"
 #include "card_circle.h"
+#include "clock_circle.h"
+#include "quickdraw_worker.h"
 
 #define FROM "okapia"
 
@@ -43,6 +45,10 @@ extern void TickStop (void);
 
 // From src/circle/input_circle.cpp
 extern void InputInit (void);
+
+#ifdef EXECMEM_SELFTEST
+#include "execmem_circle.h"
+#endif
 
 #ifdef FPU_SELFTEST
 // fpu_ieee.cpp (patches/macemu/0008). Declared here rather than in a header:
@@ -87,7 +93,9 @@ bool CKernel::Initialize (void)
     }
 
     LoadPreferences ();
-    ApplyTimeZone ();
+    // The zone, then the build time (clock_circle.cpp). The card raises it
+    // later, the network sets it once the interface is up.
+    ClockInitialize ();
 
     // 4. The Mac memory block, before any other driver allocates: Circle serves
     //    large blocks by walking forward through free space. The card driver is
@@ -109,6 +117,11 @@ bool CKernel::Initialize (void)
         return false;
     }
 
+#ifdef EXECMEM_SELFTEST
+    // Mac RAM first, as everywhere; then before any other driver or the chime.
+    ExecMemSelfTest ();
+#endif
+
     // The chime, as early as it can know which ROM to take it from: it plays
     // from a timer while USB and the boot menu come up. Not again when the
     // other engine hands back: that is the same start, not a restart.
@@ -127,6 +140,7 @@ bool CKernel::Initialize (void)
     // it. There is no state to read back: CUSBKeyboardDevice will say when
     // something changes and never what is down.
     FwInputWatch ();
+    QDStartWorker ();
 
     return true;
 }
@@ -154,46 +168,6 @@ void CKernel::LoadPreferences (void)
                     PrefsFindBool ("fpu") ? "yes" : "no",
                     PrefsFindBool ("nosound") ? "off" : "on",
                     (int) PrefsFindInt32 ("frameskip"));
-}
-
-/*
- *  Which hour to show
- *
- *  The build time is a UTC instant and Circle's clock reports UTC by default,
- *  but a Mac of this era has no notion of a time zone at all: its clock is
- *  local time and that is the end of it. So a Pi in Paris shows an hour or two
- *  behind, which looks like a stale build and is not.
- *
- *  The offset has to be applied before the time, because SetTime stores local
- *  seconds — setting the zone afterwards would move the log's idea of the hour
- *  and leave the Mac's untouched.
- */
-
-void CKernel::ApplyTimeZone (void)
-{
-    int nMinutes = (int) PrefsFindInt32 ("timezone");
-    if (nMinutes != 0)
-    {
-        if (   !CTimer::Get ()->SetTimeZone (nMinutes)
-            || !CTimer::Get ()->SetTime (OKAPIA_BUILD_TIME, FALSE))
-        {
-            CLogger::Get ()->Write (FROM, LogWarning, "timezone %d is out of range, staying on UTC",
-                            nMinutes);
-            nMinutes = 0;
-            // Back to UTC in the timer too, whichever of the two calls refused:
-            // CardRefineClock() reads the zone from the timer, and an offset
-            // accepted there and then abandoned here would put the two frames
-            // it compares an hour or two apart.
-            CTimer::Get ()->SetTimeZone (0);
-        }
-    }
-
-    // Circle's formatter has no %+d, so the sign is spelled out.
-    const unsigned nAbs = (unsigned) (nMinutes < 0 ? -nMinutes : nMinutes);
-    CLogger::Get ()->Write (FROM, LogNotice,
-                    "Clock: %s (UTC%s%u:%02u), from the build time — no RTC and no NTP yet",
-                    (const char *) *CTimer::Get ()->GetTimeString (),
-                    nMinutes < 0 ? "-" : "+", nAbs / 60, nAbs % 60);
 }
 
 /*
@@ -385,6 +359,9 @@ bool CKernel::StartMacintosh (void)
     }
 #endif
 
+#ifdef OKAPIA_JIT
+    JitPrefsApply ();
+#endif
     if (!InitAll (0))
     {
         CLogger::Get ()->Write (FROM, LogError, "InitAll failed");
@@ -506,6 +483,11 @@ TOkapiaExit CKernel::Run (bool bSwitched)
         // Init680x0() takes a fresh one every time and nothing ever gives it
         // back (basilisk_glue.cpp:73). It is a few bytes, but an appliance is
         // meant to run for months and a few bytes per restart is still a leak.
+#ifdef OKAPIA_JIT
+        // uae_cpu_2026 sets its flags atomically on AArch64 and no longer
+        // declares the mutex it still creates.
+        extern B2_mutex *spcflags_lock;
+#endif
         B2_delete_mutex (spcflags_lock);
         spcflags_lock = 0;
 

@@ -6,6 +6,8 @@
  */
 
 #include "okapia_page.h"
+#include "okapia_icons.h"
+#include "okapia_strings.h"
 
 // The design's own units, multiplied by this page's scale. Every screen states
 // its rectangles in the 640x480 the theme was drawn against.
@@ -14,10 +16,27 @@ static int PageScale (const TPage *pPage, int nValue)
     return nValue * (int) pPage->nScale16 / 16;
 }
 
+// The tabbed page laid out last, which is the one on the screen: there is one
+// window and it shows one page at a time.
+static const TPage *s_pChrome;
+static bool         s_bRestart;
+static bool         s_bFocusTabs;
+static bool         s_bCanStart = true;
+static bool         s_bBootMenu;
+static bool         s_bFocusBootMenu;
+static TListItem    s_TabItems[PageTabCount];
+
 void PageBegin (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nMax,
                 unsigned nWide, unsigned nHigh, const char *pTitle)
 {
     pPage->bAlert   = false;
+    pPage->nTabs    = -1;
+    pPage->nPower   = -1;
+    pPage->nPram    = -1;
+    pPage->nStart   = -1;
+    pPage->nNote    = -1;
+    pPage->nBootMenu = -1;
+    s_pChrome       = 0;
     pPage->pWidgets = pWidgets;
     pPage->nMax     = nMax;
     pPage->nCount   = 0;
@@ -75,8 +94,10 @@ void PageFooter (TPage *pPage)
     const TTheme *pTheme = &pPage->Theme;
 
     // Taken off the bottom with the room a default button's double ring needs
-    // on both sides — the band itself is only the button's own height.
-    const unsigned nReach = ThemeReach (pTheme, StateDefault);
+    // on both sides — the band itself is only the button's own height. Focused
+    // as well: Start is where the keyboard begins, and its grey ring sits
+    // outside the black one.
+    const unsigned nReach = ThemeReach (pTheme, StateDefault | StateFocused);
     TRect Band = LayoutBottom (&pPage->Layout, pTheme->M.nButtonHeight + 2 * nReach);
     Band = Rect (Band.nX, Band.nY + (int) nReach, Band.nWidth, pTheme->M.nButtonHeight);
     RowBegin (&pPage->Foot, pTheme, Band);
@@ -133,4 +154,133 @@ void PagePaint (TSurface *pSurface, const TPage *pPage)
         pTheme->DrawDialog (pSurface, pPage->Dialog, pTheme);
     }
     WidgetDrawAll (pSurface, pTheme, pPage->pWidgets, pPage->nCount);
+}
+
+void PageChromeBootMenu (bool bOn, bool bFocus)
+{
+    s_bBootMenu      = bOn;
+    s_bFocusBootMenu = bFocus;
+}
+
+void PageGroupBegin (TPage *pPage, TPageGroup *pGroup, const char *pTitle)
+{
+    const TTheme *pTheme = &pPage->Theme;
+    TLayout *pLayout = &pPage->Layout;
+    pGroup->nTop   = pLayout->Free.nY;
+    pGroup->nX     = pLayout->Free.nX;
+    pGroup->nWidth = pLayout->Free.nWidth;
+    pGroup->nIndex = (int) pPage->nCount;
+    PageAdd (pPage, WidgetGroup, Rect (pGroup->nX, pGroup->nTop, pGroup->nWidth, 0),
+             pTitle, StateNormal);
+    // The name's line, then the air under the frame's top; inside, a gap on
+    // either side.
+    LayoutSkip (pLayout, pTheme->M.nLineHeight);
+    pLayout->Free.nX     += (int) pTheme->M.nGap;
+    pLayout->Free.nWidth -= 2 * pTheme->M.nGap;
+}
+
+void PageGroupEnd (TPage *pPage, TPageGroup *pGroup)
+{
+    const TTheme *pTheme = &pPage->Theme;
+    TLayout *pLayout = &pPage->Layout;
+    LayoutSkip (pLayout, pTheme->M.nGap / 2 + pTheme->M.nStroke);
+    pLayout->Free.nX     = pGroup->nX;
+    pLayout->Free.nWidth = pGroup->nWidth;
+    pPage->pWidgets[pGroup->nIndex].Rect.nHeight =
+        (unsigned) (pLayout->Free.nY - pGroup->nTop);
+}
+
+void PageChromeSet (bool bRestart, bool bFocusTabs, bool bCanStart)
+{
+    s_bRestart   = bRestart;
+    s_bFocusTabs = bFocusTabs;
+    s_bCanStart  = bCanStart;
+}
+
+void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nMax,
+                      TPageTab Tab)
+{
+    PageBegin (pPage, pSurface, pWidgets, nMax, PAGE_WIDTH, PAGE_HEIGHT, 0);
+    const TTheme *pTheme = &pPage->Theme;
+
+    // The strip takes the title's place: the tab in front *is* the title, and
+    // a window naming its page twice reads as two windows.
+    static const TStringId Names[PageTabCount] =
+    {
+        StrTabSystem, StrTabSettings, StrTabNetwork, StrTabInformation
+    };
+    for (unsigned i = 0; i < PageTabCount; i++)
+    {
+        s_TabItems[i].pText  = Str (Names[i]);
+        s_TabItems[i].pIcon  = 0;
+        s_TabItems[i].nState = StateNormal;
+    }
+    pPage->nTabs = (int) pPage->nCount;
+    TWidget *pTabs = PageAdd (pPage, WidgetTabs,
+                              LayoutTop (&pPage->Layout, ThemeTabsHeight (pTheme)), 0,
+                              s_bFocusTabs ? StateFocused : StateNormal);
+    pTabs->pItems  = s_TabItems;
+    pTabs->nItems  = PageTabCount;
+    pTabs->nChoice = (int) Tab;
+    LayoutSectionGap (&pPage->Layout);
+
+    // The machine's buttons, the same on every page. Start is where the
+    // keyboard begins unless the page was turned from the strip: Start is what
+    // one came to press, and Return acts on what the keyboard holds.
+    PageFooter (pPage);
+    pPage->nPram  = PageIconButton (pPage, OkapiaPaintPram,  StateNormal);
+    pPage->nPower = PageIconButton (pPage, OkapiaPaintPower, StateNormal);
+    // Laid out with the label it will actually wear: a button sized for "Save
+    // and restart" and drawn saying "Start" is a button with a hole in it, so a
+    // change of either lays the page out again.
+    const bool bStartFocus = !s_bFocusTabs && !s_bFocusBootMenu && s_bCanStart;
+    pPage->nStart = PageLast (pPage, s_bRestart ? Str (StrSaveRestart) : Str (StrStart),
+                              (bStartFocus ? StateDefault | StateFocused : StateDefault)
+                              | (s_bCanStart ? StateNormal : StateDisabled));
+
+    // Beside Start, because it is about starting: whether this window comes
+    // back next time. A habit of the person and not a setting of the
+    // Macintosh, so it is the window's and on every page.
+    {
+        const char *pLabel = Str (StrBootMenu);
+        const unsigned nWide = pTheme->M.nCheckSize + pTheme->M.nGap
+                             + GfxTextWidth (pTheme->pBodyFont, pLabel);
+        TRect Box = RowLast (&pPage->Foot, nWide, StateFocused);
+        Box = Rect (Box.nX, Box.nY + ((int) pTheme->M.nButtonHeight - (int) pTheme->M.nCheckSize) / 2,
+                    Box.nWidth, pTheme->M.nCheckSize);
+        pPage->nBootMenu = (int) pPage->nCount;
+        PageAdd (pPage, WidgetCheckbox, Box, pLabel,
+                 (s_bBootMenu ? StateChecked : StateNormal)
+                 | (s_bFocusBootMenu && !s_bFocusTabs ? StateFocused : 0));
+    }
+    if (s_bRestart)
+    {
+        pPage->nNote = PageNote (pPage, Str (StrRestartRequired), StateNormal);
+    }
+
+    s_pChrome = pPage;
+}
+
+bool PageChromeRestart (void)
+{
+    return s_bRestart;
+}
+
+int PageChromeAnswer (int nIndex)
+{
+    const TPage *p = s_pChrome;
+    if (p == 0 || nIndex < 0)
+    {
+        return PageAnswerNone;
+    }
+    if (nIndex == p->nStart)  return PageAnswerStart;
+    if (nIndex == p->nPower)  return PageAnswerShutDown;
+    if (nIndex == p->nPram)   return PageAnswerForgetPram;
+    if (nIndex == p->nBootMenu) return PageAnswerBootMenu;
+    if (nIndex == p->nTabs)
+    {
+        const int nTab = p->pWidgets[p->nTabs].nChoice;
+        return nTab >= 0 && nTab < (int) PageTabCount ? PageAnswerTab + nTab : PageAnswerNone;
+    }
+    return PageAnswerNone;
 }

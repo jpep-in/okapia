@@ -36,6 +36,7 @@ extern void InputDrain (void);
 // ether_circle.cpp — polls the board's network interface, lets the Wi-Fi's
 // tasks run and raises the Ethernet interrupt when a frame waits.
 extern void EtherPoll (void);
+extern void ClockPoll (void);     // clock_circle.cpp, shared
 
 // xpram_circle.cpp — compares the Mac's parameter RAM with what is on the card
 // and writes when they differ. The 68k engine is told the moment it changes
@@ -132,6 +133,7 @@ void powerpc_check_ticks (void)
     Recalibrate ();
     InputDrain ();
     EtherPoll ();
+    ClockPoll ();
 
     if ((s_nVisits % PRAM_EVERY) == 0)
     {

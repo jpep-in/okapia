@@ -9,6 +9,9 @@
 # as the boot disk, so a second System can be regression-tested without
 # disturbing the card you actually use.
 #
+# OKAPIA_EXTRA_PREFS='qdaccel sync' adds those lines (\n separates them) to
+# the throwaway card's preferences, creating the file for a standalone image.
+#
 # The run works on a copy of qemu/sd.img — not to look away from corruption, but
 # to be able to see it. On the master image damage accumulates across runs and
 # nothing is attributable; from a known-good copy, whatever fsck_hfs reports was
@@ -66,6 +69,14 @@ if [ -n "$IMAGE" ]; then
     printf 'testing %s on a %s MB card\n' "$(basename "$IMAGE")" "$POW"
 else
     cp "$SD" "$CARD"
+fi
+if [ -n "${OKAPIA_EXTRA_PREFS:-}" ]; then
+    if [ -z "$IMAGE" ]; then
+        mcopy -i "$CARD" ::BasiliskII_Prefs "${WORK}/prefs"
+    fi
+    printf '\n%b\n' "$OKAPIA_EXTRA_PREFS" >> "${WORK}/prefs"
+    mcopy -i "$CARD" -o "${WORK}/prefs" ::BasiliskII_Prefs
+    printf 'preferences added to the card: %s\n' "$OKAPIA_EXTRA_PREFS"
 fi
 
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial stdio -display none \

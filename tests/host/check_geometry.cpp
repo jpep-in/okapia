@@ -305,6 +305,7 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
             if (   A.Type == WidgetLabel     || B.Type == WidgetLabel
                 || A.Type == WidgetTitle     || B.Type == WidgetTitle
                 || A.Type == WidgetSeparator || B.Type == WidgetSeparator
+                || A.Type == WidgetGroup     || B.Type == WidgetGroup
                 || A.Type == WidgetParagraph || B.Type == WidgetParagraph
                 || A.Type == WidgetAlert     || B.Type == WidgetAlert
                 || A.Type == WidgetIcon      || B.Type == WidgetIcon
@@ -314,9 +315,12 @@ static void CheckSpecimen (unsigned nScale, unsigned nPage)
             }
             // A tick box and a radio wear their ring around the small box inside
             // their row, not around the row: the row already holds it, and
-            // expanding again counts the same pixels twice.
-            const bool bInA = A.Type == WidgetCheckbox || A.Type == WidgetRadio;
-            const bool bInB = B.Type == WidgetCheckbox || B.Type == WidgetRadio;
+            // expanding again counts the same pixels twice. A strip of tabs
+            // rings the front tab's label, inside the tab.
+            const bool bInA = A.Type == WidgetCheckbox || A.Type == WidgetRadio
+                           || A.Type == WidgetTabs;
+            const bool bInB = B.Type == WidgetCheckbox || B.Type == WidgetRadio
+                           || B.Type == WidgetTabs;
             const int a = bInA ? 0 : (int) ThemeReach (&T, A.nState);
             const int b = bInB ? 0 : (int) ThemeReach (&T, B.nState);
             const TRect ra = RectInset (A.Rect, -a, -a);

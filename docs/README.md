@@ -78,4 +78,6 @@ Dated development notes and research studies, kept for the reasoning behind a re
 | [infinite-mac](notes/research/infinite-mac.md) | What the WebAssembly port teaches a bare-metal one |
 | [System 6 in 24-bit mode](notes/research/system6-24bit.md) | A third engine configuration for System 6 |
 | [68k JIT](notes/research/jit-68k.md) | Whether and how to enable a 68k→AArch64 JIT |
+| [pom68k](notes/research/pom68k.md) | Whether a low-level 68k emulator with an AArch64 JIT would beat Basilisk on a Pi |
+| [Emu68](notes/research/emu68.md) | The 68k→AArch64 JIT built for AArch64, and what a JIT shaped like it would ask of Okapia |
 | [AppleTalk and SMB gateways](notes/research/appletalk-smb-gateways.md) | Existing projects bridging classic Macs to modern shares |

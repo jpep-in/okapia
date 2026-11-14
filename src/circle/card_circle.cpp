@@ -10,6 +10,7 @@
 #include "sysdeps.h"
 #include "okapia_circle.h"
 #include "card_circle.h"
+#include "clock_circle.h"
 #include "hfs_volume_circle.h"
 #include "prefs.h"
 
@@ -86,31 +87,32 @@ void CardInventory (void)
  *  dated where no Macintosh of this card could have been is damaged, not
  *  prescient — HfsDateIsPlausible() draws that line.
  *
- *  Real sources still come first when they exist: an RTC, then NTP
- *  (docs/topics/clock-and-pram.md). Both belong here, ahead of this, and
- *  nothing downstream will have to change.
+ *  Two sources come first (clock_circle.h): the network, when it has already
+ *  answered, and a clock set on the Macintosh that nothing on the card has
+ *  overtaken since. An RTC would join them here.
  */
 
 void CardRefineClock (void)
 {
+    // The network said what time it is, and nothing on the card knows better.
+    // A clock set by hand on the Macintosh is moot from then on.
+    if (ClockSynced ())
+    {
+        ClockRecordForget ("the network gave the time");
+        CLogger::Get ()->Write (FROM, LogNotice, "Clock: %s, from the network",
+                        (const char *) *CTimer::Get ()->GetTimeString ());
+        return;
+    }
+
     // Same frame on both sides: drLsMod is local time, the build time is UTC.
     // Comparing them raw is how you end up an hour out, twice a year. The zone
     // is the timer's, which is the one it actually accepted.
     const long nOffset = (long) CTimer::Get ()->GetTimeZone () * 60;
     const long nBuild = (long) OKAPIA_BUILD_TIME + nOffset;
-    long nBest = nBuild;
-    const char *pFrom = 0;
 
-    // And never behind the clock we are already keeping. This runs again after
-    // a restart from Mac OS, minutes into the session, and a floor made only of
-    // the build time would wind it back — which is precisely the drLsMod before
-    // drCrDate that fsck_hfs reports as "MDB needs minor repair".
-    const long nNow = (long) CTimer::Get ()->GetLocalTime ();
-    if (nNow > nBest)
-    {
-        nBest = nNow;
-    }
-
+    // The latest date the card knows.
+    long nLatest = 0;
+    const char *pLatest = 0;
     for (unsigned i = 0; i < s_nVolumes; i++)
     {
         const long nWhen = s_Volumes[i].nLastModified;
@@ -121,11 +123,52 @@ void CardRefineClock (void)
                             s_Volumes[i].Path, nWhen);
             continue;
         }
-        if (nWhen > nBest)
+        if (nWhen > nLatest)
         {
-            nBest = nWhen;
-            pFrom = s_Volumes[i].Path;
+            nLatest = nWhen;
+            pLatest = s_Volumes[i].Path;
         }
+    }
+
+    // A clock set on the Macintosh holds as long as nothing on the card is
+    // later than the latest date known when it was set — including a clock set
+    // back on purpose, which the floor below would otherwise undo at every
+    // start. A later date means somebody has since lived in a later time: the
+    // volume wins and the setting is forgotten.
+    TClockRecord Record;
+    if (ClockRecordRead (&Record))
+    {
+        if (nLatest <= (long) Record.nFloor)
+        {
+            // Once per power-on: after that the running clock already carries
+            // it, minutes further on.
+            if (!ClockDecided () && CTimer::Get ()->SetTime (Record.nSet, TRUE))
+            {
+                ClockNoteSource (ClockFromMac, 0);
+                CLogger::Get ()->Write (FROM, LogNotice, "Clock: %s, as set on the Macintosh",
+                                (const char *) *CTimer::Get ()->GetTimeString ());
+            }
+            return;
+        }
+        ClockRecordForget ("a volume is dated later");
+    }
+
+    long nBest = nBuild;
+    const char *pFrom = 0;
+
+    // And never behind the clock we are already keeping. This runs again after
+    // a restart from Mac OS, minutes into a session, and a floor made only of
+    // the build time would wind it back — which is precisely the drLsMod before
+    // drCrDate that fsck_hfs reports as "MDB needs minor repair".
+    const long nNow = (long) CTimer::Get ()->GetLocalTime ();
+    if (nNow > nBest)
+    {
+        nBest = nNow;
+    }
+    if (pLatest != 0 && nLatest > nBest)
+    {
+        nBest = nLatest;
+        pFrom = pLatest;
     }
 
     if (pFrom == 0)
@@ -139,6 +182,7 @@ void CardRefineClock (void)
         CLogger::Get ()->Write (FROM, LogWarning, "Could not move the clock forward");
         return;
     }
+    ClockNoteSource (ClockFromVolume, pFrom);
 
     CLogger::Get ()->Write (FROM, LogNotice, "Clock: %s, from %s — later than the build time",
                     (const char *) *CTimer::Get ()->GetTimeString (), pFrom);

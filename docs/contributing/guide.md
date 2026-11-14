@@ -85,7 +85,9 @@ The target is Quadra-class on a small board, not a workstation.
   startup chime.
 - Reference projects' licences decide what may be reused: BlueSCSI (GPLv3) and Snow (MIT) code may be; Infinite
   Mac's site (Apache-2.0) gives ideas, and its macemu fork (GPL, like ours) may be reused, rewritten to our
-  conventions; M5Tab (no licence) and Mini vMac (GPL v2 only) are read only.
+  conventions; M5Tab (no licence) and Mini vMac (GPL v2 only) are read only. pom68k (GPLv3; its Moira core MIT,
+  its softfloat GPLv2-or-later) may be reused, but it is a hosted, multithreaded, low-level emulator: what it offers
+  is ROM knowledge and test oracles, not code for our loop.
 
 ## Documentation
 

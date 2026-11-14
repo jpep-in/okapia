@@ -54,4 +54,10 @@ bool NetWpaConfigBuild (char *pOut, size_t nSize,
                         const char *pCountry, TNetPskDerive *pDerive,
                         const char **ppError);
 
+// The configuration with no network in it: the country alone. The supplicant
+// then runs, joins nothing, and answers scans — which is what the boot menu
+// needs to list the networks in range before one has been chosen.
+bool NetWpaConfigNoNetwork (char *pOut, size_t nSize, const char *pCountry,
+                            const char **ppError);
+
 #endif

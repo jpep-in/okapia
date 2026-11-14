@@ -64,7 +64,13 @@ prefs_desc platform_prefs_items[] = {
 	{"wifissid", TYPE_STRING, false, "the Wi-Fi network's name, with ether wlan"},
 	{"wifipassword", TYPE_STRING, false, "its WPA2 passphrase (8 to 63 characters) or key (64 hex digits); empty for an open network"},
 	{"wificountry", TYPE_STRING, false, "two-letter country code for the Wi-Fi's channels, FR, DE, US..."},
-	{"timezone", TYPE_INT32, false, "minutes east of UTC; a Mac's clock is local time"},
+	{"timezone", TYPE_INT32, false, "minutes east of UTC, without summer time; zone wins when set"},
+	// The boot menu's list (okapia_clock.cpp): a standard offset and a summer
+	// time rule. A Mac's clock is local time, and NTP answers in UTC.
+	{"zone", TYPE_STRING, false, "time zone: utc, london, paris, athens, newyork, losangeles... (the boot menu's list)"},
+	{"ntp", TYPE_STRING, false, "time server asked once the network is up; empty for none"},
+	// The network bench (net_bench_circle.cpp): empty, it never runs.
+	{"netbench", TYPE_STRING, false, "address of a machine running scripts/netbench.py, then this board's when there is no DHCP; measured once at power-on"},
 	{"extfsname", TYPE_STRING, false, "name of the shared folder's volume on the Mac desktop"},
 	{"hfsrepair", TYPE_BOOLEAN, false, "scavenge a volume left in use by an interrupted session"},
 	{"hfsinventory", TYPE_BOOLEAN, false, "list the HFS volumes found on the card at startup"},
@@ -100,6 +106,7 @@ prefs_desc platform_prefs_items[] = {
 	// nothing, and says nothing about it. That cost one whole measurement.
 	{"mousedpi", TYPE_INT32, false, "what the pointing device reports per inch"},
 	{"perfreport", TYPE_BOOLEAN, false, "print engine, video, input and clock counters every 5 s"},
+	{"qdaccel", TYPE_STRING, false, "68k QuickDraw acceleration: off, sync, parallel or probe"},
 	{NULL, TYPE_END, false, NULL}	// End of list
 };
 
@@ -187,6 +194,12 @@ void AddPlatformPrefsDefaults(void)
 	// clock starts from the build time, which is a UTC instant, so without this
 	// the Mac runs an hour or two behind and it looks like a stale build.
 	PrefsReplaceInt32("timezone", 0);
+	PrefsReplaceString("zone", "");
+
+	// The NTP Pool, run by volunteers for exactly this (clock_circle.cpp). Only
+	// asked once the Macintosh has a network: a card with `ether` unset never
+	// sends a frame.
+	PrefsReplaceString("ntp", "pool.ntp.org");
 
 	// Upstream's keyword for a key-mapping file. The built-in table is generated
 	// from Basilisk's own keycodes file at build time and is normally right, so
@@ -422,9 +435,17 @@ void SavePrefs(void)
 		"# on both engines.\n"
 		"# mousedpi 200\n"
 		"#\n"
-		"# Minutes east of UTC. 60 for CET, 120 for CEST, -300 for EST. A Mac has\n"
-		"# no time zone: its clock is local time, and Okapia's starts at UTC.\n"
-		"# timezone 120\n"
+		"# The time zone, from the boot menu's list: utc, london, paris, athens,\n"
+		"# moscow, dubai, delhi, bangkok, beijing, tokyo, brisbane, sydney,\n"
+		"# noumea, auckland, saopaulo, martinique, newyork, chicago, denver,\n"
+		"# losangeles, anchorage, honolulu. Summer time follows on its own. A Mac\n"
+		"# has no time zone: its clock is local time, and the network's is UTC.\n"
+		"# zone paris\n"
+		"#\n"
+		"# The time server, asked once the network is up and once a day after\n"
+		"# that. Empty for none: the clock then starts from the latest date on\n"
+		"# the card, or from the one set in the Date & Time control panel.\n"
+		"# ntp pool.ntp.org\n"
 		"#\n"
 		"# Leave the sound hardware alone.\n"
 		"# nosound true\n"

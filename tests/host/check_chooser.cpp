@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "okapia_chooser.h"
+#include "okapia_page.h"
 #include "okapia_screen.h"
 #include "okapia_strings.h"
 
@@ -303,10 +304,23 @@ int main (void)
     Expect ((pW[nStart].nState & StateDisabled) != 0,
             "with nothing to start, the button is disabled");
 
-    // The footer buttons answer what they promise.
+    // The footer buttons answer what they promise. They are the window's, so
+    // the page itself has nothing to say about them and the frame does.
     s_Model.nStartup = 1;
     ChooserSync (&s_Model);
-    Expect (Operate (nStart) == ChooserStart, "Start starts");
+    Expect (Operate (nStart) == ChooserNothing, "Start is not the page's to answer");
+    Expect (PageChromeAnswer (nStart) == PageAnswerStart, "Start starts");
+
+    // Saving and restarting needs no startup volume: a memory change made on
+    // the settings page must still be savable from a card with none.
+    s_Model.nStartup = -1;
+    PageChromeSet (true, false, true);
+    ChooserSync (&s_Model);
+    Expect ((pW[nStart].nState & StateDisabled) == 0,
+            "with a restart owed, Start stays usable without a startup volume");
+    PageChromeSet (false, false, true);
+    s_Model.nStartup = 1;
+    ChooserSync (&s_Model);
 
     // The keyboard starts on a deliberate control, not on whatever lies first:
     // Return operates what the keyboard holds, and resting on the footer it
@@ -598,30 +612,64 @@ int main (void)
         Open ();
     }
 
-    // The four glyph buttons of the footer, each answering for itself. The
-    // information one lives here and not behind the settings: a machine that
-    // will not start is not a machine whose owner wants to go two clicks deep
-    // to find out why.
+    // The window's two glyph buttons, each answering for itself, and the
+    // strip of tabs that replaced the settings and information marks: what
+    // used to be two clicks deep is now a page beside this one.
     {
         TWidget *pW = 0;
         const unsigned n = ChooserWidgets (&pW);
         unsigned nIcons = 0;
         unsigned nSeen = 0;
+        int nTabs = -1;
         for (unsigned i = 0; i < n; i++)
         {
+            if (pW[i].Type == WidgetTabs)
+            {
+                nTabs = (int) i;
+            }
             if (pW[i].Type != WidgetIconButton) continue;
             nIcons++;
-            switch (Operate ((int) i))
+            switch (PageChromeAnswer ((int) i))
             {
-            case ChooserSettings:    nSeen |= 1; break;
-            case ChooserInformation: nSeen |= 2; break;
-            case ChooserForgetPram:  nSeen |= 4; break;
-            case ChooserShutDown:    nSeen |= 8; break;
+            case PageAnswerForgetPram: nSeen |= 1; break;
+            case PageAnswerShutDown:   nSeen |= 2; break;
             default: break;
             }
         }
-        Expect (nIcons == 4, "the footer carries four marks");
-        Expect (nSeen == 15, "settings, information, PRAM and shut down, each its own");
+        Expect (nIcons == 2, "the footer carries two marks");
+        Expect (nSeen == 3, "PRAM and shut down, each its own");
+        Expect (nTabs >= 0 && pW[nTabs].nItems == PageTabCount
+                && pW[nTabs].nChoice == PageTabSystem,
+                "the strip names four pages, this one in front");
+
+        // Turning a page is a click on its tab, and the answer names it.
+        Open ();
+        const TRect Strip = pW[nTabs].Rect;
+        int nHitTab = -1;
+        for (int x = Strip.nX; x < Strip.nX + (int) Strip.nWidth && nHitTab != 2; x++)
+        {
+            nHitTab = WidgetTabAt (&pW[nTabs], &s_Theme, x, Strip.nY + (int) Strip.nHeight / 3);
+            if (nHitTab == 2)
+            {
+                TEvent Down = {};
+                Down.Type = EventMouseDown;
+                Down.nX = x;
+                Down.nY = Strip.nY + (int) Strip.nHeight / 3;
+                const TScreenReply R = ScreenEvent (&s_Screen, &Down);
+                Expect (R.Result == ScreenActivated && R.nIndex == nTabs,
+                        "a click on a tab answers at once");
+                Expect (PageChromeAnswer (nTabs) == PageAnswerTab + PageTabNetwork,
+                        "and the answer is the page it names");
+            }
+        }
+        Expect (nHitTab == 2, "the third tab can be found under the pointer");
+
+        // Control-Tab turns the page from anywhere, wrapping at the end.
+        Open ();
+        const TScreenReply R = Send (Key (OkKeyTab, ModControl | ModShift));
+        Expect (R.Result == ScreenActivated && R.nIndex == nTabs
+                && pW[nTabs].nChoice == PageTabInformation,
+                "Control-Shift-Tab goes back, round to the last page");
     }
 
     printf ("\n%u failure(s)\n", s_nFailures);

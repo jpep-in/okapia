@@ -65,11 +65,6 @@ static TListItem s_MountItems[3];
 // same way, about the same selected row.
 enum { ColStartup = 1, ColMounted = 2 };
 static TListColumn s_Columns[LIST_COLUMNS];
-static int s_nStart    = -1;
-static int s_nSettings = -1;
-static int s_nInfo     = -1;
-static int s_nPram     = -1;
-static int s_nPower    = -1;
 
 // "Macintosh HD — System 7.1.2" — and what is wrong with it, when something is.
 // The state belongs on the row rather than only under the selection: a card
@@ -296,20 +291,18 @@ void ChooserSync (TChooser *pChooser)
     }
 
     // Nothing to start from is not an error to report at the last moment: the
-    // button that cannot work says so before it is pressed.
-    WidgetSetState (&s_Widgets[s_nStart], pChooser->nStartup >= 0
-                                          ? StateDefault
-                                          : StateDefault | StateDisabled);
+    // button that cannot work says so before it is pressed. It is the shared
+    // footer's, and this is the one page where the answer can change under it.
+    if (s_Page.nStart >= 0)
+    {
+        WidgetSetState (&s_Widgets[s_Page.nStart],
+                        pChooser->nStartup >= 0 || PageChromeRestart ()
+                        ? StateDefault : StateDefault | StateDisabled);
+    }
 }
 
 TChooserAction ChooserOperate (TChooser *pChooser, int nIndex, unsigned nCell)
 {
-    if (nIndex == s_nStart)      return ChooserStart;
-    if (nIndex == s_nSettings)   return ChooserSettings;
-    if (nIndex == s_nInfo)       return ChooserInformation;
-    if (nIndex == s_nPram)       return ChooserForgetPram;
-    if (nIndex == s_nPower)      return ChooserShutDown;
-
     const int nSel = ChooserSelected ();
 
     if (nIndex == s_nMount && nSel >= 0)
@@ -469,22 +462,10 @@ TChooserCPU ChooserStartupEngine (const TChooser *pChooser)
 
 void ChooserDraw (TSurface *pSurface, TChooser *pChooser)
 {
-    PageBegin (&s_Page, pSurface, s_Widgets, MAX_WIDGETS, PAGE_WIDTH, PAGE_HEIGHT,
-               Str (StrChooseSystem));
+    // The window's first page: the tabs, the footer and Start come with it.
+    PageBeginTabbed (&s_Page, pSurface, s_Widgets, MAX_WIDGETS, PageTabSystem);
     const TTheme *pTheme = &s_Page.Theme;
     TLayout &Layout = s_Page.Layout;
-
-    // The footer first, so the middle knows where it must stop.
-    PageFooter (&s_Page);
-    s_nSettings = PageIconButton (&s_Page, OkapiaPaintSettings, StateNormal);
-    s_nInfo     = PageIconButton (&s_Page, OkapiaPaintInfo,     StateNormal);
-    s_nPram     = PageIconButton (&s_Page, OkapiaPaintPram,     StateNormal);
-    s_nPower    = PageIconButton (&s_Page, OkapiaPaintPower,    StateNormal);
-    // The keyboard starts here, and ScreenInit obeys a screen that says so.
-    // Start is what one came to press: left to "the first control that can hold
-    // it" the focus began on the settings mark in the footer, and Return acts
-    // on what the keyboard holds.
-    s_nStart    = PageLast (&s_Page, Str (StrStart), StateDefault | StateFocused);
 
     // The volume's own line, then the three things one can say about it, both
     // taken off the bottom so the list gets everything that is left.

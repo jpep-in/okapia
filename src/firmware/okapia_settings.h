@@ -10,9 +10,7 @@
  *
  * So the resolution is absent (the display's, not ours — and a manual override
  * would work on a Pi 3 and be a no-op on a Pi 5, which is the worst kind of
- * setting), the date and time are absent (Mac OS has a control panel for them
- * and its write is intercepted, §7.7), and the network is absent until there is
- * a choice worth making beyond on and off.
+ * setting), and the date and time are shown but not set (okapia_datetime.h).
  *
  * Like the chooser, this knows nothing about a preferences file. It is handed
  * values and answers values; the caller reads and writes. That is what lets the
@@ -25,6 +23,7 @@
 #define _okapia_settings_h
 
 #include "okapia_widgets.h"
+#include "okapia_datetime.h"
 
 // Where the Mac's sound comes out. Four states and not a boolean, because
 // audio_circle.cpp hard-codes the jack — which a Pi 5 does not have, and which
@@ -79,6 +78,9 @@ struct TSettings
     // whether anything asked for a restart, which is not the same question as
     // whether anything changed.
     TSettingsValues Opened;
+    // The group "Date & Time", whose values are kept apart: they act on the
+    // clock at once and are stored on their own (okapia_datetime.h).
+    TDateTime Clock;
 };
 
 enum TSettingsAction
@@ -88,14 +90,14 @@ enum TSettingsAction
     // are not the same width twice. Lay the page out again rather than repaint
     // a geometry that no longer fits its words.
     SettingsRelayout,
-    SettingsBack,                       // leave, keeping nothing
-    SettingsSave,
-    SettingsSaveRestart
+    // The zone or the time server changed: the clock may be told at once.
+    SettingsClock,
+    SettingsClockHelp                   // the date's (i): say how the clock is kept
 };
 
 // Whether what has been changed needs the board to start again — as opposed to
-// the Macintosh, which starts again every time the chooser's own button is
-// pressed and therefore needs no ceremony at all.
+// the Macintosh, which starts again every time Start is pressed and therefore
+// needs no ceremony at all.
 bool SettingsNeedsRestart (const TSettings *pSettings);
 
 // The nearest memory size this screen can offer. A card naming one it cannot —
@@ -112,6 +114,9 @@ unsigned SettingsWidgets (TWidget **ppList);
 // into its border. Every element spilling out was invisible in the numbers
 // until the numbers were asked for.
 TRect SettingsDialog (void);
+
+// Whether the last SettingsDraw ran out of room.
+bool SettingsOverflowed (void);
 void SettingsSync (TSettings *pSettings);
 TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex);
 

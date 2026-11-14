@@ -34,6 +34,7 @@ enum TOkapiaColor
     ColorLtGray  = 3,           // separators and the scroller track
     ColorDim     = 4,           // disabled ink
     ColorDark    = 5,           // filled meters, where black would be too heavy
+    ColorPale    = 6,           // the tabs behind the one in front
     ColorCount
 };
 

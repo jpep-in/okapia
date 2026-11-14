@@ -19,6 +19,7 @@
 #include <circle/macaddress.h>
 #include <circle/netdevice.h>
 #include <circle/string.h>
+#include <circle/timer.h>
 #if RASPPI == 4
 #include <circle/bcm54213.h>
 #endif
@@ -26,6 +27,8 @@
 #include <string.h>
 
 #include "net_config_circle.h"
+#include "clock_circle.h"
+#include "net_bench_circle.h"
 
 #include "sysdeps.h"
 #include "prefs.h"
@@ -67,7 +70,7 @@ static unsigned s_nDroppedFull, s_nDroppedLong, s_nReported;
 
 // Traffic, for the periodic report: frames off the interface, how many went to
 // the Macintosh and how many to the supplicant, frames sent and refused.
-static unsigned s_nRxFrames, s_nRxToMac, s_nRxEAPOL, s_nTxFrames, s_nTxFailed;
+static unsigned s_nRxFrames, s_nRxToMac, s_nRxEAPOL, s_nRxClock, s_nTxFrames, s_nTxFailed;
 
 // prefs_circle.cpp: whether the five-second reports go out.
 extern bool PerfReportWanted (void);
@@ -198,7 +201,6 @@ bool BoardNetStart (void)
     {
         return s_bStarted;
     }
-    s_bTried = true;
 
     CLogger *pLog = CLogger::Get ();
 
@@ -224,6 +226,12 @@ bool BoardNetStart (void)
         }
         return false;
     }
+
+    // Only now is the attempt spent. "No network" is not one: the boot menu
+    // may choose a connection after the Macintosh has run without any, and
+    // asking again then has to start it. A device that failed is final —
+    // Circle cannot give one back to try again.
+    s_bTried = true;
 
     // Before the device: a ring that cannot be had is a reason not to claim one.
     s_pRing = new TRingSlot[RING_SLOTS];
@@ -258,6 +266,41 @@ TBoardNetKind BoardNetKind (void)
     return s_Kind;
 }
 
+bool BoardNetTried (void)
+{
+    return s_bTried;
+}
+
+bool BoardNetLinkUp (unsigned *pMbps)
+{
+    if (pMbps != 0)
+    {
+        *pMbps = 0;
+    }
+    if (!s_bStarted)
+    {
+        return false;
+    }
+    // The PHY is what learns whether a cable is there; the boot menu asks about
+    // once a second, which is what Circle's own CPHYTask does.
+    if (s_Kind == BoardNetWired)
+    {
+        s_pDevice->UpdatePHY ();
+    }
+    const bool bUp = s_pDevice->IsLinkUp ();
+    if (bUp && pMbps != 0)
+    {
+        switch (s_pDevice->GetLinkSpeed ())
+        {
+        case NetDeviceSpeed10Half:   case NetDeviceSpeed10Full:   *pMbps = 10;   break;
+        case NetDeviceSpeed100Half:  case NetDeviceSpeed100Full:  *pMbps = 100;  break;
+        case NetDeviceSpeed1000Half: case NetDeviceSpeed1000Full: *pMbps = 1000; break;
+        default:                                                  break;
+        }
+    }
+    return bUp;
+}
+
 const u8 *BoardNetMAC (void)
 {
     return s_MAC;
@@ -282,22 +325,34 @@ void BoardNetListen (bool bListen)
 // bounds how long a burst can hold up the Macintosh's instruction stream.
 static const unsigned FRAMES_PER_POLL = 16;
 
-// Visits between two looks at the link, about a second at 1 kHz.
-static const unsigned LINK_EVERY = 1024;
+// One look at the link a second, by the clock and not by the number of
+// visits: the boot menu visits a hundred times a second, the engine's seam a
+// thousand, and the network bench's loop a hundred thousand — where a count of
+// visits made the five-second report a line every few milliseconds and asked
+// the PHY to reconfigure the MAC a hundred times a second.
+static const unsigned LINK_EVERY_USEC = 1000000;
+
+// What the last look at the link found, for the clock's question: asking the
+// device a thousand times a second costs a register read over MDIO each time.
+static bool s_bLinkUp;
 
 static void WatchLink (void)
 {
-    static unsigned s_nVisits;
-    static bool     s_bLinkKnown, s_bLinkUp;
+    static unsigned s_nLooks;
+    static unsigned s_nLastLook;
+    static bool     s_bLinkKnown;
 
-    if (++s_nVisits % LINK_EVERY != 0)
+    const unsigned nNow = CTimer::GetClockTicks ();
+    if (s_nLooks != 0 && nNow - s_nLastLook < LINK_EVERY_USEC)
     {
         return;
     }
+    s_nLastLook = nNow;
+    ++s_nLooks;
 
     // The PHY is what learns the speed the cable negotiated, and the MAC must
     // be told it; Circle's own CPHYTask does this every two seconds.
-    if (s_Kind == BoardNetWired && (s_nVisits / LINK_EVERY) % 2 == 0)
+    if (s_Kind == BoardNetWired && s_nLooks % 2 == 0)
     {
         s_pDevice->UpdatePHY ();
     }
@@ -324,22 +379,22 @@ static void WatchLink (void)
 
     // With the other counters every five seconds: the transitions above are
     // said once, at a moment a serial cable plugged in later never sees.
-    if ((s_nVisits / LINK_EVERY) % 5 == 0 && PerfReportWanted ())
+    if (s_nLooks % 5 == 0 && PerfReportWanted ())
     {
         CLogger::Get ()->Write (FROM, LogNotice,
-                                "%s %s, Mac %s: rx %u (%u to the Mac, %u EAPOL), "
+                                "%s %s, Mac %s: rx %u (%u to the Mac, %u EAPOL, %u clock), "
                                 "tx %u (%u refused), %u groups",
                                 s_Kind == BoardNetWLAN ? "Wi-Fi" : "Ethernet",
                                 bUp ? "up" : "down",
                                 s_bListening ? "listening" : "not listening",
-                                s_nRxFrames, s_nRxToMac, s_nRxEAPOL,
+                                s_nRxFrames, s_nRxToMac, s_nRxEAPOL, s_nRxClock,
                                 s_nTxFrames, s_nTxFailed, s_nGroups);
     }
 
     // Every sixteen seconds at most: a Macintosh still starting drains nothing,
     // and a line a second would bury the rest of its boot.
     const unsigned nDropped = s_nDroppedFull + s_nDroppedLong;
-    if (nDropped != s_nReported && (s_nVisits / LINK_EVERY) % 16 == 0)
+    if (nDropped != s_nReported && s_nLooks % 16 == 0)
     {
         s_nReported = nDropped;
         CLogger::Get ()->Write (FROM, LogWarning,
@@ -379,6 +434,17 @@ void BoardNetPoll (void)
             WlanTakeEAPOL (s_RxBuffer, nLength);
             continue;
         }
+        // The clock's question to the network, when one is out: its answers
+        // carry a transaction number or a port of its own (net_clock.h).
+        if (ClockNetTake (s_RxBuffer, nLength))
+        {
+            s_nRxClock++;
+            continue;
+        }
+        if (NetBenchTake (s_RxBuffer, nLength))
+        {
+            continue;
+        }
         if (!s_bListening)
         {
             continue;           // a closed driver hears nothing
@@ -401,6 +467,7 @@ void BoardNetPoll (void)
     }
 
     WatchLink ();
+    ClockNetStep (s_bLinkUp);
 }
 
 bool BoardNetPending (void)

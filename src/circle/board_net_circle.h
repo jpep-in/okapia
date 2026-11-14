@@ -4,8 +4,10 @@
  * The Macintosh shares the Pi's MAC address (docs/topics/network.md): its
  * frames go out through a Circle CNetDevice as they are, and every frame the
  * interface receives is the Macintosh's — Okapia runs no network stack of its
- * own. On Wi-Fi there is one exception, the WPA handshake (EAPOL, ethertype
- * 0x888E), which belongs to the supplicant and never reaches the Mac.
+ * own. Two exceptions: on Wi-Fi the WPA handshake (EAPOL, ethertype 0x888E),
+ * which belongs to the supplicant, and the answers to the clock's question to
+ * the network (clock_circle.h), which carry a transaction number or a port of
+ * their own. Neither reaches the Mac.
  *
  * The device is the board's and not an engine's, for the reason the sound
  * device is: the Macintosh goes round more than once and there are two of
@@ -47,6 +49,14 @@ bool BoardNetStart (void);
 
 // The kind that was started, BoardNetNone when none was.
 TBoardNetKind BoardNetKind (void);
+
+// Whether a device was asked for already — successfully or not. A start that
+// found no `ether` to obey does not count: the boot menu may set one later.
+bool BoardNetTried (void);
+
+// Whether the link is up, and at what speed in Mbit/s when the device says (0
+// otherwise). For the boot menu's status line; false when nothing started.
+bool BoardNetLinkUp (unsigned *pMbps);
 
 // The address the Macintosh uses: the interface's own.
 const u8 *BoardNetMAC (void);

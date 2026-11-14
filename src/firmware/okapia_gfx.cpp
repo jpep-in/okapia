@@ -20,7 +20,10 @@ static const unsigned s_Palette[ColorCount] =
     0xBCBCBC,           // ColorGray
     0xE0E0E0,           // ColorLtGray
     0x9A9A9A,           // ColorDim
-    0x4A4A4A            // ColorDark
+    0x4A4A4A,           // ColorDark
+    // Lighter than the separators' grey: on a television the tabs behind read
+    // as a block of colour at 0xE0, where they should only read as further away.
+    0xEEEEEE            // ColorPale
 };
 
 unsigned GfxPaletteEntry (TOkapiaColor Color)
@@ -1157,6 +1160,24 @@ static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TR
         {
             break;
         }
+        // A line break the text asks for: the line ends here, and a second
+        // one in a row leaves a blank line — how a sentence becomes paragraphs.
+        if (nCode == '\n')
+        {
+            if (pSurface != 0 && pBefore != pLine)
+            {
+                TextRun (pSurface, pFont, rBox.nX,
+                         nY + GfxTextTop (pFont, Rect (0, 0, 0, nLineHeight)),
+                         pLine, pBefore, Color);
+            }
+            nLines++;
+            nY += (int) nLineHeight;
+            pLine  = p;
+            pBreak = 0;
+            nWidth = 0;
+            continue;
+        }
+
         const int nIndex = GlyphIndex (pFont, nCode);
         const unsigned nAdvance = nIndex < 0 ? 0 : pFont->pWidth[nIndex];
 

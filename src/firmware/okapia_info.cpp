@@ -14,7 +14,6 @@
 static const unsigned MAX_WIDGETS = 2 * (INFO_MAX + INFO_CREDITS) + 8;
 static TWidget s_Widgets[MAX_WIDGETS];
 static TPage   s_Page;
-static int     s_nBack = -1;
 
 void InfoAdd (TInfo *pInfo, const char *pLabel, const char *pValue)
 {
@@ -49,9 +48,9 @@ TRect InfoDialog (void)
     return s_Page.Dialog;
 }
 
-bool InfoIsBack (int nIndex)
+bool InfoOverflowed (void)
 {
-    return nIndex == s_nBack;
+    return s_Page.Layout.bOverflow;
 }
 
 // One row: its label on the left, its value beside it. Nothing here can be
@@ -75,16 +74,9 @@ static void Line (TPage *pPage, unsigned nLabel, const TInfoLine *pLine, const T
 
 void InfoDraw (TSurface *pSurface, TInfo *pInfo)
 {
-    PageBegin (&s_Page, pSurface, s_Widgets, MAX_WIDGETS, PAGE_WIDTH, PAGE_HEIGHT,
-               Str (StrInformation));
+    PageBeginTabbed (&s_Page, pSurface, s_Widgets, MAX_WIDGETS, PageTabInformation);
     const TTheme *pTheme = &s_Page.Theme;
     TLayout &Layout = s_Page.Layout;
-
-    PageFooter (&s_Page);
-    // No focus on it, as in an alert: a page with one button has nothing to
-    // navigate, and the ring that says "the keyboard is here" then sits on top
-    // of the ring that says "Return does this" and repeats it.
-    s_nBack = PageLast (&s_Page, Str (StrBack), StateDefault | StateNoFocus);
 
     // One label column for both sections, measured over both: two columns of
     // two widths on one page read as two tables that happen to be stacked.

@@ -21,6 +21,8 @@
 #include <circle/netdevice.h>
 #include <circle/types.h>
 
+#include "wlan_hostap.h"
+
 // The handshake's ethertype. Frames of this type go to WlanTakeEAPOL().
 static const u16 WLAN_ETHERTYPE_EAPOL = 0x888E;
 
@@ -31,6 +33,20 @@ CNetDevice *WlanStart (const char *pSSID, const char *pPassword, const char *pCo
 
 // Lets the driver's and the supplicant's tasks run. Only from the emulation
 // thread's own seams, never from an interrupt.
+// Whether this build can have the on-board Wi-Fi at all: not under QEMU, and
+// not when the SD card sits on the controller the Wi-Fi needs.
+bool WlanAvailable (void);
+
+// A new network for the supplicant that is already running: the boot menu's
+// Join. An empty SSID leaves it joined to nothing, scanning on demand.
+bool WlanApply (const char *pSSID, const char *pPassword, const char *pCountry);
+
+// A scan now; what the last ones found; and how the joining goes (one of the
+// OKAPIA_WLAN_* values, wlan_hostap.h).
+bool     WlanScan (void);
+unsigned WlanSeen (okapia_wlan_bss *pOut, unsigned nMax);
+int      WlanState (char *pSSID, unsigned nSize, int *pDbm);
+
 void WlanYield (void);
 
 // A frame of type WLAN_ETHERTYPE_EAPOL, header included. Copied; dropped when

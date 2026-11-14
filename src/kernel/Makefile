@@ -38,6 +38,46 @@ ifeq ($(ENGINE),basilisk)
   # stops writing it twice per instruction (patches/macemu/0009).
   ENGINE_DEFINES = -DDIRECT_ADDRESSING -DFPU_IEEE -DM68K_NO_FAULT_PC
   ENGINE_VPATH   =
+  # The 68k core and where its generated tables are (scripts/gen-cpu.sh).
+  UAE            = $(MACEMU)/uae_cpu_2021
+  CPUGEN         = $(GEN)
+  ifeq ($(OKAPIA_JIT),1)
+    # Experimental, off by default: the 68k core of rcarmo/macemu-jit and its
+    # AArch64 JIT, in place of uae_cpu_2021. Only the core changes — Basilisk
+    # itself, its ROM patches included, stays kanjitalk755's. The defines are
+    # the ones that tree's configure.ac sets (:1761-1773, :1809); OPTIMIZED_FLAGS
+    # is not optional, the backend reads regflags.nzcv. Generate first with
+    # scripts/gen-cpu.sh jit, and okapia-clean when switching either way.
+    # See docs/notes/research/jit-68k.md.
+    UAE            = ../../external/macemu-jit/BasiliskII/src/uae_cpu_2026
+    CPUGEN         = ../../build/generated-jit
+    ENGINE_DEFINES += -DOKAPIA_JIT=1 -DUSE_JIT -DJIT -DCPU_aarch64 -DCPU_AARCH64 \
+                      -DUNALIGNED_PROFITABLE -DAARCH64_ASSEMBLY -DOPTIMIZED_FLAGS
+    # Stand-ins for <sys/mman.h> and <SDL2/SDL.h>, which that tree includes
+    # unguarded and never uses once __linux__ is undefined.
+    JIT_INCLUDES   = -I$(OKAPIA)/jit-compat -I$(UAE)/compiler
+    # What that core expects its platform's headers to declare (jit_circle.h).
+    ENGINE_DEFINES += -include $(OKAPIA)/jit_circle.h
+    # OKAPIA_JIT_DIAG=1: the core's own counters (compiled blocks, trips through
+    # the interpreter, checksums, flushes) printed every few seconds on the serial
+    # port. Costs a little in every dispatch, so only for finding out where the
+    # time goes.
+    ifeq ($(OKAPIA_JIT_DIAG),1)
+      ENGINE_DEFINES += -DOKAPIA_JIT_DIAG=1
+    endif
+    # OKAPIA_JIT_FPU=1: compile 68881 instructions too (preference jitfpu). Off in
+    # macemu-jit on AArch64 ("not fully wired yet"); generate with the same
+    # variable set (scripts/gen-cpu.sh jit).
+    ifeq ($(OKAPIA_JIT_FPU),1)
+      ENGINE_DEFINES += -DUSE_JIT_FPU
+    endif
+    # OKAPIA_JIT_CONSTJUMP=1: follow constant jumps (BRA, BSR, JMP) when tracing a
+    # block. macemu-jit forces it off on AArch64 (compemu_prefs.cpp:63-75) after a
+    # divergence in the ROM's A-trap path, unless B2_JIT_ENABLE_CONSTJUMP=1.
+    ifeq ($(OKAPIA_JIT_CONSTJUMP),1)
+      ENGINE_DEFINES += -DOKAPIA_JIT_CONSTJUMP=1
+    endif
+  endif
 else ifeq ($(ENGINE),sheepshaver)
   MACEMU         = ../../external/macemu/SheepShaver/src
   # Its own config.h, ahead of Basilisk's on the include path: upstream includes
@@ -55,6 +95,8 @@ else ifeq ($(ENGINE),sheepshaver)
   # produces on this board, which is what should decide it.
   ENGINE_DEFINES = -DHAVE_CONFIG_H -DSHEEPSHAVER -DPPC_CHECK_TICKS=50000
   ENGINE_VPATH   = $(OKAPIA)/sheepshaver:
+  UAE            = $(MACEMU)/uae_cpu_2021
+  CPUGEN         = $(GEN)
 else
   $(error ENGINE must be basilisk or sheepshaver, not "$(ENGINE)")
 endif
@@ -69,10 +111,21 @@ OBJ = emu-$(ENGINE)
 CORE_SRCS   = $(filter-out $(MACEMU)/bincue.cpp,$(wildcard $(MACEMU)/*.cpp))
 
 ifeq ($(ENGINE),basilisk)
-CPU_SRCS    = $(wildcard $(MACEMU)/uae_cpu_2021/*.cpp) \
-              $(MACEMU)/uae_cpu_2021/fpu/fpu_ieee.cpp \
+# Named, not globbed: uae_cpu_2026 has a compemu_prefs.cpp that another file
+# includes.
+CPU_SRCS    = $(UAE)/basilisk_glue.cpp $(UAE)/memory.cpp $(UAE)/newcpu.cpp \
+              $(UAE)/readcpu.cpp $(UAE)/fpu/fpu_ieee.cpp \
               $(MACEMU)/CrossPlatform/video_blit.cpp
-GEN_SRCS    = $(GEN)/cpudefs.cpp $(GEN)/cpustbl.cpp $(GEN)/cpufunctbl.cpp
+GEN_SRCS    = $(CPUGEN)/cpudefs.cpp $(CPUGEN)/cpustbl.cpp $(CPUGEN)/cpufunctbl.cpp
+ifeq ($(OKAPIA_JIT),1)
+# compemu_support.cpp includes the emitter, the midfuncs and the ARM support
+# file; compstbl.cpp is the table of the generated compile handlers.
+CPU_SRCS   += $(UAE)/compiler/compemu_support.cpp
+ifeq ($(OKAPIA_JIT_FPU),1)
+CPU_SRCS   += $(UAE)/compiler/compemu_fpp.cpp
+endif
+GEN_SRCS   += $(CPUGEN)/compstbl.cpp
+endif
 else
 # The interpreted list, exactly as configure.ac:1580-1587 and :1705 build it
 # when the host has no JIT backend — which AArch64 has not.
@@ -156,15 +209,32 @@ FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
 # board_net_circle.cpp is the network interface, for the same reason: one
 # device for both engines, and for Wi-Fi one scheduler and one supplicant
 # (wlan_circle.cpp). net_config_circle.cpp is the pure part of it.
+#
+# clock_circle.cpp is the board's clock, one for both engines, and
+# net_clock.cpp the pure half of its question to the network.
 SHARED_SRCS = $(OKAPIA)/hal_circle.cpp $(OKAPIA)/board_sound_circle.cpp \
               $(OKAPIA)/board_net_circle.cpp $(OKAPIA)/wlan_circle.cpp \
               $(OKAPIA)/net_config_circle.cpp \
+              $(OKAPIA)/clock_circle.cpp $(OKAPIA)/net_clock.cpp \
+              $(OKAPIA)/net_bench_circle.cpp $(OKAPIA)/execmem_circle.cpp \
+              $(OKAPIA)/quickdraw_worker.cpp $(OKAPIA)/quickdraw_blit.cpp \
               $(OKAPIA)/mac_ram_circle.cpp $(OKAPIA)/rom_chime.cpp \
               okapia_boot.cpp $(FIRMWARE_SRCS)
 SHARED_OBJ  = obj-shared
 SHARED_OBJS = $(addprefix $(SHARED_OBJ)/,$(notdir $(SHARED_SRCS:.cpp=.o))) \
               $(SHARED_OBJ)/okapia_font_data.o $(SHARED_OBJ)/okapia_icons_data.o \
-              $(SHARED_OBJ)/okapia_strings_data.o
+              $(SHARED_OBJ)/okapia_strings_data.o $(SHARED_OBJ)/wlan_hostap.o
+
+# wlan_hostap.c reads struct wpa_supplicant, whose layout depends on the
+# switches the library was built with: these are Makefile.circle's, and must
+# stay so (addon/wlan/hostap/wpa_supplicant/Makefile.circle).
+WLAN_HOSTAP       = $(CIRCLEHOME)/addon/wlan/hostap
+WLAN_HOSTAP_FLAGS = -I $(WLAN_HOSTAP) -I $(WLAN_HOSTAP)/src -I $(WLAN_HOSTAP)/src/common \
+                    -I $(WLAN_HOSTAP)/src/crypto -I $(WLAN_HOSTAP)/src/rsn_supp \
+                    -I $(WLAN_HOSTAP)/src/utils -I $(WLAN_HOSTAP)/wpa_supplicant \
+                    -DCONFIG_DRIVER_CIRCLE -DCONFIG_CRYPTO_INTERNAL -DCONFIG_BACKEND_FILE \
+                    -DCONFIG_NO_CONFIG_WRITE -DCONFIG_NO_RANDOM_POOL -DCONFIG_NO_ROBUST_AV \
+                    -DCONFIG_NO_WMM_AC -DIEEE8021X_EAPOL
 FONTDIR       = ../../assets/fonts
 ICONDIR       = ../../assets/icons
 BDF           = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf \
@@ -191,8 +261,16 @@ EMU_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) \
 
 HFS_OBJS = $(addprefix $(OBJ)/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
-EMU_OBJS = $(addprefix $(OBJ)/,$(notdir $(EMU_SRCS:.cpp=.o))) \
-           $(if $(GEN_SRCS),$(addprefix $(OBJ)/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8)))
+CPUEMU_OBJS = $(if $(GEN_SRCS),$(addprefix $(OBJ)/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8)))
+ifeq ($(ENGINE)$(OKAPIA_JIT),basilisk1)
+# What the JIT adds: the interpreter's handlers once more without flags, which
+# it calls for what it does not compile, and its own generated handlers.
+CPUEMU_NF_OBJS = $(addprefix $(OBJ)/cpuemu,$(addsuffix _nf.o,1 2 3 4 5 6 7 8))
+COMPEMU_OBJS   = $(addprefix $(OBJ)/compemu,$(addsuffix .o,1 2 3 4 5 6 7 8))
+JIT_OBJS       = $(CPUEMU_NF_OBJS) $(COMPEMU_OBJS) $(OBJ)/cpustbl_nf.o
+endif
+
+EMU_OBJS = $(addprefix $(OBJ)/,$(notdir $(EMU_SRCS:.cpp=.o))) $(CPUEMU_OBJS) $(JIT_OBJS)
 
 # Our entry point is okapia_main*.cpp, not main.cpp: VPATH also finds the core's
 # main.cpp, and identical names silently resolve to the wrong file.
@@ -241,9 +319,11 @@ OKAPIA_BUILD_TIME := $(shell date +%s)
 EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
 # The engine's own config.h comes first, which is the whole reason it lives in
 # a directory of its own.
-EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(OKAPIA) -I$(OKAPIA)/compat -I$(GEN) -I$(HFS) \
+# CPUGEN ahead of GEN: both hold a cputbl.h when the JIT core is built.
+EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(OKAPIA) -I$(OKAPIA)/compat $(JIT_INCLUDES) \
+               -I$(CPUGEN) -I$(GEN) -I$(HFS) \
                -I$(FIRMWARE) -I$(FIRMWARE)/circle -I$(OKAPIA)/circle \
-               -I$(MACEMU)/include -I$(MACEMU)/uae_cpu_2021 -I$(MACEMU)/Unix \
+               -I$(MACEMU)/include -I$(UAE) -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform -I$(MACEMU)/kpx_cpu/include -I$(MACEMU)/kpx_cpu/src
 
 INCLUDE := $(EMU_INCLUDES) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
@@ -268,7 +348,9 @@ LIBS := $(CIRCLEHOME)/lib/sound/libsound.a \
 # configuration through FatFs itself, and gets it from memory instead of from
 # a file written on the card (wlan_circle.cpp); every other file goes through
 # untouched.
-FINAL_WRAPS = --wrap=f_open --wrap=f_gets --wrap=f_close
+# wpa_supplicant_add_iface: the supplicant's interface is kept static in
+# Circle's main_circle.c, so wlan_hostap.c takes the pointer as it is made.
+FINAL_WRAPS = --wrap=f_open --wrap=f_gets --wrap=f_close --wrap=wpa_supplicant_add_iface
 
 # Two upstream hooks that are part of the product, not diagnostics, so they are
 # always on. Mangled names: extfs_write(int, void*, size_t) for the shared
@@ -283,12 +365,18 @@ FINAL_WRAPS = --wrap=f_open --wrap=f_gets --wrap=f_close
 # their symbols, and were never called: the Macintosh's restart and shutdown
 # went unheard, so a restart from the Finder became a hard reset with no boot
 # menu, and Shut Down never closed the disk image.
+# The three Open Transport entry points of SheepShaver's DLPI module say in
+# the log what Open Transport did with the driver; they exist on the PowerPC
+# side only, and a wrap of a symbol an engine lacks does nothing
+# (ether_circle.cpp).
 # The two file-name converters are replaced outright rather than patched into
 # external/: extfs_unix.cpp's are identity functions, right on a UTF-8 desktop
 # and wrong between a FAT card and a Macintosh (mac_encoding_circle.cpp).
 ENGINE_WRAPS = --wrap=_Z11extfs_writeiPvm --wrap=_Z6EmulOptP13M68kRegisters \
                --wrap=_Z25host_encoding_to_macromanPKc \
-               --wrap=_Z25macroman_to_host_encodingPKc
+               --wrap=_Z25macroman_to_host_encodingPKc \
+               --wrap=_Z16InitStreamModulePv --wrap=_Z21TerminateStreamModulev \
+               --wrap=_Z10ether_openP5queuePviiS1_
 
 # Diagnostics, off by default: build with OKAPIA_TRACE=1 to hook upstream
 # functions at link time rather than patching external/ (docs/contributing/build.md). Circle
@@ -312,6 +400,9 @@ ENGINE_DEFINES += -DSOUND_SELFTEST=1
 # address, and the Mac's answer watched for: the receive path proved under a
 # QEMU whose USB network never delivers a frame (ether_circle.cpp).
 ENGINE_DEFINES += -DNET_SELFTEST=1
+# One page of heap made executable and run, then re-emitted and run again: the
+# prerequisite of a JIT, proved under QEMU (execmem_circle.cpp).
+ENGINE_DEFINES += -DEXECMEM_SELFTEST=1
 endif
 # Toggling OKAPIA_TRACE does not invalidate kernel8.img on its own:
 # rm kernel8.img kernel8.elf first, or you will run the previous kernel.
@@ -326,7 +417,7 @@ EMU_FLAGS = $(EMU_DEFINES) -fexceptions -Wno-narrowing -Wno-write-strings
 # resolves a name to the first directory that has it. Ahead, and a SheepShaver
 # kernel would compile Basilisk's platform; unconditionally, and the Basilisk
 # kernel compiles SheepShaver's. Both were seen, in that order.
-VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(MACEMU)/uae_cpu_2021:$(MACEMU)/uae_cpu_2021/fpu:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(GEN)
+VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(UAE):$(UAE)/fpu:$(UAE)/compiler:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(CPUGEN):$(GEN)
 
 # The USB HID -> ADB key table, derived from Basilisk's own keycodes file rather
 # than typed out: SDL2 scancodes are HID usage IDs, so its "sdl cocoa" section
@@ -394,9 +485,25 @@ $(OBJ)/%.o: %.cpp | $(OBJ)
 	@printf '  CC    %s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
-$(OBJ)/cpuemu%.o: $(GEN)/cpuemu.cpp | $(OBJ)
+# Static pattern rules: an implicit "compemu%.o" would also claim
+# compemu_support.o, and "cpuemu%.o" the _nf objects.
+$(CPUEMU_OBJS): $(OBJ)/cpuemu%.o: $(CPUGEN)/cpuemu.cpp | $(OBJ)
 	@printf '  CC    cpuemu part %s\n' "$*"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -DPART_$* -MMD -MP -c -o $@ $<
+
+ifneq ($(JIT_OBJS),)
+$(CPUEMU_NF_OBJS): $(OBJ)/cpuemu%_nf.o: $(CPUGEN)/cpuemu.cpp | $(OBJ)
+	@printf '  CC    cpuemu part %s, no flags\n' "$*"
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -DPART_$* -DNOFLAGS -MMD -MP -c -o $@ $<
+
+$(COMPEMU_OBJS): $(OBJ)/compemu%.o: $(CPUGEN)/compemu.cpp | $(OBJ)
+	@printf '  CC    compemu part %s\n' "$*"
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -DPART_$* -MMD -MP -c -o $@ $<
+
+$(OBJ)/cpustbl_nf.o: $(CPUGEN)/cpustbl.cpp | $(OBJ)
+	@printf '  CC    cpustbl, no flags\n'
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -DNOFLAGS -MMD -MP -c -o $@ $<
+endif
 
 $(SHARED_OBJ):
 	@mkdir -p $(SHARED_OBJ)
@@ -408,6 +515,10 @@ $(SHARED_OBJ):
 $(SHARED_OBJ)/%.o: %.cpp | $(SHARED_OBJ)
 	@printf '  CC    %s (shared)\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
+
+$(SHARED_OBJ)/wlan_hostap.o: $(OKAPIA)/wlan_hostap.c | $(SHARED_OBJ)
+	@printf '  CC    %s (shared)\n' "$(notdir $<)"
+	@$(CC) $(CFLAGS) $(WLAN_HOSTAP_FLAGS) -MMD -MP -c -o $@ $<
 
 $(SHARED_OBJ)/okapia_font_data.o: $(FONT_SRC) | $(SHARED_OBJ)
 	@printf '  CPP   generated/%s (shared)\n' "$(notdir $<)"

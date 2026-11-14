@@ -1,0 +1,11 @@
+# Counter totals extracted from the Pi 4 serial logs (OKAPIA_JIT_DIAG), via tools/diag_totals.py
+
+## Before patch 0003, cache 16 MB, 81 s of Speedometer
+{'t': 81, 'dispatch': 70377153, 'exec_normal': 4572940, 'cache_hit': 276, 'compile': 4772599, 'fresh': 318290, 'recomp': 4454309, 'opt0': 2727263, 'opt>0': 67618, 'do_nothing': 346014, 'exec_nostats': 2378664247, 'cache_miss': 74507, 'recompile_block': 4447247, 'check_checksum': 7167956, 'good': 6944642, 'bad': 24652, 'flush_hard': 28}
+avg_block (insn) / avg_code (B) / code_per_insn (B), last row: ('3.7', '58.1', '15.72')
+
+## Before patch 0003, cache 128 MB, 187 s
+{'t': 187, 'dispatch': 137953107, 'exec_normal': 6855242, 'cache_hit': 46397, 'compile': 6906258, 'fresh': 220509, 'recomp': 6685749, 'opt0': 6322527, 'opt>0': 30220, 'do_nothing': 4612410, 'exec_nostats': 2512745774, 'cache_miss': 123317, 'recompile_block': 6667748, 'check_checksum': 11203174, 'good': 10814108, 'bad': 30495, 'flush_hard': 5}
+avg_block (insn) / avg_code (B) / code_per_insn (B), last row: ('4.0', '53.8', '13.35')
+
+(exec_nostats is garbled by interleaving in these logs: ignore it)

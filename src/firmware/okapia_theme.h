@@ -92,7 +92,13 @@ struct TThemeMetrics
     unsigned nProgressHeight;
     unsigned nBodyHeight;               // wanted cell for the body face
     unsigned nTitleHeight;
+    // The front tab, from its top to the rule it stands on. The ones behind
+    // are shorter by a step, which is what puts them behind.
+    unsigned nTabHeight;
 };
+
+// More tabs than this is a window that wants a list instead.
+static const unsigned THEME_TABS_MAX = 8;
 
 struct TTheme
 {
@@ -145,6 +151,13 @@ struct TTheme
                               const TFieldMark &, const TTheme *);
     void (*DrawProgress)     (TSurface *, const TRect &, unsigned, const TTheme *);
     void (*DrawSeparator)    (TSurface *, const TRect &, const TTheme *);
+    // A row of tabs standing on a rule, the chosen one in front and open at the
+    // bottom onto the page it names: the Appearance Manager's tab control of
+    // Mac OS 8, taken for its grammar and drawn flat. The state is the strip's;
+    // a focused strip rings the front tab's label.
+    void (*DrawTabs)         (TSurface *, const TRect &, const char *const *pLabels,
+                              unsigned nCount, int nChoice, unsigned nState,
+                              const TTheme *);
     // The radius comes from the caller so that the ring follows the shape it
     // surrounds — a pop-up is not as round as a button, and a tick box is not
     // round at all. Passing the button's radius everywhere is what made the
@@ -154,6 +167,9 @@ struct TTheme
     // of inside it; everything else passes M.nFocusGap.
     void (*DrawFocusRing)    (TSurface *, const TRect &, unsigned, unsigned,
                               const TTheme *);
+    // Controls that belong together, framed and named: the Views control
+    // panel's groups. Drawn before what it holds, which sits on top.
+    void (*DrawGroup)        (TSurface *, const TRect &, const char *, const TTheme *);
 };
 
 // The theme at 1:1. A second theme would be a second value of this type, and
@@ -183,6 +199,13 @@ unsigned ThemeReach (const TTheme *pTheme, unsigned nState);
 // landing beside the thumb it can see — so there is one, and it is here.
 TRect ThemeScrollThumb (const TTheme *pTheme, const TRect &rBar, unsigned nTop,
                         unsigned nVisible, unsigned nTotal);
+
+// The strip of tabs: how tall it is, and where tab nIndex stands in it at its
+// full height. The theme draws them there and a click has to find them there,
+// so both questions have one answer each.
+unsigned ThemeTabsHeight (const TTheme *pTheme);
+TRect ThemeTabRect (const TTheme *pTheme, const TRect &rStrip, const char *const *pLabels,
+                    unsigned nCount, unsigned nIndex);
 
 // Whole sixteenths: 16 is 1:1, 36 is the 2.25 a 1920x1080 output asks for. The
 // base design is 640x480, and the factor is the smaller of the two ratios so

@@ -125,6 +125,7 @@ extern void InputDrain (void);
 // ether_circle.cpp — polls the board's network interface, lets the Wi-Fi's
 // tasks run and raises the Ethernet interrupt when a frame waits.
 extern void EtherPoll (void);
+extern void ClockPoll (void);     // clock_circle.cpp, shared
 
 // rsrc_patches.cpp (patches/macemu/0005) and main_circle.cpp. Between them they
 // answer the question a boot log cannot otherwise settle: is the Macintosh
@@ -139,6 +140,7 @@ void cpu_do_check_ticks (void)
     ArmNextVisit ();
     InputDrain ();
     EtherPoll ();
+    ClockPoll ();
 
     // Same reason as InputReport(): a thousand visits a second must not mean a
     // thousand clock reads for a line printed every five seconds.

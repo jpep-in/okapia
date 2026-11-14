@@ -15,6 +15,7 @@ static TWidget s_Widgets[MAX_WIDGETS];
 static TPage   s_Page;
 static int     s_nYes = -1;
 static int     s_nNo  = -1;
+static int     s_nOther = -1;
 static int     s_nFirstChoice = -1;     // the first radio's index, or -1
 static unsigned s_nChoices;
 static unsigned s_nHeight;
@@ -34,6 +35,7 @@ TConfirmAnswer ConfirmOperate (int nIndex)
 {
     if (nIndex == s_nYes) return ConfirmYes;
     if (nIndex == s_nNo)  return ConfirmNo;
+    if (nIndex == s_nOther && s_nOther >= 0) return ConfirmOther;
     return ConfirmWaiting;              // a choice: the screen has marked it already
 }
 
@@ -79,6 +81,9 @@ void ConfirmDraw (TSurface *pSurface, const TConfirm *pConfirm)
         // one that means "Return does this" and the one that means "the
         // keyboard is here", and they said the same thing twice.
         s_nYes = PageLast (&s_Page, pConfirm->pYes, StateDefault | StateNoFocus);
+        // Between the refusal and the assent: Cancel, Restart, Shut down.
+        s_nOther = pConfirm->pOther == 0 ? -1
+                                         : PageLast (&s_Page, pConfirm->pOther, StateNoFocus);
         s_nNo  = pConfirm->pNo == 0 ? -1
                                     : PageLast (&s_Page, pConfirm->pNo, StateNoFocus);
 

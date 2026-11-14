@@ -85,21 +85,15 @@ struct TChooser
     TChooserCPU    Built;
 };
 
+// Start, shut down, forget the PRAM and the other pages belong to the window
+// and not to this page: PageChromeAnswer() says what they mean.
 enum TChooserAction
 {
     ChooserNothing,                     // the model changed; repaint and carry on
-    ChooserStart,
-    ChooserSettings,
-    // On the main screen rather than behind the settings: what Okapia found is
-    // the first thing wanted when a machine will not start, and a page reached
-    // in two clicks is a page nobody opens at that moment.
-    ChooserInformation,
     // The command row at the top of the list. What it makes lands in that list,
     // which is why it is asked for there and not from the footer, where the
     // buttons are about the machine rather than about the card.
-    ChooserNewVolume,
-    ChooserForgetPram,
-    ChooserShutDown
+    ChooserNewVolume
 };
 
 // Lays the screen out for this surface and paints it. Call again after anything

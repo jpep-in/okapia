@@ -35,7 +35,15 @@ enum TWidgetType
     WidgetPopup,
     WidgetField,
     WidgetProgress,
-    WidgetSeparator
+    WidgetSeparator,
+    // The pages of one window. Its items are the tabs' names and its choice the
+    // page in front; choosing another answers at once, like a click on a row,
+    // because there is nothing else choosing one could mean.
+    WidgetTabs,
+    // A frame with a name around controls that belong together. Decoration:
+    // it takes no click and no focus, and what it holds comes after it in the
+    // array so that it is drawn on top.
+    WidgetGroup
 };
 
 // The columns a list may carry beyond its name, and how many there can be. Two
@@ -74,6 +82,10 @@ struct TListItem
     // clicking it could mean. It lives in the list rather than beside it
     // because what it makes appears in the list.
     bool               bAction;
+    // Up to two small marks at the row's right, after its columns: a Wi-Fi
+    // network's lock and its signal. Painted rather than drawn from a bitmap,
+    // so they scale with the text beside them; 0 for none.
+    TIconPainter       Marks[2];
 };
 
 struct TWidget
@@ -112,6 +124,9 @@ struct TWidget
     unsigned            nEditSize;      // bytes available, terminator included
     unsigned            nCaret;         // the insertion point, as a byte offset
     unsigned            nAnchor;        // where a selection began; equal when none
+    // A password: drawn as one bullet per character, and never copied out.
+    // The bytes stay what they are; only what the screen shows changes.
+    bool                bSecret;
 };
 
 // Fills one in with nothing set. Every screen builds its components through
@@ -168,6 +183,12 @@ TRect    WidgetListScroller (const TWidget *pWidget, const TTheme *pTheme);
 // Brings the chosen item into view, scrolling by as little as it takes. A list
 // that jumps to put the selection in the middle loses the reader's place.
 void     WidgetListReveal (TWidget *pWidget, const TTheme *pTheme);
+
+/*
+ *  Tabs
+ */
+// Which tab is under the point, or -1.
+int WidgetTabAt (const TWidget *pWidget, const TTheme *pTheme, int nX, int nY);
 
 /*
  *  Editable fields

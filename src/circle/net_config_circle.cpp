@@ -236,3 +236,39 @@ bool NetWpaConfigBuild (char *pOut, size_t nSize,
     }
     return true;
 }
+
+bool NetWpaConfigNoNetwork (char *pOut, size_t nSize, const char *pCountry,
+                            const char **ppError)
+{
+    const char *pDummy;
+    if (ppError == 0)
+    {
+        ppError = &pDummy;
+    }
+    *ppError = 0;
+    if (pCountry == 0 || strlen (pCountry) != 2
+        || pCountry[0] < 'A' || pCountry[0] > 'Z'
+        || pCountry[1] < 'A' || pCountry[1] > 'Z')
+    {
+        *ppError = "wificountry must be two capital letters";
+        return false;
+    }
+    TOut Out = { pOut, nSize, 0, false };
+    if (nSize > 0)
+    {
+        pOut[0] = '\0';
+    }
+    Put (&Out, "country=");
+    Put (&Out, pCountry);
+    Put (&Out, "\n");
+    if (Out.bFull)
+    {
+        *ppError = "the configuration does not fit its buffer";
+        if (nSize > 0)
+        {
+            pOut[0] = '\0';
+        }
+        return false;
+    }
+    return true;
+}
