@@ -135,6 +135,11 @@ every instruction the translator does not know.
   Every backward transfer spends a budget kept in `w16`, so the execution loop is reached every few thousand
   of them: that is where interrupts are seen and where `jit_arm64_host_poll()` calls the seam by the clock.
 - **A-line traps** are the 68040's exception written out in the block, in supervisor state with no trace.
+- **What it does not know leaves the block**: the instruction is run by the interpreter's handler, called from
+  translated code, and the block ends there. An emulator opcode is one of those, so every `EmulOp` is a
+  journey: the sixteen registers and the flags written out, the handler, everything read back, and a jump
+  through the return table. `MOVE CCR,<ea>` and `MOVE <ea>,CCR` are translated for that reason alone — the
+  QuickDraw trampolines open and close with them, and each call used to make that journey three times.
 - **Coherence**: a `CPUSHA`, or a `FlushCodeCache()` over translated code, raises an epoch. A block of an
   older epoch leaves at its first instruction and is compared, byte for byte, with its source before it runs
   again; nothing is rewritten in translated code for that, and no checksum stands in for the comparison.
@@ -204,8 +209,16 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - **A translator makes 68040-clean code a requirement.** Code modified without a cache flush runs stale until
   the next one, as it would on a real 68040 with a larger cache than any ever built. The interpreter forgives
   it; `jit true` does not.
-- **`qdaccel` and the translator can be on together**: the hooks' `EmulOp` is run by the interpreter's handler
-  with the exact PC. Nobody has tried it.
+- **`qdaccel` and the translator are on together** (2026-11-15), and the translator changes what a hook is
+  worth: QuickDraw's own loops are ARM64 code now, and the call to the host is what costs. See
+  [Display](display.md#68k-quickdraw) for the gate this led to and the measurements.
+- **A fault that moves with timing is not yet a fault of the translator.** One drawing check of MacBench
+  differed by nine pixels between two configurations, stably, and only with `jit true`. A long run of
+  suspicion went to the carry shortcut between blocks; the cause was the Font Manager failing to reallocate a
+  scaled Chicago strike in a full system heap and drawing from the 12 point one. Trace the guest (which
+  string, which strike handle) before bisecting the translator. Two test modes came out of the hunt and stay:
+  `B2_JIT_POISON` enters every block said to ignore incoming flags with those flags inverted, `B2_JIT_IRQ=n`
+  raises an interrupt every n returns to the loop (hosted builds; see `jit-test/README.md` upstream).
 
 - **`uae_cpu_2021`, not `uae_cpu`**: the latter is not what macemu builds on AArch64.
 - **`gencpu` and `gencomp` are built for the host** and run during the build.

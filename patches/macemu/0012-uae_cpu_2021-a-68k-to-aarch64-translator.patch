@@ -578,10 +578,10 @@ index 00000000..f3886f05
 +#define LDAR_wX(Wt,Xbase,offset)  do { ADD_xxi(REG_WORK4,(Xbase),(offset)); _W(0x88DFFC00u | (REG_WORK4 << 5) | (Wt)); } while(0)
 diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
 new file mode 100644
-index 00000000..5405e72b
+index 00000000..39b43feb
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
-@@ -0,0 +1,2247 @@
+@@ -0,0 +1,2288 @@
 +/*
 + *  jit_arm64.cpp - 68k to AArch64 translator for the uae_cpu_2021 core
 + *
@@ -1653,6 +1653,33 @@ index 00000000..5405e72b
 +		}
 +		const int sz = (op >> 6) & 3;
 +		const int kind = op & 0xff00;
++		if ((op & 0xffc0) == 0x42c0) {	// MOVE CCR,<ea>: a word, X N Z V C in its low five bits
++			if (mode == 1 || (mode == 7 && reg > 1) || !decode_ea(mode, reg, SZ_W, dst, 4)) return 0;
++			flags_needed();
++			if (cx.c_inv) { flip_c(); cx.c_inv = false; }
++			MRS_NZCV_x(0);
++			LSR_wwi(0, 0, 28);			// N Z C V
++			LSR_wwi(1, 0, 1);			// C in bit 0
++			BFI_wwii(0, 0, 1, 1);		// N Z V V
++			BFI_wwii(0, 1, 0, 1);		// N Z V C
++			BFI_wwii(0, R_X, 4, 1);
++			store_ea(dst, SZ_W, 0, 1);
++			return 1;
++		}
++		if ((op & 0xffc0) == 0x44c0) {	// MOVE <ea>,CCR
++			if (mode == 1 || !decode_ea(mode, reg, SZ_W, src, 4)) return 0;
++			const int v = load_ea(src, SZ_W, 0);
++			flags_replaced();
++			LSR_wwi(1, v, 2);			// N Z in bits 1 and 0
++			LSL_wwi(2, 1, 30);			// N Z at the top, nothing below
++			BFI_wwii(2, v, 29, 1);		// C
++			LSR_wwi(1, v, 1);
++			BFI_wwii(2, 1, 28, 1);		// V
++			UBFX_wwii(R_X, v, 4, 1);
++			MSR_NZCV_x(2);
++			cx.c_inv = false;
++			return 1;
++		}
 +		if (sz != 3 && (kind == 0x4200 || kind == 0x4400 || kind == 0x4600 || kind == 0x4a00)) {	// CLR NEG NOT TST
 +			if (mode == 1 && (kind != 0x4a00 || sz == SZ_B)) return 0;
 +			if (mode == 7 && reg > (kind == 0x4a00 ? 3 : 1)) return 0;
@@ -2760,6 +2787,13 @@ index 00000000..5405e72b
 +		stats_every = strtoul(e, NULL, 0);		// a line every so many turns of the loop
 +	if (getenv("B2_JIT_HISTOGRAM"))
 +		opcode_histogram = (uae_u32 *)calloc(65536, sizeof(uae_u32));
++	// A test of one claim: a block said to ignore incoming N Z C V is entered
++	// with all four inverted, and must compute what the interpreter computes
++	const bool poison_dead = getenv("B2_JIT_POISON") != NULL;
++	// Another: an interrupt every so many returns to this loop, at a cadence
++	// that does not depend on the clock, so that a fault it causes repeats
++	const unsigned long irq_every = getenv("B2_JIT_IRQ") ? strtoul(getenv("B2_JIT_IRQ"), NULL, 0) : 0;
++	unsigned long irq_count = 0;
 +
 +	for (;;) {
 +		if (quit_program > 0) {
@@ -2790,6 +2824,8 @@ index 00000000..5405e72b
 +
 +		if (b->code) {
 +			flags_to_jit();
++			if (poison_dead && b->flags_dead)
++				jit_state.nzcv ^= 0xf0000000;
 +			const uae_u32 next = jit_enter(b->code);
 +			flags_from_jit();
 +			m68k_setpc(next & ~1);
@@ -2809,6 +2845,11 @@ index 00000000..5405e72b
 +			jit_stats.interpreted++;
 +		}
 +		jit_arm64_host_poll();
++		if (irq_every && ++irq_count >= irq_every) {
++			irq_count = 0;
++			SetInterruptFlag(INTFLAG_60HZ);
++			TriggerInterrupt();
++		}
 +
 +		if (SPCFLAGS_TEST(SPCFLAG_ALL_BUT_EXEC_RETURN))
 +			m68k_do_specialties();		// what it asks for is in quit_program
