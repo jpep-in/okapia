@@ -113,4 +113,5 @@ make -C tests/host                    # host tests and the firmware specimen
 ./scripts/specimen.sh [page|live]     # boot menu specimen, no card
 ./scripts/run-qemu.sh [kernel] -s -S  # bare kernel, GDB on :1234
 ./scripts/make-pi-sd.sh               # stage a Pi 4 card in rpi4-sd-contents/
+./scripts/build-macbench.sh [image]   # MacBench (tools/macbench, Retro68), into Startup Items
 ```

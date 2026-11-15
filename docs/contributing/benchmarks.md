@@ -17,6 +17,32 @@ the QEMU capture on CPU (6.84 against 5.14), so the QEMU/Pi ratio says nothing a
 
 Speedometer's averages are pulled by `K'Whet`; the median of the ten integer subtests reads less distorted.
 
+### MacBench
+
+**Not the Ziff-Davis MacBench of the period**: Okapia's own 68k application, in [`tools/macbench/`](../../tools/macbench/)
+(C for [Retro68](https://github.com/autc04/Retro68), under the MIT licence so that Basilisk II or anyone else can take it). It runs twenty tests
+by itself at startup — five of the processor (`cpu_*`), three of the Toolbox (`tb_*`), twelve of QuickDraw (`qd_*`) —
+each a fixed amount of work timed with `TickCount`, and writes `name ticks check` lines to **MacBench Results**: at the
+root of a volume named `Unix` when there is one (a desktop Basilisk II's shared folder), otherwise next to the
+application. `check` hashes what the test computed or drew, the window read from the frame buffer at any depth: two
+runs that disagree on it did not do the same work, which is what makes it the test of the QuickDraw hooks
+([Display](../topics/display.md#68k-quickdraw)).
+
+```
+RETRO68=~/github-repositories/Retro68-build ./scripts/build-macbench.sh               # build/macbench/MacBench.bin
+./scripts/build-macbench.sh qemu/sd-contents/boot755.img                               # ...and into Startup Items
+./scripts/build-macbench.sh -- -DDEPTH=16 -DAPPEND_RESULTS                             # with switches
+```
+
+Retro68 is built once by hand (`./build-toolchain.bash` in its clone); `RETRO68` names the directory holding its
+`toolchain/`. The script copies with Retro68's hfsutils straight into the image: **never on a card an emulator is
+using**. Compile-time switches: `-DAPPEND_RESULTS` keeps every run, one block after the other (a machine run by hand);
+`-DHOLD_TICKS=<n>` leaves the last drawing on screen n ticks; `-DONLY='"qd_text"'` runs one test; `-DDEPTH=<bits>`
+switches the screen first; `-DREPEAT=<n>` runs each test n times to see whether its check is stable;
+`-DSCALE=<n>` multiplies every iteration count; `-DSTRETCH_DEBUG` hashes `qd_stretch` part by part.
+`tools/macbench/run.py` boots a desktop Basilisk II once per configuration and prints the table; on Okapia, read the
+results file off the volume after Special → Shut Down.
+
 ## Results
 
 ### Summary

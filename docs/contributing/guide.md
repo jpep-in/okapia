@@ -78,6 +78,9 @@ The target is Quadra-class on a small board, not a workstation.
 
 - Circle is GPL-3.0; Basilisk II and SheepShaver are GPL v2 **or later**; libhfs is GPL v2 or later. The combined work
   is distributed under **GPLv3** (`LICENSE`).
+- **One exception, not part of the kernel**: `tools/macbench/`, a guest application, is **MIT**
+  (`SPDX-License-Identifier: MIT`, its own `LICENSE`), so that any emulator or period machine can take it. MIT code
+  may enter the GPLv3 work; GPL code may not enter it.
 - **Apple ROMs and Systems** were never released and remain Apple's copyright; their status outside ownership of the
   original hardware is uncertain and depends on jurisdiction. Some neighbouring projects ship ROMs in their
   repository; **Okapia does not**: nothing is committed, nothing is rehosted, the user supplies their ROM, and a
