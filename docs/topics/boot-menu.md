@@ -33,7 +33,9 @@ What cannot be done is greyed per line: the startup volume cannot be unmounted u
 a System cannot become the startup disk. **+ New volume…** makes an empty HFS volume: it asks only the
 Macintosh volume name (27 characters) and a size that fits the card; the firmware picks the file name.
 
-**Settings**: memory, screen refresh (frameskip), mouse resolution, sound output and language, two to a row; then
+**Settings**: memory, screen refresh (frameskip), mouse resolution, sound output and language, two to a row; beside
+the language, the 68k engine's two experimental speed-ups, **JIT** (`jit`) and **QuickDraw acceleration** (`qdaccel`),
+followed by "(68K only)" once for both; then
 two groups, framed and named as the Views control panel of System 7 frames its own: **Folder sharing** (share, the
 folder on the card, the volume's name on the Mac) and **Date & Time** (below). A setting that needs an Okapia restart
 (only memory) is marked `*` and Start becomes **Save and restart**, with "* Restart required" beside it. There is deliberately no resolution: Mac OS owns the screen
@@ -86,6 +88,14 @@ The time zone and the time server pass the first three and not the last either, 
 as the network: a Macintosh of this era has no notion of either — its clock *is* local time — and it is Okapia's
 clock that needs both to turn the network's UTC into that local time. The date itself still fails the first test,
 which is why the page shows it and does not set it: Date & Time sets it, and Okapia now keeps what it sets.
+
+The two speed-ups pass all four: each is an experimental mode that can hang a Macintosh at startup, and turning it
+back off is exactly what must not need another computer. Both are read at every start of the Macintosh
+(`basilisk_glue.cpp` for `jit`, `quickdraw_circle.cpp` for `qdaccel`), so neither asks for a restart. QuickDraw's box
+is ticked for any value but `off` and writes `sync` or `off` only when it is changed, so a card set to `parallel`,
+`probe` or `verify` keeps it. The JIT box is grey, still showing the file's value, in an image built without the
+translator: the shared half learns that from `-DOKAPIA_TRANSLATOR`, which `src/kernel/Makefile` sets from
+`OKAPIA_JIT_ARM64` for the shared objects alone, so the PowerPC window says the same as the 68k one.
 
 The network passes the first three and not the last: a Macintosh starts without it. It earns its page on the cost
 alone — a Wi-Fi password is the setting most likely to be wrong, it is found wrong only on the board, and correcting
@@ -222,6 +232,7 @@ levels — note, caution, stop — because they are a promise about consequences
 - [x] Settings in two columns and two named groups (`WidgetGroup`, `PageGroupBegin()`/`End()`), the Date & Time page
       folded back into it; "Show this menu at startup" moved to the footer, beside Start; the tabs behind a lighter grey
       (`ColorPale`, `#EEEEEE`) (2026-11-12)
+- [x] JIT and QuickDraw acceleration tick boxes beside the language, "(68K only)" (2026-11-15)
 - [ ] Tabs and the Network page tried on the Pi 4 and under QEMU
 - [ ] **Open the menu whenever the Macintosh cannot start**, with the reason on screen, instead of halting. Today
       the menu opens by itself only for a missing configuration or no bootable volume; any other failure of

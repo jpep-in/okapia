@@ -19,6 +19,8 @@ static int s_nRefresh  = -1;
 static int s_nMouse    = -1;
 static int s_nSound    = -1;
 static int s_nLanguage = -1;
+static int s_nJit      = -1;
+static int s_nQuickDraw = -1;
 static int s_nShared   = -1;
 static int s_nPath     = -1;
 static int s_nName     = -1;
@@ -214,6 +216,17 @@ void SettingsSync (TSettings *pSettings)
     s_Widgets[s_nSound].nChoice    = (int) pSettings->V.nSound;
     s_Widgets[s_nLanguage].nChoice = (int) pSettings->V.nLanguage;
 
+    // The translator's box goes grey in an image built without one, and the
+    // tick still says what the file holds: the next image may have it.
+    unsigned nJit = pSettings->V.bJit ? StateChecked : StateNormal;
+    if (!pSettings->bJitAvailable)
+    {
+        nJit |= StateDisabled;
+    }
+    WidgetSetState (&s_Widgets[s_nJit], nJit);
+    WidgetSetState (&s_Widgets[s_nQuickDraw],
+                    pSettings->V.bQuickDraw ? StateChecked : StateNormal);
+
     WidgetSetState (&s_Widgets[s_nShared],
                     pSettings->V.bShared ? StateChecked : StateNormal);
 
@@ -272,6 +285,32 @@ static TWidget *Popup (TPage *pPage, const TRect &rRect, int *pnIndex,
     return p;
 }
 
+// The 68k engine's two speed-ups, in the half the language leaves free: a row
+// of their own cost the date its room at 640x480. Two tick boxes and one note
+// that says whom they are for, said once rather than after each.
+static void Speedups (TPage *pPage, const TRect &rBand)
+{
+    const TTheme *pTheme = &pPage->Theme;
+    const int nY = rBand.nY + (int) (rBand.nHeight - pTheme->M.nCheckSize) / 2;
+    TRow R;
+    RowBegin (&R, pTheme, rBand);
+    const TStringId Ticks[2] = { StrJit, StrQdAccel };
+    int *const pIndex[2] = { &s_nJit, &s_nQuickDraw };
+    for (unsigned i = 0; i < 2; i++)
+    {
+        const unsigned nTick = pTheme->M.nCheckSize + pTheme->M.nGap
+                             + GfxTextWidth (pTheme->pBodyFont, Str (Ticks[i]));
+        TRect T = RowNext (&R, nTick, StateNormal);
+        T = Rect (T.nX, nY, T.nWidth, pTheme->M.nCheckSize);
+        *pIndex[i] = (int) pPage->nCount;
+        PageAdd (pPage, WidgetCheckbox, T, Str (Ticks[i]), StateNormal);
+    }
+    TRect L = RowNext (&R, GfxTextWidth (pTheme->pBodyFont, Str (StrOnly68k)), StateNormal);
+    L = Rect (L.nX, rBand.nY + (int) (rBand.nHeight - pTheme->M.nLineHeight) / 2,
+              L.nWidth, pTheme->M.nLineHeight);
+    PageAdd (pPage, WidgetLabel, L, Str (StrOnly68k), StateNormal);
+}
+
 void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
 {
     BuildMenus ();
@@ -321,10 +360,12 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
         default:
             Popup (&s_Page, Labelled (&s_Page, A, nLeft, Str (StrLanguage)), &s_nLanguage,
                    s_LanguageItems, LanguageCount);
+            Speedups (&s_Page, B);
             break;
         }
         LayoutRowGap (&Layout);
     }
+
     LayoutSectionGap (&Layout);
 
     // The two groups share one label column, so their fields line up.
@@ -441,6 +482,17 @@ TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex)
             StringsSetLanguage ((TLanguage) n);
             return SettingsRelayout;
         }
+    }
+    else if (nIndex == s_nJit)
+    {
+        if (pSettings->bJitAvailable)
+        {
+            pSettings->V.bJit = !pSettings->V.bJit;
+        }
+    }
+    else if (nIndex == s_nQuickDraw)
+    {
+        pSettings->V.bQuickDraw = !pSettings->V.bQuickDraw;
     }
     else if (nIndex == s_nShared)
     {

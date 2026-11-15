@@ -557,9 +557,15 @@ $(SHARED_OBJ):
 # current. That is not sloppiness: these files name no emulator header, and the
 # objects come out identical either way — checked by comparing them between the
 # two builds, which is how the list was drawn in the first place.
+# One fact about the image does reach the shared half on purpose: whether the
+# 68k engine carries the translator, which the boot menu offers or greys
+# (okapia_firmware.cpp) in both engines' windows. Stated here rather than read
+# from ENGINE_DEFINES, which the shared half only sees by accident.
+SHARED_DEFINES = $(if $(filter 1,$(OKAPIA_JIT_ARM64)),-DOKAPIA_TRANSLATOR=1)
+
 $(SHARED_OBJ)/%.o: %.cpp | $(SHARED_OBJ)
 	@printf '  CC    %s (shared)\n' "$(notdir $<)"
-	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
+	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) $(SHARED_DEFINES) -MMD -MP -c -o $@ $<
 
 $(SHARED_OBJ)/wlan_hostap.o: $(OKAPIA)/wlan_hostap.c | $(SHARED_OBJ)
 	@printf '  CC    %s (shared)\n' "$(notdir $<)"

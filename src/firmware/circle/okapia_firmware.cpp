@@ -403,6 +403,20 @@ static void LoadSettings (TSettings *pSettings)
     pSettings->V.nLanguage = (unsigned) StringsLanguage ();
     pSettings->V.bBootMenu = PrefsFindBool ("bootmenu");
 
+    // Both read at every start of the Macintosh (basilisk_glue.cpp for jit,
+    // quickdraw_circle.cpp for qdaccel), so neither owes the board a restart.
+    // Anything but "off" reads as ticked: the file may hold parallel, probe or
+    // verify, which StoreSettings() leaves alone unless the box is changed.
+    pSettings->V.bJit = PrefsFindBool ("jit");
+    const char *pQuickDraw = PrefsFindString ("qdaccel");
+    pSettings->V.bQuickDraw = pQuickDraw != 0 && pQuickDraw[0] != '\0'
+                           && strcmp (pQuickDraw, "off") != 0;
+#ifdef OKAPIA_TRANSLATOR
+    pSettings->bJitAvailable = true;
+#else
+    pSettings->bJitAvailable = false;
+#endif
+
     const char *pShared = PrefsFindString ("extfs");
     pSettings->V.bShared = pShared != 0 && pShared[0] != '\0';
     pSettings->V.SharedPath[0] = '\0';
@@ -441,6 +455,11 @@ static void StoreSettings (const TSettings *pSettings)
 
     PrefsReplaceString ("language", StringsCode ((TLanguage) pSettings->V.nLanguage));
     PrefsReplaceBool ("bootmenu", pSettings->V.bBootMenu);
+    PrefsReplaceBool ("jit", pSettings->V.bJit);
+    if (pSettings->V.bQuickDraw != pSettings->Opened.bQuickDraw)
+    {
+        PrefsReplaceString ("qdaccel", pSettings->V.bQuickDraw ? "sync" : "off");
+    }
     PrefsReplaceString ("extfs", pSettings->V.bShared
                                  ? (pSettings->V.SharedPath[0] != '\0'
                                     ? pSettings->V.SharedPath : SHARED_PATH)
@@ -448,14 +467,18 @@ static void StoreSettings (const TSettings *pSettings)
     PrefsReplaceString ("extfsname", pSettings->V.SharedName);
 
     CLogger::Get ()->Write (FROM, LogNotice,
-                            "Settings: %u MB, frameskip %d, sound %s, language %s, %s, %s",
+                            "Settings: %u MB, frameskip %d, sound %s, language %s, %s, %s, "
+                            "jit %s, qdaccel %s",
                             pSettings->V.nMemoryMB, (int) pSettings->V.nFrameSkip,
                             SOUND_NAMES[pSettings->V.nSound],
                             StringsCode ((TLanguage) pSettings->V.nLanguage),
                             pSettings->V.bShared ? pSettings->V.SharedPath
                                                  : "no shared folder",
                             pSettings->V.bBootMenu ? "boot menu always"
-                                                   : "boot menu on Option");
+                                                   : "boot menu on Option",
+                            pSettings->V.bJit ? "on" : "off",
+                            PrefsFindString ("qdaccel") != 0 ? PrefsFindString ("qdaccel")
+                                                             : "off");
 }
 
 /*

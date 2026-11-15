@@ -83,6 +83,9 @@ mouse_dpi	Mouse	Souris
 sound	Sound	Son
 sound_off	Off	Coupé
 language	Language	Langue
+jit	JIT	JIT
+qd_accel	QuickDraw acceleration	Accélération QuickDraw
+only_68k	(68K only)	(68K seulement)
 boot_menu	Show this menu at startup	Afficher ce menu au démarrage
 time_zone	Time zone	Fuseau horaire
 net_time	Time from the network	Heure par le réseau

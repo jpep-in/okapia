@@ -524,6 +524,37 @@ int main (void)
                 "and the headphone jack is not");
     }
 
+    // The 68k engine's two speed-ups. Both are read at every start of the
+    // Macintosh, so neither asks for the board to restart.
+    {
+        const int nQuickDraw = Find (WidgetCheckbox, Str (StrQdAccel));
+        Expect (nQuickDraw >= 0, "QuickDraw acceleration has its tick box");
+        Expect (SettingsOperate (&s_Settings, nQuickDraw) == SettingsNothing
+                && s_Settings.V.bQuickDraw, "it can be turned on");
+        Expect (!SettingsNeedsRestart (&s_Settings), "and that owes no restart");
+        TWidget *pW = 0;
+        SettingsWidgets (&pW);
+        Expect ((pW[nQuickDraw].nState & StateChecked) != 0, "the box shows it");
+
+        // An image without the translator shows the box grey, still saying what
+        // the file holds, and the loop cannot change it.
+        const int nJit = Find (WidgetCheckbox, Str (StrJit));
+        Expect (nJit >= 0, "the translator has its tick box");
+        Expect ((pW[nJit].nState & (StateDisabled | StateChecked)) == (StateDisabled | StateChecked)
+                && !WidgetFocusable (&pW[nJit]),
+                "without a translator it is grey, ticked as the file says, Tab included");
+        SettingsOperate (&s_Settings, nJit);
+        Expect (s_Settings.V.bJit, "and pressing it changes nothing");
+        s_Settings.bJitAvailable = true;
+        SettingsOperate (&s_Settings, nJit);
+        Expect (!s_Settings.V.bJit && (pW[nJit].nState & (StateDisabled | StateChecked)) == 0,
+                "with one, it can be turned off");
+        Expect (!SettingsNeedsRestart (&s_Settings), "and that owes no restart either");
+        s_Settings.bJitAvailable = false;
+        s_Settings.V.bJit = true;
+        SettingsSync (&s_Settings);
+    }
+
     // The shared folder's name is a name only while there is a volume to carry
     // it. The field says so by going grey, not by refusing letters.
     const int nShared = Find (WidgetCheckbox, Str (StrShare));

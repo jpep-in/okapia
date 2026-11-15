@@ -59,6 +59,13 @@ struct TSettingsValues
     // whoever changes System every day wants it, whoever changes it twice a
     // year does not — and a board with no keyboard has no other way to ask.
     bool     bBootMenu;
+    // The 68k engine's two experimental speed-ups, read at every start of the
+    // Macintosh: the translator (preference jit) and QuickDraw done natively
+    // (qdaccel, off or sync here; the file may hold more). On this page rather
+    // than only in the file because a mode that hangs the Macintosh is exactly
+    // what has to be undone without taking the card out.
+    bool     bJit;
+    bool     bQuickDraw;
     bool     bShared;                   // the shared folder is offered at all
     char     SharedPath[SETTINGS_PATH]; // where it is on the card
     char     SharedName[SETTINGS_NAME]; // what the Mac calls it on the desktop
@@ -74,6 +81,10 @@ struct TSettings
     // what is true. Zero means "offer them all", so a caller that has not
     // thought about it does not silently offer nothing.
     unsigned nSoundAvailable;
+    // Whether this image carries the translator at all (OKAPIA_JIT_ARM64). A
+    // fact about the image, like the sound outputs about the board: without it
+    // the box is there and grey, and its value is kept as the file had it.
+    bool bJitAvailable;
     // What they were when the screen opened. Kept so that the screen can say
     // whether anything asked for a restart, which is not the same question as
     // whether anything changed.

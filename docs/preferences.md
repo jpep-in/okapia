@@ -50,7 +50,7 @@ the other way round. The same file serves both Macintosh; its name does not chan
 |---|---|---|
 | `screen` | — | upstream's spelling, `win/<width>/<height>` (or `dga/…`): the resolution to start in. `0` means the display's own width or height. The size is also added to the Monitors list if missing |
 | `frameskip` | `0` | `0` = dynamic (default), `1` = every VBL, `2` = 30 Hz, `4` = 15 Hz, `6` = 10 Hz. The Mac draws its own cursor, so a low rate reads as a laggy mouse — see [Display](topics/display.md) |
-| `qdaccel` | `off` | Experimental 68k QuickDraw. `sync` accelerates boolean copies and fills at every depth, and some shapes and conversions at 8 bits; `parallel` also uses core 2 for large transfers with a multicore Pi 4 build; `probe` logs eligibility and executes the original guest code; `verify` lets the guest draw, draws each `BitBlt` and `RgnBlt` again natively and logs any difference. See [QuickDraw](topics/display.md#68k-quickdraw). |
+| `qdaccel` | `off` | Experimental 68k QuickDraw. `sync` accelerates boolean copies and fills at every depth, and some shapes and conversions at 8 bits; `parallel` also uses core 2 for large transfers with a multicore Pi 4 build; `probe` logs eligibility and executes the original guest code; `verify` lets the guest draw, draws each `BitBlt` and `RgnBlt` again natively and logs any difference. See [QuickDraw](topics/display.md#68k-quickdraw). The boot menu's *QuickDraw acceleration* box writes `sync` or `off`, and only when it is changed. |
 | `qdaccelmin` | `4096` | With `jit true` only: a rectangular or region transfer whose clipped area holds fewer bytes of pixels than this stays in the guest (4096 is 4096 pixels at 8 bits, 1024 at 32); 1 and 2 bits always do, where the translator already runs QuickDraw as ARM64 code. Tested in 68k by the trampoline, so a refused transfer never leaves translated code. See [QuickDraw](topics/display.md#68k-quickdraw). |
 
 ## Sound
@@ -115,7 +115,7 @@ They are written back unchanged, so a value that seems ignored is ignored on pur
 | Keywords | Why |
 |---|---|
 | `displaycolordepth`, `title`, `init_grab`, `hotkey`, `scale_*`, `mag_rate`, `gammaramp`, `sdlrender`, `nogui` | they configure a window on a host desktop; the Mac owns the frame buffer and Monitors picks the depth |
-| `jit*` | the interpreter is the only CPU in a standard kernel. `jit true` is read by the experimental kernels only (`OKAPIA_JIT_ARM64=1`, `OKAPIA_JIT=1`) |
+| `jit*` | the interpreter is the only CPU in a standard kernel. `jit true` is read by the experimental kernels only (`OKAPIA_JIT_ARM64=1`, `OKAPIA_JIT=1`). The boot menu's *JIT* box sets `jit`, and is grey in an image without the `OKAPIA_JIT_ARM64` translator |
 | `etherconfig`, `redir`, `host_domain` | host network scripts and slirp's forwarding; the Mac is a node on the real network |
 | `udptunnel`, `udpport` | no UDP tunnel: `udptunnel true` means no network |
 | `seriala`, `serialb` | the Pi's usable UART carries Okapia's log |

@@ -32,6 +32,11 @@ void SettingsSample (TSettings *p)
     p->V.nSound = SoundJack;
     p->V.nLanguage = (unsigned) StringsLanguage ();
     p->V.bShared = true;
+    // The translator ticked in an image that has none: grey and still ticked,
+    // the awkward case again. QuickDraw off, so a test can turn it on.
+    p->V.bJit = true;
+    p->V.bQuickDraw = false;
+    p->bJitAvailable = false;
     // Everything but USB, which is what a Pi 3 offers — the awkward case, since
     // it is the one where an entry has to be there and unusable.
     p->nSoundAvailable = (1u << SoundOff) | (1u << SoundHDMI) | (1u << SoundJack);
