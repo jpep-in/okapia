@@ -92,8 +92,9 @@ int main ()
         QDRunBlit (blit, 0, 1);
         QDRunBlit (blit, 1, blit.height);
         assert (memcmp (expected, pixels, sizeof pixels) == 0);
+        // A pattern that is not one colour goes row by row, at any depth.
         ram[0x63f] ^= 1;
-        assert (QDPrepareBlit (memory, a, d, blit) == (bytes == 1));
+        assert (QDPrepareBlit (memory, a, d, blit) && blit.patternRows);
         ram[0x63f] ^= 1;
         Long (ram + a[5], 0xfffffffc);
         assert (!QDPrepareBlit (memory, a, d, blit));
@@ -166,6 +167,46 @@ int main ()
     }
     d[7] = 0;
 
+    // The colour loops: BGnotWhite set, a foreground and a background. Copy
+    // lays both; OR lays the foreground and BIC the background where the
+    // source, inverted or not, has a one. XOR never looks at the word.
+    Word (ram + frame - 0x104, 1);
+    Long (ram + frame - 0xa0, 0xc3c3c3c3);
+    Long (ram + frame - 0xa4, 0x18181818);
+    for (unsigned mode = 0; mode < 8; ++mode)
+    {
+        Word (ram + frame - 0x98, mode);
+        d[7] = mode & 4 ? UINT32_MAX : 0;
+        memset (ram + 0x800, 0x4a, 64 * 7);
+        memset (pixels, 0x95, sizeof pixels);
+        assert (QDPrepareBlit (memory, a, d, blit) && blit.colorize == ((mode & 3) != 2));
+        QDRunBlit (blit, 0, blit.height);
+        const unsigned value = (mode & 4) ? 0xb5 : 0x4a;
+        const unsigned outputs[] = {(value & 0xc3) | (~value & 0x18), (0x95 & ~value) | (value & 0xc3),
+                                    0x95 ^ value, (0x95 & ~value) | (value & 0x18)};
+        for (unsigned y = 0; y < 3; ++y)
+            for (unsigned x = 1; x < 6; ++x)
+                assert (pixels[(y + 2) * 64 + x + 1] == outputs[mode & 3]);
+    }
+    d[7] = 0;
+    // Black on white through those loops is the plain transfer, and a colour
+    // that is not one pixel repeated is left to the guest.
+    Word (ram + frame - 0x98, 0);
+    Long (ram + frame - 0xa0, 0xffffffff);
+    Long (ram + frame - 0xa4, 0);
+    assert (QDPrepareBlit (memory, a, d, blit) && !blit.colorize);
+    QDBlitDiagnostic colors = {};
+    // Alpha drawing goes through loops the System has replaced: at no depth
+    // is it this path's business.
+    ram[frame - 0x92] = 0xff;
+    assert (!QDPrepareBlit (memory, a, d, blit, &colors) && colors.reason == QDBlitReject::Alpha);
+    ram[frame - 0x92] = 0;
+    Long (ram + frame - 0xa0, 0x12345678);
+    assert (!QDPrepareBlit (memory, a, d, blit, &colors));
+    assert (colors.reason == QDBlitReject::Colorize && colors.colorize == 1);
+    Long (ram + frame - 0xa0, 0);
+
+    // A pattern mode does not look at the word either: it stays set here.
     Word (ram + frame - 0x98, 10);
     for (unsigned i = 0; i < 64; ++i)
         ram[0x600 + i] = uint8_t (i ^ 0x55);
@@ -196,9 +237,6 @@ int main ()
     assert (!QDPrepareBlit (memory, a, d, blit, &diagnostic));
     assert (diagnostic.reason == QDBlitReject::Mode && diagnostic.mode == 50);
     Word (ram + frame - 0x98, 0);
-    Word (ram + frame - 0x104, 0x108);
-    assert (!QDPrepareBlit (memory, a, d, blit, &diagnostic));
-    assert (diagnostic.reason == QDBlitReject::Colorize && diagnostic.colorize == 0x108);
 
     // ScaleBlt indexes the current device's RGB inverse table. Clipping
     // shifts the source origin, and the second row has a region hole.
@@ -282,4 +320,274 @@ int main ()
     const uint8_t expanded[] = {0, 0x21, 0x21, 0x47, 0x47, 0};
     assert (memcmp (pixels + 2 * 64, expanded, sizeof expanded) == 0);
     assert (memcmp (pixels + 3 * 64, expanded, sizeof expanded) == 0);
+
+    // The span writers move eight bytes at a time. Each is compared with its
+    // definition, one byte after the other, over lengths and alignments that
+    // start, cross and end inside a word, and with the source overlapping the
+    // destination from both sides.
+    static uint8_t surface[4096], model[4096], patternRows[16 * 16];
+    uint32_t seed = 20261115;
+    const auto next = [&seed] {
+        seed = seed * 1664525u + 1013904223u;
+        return seed >> 8;
+    };
+    const auto transfer = [] (unsigned dst, unsigned src, unsigned operation) -> uint8_t {
+        return operation == 0 ? src : operation == 1 ? dst | src :
+               operation == 2 ? dst ^ src : dst & ~src;
+    };
+    const auto colorize = [] (unsigned dst, unsigned src, unsigned operation,
+                              unsigned fore, unsigned back) -> uint8_t {
+        return operation == 0 ? (src & fore) | (~src & back) :
+               operation == 1 ? (dst & ~src) | (src & fore) : (dst & ~src) | (src & back);
+    };
+    for (unsigned round = 0; round < 80000; ++round)
+    {
+        for (auto &byte : surface)
+            byte = next ();
+        for (auto &byte : patternRows)
+            byte = next ();
+        memcpy (model, surface, sizeof model);
+        QDBlit b = {};
+        b.pixelBytes = 1;
+        b.shift = 3;
+        b.destinationPitch = b.sourcePitch = 128;
+        b.height = 1 + next () % 5;
+        b.rowBytes = b.width = 1 + next () % 70;
+        b.operation = next () % 4;
+        const unsigned at = 1536 + next () % 40;
+        b.destination = surface + at;
+        const size_t span = (b.height - 1) * 128 + b.rowBytes;
+        if (round % 4 == 0)
+        {
+            const unsigned from = at + next () % 600 - 300;
+            b.source = surface + from;
+            b.flip = next () & 1 ? UINT32_MAX : 0;
+            b.colorize = b.operation != 2 && (next () & 1);
+            b.foreColor = (next () & 0xff) * 0x01010101u;
+            b.backColor = (next () & 0xff) * 0x01010101u;
+            b.overlaps = from < at + span && at < from + span;
+            b.reverse = b.overlaps && at > from;
+            for (unsigned line = 0; line < b.height; ++line)
+            {
+                const unsigned y = b.reverse ? b.height - 1 - line : line;
+                for (unsigned i = 0; i < b.rowBytes; ++i)
+                {
+                    const unsigned x = b.reverse ? b.rowBytes - i - 1 : i;
+                    auto &dst = model[at + y * 128 + x];
+                    const unsigned src = model[from + y * 128 + x] ^ (b.flip & 0xff);
+                    dst = b.colorize ? colorize (dst, src, b.operation, b.foreColor & 0xff, b.backColor & 0xff)
+                                     : transfer (dst, src, b.operation);
+                }
+            }
+        }
+        else if (round % 4 == 1)
+        {
+            b.patternRows = patternRows;
+            b.patternWidth = 4u << next () % 3;
+            b.patternHeight = 1u << next () % (b.patternWidth == 16 ? 5 : 3);
+            b.patternX = next () % 64;
+            b.patternY = next () % 64;
+            b.patternColor = (next () & 0xff) * 0x01010101u;
+            for (unsigned y = 0; y < b.height; ++y)
+                for (unsigned x = 0; x < b.rowBytes; ++x)
+                {
+                    const unsigned src = patternRows[((b.patternY + y) & (b.patternHeight - 1)) * b.patternWidth +
+                                                     ((b.patternX + x) & (b.patternWidth - 1))];
+                    auto &dst = model[at + y * 128 + x];
+                    dst = b.operation & 1 ? (dst & ~src) | (b.patternColor & 0xff & src)
+                                          : transfer (dst, src, b.operation);
+                }
+        }
+        else if (round % 4 == 2)
+        {
+            // Deeper pixels through the colour loops: the two colours are
+            // longs, laid from the first byte of the row.
+            b.pixelBytes = round % 8 == 2 ? 2 : 4;
+            b.shift = b.pixelBytes == 2 ? 4 : 5;
+            b.width = 1 + next () % 30;
+            b.rowBytes = b.width * b.pixelBytes;
+            b.operation = next () % 3 == 2 ? 3 : next () & 1;
+            b.source = surface + at + 1024;
+            // An inversion that spares the alpha bits, as 32-bit QuickDraw passes.
+            b.flip = b.pixelBytes == 4 ? (next () & 1 ? 0x00ffffffu : UINT32_MAX) : next () & 1 ? UINT32_MAX : 0;
+            b.colorize = next () & 1;
+            b.foreColor = next () << 8 | (next () & 0xff);
+            b.backColor = next () << 8 | (next () & 0xff);
+            if (b.pixelBytes == 2)
+            {
+                b.foreColor = (b.foreColor & 0xffff) * 0x10001u;
+                b.backColor = (b.backColor & 0xffff) * 0x10001u;
+            }
+            for (unsigned y = 0; y < b.height; ++y)
+                for (unsigned x = 0; x < b.rowBytes; ++x)
+                {
+                    const unsigned shift = 24 - (x & 3) * 8;
+                    auto &dst = model[at + y * 128 + x];
+                    const unsigned src = model[at + 1024 + y * 128 + x] ^ uint8_t (b.flip >> shift);
+                    dst = b.colorize ? colorize (dst, src, b.operation,
+                                                 uint8_t (b.foreColor >> shift), uint8_t (b.backColor >> shift))
+                                     : transfer (dst, src, b.operation);
+                }
+        }
+        else
+        {
+            b.operation = 0;
+            b.pixelBytes = round % 8 == 3 ? 2 : 4;
+            b.shift = b.pixelBytes == 2 ? 4 : 5;
+            b.width = 1 + next () % 30;
+            b.rowBytes = b.width * b.pixelBytes;
+            b.pattern = next () << 8 | (next () & 0xff);
+            if (b.pixelBytes == 2)
+                b.pattern = (b.pattern & 0xffff) * 0x10001u;
+            for (unsigned y = 0; y < b.height; ++y)
+                for (unsigned x = 0; x < b.rowBytes; ++x)
+                    model[at + y * 128 + x] = b.pattern >> (24 - (x & 3) * 8);
+        }
+        QDRunBlit (b, 0, b.height);
+        assert (memcmp (surface, model, sizeof surface) == 0);
+    }
+
+    // Below 8 bits a pixel, a row starts and ends anywhere in a byte and the
+    // source need not start at the same bit as the destination. The model
+    // works one bit at a time, from the surface as it was before the call:
+    // that is what a transfer means when the two rectangles overlap.
+    const auto bitAt = [] (const uint8_t *bytes, size_t bit) -> unsigned {
+        return (bytes[bit / 8] >> (7 - bit % 8)) & 1;
+    };
+    static uint8_t before[sizeof surface];
+    for (unsigned round = 0; round < 60000; ++round)
+    {
+        for (auto &byte : surface)
+            byte = next ();
+        for (auto &byte : patternRows)
+            byte = next ();
+        memcpy (model, surface, sizeof model);
+        memcpy (before, surface, sizeof before);
+        QDBlit b = {};
+        b.pixelBytes = 1;
+        b.shift = next () % 4;
+        b.destinationPitch = b.sourcePitch = 64;
+        b.height = 1 + next () % 5;
+        b.width = 1 + next () % (300 >> b.shift);
+        b.operation = next () % 4;
+        const size_t to = (1536 + next () % 40) * 8 + (next () % (8 >> b.shift) << b.shift);
+        b.destination = surface + to / 8;
+        b.destinationBit = to % 8;
+        b.rowBytes = (b.destinationBit + (b.width << b.shift) + 7) / 8;
+        const size_t rowBits = size_t (b.width) << b.shift;
+        size_t from = 0;
+        const unsigned kind = round % 3;
+        if (kind == 0)
+        {
+            from = to + (size_t (next () % 2400) << b.shift) - (size_t (1200) << b.shift);
+            b.source = surface + from / 8;
+            b.sourceBit = from % 8;
+            b.serial = b.sourceBit != b.destinationBit;
+            b.flip = next () & 1 ? UINT32_MAX : 0;
+            b.colorize = b.operation != 2 && (next () & 1);
+            b.foreColor = (next () & 0xff) * 0x01010101u;
+            b.backColor = (next () & 0xff) * 0x01010101u;
+            const size_t span = (b.height - 1) * 64 + b.rowBytes;
+            const size_t sourceSpan = (b.height - 1) * 64 + (b.sourceBit + rowBits + 7) / 8;
+            b.overlaps = from / 8 < to / 8 + span && to / 8 < from / 8 + sourceSpan;
+            b.reverse = b.overlaps && to / 8 > from / 8;
+        }
+        else if (kind == 1)
+        {
+            b.patternRows = patternRows;
+            b.patternWidth = 4u << next () % 3;
+            b.patternHeight = 1u << next () % (b.patternWidth == 16 ? 5 : 3);
+            b.patternX = next () % 64;
+            b.patternY = next () % 64;
+            b.patternColor = (next () & 0xff) * 0x01010101u;
+        }
+        else
+        {
+            b.operation = 0;
+            b.pattern = (next () & 0xff) * 0x01010101u;
+        }
+        // Half the rounds go through the region runner, clipped to a rectangle
+        // of their own: its spans start anywhere in the row.
+        const bool clipped = next () & 1;
+        QDRegion clip[3] = {{nullptr, nullptr, nullptr, 0, 0, int (b.height), int (b.width)},
+                            {nullptr, nullptr, nullptr, 0, 0, int (b.height), int (b.width)},
+                            {nullptr, nullptr, nullptr, 0, 0, int (b.height), int (b.width)}};
+        if (clipped)
+        {
+            auto &r = clip[next () % 3];
+            r.top = int (next () % b.height);
+            r.bottom = r.top + 1 + int (next () % (b.height - r.top));
+            r.left = int (next () % b.width);
+            r.right = r.left + 1 + int (next () % (b.width - r.left));
+        }
+        for (unsigned y = 0; y < b.height; ++y)
+            for (size_t i = 0; i < rowBits; ++i)
+            {
+                const int column = int (i >> b.shift);
+                bool visible = true;
+                for (const auto &r : clip)
+                    visible = visible && int (y) >= r.top && int (y) < r.bottom && column >= r.left && column < r.right;
+                if (!visible)
+                    continue;
+                const size_t at = to + y * 512 + i;
+                const unsigned inByte = 7 - at % 8;
+                const unsigned dst = bitAt (before, at);
+                unsigned value;
+                if (kind == 0)
+                {
+                    const unsigned src = bitAt (before, from + y * 512 + i) ^ (b.flip & 1);
+                    value = b.colorize ? colorize (dst, src, b.operation, (b.foreColor >> inByte) & 1,
+                                                   (b.backColor >> inByte) & 1) & 1
+                                       : transfer (dst, src, b.operation) & 1;
+                }
+                else if (kind == 1)
+                {
+                    const size_t patternColumn = b.patternX + at / 8 - to / 8;
+                    const unsigned src = (patternRows[((b.patternY + y) & (b.patternHeight - 1)) * b.patternWidth +
+                                                      (patternColumn & (b.patternWidth - 1))] >> inByte) & 1;
+                    value = b.operation & 1 ? (dst & ~src) | ((b.patternColor >> inByte) & src)
+                                            : transfer (dst, src, b.operation) & 1;
+                }
+                else
+                    value = (b.pattern >> inByte) & 1;
+                model[at / 8] = uint8_t ((model[at / 8] & ~(1u << inByte)) | ((value & 1) << inByte));
+            }
+        if (clipped)
+            QDRunRegionBlit (b, clip, 0, 0);
+        else
+            QDRunBlit (b, 0, b.height);
+        assert (memcmp (surface, model, sizeof surface) == 0);
+    }
+
+    // DrawSlab's four modes, with the pattern and both colours rotated to
+    // every starting column.
+    a[1] = 0x10000;
+    a[2] = 0x600;
+    Rect (ram + a[3], 0, 0, 1, 400);
+    for (unsigned round = 0; round < 40000; ++round)
+    {
+        for (unsigned i = 0; i < sizeof pixels; ++i)
+        {
+            pixels[i] = next ();
+            ram[0x600 + i] = next () & 1 ? next () : next () & 1 ? 0xff : 0;
+        }
+        memcpy (expected, pixels, sizeof pixels);
+        const unsigned start = next () % 300, size = 1 + next () % 90, operation = round % 4;
+        d[1] = start;
+        d[2] = start + size;
+        for (unsigned n : {4, 5, 6})
+            d[n] = next () << 8 | (next () & 0xff);
+        for (unsigned x = start; x < start + size; ++x)
+        {
+            const unsigned shift = 24 - (x & 3) * 8;
+            const unsigned pattern = uint8_t (d[6] >> shift);
+            unsigned gate = ram[0x600 + x];
+            if (operation)
+                gate &= pattern;
+            const unsigned color = operation ? uint8_t (d[operation == 1 ? 4 : 5] >> shift) : pattern;
+            expected[x] = operation == 2 ? expected[x] ^ gate : (expected[x] & ~gate) | (color & gate);
+        }
+        assert (QDSlab8 (memory, a, d, operation, true));
+        assert (memcmp (expected, pixels, sizeof pixels) == 0);
+    }
 }

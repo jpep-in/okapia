@@ -70,7 +70,7 @@ bool QDParallelBlit (const QDBlit &blit)
 {
 #if defined(ARM_ALLOW_MULTI_CORE) && RASPPI == 4
     constexpr size_t minBytes = 256 * 1024;
-    if (s_ready && !blit.overlaps && blit.height >= 2 &&
+    if (s_ready && !blit.overlaps && !blit.serial && blit.height >= 2 &&
         size_t (blit.rowBytes) * blit.height >= minBytes &&
         __atomic_load_n (&s_status, __ATOMIC_RELAXED) == Status::Idle)
     {

@@ -73,7 +73,7 @@ decoders where the guest uses the same pixel rules.
 
 Hook IDs are from `OS/DispTable.a:1064`, `:1075`, `:1095`, `:1103`,
 `:1214` and `:1217`. The current hooks handle subsets of the first five rows. In the F1ACAD13
-ROM and the verified System 7.1 / 7.6.1 StretchBits patch, same-size
+ROM and the verified System 7.1 / 7.5.5 / 7.6.1 StretchBits patch, same-size
 RGB32-to-indexed-8 conversion reaches `ScaleBlt`. An indexed-to-indexed
 palette mismatch goes through the stretch path. The native `ScaleBlt` uses
 an existing device inverse table, while `stScanLoop` currently handles
@@ -81,6 +81,32 @@ same-palette 8-bit copies with a 1-bit stencil and exact unmasked 2× and 4×
 expansions. Text buffers, cursor paths, PICT opcodes,
 and optional System patches need a separate walk to identify drawing paths
 outside this graph.
+
+## What the running machine adds to this map
+
+The graph above is Apple's source of 1994. The machine runs the `F1ACAD13` ROM, whose QuickDraw is older,
+under a System that replaces parts of it. Read from a System 7.5.5 guest on 2026-11-15, by disassembling
+the ROM and dumping the trap table:
+
+- `StretchBits` (`$AB27`) is the System's, in RAM. `BitBlt` (`$AB00`) is the ROM's. `RgnBlt` (`$AB1F`) is
+  a head in RAM that jumps into the ROM (`$2A838`) for the modes below 32.
+- **Below the last row of the graph there is one more level.** `BitBlt` and `RgnBlt` choose a row loop from
+  a table that lives in the trap table itself: `$1AC0` for `BitBlt` (48 entries: 16 for a row of several
+  longs, 16 for a row of one, then the arithmetic modes), `$1B60` and `$1B64` for its fast copy in each
+  direction, `$1B68` for `RgnBlt`. The System replaces entries one by one: the pattern copies, for alpha
+  drawing; the forward fast copy, for `MOVE16`; every arithmetic and highlight loop. A hook on `BitBlt`
+  stands in for whichever loop the dispatcher would have picked, so the entry is part of what it must check.
+- The frame is shared between the two ages of code and its fields are named from the ROM's side. `-$104(A6)`
+  is `BGnotWhite` there; the System derives it from its own `XLateFlag`, which the ROM never sees. The
+  source names a field the ROM does not have: disassemble the ROM for anything a hook reads.
+- What the probe counts during one MacBench pass: text and pictures reach `stScanLoop` (8,505 calls), not
+  `BitBlt`; lines, ovals and polygons reach `DrawSlab` 21.8 million times from a call site (`$29D80`) and
+  through dispatchers (`$2FFC0`, `$30010`, one in RAM) that the three sites of the table above do not include.
+
+Since 2026-11-15 the two transfer hooks, `BitBlt` and `RgnBlt`, work at every depth: a boolean transfer is
+the same on every bit, and only the ends of a row depend on the size of a pixel. The rest of this note, and
+the other three hooks, remain about 8-bit destinations. Coverage by depth and the measurements are in
+[Display](../../topics/display.md#68k-quickdraw).
 
 For each native primitive, compare guest and ARM64 output byte for byte in a
 test that exercises it directly. Use visible and offscreen surfaces, odd

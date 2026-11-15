@@ -160,11 +160,63 @@ The first Pi run amplified the hardware gap (the M4 led by 19 to 22× on integer
 after rev2 it leads by 6.34× on CPU. The initial shortfall was configuration and porting, not a fundamental limit of
 Basilisk. Subsystems do not scale with Geekbench: they include maths libraries, storage and video presentation.
 
+### Raspberry Pi 4 with the 68k translator (2026-11-15)
+
+Kernel `a6e93db` built with `OKAPIA_JIT_ARM64=1`, `jit true`, ARM clock 1500 MHz, Mac at 1280×720 in thousands of
+colours shown at ×2. Speedometer 4.0.2 run by the owner, once with `qdaccel off` and once with `qdaccel sync`,
+each session ended with Shut Down. The reference column is a record made on the same board without the
+translator. System version and `frameskip` were not noted. In a session of the same day the Mac's tick count
+stayed within 0.2 % of the clock under the translator, so the scores are not flattered by lost ticks.
+
+| Test | Interpreter | Translator | Translator + `qdaccel sync` | Translator / interpreter |
+|---|---:|---:|---:|---:|
+| CPU | 6.53 | 35.01 | 35.17 | 5.4× |
+| Graf | 3.96 | 28.08 | 35.48 | 7.1× |
+| Disk | 3.47 | 3.53 | 3.46 | 1.0× |
+| Math | 95.04 | 177.67 | 174.76 | 1.9× |
+| PR | 5.11 | 12.60 | 12.78 | 2.5× |
+| K'Whet | 24.14 | 36.09 | 36.41 | 1.5× |
+| Dhry | 3.19 | 50.68 | 52.09 | 15.9× |
+| Towers | 4.75 | 60.03 | 59.71 | 12.6× |
+| Quicksort | 4.55 | 46.05 | 46.07 | 10.1× |
+| Bubble Sort |  | 55.75 | 55.65 |  |
+| Queens | 4.10 | 57.09 | 56.31 | 13.9× |
+| Puzzle | 5.77 | 58.56 | 58.02 | 10.1× |
+| Permute | 5.84 | 58.78 | 56.96 | 10.1× |
+| Int. Matrix | 6.73 | 76.29 | 76.67 | 11.3× |
+| Sieve | 4.06 | 53.32 | 53.45 | 13.1× |
+| **Bench. Ave.** |  | **55.26** | **55.13** |  |
+| FPU FFT | 2.07 | 2.68 | 2.69 | 1.3× |
+| FPU K'Whet | 4.34 | 5.09 | 4.69 | 1.2× |
+| FPU Matrix | 2.45 | 3.66 | 3.58 | 1.5× |
+| **FPU Ave.** | 2.96 | 3.81 | 3.64 | 1.3× |
+| B&W | 4.46 | 23.18 | 25.36 | 5.2× |
+| 2 Bit |  | 24.07 | 24.27 |  |
+| 4 Bit |  | 29.16 | 26.56 |  |
+| 8 Bit | 6.44 | 34.51 | 38.20 | 5.4× |
+| 16 Bit | 6.78 | 58.81 | 54.78 | 8.7× |
+| **Color Ave.** | 5.64 | 33.94 | 33.83 | 6.0× |
+
+Read off two screenshots; the reference values of Bubble Sort, 2 Bit, 4 Bit and Bench. Ave. were not legible.
+
+- **The translator**: 5.4× on CPU, 10 to 16× on the integer tests, 7.1× on Graf, 6× on the colour average.
+  What does not move is what it does not touch: the disk, and floating point, which stays in the binary128
+  core. Against a Quadra 650 (CPU 1.31) the CPU line is 27×; the integer average is above the interpreted
+  Basilisk II on the MacBook Pro M4 of the first table (55 against 46.64).
+- **The `qdaccel sync` column measures almost nothing of `qdaccel`.** Until the fix of the same day the hooks
+  were the Finder's own patch and were out of the trap table whenever Speedometer was in front
+  ([Display](../topics/display.md#pitfalls)). Graf at 35.48 against 28.08 cannot be credited to them; one run
+  each, and the cause of that gap is not known. The column stays as a second run of the translator: its lines
+  differ from the first by 1 to 3 %, the colour lines by up to 11 %, Graf by 26 %.
+- **Owed**: both columns again with a kernel that carries the fix, MacBench beside Speedometer, the System
+  version, depth and `frameskip` written down.
+
 ## Status
 
 - [x] First QEMU baseline (2026-08-27)
 - [x] First Pi 4 runs, both engines (2026-09-12)
 - [x] rev2 after seven changes: 68k Quadra-class with margin (2026-09-13)
+- [x] First Speedometer runs with the 68k translator on a Pi 4 (2026-11-15)
 - [ ] Five runs per configuration with revision, frequency, temperature, System, mode and preferences recorded
 - [ ] Measure the seven changes separately, or by family (frequency, libraries, CPU loop, video, I/O)
 - [ ] Reproduce SheepShaver's `Disk` regression (4.72 → 3.08) noting cluster size, fragmentation and file position
