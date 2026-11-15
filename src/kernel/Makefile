@@ -26,17 +26,30 @@ CIRCLEH = $(CIRCLEHOME)
 ifeq ($(ENGINE),basilisk)
   MACEMU         = ../../external/macemu/BasiliskII/src
   ENGINE_CONFIG  = $(OKAPIA)
-  # FPU_IEEE, not FPU_UAE, and the difference is 11 bits of mantissa and four
-  # thousand decades of exponent. The UAE core keeps a 68881 register in a
-  # double (uae_cpu_2021/fpu/types.h:67), so every extended value the Macintosh
-  # stores and reads back comes home rounded; the C99 core keeps it in the
-  # host's widest IEEE type, and on AArch64 that is binary128 — a 15-bit
-  # exponent with the Mac's own bias, 112 fraction bits for the Mac's 63.
-  # Nothing is lost. See patches/macemu/0008.
+  # The FPU. softfloat (the default) is the 68881 itself: its 80-bit extended
+  # format, rounded at every operation in FPCR's mode and precision, its
+  # exception flags, and the 68040 FPSP's algorithms for the transcendentals,
+  # in 64-bit integer arithmetic only, so the same bits here as on any host
+  # (patches/macemu/0013, 0014). ieee is the C99 core in AArch64's binary128
+  # (patches/macemu/0008): more bits than a 68881 keeps, its rounding and
+  # exceptions ignored; kept to compare against. okapia-clean when switching.
+  # See docs/project/decisions.md.
   # M68K_NO_FAULT_PC: nothing here can raise the access error that reads
   # regs.fault_pc — no JIT, no SIGSEGV path into the core — so the interpreter
   # stops writing it twice per instruction (patches/macemu/0009).
-  ENGINE_DEFINES = -DDIRECT_ADDRESSING -DFPU_IEEE -DM68K_NO_FAULT_PC
+  OKAPIA_FPU    ?= softfloat
+  ifeq ($(OKAPIA_JIT),1)
+    # The macemu-jit core has no softfloat core of its own.
+    OKAPIA_FPU   = ieee
+  endif
+  ifeq ($(OKAPIA_FPU),softfloat)
+    FPU_DEFINE   = -DFPU_SOFTFLOAT
+  else ifeq ($(OKAPIA_FPU),ieee)
+    FPU_DEFINE   = -DFPU_IEEE
+  else
+    $(error OKAPIA_FPU is softfloat or ieee)
+  endif
+  ENGINE_DEFINES = -DDIRECT_ADDRESSING $(FPU_DEFINE) -DM68K_NO_FAULT_PC
   ENGINE_VPATH   =
   # The 68k core and where its generated tables are (scripts/gen-cpu.sh).
   UAE            = $(MACEMU)/uae_cpu_2021
@@ -126,7 +139,7 @@ ifeq ($(ENGINE),basilisk)
 # Named, not globbed: uae_cpu_2026 has a compemu_prefs.cpp that another file
 # includes.
 CPU_SRCS    = $(UAE)/basilisk_glue.cpp $(UAE)/memory.cpp $(UAE)/newcpu.cpp \
-              $(UAE)/readcpu.cpp $(UAE)/fpu/fpu_ieee.cpp \
+              $(UAE)/readcpu.cpp $(UAE)/fpu/fpu_$(OKAPIA_FPU).cpp \
               $(MACEMU)/CrossPlatform/video_blit.cpp
 GEN_SRCS    = $(CPUGEN)/cpudefs.cpp $(CPUGEN)/cpustbl.cpp $(CPUGEN)/cpufunctbl.cpp
 ifeq ($(OKAPIA_JIT_ARM64),1)
@@ -276,6 +289,14 @@ EMU_SRCS = $(CORE_SRCS) $(CPU_SRCS) $(GEN_SRCS) $(DUMMY_SRCS) \
 
 HFS_OBJS = $(addprefix $(OBJ)/hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
+# The 68K softfloat under fpu_softfloat.cpp: plain C, its own directory
+# (patches/macemu/0013). Prefixed, as libhfs is, so that no name of it can
+# meet another of the same in VPATH.
+ifeq ($(ENGINE)$(OKAPIA_FPU),basilisksoftfloat)
+SOFTFLOAT      = $(UAE)/fpu/softfloat
+SOFTFLOAT_OBJS = $(addprefix $(OBJ)/sf_,softfloat.o softfloat_fpsp.o softfloat_decimal.o)
+endif
+
 CPUEMU_OBJS = $(if $(GEN_SRCS),$(addprefix $(OBJ)/cpuemu,$(addsuffix .o,1 2 3 4 5 6 7 8)))
 ifeq ($(ENGINE)$(OKAPIA_JIT),basilisk1)
 # What the JIT adds: the interpreter's handlers once more without flags, which
@@ -290,7 +311,7 @@ EMU_OBJS = $(addprefix $(OBJ)/,$(notdir $(EMU_SRCS:.cpp=.o))) $(CPUEMU_OBJS) $(J
 # Our entry point is okapia_main*.cpp, not main.cpp: VPATH also finds the core's
 # main.cpp, and identical names silently resolve to the wrong file.
 ifeq ($(ENGINE),basilisk)
-OBJS = $(OBJ)/okapia_main.o $(OBJ)/kernel.o $(EMU_OBJS) $(HFS_OBJS)
+OBJS = $(OBJ)/okapia_main.o $(OBJ)/kernel.o $(EMU_OBJS) $(HFS_OBJS) $(SOFTFLOAT_OBJS)
 else
 OBJS = $(OBJ)/okapia_main_ppc.o $(OBJ)/kernel_ppc.o $(EMU_OBJS) $(HFS_OBJS)
 endif
@@ -399,13 +420,16 @@ ENGINE_WRAPS = --wrap=_Z11extfs_writeiPvm --wrap=_Z6EmulOptP13M68kRegisters \
 # Sys_read(void*, void*, loff_t, size_t) and Exception(int, uaecptr), mangled.
 ifeq ($(OKAPIA_TRACE),1)
 ENGINE_WRAPS += --wrap=_Z8Sys_readPvS_lm --wrap=_Z9Sys_writePvS_lm --wrap=_Z9Exceptionij \
-                --wrap=_Z9op_illg_1j --wrap=_Z16fpuop_arithmeticjj
+                --wrap=_Z9op_illg_1j --wrap=_Z16fpuop_arithmeticjj \
+                --wrap=_Z9fpuop_bccjjj --wrap=_Z10fpuop_dbccjj --wrap=_Z9fpuop_sccjj
 # One compare per guest memory access, naming the guest address of a stray one
 # before the host fault it causes (patches/macemu/0007). Far too hot to leave on.
 ENGINE_DEFINES += -DDIRECT_ADDRESSING_GUARD=1
-# The extended round trip, checked before the Macintosh starts: it is the one
-# property of the FPU decidable without a guest, and it is the one that fails
-# when the register is too narrow (patches/macemu/0008).
+# The FPU checked before the Macintosh starts, as far as it is decidable
+# without a guest: for the softfloat core, the known answers and the digest
+# tests/host/check_fpu pins (src/circle/fpu_selftest.h); for the binary128 core,
+# the extended round trip that fails when the register is too narrow
+# (patches/macemu/0008).
 ENGINE_DEFINES += -DFPU_SELFTEST=1
 # One system beep at the first idle, on a card whose preferences turn sound on:
 # the Sound Manager waits for its sound to finish, so a pull that never happens
@@ -495,6 +519,12 @@ $(OBJ):
 $(OBJ)/hfs_%.o: $(HFS)/%.c | $(OBJ)
 	@printf '  CC    libhfs/%s\n' "$(notdir $<)"
 	@$(CC) $(CFLAGS) -I$(HFS) -MMD -MP -Wno-unused-result -c -o $@ $<
+
+ifneq ($(SOFTFLOAT_OBJS),)
+$(OBJ)/sf_%.o: $(SOFTFLOAT)/%.c | $(OBJ)
+	@printf '  CC    softfloat/%s\n' "$(notdir $<)"
+	@$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+endif
 
 $(OBJ)/%.o: %.cpp | $(OBJ)
 	@printf '  CC    %s\n' "$(notdir $<)"

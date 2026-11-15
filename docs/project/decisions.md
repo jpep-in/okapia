@@ -56,18 +56,26 @@
 
 - **Why**: it is the core macemu builds on AArch64.
 
-### FPU: `fpu_ieee` in IEEE binary128
+### FPU: the 68881 in 80-bit softfloat
 
-- **Decision**: the 68881 register is held in AArch64's `long double`, which *is* IEEE binary128 — a
-  15-bit exponent with the Macintosh's own bias of 16383 and 112 fraction bits for its 63.
-- **Why not `fpu_uae`**: it keeps the register in a `double` (`uae_cpu_2021/fpu/types.h:67`): eleven
-  mantissa bits dropped, exponent clamped from 1e4932 to 1e308.
-- **Why not MPFR** (upstream's choice on ARM): a `malloc` and a `free` per floating-point instruction.
-- **Evidence**: upstream had disabled the quad path because `make_extended()` was not the inverse of
-  `extract_extended()` — 1.0 went in, 1.5 came out. `patches/macemu/0008` fixes it, plus
-  `make_nan()`/`make_inf()` and denormals. Cost: +62 KB, 3.5% on a System 7.1 boot under QEMU.
-- **Verdict instrument**: `fpu_selftest_extended()`, never a boot — System 7.1 reaches the Finder in four
-  FPU instructions.
+- **Decision** (2026-11-15, replacing binary128): the register is the 68881's own extended value and every
+  operation is the 68K softfloat of WinUAE and Previous — FPCR's rounding mode and precision, the 68881's
+  exception flags, the 68040 FPSP's algorithms for the transcendentals — in 64-bit integer arithmetic only
+  (`fpu_softfloat.cpp`, `patches/macemu/0013`–`0015`).
+- **Why it replaced binary128**: binary128 kept more bits than a 68881, so its answers were not a 68881's,
+  and it ignored FPCR's mode and precision and set no exception. It also carried defects found when the
+  translator made the FPU the slowest part of the machine ([68k engine](../topics/engine-68k.md#pitfalls)).
+  And it exists only where `long double` is binary128: on Apple silicon it is a `double`, so the core could
+  be neither shared with upstream's main platform nor tested on the development machine.
+- **Why not `fpu_uae`**: a `double` register (`uae_cpu_2021/fpu/types.h:67`): eleven mantissa bits dropped,
+  exponent clamped from 1e4932 to 1e308.
+- **Why not MPFR** (upstream's choice on ARM and in the Xcode project): GMP and MPFR as dependencies and a
+  `malloc` and a `free` per floating-point instruction.
+- **Evidence**: sixteen answers computed independently in decimal and a digest of 60,000 operations over every
+  mode and precision, the same on an Apple M4 with Clang and on AArch64 with GCC (`tests/host/check_fpu`,
+  `src/circle/fpu_selftest.h`); clean under UBSan and ASan.
+- **Verdict instrument**: those checks, never a boot — System 7.1 reaches the Finder in four FPU instructions.
+- **Kept**: `OKAPIA_FPU=ieee` builds the binary128 core (`patches/macemu/0008`) for comparison.
 
 ### No JIT by default; an experimental one behind `OKAPIA_JIT=1`
 

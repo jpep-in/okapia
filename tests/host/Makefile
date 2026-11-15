@@ -192,8 +192,23 @@ make_large_volume: make_large_volume.o $(HFS_OBJS)
 check_quickdraw: check_quickdraw.cpp ../../src/circle/quickdraw_blit.cpp ../../src/circle/quickdraw_blit.h
 	$(CXX) $(CXXFLAGS) -I../../src/circle -o $@ $(filter %.cpp,$^)
 
+# The 68881: the 68K softfloat under fpu_softfloat.cpp, as the kernel compiles
+# it, with the known answers and the digest the board is compared against
+# (src/circle/fpu_selftest.h). It is plain C and needs no shim.
+SOFTFLOAT      = $(MACEMU)/uae_cpu_2021/fpu/softfloat
+SOFTFLOAT_OBJS = sf_softfloat.o sf_softfloat_fpsp.o sf_softfloat_decimal.o
+
+sf_%.o: $(SOFTFLOAT)/%.c
+	$(CC) -O2 -MMD -MP -c -o $@ $<
+
+check_fpu.o: check_fpu.cpp
+	$(CXX) $(CXXFLAGS) -I$(CIRCLE) -I$(MACEMU)/uae_cpu_2021 -MMD -MP -c -o $@ $<
+
+check_fpu: check_fpu.o $(SOFTFLOAT_OBJS)
+	$(CXX) -o $@ $^
+
 check: check_geometry check_screen check_chooser check_pages check_platform check_blit \
-       check_encoding check_net check_clock check_quickdraw
+       check_encoding check_net check_clock check_quickdraw check_fpu
 	./check_geometry
 	./check_screen
 	./check_chooser
@@ -204,6 +219,7 @@ check: check_geometry check_screen check_chooser check_pages check_platform chec
 	./check_net
 	./check_clock
 	./check_quickdraw
+	./check_fpu
 
 # Every page, the count being the flow's to decide: naming them here again is
 # how the second page went stale the day a third appeared.
@@ -219,7 +235,7 @@ view: render_specimen
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
 	      check_chooser check_pages check_platform check_platform.tmp check_blit \
-	      check_encoding check_quickdraw make_large_volume \
+	      check_encoding check_quickdraw check_fpu make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean

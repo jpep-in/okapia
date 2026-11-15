@@ -37,6 +37,7 @@ measurements are part of the build.
 | `check_platform` | unknown preference lines kept, System flavour, the PowerPC memory layout, the resolution lists, the ROM chime (fabricated ROMs, plus the local ROMs when present), compositor output writes at odd origins and pitches |
 | `check_blit` | upstream's pixel expanders at every depth |
 | `check_encoding` | MacRoman ↔ UTF-8 file names |
+| `check_fpu` | the 68K softfloat under `fpu_softfloat.cpp`: sixteen answers computed independently (FPCR precision, directed rounding to integers, ties, overflow, exponents a double cannot hold), and the digest of 60,000 operations that the traced kernel must reproduce on the board. `./check_fpu digest` prints it, to pin a deliberate change |
 
 The firmware's screens are pure (handed values, answering values; everything knowing about files or frame buffers
 stays in `src/firmware/circle/`), which is what makes them measurable here. A fixed reproducible bug comes with a test,
@@ -120,9 +121,10 @@ echo "screendump /tmp/x.ppm" | nc -U /tmp/okapia-monitor.sock
 | `trace_disk_circle.cpp` | `Sys_read`, `Sys_write` | every block, short reads and writes |
 | `exception_trace.cpp` | `Exception` | 68k exceptions |
 | `trace_traps_circle.cpp` | A-line traps (`op_illg_1`) | Toolbox calls, `MountVol` results, `Control`/`Status` csCodes |
-| `trace_fpu_circle.cpp` | `fpuop_arithmetic` | FPU instructions executed |
+| `trace_fpu_circle.cpp` | `fpuop_arithmetic`, `fpuop_bcc`, `fpuop_dbcc`, `fpuop_scc` | FPU instructions executed; every 10 s with FPU use, the share of wall time inside the core, the six operations that took most of it (calls, ns each), source formats and conditionals. Timed with the generic timer (28 cycles a tick on a Pi 4, unbiased over many calls); run one Speedometer FPU test at a time |
 
-Plus `DIRECT_ADDRESSING_GUARD` (stray guest addresses, `patches/macemu/0007`), `FPU_SELFTEST`, `SOUND_SELFTEST` and
+Plus `DIRECT_ADDRESSING_GUARD` (stray guest addresses, `patches/macemu/0007`), `FPU_SELFTEST` (the known answers
+and the digest of `src/circle/fpu_selftest.h`, which must match `tests/host/check_fpu`'s), `SOUND_SELFTEST` and
 `NET_SELFTEST` ([QEMU network](#qemu-network)).
 Only calls crossing a translation unit are wrapped, and the wraps must be on the engine's partial link
 ([Build](build.md)).

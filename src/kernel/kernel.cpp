@@ -51,9 +51,14 @@ extern void InputInit (void);
 #endif
 
 #ifdef FPU_SELFTEST
+#ifdef FPU_SOFTFLOAT
+// The 68881's known answers and the digest tests/host/check_fpu pins.
+#include "fpu_selftest.h"
+#else
 // fpu_ieee.cpp (patches/macemu/0008). Declared here rather than in a header:
 // it exists only in a traced build and has exactly one caller.
 extern "C" int fpu_selftest_extended (uint32 *first);
+#endif
 #endif
 
 // Everything that used to be a constant here now comes from the preferences
@@ -334,7 +339,41 @@ bool CKernel::StartMacintosh (void)
     }
 
     CLogger::Get ()->Write (FROM, LogNotice, "Initialising the emulator");
-#ifdef FPU_SELFTEST
+#if defined(FPU_SELFTEST) && defined(FPU_SOFTFLOAT)
+    // The same checks as tests/host/check_fpu, on this board's compiler and
+    // processor: the answers known independently, then the digest of a fixed
+    // stream of operations, which must be the development machine's to the bit.
+    // Off unless OKAPIA_TRACE=1, because it is a fact about the build and not
+    // about this boot.
+    {
+        unsigned nFirst = 0;
+        floatx80 Got;
+        Got.high = 0;
+        Got.low = 0;
+        uint8_t nFlags = 0;
+        const unsigned nFailed = FpuCheckKnownAnswers (&nFirst, &Got, &nFlags);
+        const unsigned nStart = CTimer::Get ()->GetClockTicks ();
+        const uint64_t nDigest = FpuDigest (kFpuDigestCount);
+        const unsigned nMicros = CTimer::Get ()->GetClockTicks () - nStart;
+        if (nFailed == 0)
+        {
+            CLogger::Get ()->Write (FROM, LogNotice, "FPU: %u known answers right",
+                                    (unsigned) (sizeof s_FpuKnownAnswers / sizeof s_FpuKnownAnswers[0]));
+        }
+        else
+        {
+            CLogger::Get ()->Write (FROM, LogWarning,
+                                    "FPU: %u known answer(s) wrong, first \"%s\": %04x %016lx flags %02x",
+                                    nFailed, s_FpuKnownAnswers[nFirst].pWhat, Got.high,
+                                    (unsigned long) Got.low, nFlags);
+        }
+        CLogger::Get ()->Write (FROM, nDigest == kFpuDigestExpected ? LogNotice : LogWarning,
+                                "FPU: digest of %u operations %016lx in %u us, %s",
+                                kFpuDigestCount, (unsigned long) nDigest, nMicros,
+                                nDigest == kFpuDigestExpected ? "the same bits as the host"
+                                                               : "NOT the host's bits");
+    }
+#elif defined(FPU_SELFTEST)
     // Does a 68881 extended value survive a trip through an fpu_register?
     // The FPU's one property decidable without a Macintosh, and the one that
     // fails when the register is a double: eleven bits of mantissa go missing

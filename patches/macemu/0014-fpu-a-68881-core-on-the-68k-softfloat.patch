@@ -1,0 +1,1624 @@
+fpu: a 68881 core on the 68K softfloat
+
+fpu_softfloat.cpp is fpu_mpfr.cpp with MPFR taken out and the 68K
+softfloat of the previous patch put in. The instruction decoding, the
+effective addresses, FMOVEM, the condition tests and the state frames
+are Andreas Schwab's, unchanged but for two fixes; what changes is the
+register and every operation on it:
+
+  * fpu_register is the 68881's own extended value, laid out as
+    softfloat's floatx80 (types.h spells it out, so the softfloat headers
+    stay out of every file that includes fpu.h). A NaN's payload is in the
+    value, not kept beside it.
+  * Every result is rounded in FPCR's mode and to FPCR's precision, and
+    softfloat's flags become the exception byte, from which the accrued
+    byte follows as before. The 68040's FS... and FD... forms round to
+    single and double whatever FPCR says.
+  * The transcendental functions are the 68040 FPSP's algorithms; FMOD
+    and FREM give the quotient byte; FGETEXP, FGETMAN, FSCALE, FSGLMUL,
+    FSGLDIV, FINT and FINTRZ are softfloat's 68K extensions.
+  * Packed decimal goes through softfloat's decimal conversions, both
+    ways, k-factor included.
+  * FMOVECR returns the constant ROM as a 68881 does: the values agree
+    with ones computed here to 1,300 digits, save that the hardware keeps
+    log10(2) and e truncated and raises no INEX2 for log10(e), and each
+    entry moves by one unit in the directed modes as its rounding says.
+    Undefined offsets read zero, as before.
+  * Nothing is allocated, and nothing needs GMP, MPFR or a long double.
+
+The two fixes to the code taken over: FMOVE.P with a dynamic k-factor
+moved (An)+ and -(An) by nothing instead of twelve bytes, and FMOVE to
+memory accepted PC-relative and immediate destinations, which are not
+writable; they are now illegal, as the hardware has them.
+
+Floating-point exceptions enabled in FPCR are recorded and not taken, as
+in fpu_mpfr.cpp: the 68040 FPSP depends on FPU stack frames that FSAVE
+does not build.
+
+Checked: the softfloat's answers against values computed independently
+(directed rounding to integers, ties, FPCR precision, a value past 2^31,
+exponents a double cannot hold), and a digest of 60,000 operations over
+every mode and precision that comes out identical on Apple silicon with
+Clang and on AArch64 with GCC. A System 7.5.5 boot reaches the Finder.
+
+diff --git a/BasiliskII/src/uae_cpu_2021/fpu/types.h b/BasiliskII/src/uae_cpu_2021/fpu/types.h
+--- a/BasiliskII/src/uae_cpu_2021/fpu/types.h
++++ b/BasiliskII/src/uae_cpu_2021/fpu/types.h
+@@ -183,6 +183,18 @@
+   fpu_register &operator=(long double);
+ };
+ 
++#elif defined(FPU_SOFTFLOAT)
++
++/* The 68881's own extended value, laid out as fpu/softfloat's floatx80:
++   sign and 15-bit exponent in high, the 64-bit significand with its
++   explicit integer bit in low. Spelled out here so that the softfloat
++   headers stay out of every file that includes fpu.h. */
++struct fpu_register {
++  uae_u16 high;
++  uae_u64 low;
++  operator double () const;
++};
++
+ #endif
+ 
+ union fpu_register_parts {
+diff --git a/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp b/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp
+new file mode 100644
+index 00000000..407cc465
+--- /dev/null
++++ b/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp
+@@ -0,0 +1,1553 @@
++/*
++ * fpu/fpu_softfloat.cpp - MC68881/68882 and MC68040 FPU in exact 80-bit softfloat
++ *
++ * Copyright (c) 2012, 2013 Andreas Schwab
++ * Copyright (C) 2026  Jonathan Pepin
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ *
++ * Adapted from fpu_mpfr.cpp, whose instruction decoding, effective
++ * addresses, FMOVEM, condition tests and state frames it keeps. The
++ * arithmetic is the 68K softfloat in fpu/softfloat/ instead of MPFR:
++ *
++ *  - a register is the 68881's own extended value (sign, 15-bit exponent,
++ *    64-bit significand with its explicit integer bit), not an MPFR number
++ *    with its NaN payload kept beside it;
++ *  - every result is rounded in the mode and to the precision FPCR asks for,
++ *    by softfloat, and its exception flags become FPSR's;
++ *  - the transcendental functions are softfloat's port of Motorola's 68040
++ *    FPSP, the algorithms a 68040 Macintosh runs from its ROM;
++ *  - packed decimal goes through softfloat's decimal conversions;
++ *  - FMOVECR returns the constant ROM as a 68881 does, including the
++ *    entries it does not round to nearest;
++ *  - nothing is allocated: no GMP, no MPFR, no malloc per instruction.
++ *
++ * It needs only 64-bit integer arithmetic, so it gives the same bits on
++ * every host.
++ */
++
++#include "sysdeps.h"
++
++#ifdef FPU_SOFTFLOAT
++
++#include <cstdio>
++#include <cstdint>
++#include "memory.h"
++#include "readcpu.h"
++#include "newcpu.h"
++#include "main.h"
++#define FPU_IMPLEMENTATION
++#include "fpu/fpu.h"
++
++#include "fpu/flags.h"
++#include "fpu/exceptions.h"
++#include "fpu/rounding.h"
++#include "fpu/impl.h"
++
++extern "C" {
++#include "fpu/softfloat/softfloat.h"
++#include "fpu/softfloat/softfloat-specialize.h"
++}
++
++fpu_t fpu;
++
++// The softfloat context: FPCR's rounding mode and precision on the way in,
++// the exception flags of the instruction on the way out.
++static float_status fs;
++
++// Exceptions found outside softfloat, added to its flags at the end.
++static uae_u32 cur_exceptions;
++static uaecptr cur_instruction_address;
++
++static inline floatx80
++fx (const fpu_register &r)
++{
++  floatx80 f;
++  f.high = r.high;
++  f.low = r.low;
++  return f;
++}
++
++static inline void
++put_fx (fpu_register &r, floatx80 f)
++{
++  r.high = f.high;
++  r.low = f.low;
++}
++
++static inline floatx80
++make_fx (uae_u16 high, uae_u64 low)
++{
++  floatx80 f;
++  f.high = high;
++  f.low = low;
++  return f;
++}
++
++// FPCR's mode control byte, as softfloat wants it. Precision 11 is
++// reserved; a 68881 rounds to double there.
++static void
++set_mode (void)
++{
++  switch (get_rounding_precision ())
++    {
++    case FPCR_PRECISION_SINGLE:
++      fs.floatx80_rounding_precision = 32;
++      break;
++    case FPCR_PRECISION_EXTENDED:
++      fs.floatx80_rounding_precision = 80;
++      break;
++    default:
++      fs.floatx80_rounding_precision = 64;
++      break;
++    }
++  switch (get_rounding_mode ())
++    {
++    case FPCR_ROUND_NEAR:
++      fs.float_rounding_mode = float_round_nearest_even;
++      break;
++    case FPCR_ROUND_ZERO:
++      fs.float_rounding_mode = float_round_to_zero;
++      break;
++    case FPCR_ROUND_MINF:
++      fs.float_rounding_mode = float_round_down;
++      break;
++    case FPCR_ROUND_PINF:
++      fs.float_rounding_mode = float_round_up;
++      break;
++    }
++}
++
++static void
++begin_instruction (void)
++{
++  set_mode ();
++  fs.float_exception_flags = 0;
++  cur_exceptions = 0;
++}
++
++static inline floatx80
++default_nan (void)
++{
++  return make_fx (floatx80_default_nan_high, floatx80_default_nan_low);
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- Initialization                                                   --- */
++/* ------------------------------------------------------------------------ */
++
++void
++fpu_init (bool integral_68040)
++{
++  fpu.is_integral = integral_68040;
++
++  fs.float_detect_tininess = float_tininess_before_rounding;
++  fs.flush_to_zero = 0;
++  fs.flush_inputs_to_zero = 0;
++  fs.default_nan_mode = 0;
++  // Where the 68040 and the 6888x differ in their special cases: a 68040
++  // compares a NaN by its sign, a 6888x orders the operands of an
++  // infinite sum differently.
++  set_special_flags (integral_68040 ? cmp_signed_nan : addsub_swap_inf, &fs);
++
++  fpu_reset ();
++}
++
++void
++fpu_exit ()
++{
++}
++
++void
++fpu_reset ()
++{
++  set_fpcr (0);
++  set_fpsr (0);
++  fpu.instruction_address = 0;
++
++  for (int i = 0; i < 8; i++)
++    put_fx (fpu.registers[i], default_nan ());
++  put_fx (fpu.result, default_nan ());
++}
++
++// For m68k_dumpstate, which prints the registers as doubles. A double, not
++// a long double, which is binary128 in software on AArch64.
++fpu_register::operator double () const
++{
++  float_status st = fs;
++  float64 d = floatx80_to_float64 (fx (*this), &st);
++  union { float64 bits; double value; } u;
++  u.bits = d;
++  return u.value;
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- Effective addresses                                              --- */
++/* ------------------------------------------------------------------------ */
++
++static bool
++get_fp_addr (uae_u32 opcode, uae_u32 *addr, bool write)
++{
++  uaecptr pc;
++  int mode;
++  int reg;
++
++  mode = (opcode >> 3) & 7;
++  reg = opcode & 7;
++  switch (mode)
++    {
++    case 0:
++    case 1:
++      return false;
++    case 2:
++      *addr = m68k_areg (regs, reg);
++      break;
++    case 3:
++      *addr = m68k_areg (regs, reg);
++      break;
++    case 4:
++      *addr = m68k_areg (regs, reg);
++      break;
++    case 5:
++      *addr = m68k_areg (regs, reg) + (uae_s16) next_iword();
++      break;
++    case 6:
++      *addr = get_disp_ea_020 (m68k_areg (regs, reg), next_iword());
++      break;
++    case 7:
++      switch (reg)
++	{
++	case 0:
++	  *addr = (uae_s16) next_iword();
++	  break;
++	case 1:
++	  *addr = next_ilong();
++	  break;
++	case 2:
++	  if (write)
++	    return false;
++	  pc = m68k_getpc ();
++	  *addr = pc + (uae_s16) next_iword();
++	  break;
++	case 3:
++	  if (write)
++	    return false;
++	  pc = m68k_getpc ();
++	  *addr = get_disp_ea_020 (pc, next_iword());
++	  break;
++	default:
++	  return false;
++	}
++    }
++  return true;
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- Conversions from memory formats                                  --- */
++/* ------------------------------------------------------------------------ */
++
++static inline floatx80
++from_single (uae_u32 data)
++{
++  return float32_to_floatx80_allowunnormal (data, &fs);
++}
++
++static inline floatx80
++from_double (uae_u32 words[2])
++{
++  return float64_to_floatx80_allowunnormal (((uae_u64) words[0] << 32) | words[1], &fs);
++}
++
++// The memory image of an extended value is the register itself, sixteen
++// unused bits apart.
++static inline floatx80
++from_extended (const uae_u32 words[3])
++{
++  return make_fx (words[0] >> 16, ((uae_u64) words[1] << 32) | words[2]);
++}
++
++// Packed decimal: a sign, a three-digit exponent with its own sign, one
++// integer digit and sixteen fraction digits, all BCD. softfloat takes the
++// seventeen digits as an integer and the exponent as a binary magnitude.
++static floatx80
++from_packed (const uae_u32 words[3])
++{
++  if (((words[0] >> 16) & 0x7fff) == 0x7fff)
++    // Infinity and NaN keep the extended format's encoding.
++    return from_extended (words);
++
++  bool mant_neg = (words[0] >> 31) & 1;
++  bool exp_neg = (words[0] >> 30) & 1;
++  uae_u64 fraction = ((uae_u64) words[1] << 32) | words[2];
++
++  if ((words[0] & 0xf) == 0 && fraction == 0)
++    // A zero significand makes the exponent irrelevant.
++    return make_fx (mant_neg ? 0x8000 : 0, 0);
++
++  uae_s32 exp = 0;
++  for (int i = 0; i < 3; i++)
++    exp = exp * 10 + ((words[0] >> (24 - i * 4)) & 0xf);
++  if (exp_neg)
++    exp = -exp;
++  // The integer is the seventeen digits read as one, so the exponent
++  // loses the sixteen fraction places.
++  exp -= 16;
++  if (exp < 0)
++    {
++      exp = -exp;
++      exp_neg = true;
++    }
++  else
++    exp_neg = false;
++
++  uae_u64 mant = words[0] & 0xf;
++  for (int i = 0; i < 16; i++)
++    mant = mant * 10 + ((fraction >> (60 - i * 4)) & 0xf);
++
++  floatx80 decimal = make_fx ((exp & 0x3fff) | (exp_neg ? 0x4000 : 0) | (mant_neg ? 0x8000 : 0), mant);
++  return floatdecimal_to_floatx80 (decimal, &fs);
++}
++
++static bool
++get_fp_value (uae_u32 opcode, uae_u32 extra, floatx80 &value)
++{
++  int mode, reg, size;
++  uaecptr pc;
++  uae_u32 addr;
++  uae_u32 words[3];
++  static const int sz1[8] = {4, 4, 12, 12, 2, 8, 1, 0};
++  static const int sz2[8] = {4, 4, 12, 12, 2, 8, 2, 0};
++
++  if ((extra & 0x4000) == 0)
++    {
++      value = fx (fpu.registers[(extra >> 10) & 7]);
++      return true;
++    }
++  mode = (opcode >> 3) & 7;
++  reg = opcode & 7;
++  size = (extra >> 10) & 7;
++  switch (mode)
++    {
++    case 0:
++      switch (size)
++	{
++	case 6:
++	  value = int32_to_floatx80 ((uae_s8) m68k_dreg (regs, reg));
++	  break;
++	case 4:
++	  value = int32_to_floatx80 ((uae_s16) m68k_dreg (regs, reg));
++	  break;
++	case 0:
++	  value = int32_to_floatx80 ((uae_s32) m68k_dreg (regs, reg));
++	  break;
++	case 1:
++	  value = from_single (m68k_dreg (regs, reg));
++	  break;
++	default:
++	  return false;
++	}
++      return true;
++    case 1:
++      return false;
++    case 2:
++    case 3:
++      addr = m68k_areg (regs, reg);
++      break;
++    case 4:
++      addr = m68k_areg (regs, reg) - (reg == 7 ? sz2[size] : sz1[size]);
++      break;
++    case 5:
++      addr = m68k_areg (regs, reg) + (uae_s16) next_iword ();
++      break;
++    case 6:
++      addr = get_disp_ea_020 (m68k_areg (regs, reg), next_iword ());
++      break;
++    case 7:
++      switch (reg)
++	{
++	case 0:
++	  addr = (uae_s16) next_iword ();
++	  break;
++	case 1:
++	  addr = next_ilong ();
++	  break;
++	case 2:
++	  pc = m68k_getpc ();
++	  addr = pc + (uae_s16) next_iword ();
++	  break;
++	case 3:
++	  pc = m68k_getpc ();
++	  addr = get_disp_ea_020 (pc, next_iword ());
++	  break;
++	case 4:
++	  addr = m68k_getpc ();
++	  m68k_incpc (sz2[size]);
++	  if (size == 6) // Immediate byte
++	    addr++;
++	  break;
++	default:
++	  return false;
++	}
++      break;
++    default:
++      return false;
++    }
++
++  switch (size)
++    {
++    case 0:
++      value = int32_to_floatx80 ((uae_s32) get_long (addr));
++      break;
++    case 1:
++      value = from_single (get_long (addr));
++      break;
++    case 2:
++      words[0] = get_long (addr);
++      words[1] = get_long (addr + 4);
++      words[2] = get_long (addr + 8);
++      value = from_extended (words);
++      break;
++    case 3:
++      words[0] = get_long (addr);
++      words[1] = get_long (addr + 4);
++      words[2] = get_long (addr + 8);
++      value = from_packed (words);
++      break;
++    case 4:
++      value = int32_to_floatx80 ((uae_s16) get_word (addr));
++      break;
++    case 5:
++      words[0] = get_long (addr);
++      words[1] = get_long (addr + 4);
++      value = from_double (words);
++      break;
++    case 6:
++      value = int32_to_floatx80 ((uae_s8) get_byte (addr));
++      break;
++    default:
++      return false;
++    }
++
++  switch (mode)
++    {
++    case 3:
++      m68k_areg (regs, reg) += reg == 7 ? sz2[size] : sz1[size];
++      break;
++    case 4:
++      m68k_areg (regs, reg) -= reg == 7 ? sz2[size] : sz1[size];
++      break;
++    }
++
++  return true;
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- Status                                                           --- */
++/* ------------------------------------------------------------------------ */
++
++// The exception byte from softfloat's flags, and the accrued byte from it.
++static void
++update_exceptions ()
++{
++  uae_u32 exc, aexc;
++  uae_u8 flags = fs.float_exception_flags;
++
++  exc = cur_exceptions;
++  if (flags & float_flag_signaling)
++    exc |= FPSR_EXCEPTION_SNAN;
++  if (flags & float_flag_invalid)
++    exc |= FPSR_EXCEPTION_OPERR;
++  if (flags & float_flag_divbyzero)
++    exc |= FPSR_EXCEPTION_DZ;
++  if (flags & float_flag_overflow)
++    exc |= FPSR_EXCEPTION_OVFL;
++  if (flags & float_flag_underflow)
++    exc |= FPSR_EXCEPTION_UNFL;
++  if (flags & float_flag_inexact)
++    exc |= FPSR_EXCEPTION_INEX2;
++  if (flags & float_flag_decimal)
++    exc |= FPSR_EXCEPTION_INEX1;
++  set_exception_status (exc);
++
++  aexc = get_accrued_exception ();
++  if (exc & (FPSR_EXCEPTION_SNAN|FPSR_EXCEPTION_OPERR))
++    aexc |= FPSR_ACCR_IOP;
++  if (exc & FPSR_EXCEPTION_OVFL)
++    aexc |= FPSR_ACCR_OVFL;
++  if ((exc & (FPSR_EXCEPTION_UNFL|FPSR_EXCEPTION_INEX2))
++      == (FPSR_EXCEPTION_UNFL|FPSR_EXCEPTION_INEX2))
++    aexc |= FPSR_ACCR_UNFL;
++  if (exc & FPSR_EXCEPTION_DZ)
++    aexc |= FPSR_ACCR_DZ;
++  if (exc & (FPSR_EXCEPTION_INEX1|FPSR_EXCEPTION_INEX2|FPSR_EXCEPTION_OVFL))
++    aexc |= FPSR_ACCR_INEX;
++  set_accrued_exception (aexc);
++
++  if ((fpu.fpcr & exc) != 0)
++    {
++      fpu.instruction_address = cur_instruction_address;
++      // As in fpu_mpfr.cpp, an enabled exception is recorded and not taken:
++      // the 68040 FPSP depends on FPU stack frames that FSAVE does not build.
++    }
++}
++
++// The condition code byte for a result: N is its sign, NaN included; then
++// exactly one of NAN, Z and I, or none for a finite non-zero value.
++static void
++set_condition_codes (floatx80 value)
++{
++  uae_u32 flags = 0;
++
++  if (floatx80_is_negative (value))
++    flags |= FPSR_CCB_NEGATIVE;
++  if (floatx80_is_any_nan (value))
++    flags |= FPSR_CCB_NAN;
++  else if (floatx80_is_zero (value))
++    flags |= FPSR_CCB_ZERO;
++  else if (floatx80_is_infinity (value))
++    flags |= FPSR_CCB_INFINITY;
++  set_fpccr (flags);
++}
++
++static inline void
++set_fp_register (int reg, floatx80 value, bool do_flags)
++{
++  put_fx (fpu.registers[reg], value);
++  if (do_flags)
++    set_condition_codes (value);
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- Conversions to memory formats                                    --- */
++/* ------------------------------------------------------------------------ */
++
++static inline uae_u32
++to_single (floatx80 value)
++{
++  return floatx80_to_float32 (value, &fs);
++}
++
++static inline void
++to_double (floatx80 value, uae_u32 *words)
++{
++  float64 d = floatx80_to_float64 (value, &fs);
++  words[0] = d >> 32;
++  words[1] = (uae_u32) d;
++}
++
++static inline void
++to_extended (floatx80 value, uae_u32 *words)
++{
++  floatx80 f = floatx80_to_floatx80 (value, &fs);
++  words[0] = (uae_u32) f.high << 16;
++  words[1] = f.low >> 32;
++  words[2] = (uae_u32) f.low;
++}
++
++// The register as it is, for FMOVEM: no rounding, no signalling.
++static inline void
++to_extended_raw (const fpu_register &r, uae_u32 *words)
++{
++  words[0] = (uae_u32) r.high << 16;
++  words[1] = r.low >> 32;
++  words[2] = (uae_u32) r.low;
++}
++
++// k is the k-factor: the number of significant digits if positive, of
++// digits right of the decimal point if not. softfloat answers with the
++// digits as an integer, their count in k, and the decimal exponent.
++static void
++to_packed (floatx80 value, int k, uae_u32 *words)
++{
++  if ((value.high & 0x7fff) == 0x7fff)
++    {
++      words[0] = (uae_u32) value.high << 16;
++      words[1] = value.low >> 32;
++      words[2] = (uae_u32) value.low;
++      return;
++    }
++
++  int32_t len = k;
++  floatx80 decimal = floatx80_to_floatdecimal (value, &len, &fs);
++
++  uae_u64 digits = decimal.low;
++  uae_u32 integer = 0;
++  uae_u64 fraction = 0;
++  // A zero leaves len as it came; there are no digits to place anyway.
++  if (len > 17)
++    len = 17;
++  for (int32_t i = len - 1; i >= 0; i--)
++    {
++      uae_u64 digit = digits % 10;
++      digits /= 10;
++      if (i == 0)
++	integer = (uae_u32) digit;
++      else
++	fraction |= digit << (64 - i * 4);
++    }
++
++  uae_u32 exp = decimal.high & 0x3fff;
++  uae_u32 exp_digits = 0;
++  for (int i = 0; i < 3; i++)
++    {
++      exp_digits |= (exp % 10) << (i * 4);
++      exp /= 10;
++    }
++  // A fourth exponent digit, possible only for an exponent the format
++  // cannot hold, has a field of its own below the three.
++  uae_u32 exp_thousands = exp % 10;
++
++  words[0] = (exp_digits << 16) | (exp_thousands << 12) | integer;
++  if (decimal.high & 0x4000)
++    words[0] |= 0x40000000;
++  if (decimal.high & 0x8000)
++    words[0] |= 0x80000000;
++  words[1] = fraction >> 32;
++  words[2] = (uae_u32) fraction;
++}
++
++// To an integer of 8, 16 or 32 bits, in the current rounding mode; an
++// out-of-range value saturates and signals OPERR, through softfloat.
++static uae_s32
++to_integer (floatx80 value, int size)
++{
++  switch (size)
++    {
++    case 6:
++      return floatx80_to_int8 (value, &fs);
++    case 4:
++      return floatx80_to_int16 (value, &fs);
++    default:
++      return floatx80_to_int32 (value, &fs);
++    }
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- FMOVE to memory, FMOVEM                                          --- */
++/* ------------------------------------------------------------------------ */
++
++static bool
++fpuop_fmove_memory (uae_u32 opcode, uae_u32 extra)
++{
++  int mode, reg, size;
++  uae_u32 addr;
++  uae_u32 words[3];
++  // Size 7 is packed with a dynamic k-factor: twelve bytes, like size 3
++  // (fpu_mpfr.cpp moved the address register by nothing).
++  static const int sz1[8] = {4, 4, 12, 12, 2, 8, 1, 12};
++  static const int sz2[8] = {4, 4, 12, 12, 2, 8, 2, 12};
++
++  begin_instruction ();
++  cur_instruction_address = m68k_getpc () - 4;
++  mode = (opcode >> 3) & 7;
++  reg = opcode & 7;
++  size = (extra >> 10) & 7;
++  floatx80 value = fx (fpu.registers[(extra >> 7) & 7]);
++
++  switch (mode)
++    {
++    case 0:
++      switch (size)
++	{
++	case 0:
++	  m68k_dreg (regs, reg) = to_integer (value, 0);
++	  break;
++	case 1:
++	  m68k_dreg (regs, reg) = to_single (value);
++	  break;
++	case 4:
++	  m68k_dreg (regs, reg) &= ~0xffff;
++	  m68k_dreg (regs, reg) |= to_integer (value, 4) & 0xffff;
++	  break;
++	case 6:
++	  m68k_dreg (regs, reg) &= ~0xff;
++	  m68k_dreg (regs, reg) |= to_integer (value, 6) & 0xff;
++	  break;
++	default:
++	  return false;
++	}
++      update_exceptions ();
++      return true;
++    case 1:
++      return false;
++    case 2:
++      addr = m68k_areg (regs, reg);
++      break;
++    case 3:
++      addr = m68k_areg (regs, reg);
++      break;
++    case 4:
++      addr = m68k_areg (regs, reg) - (reg == 7 ? sz2[size] : sz1[size]);
++      break;
++    case 5:
++      addr = m68k_areg (regs, reg) + (uae_s16) next_iword();
++      break;
++    case 6:
++      addr = get_disp_ea_020 (m68k_areg (regs, reg), next_iword());
++      break;
++    case 7:
++      switch (reg)
++	{
++	case 0:
++	  addr = (uae_s16) next_iword();
++	  break;
++	case 1:
++	  addr = next_ilong();
++	  break;
++	default:
++	  // No destination is relative to the PC, nor immediate.
++	  return false;
++	}
++      break;
++    default:
++      return false;
++    }
++
++  switch (size)
++    {
++    case 0:
++      put_long (addr, to_integer (value, 0));
++      break;
++    case 1:
++      put_long (addr, to_single (value));
++      break;
++    case 2:
++      to_extended (value, words);
++      put_long (addr, words[0]);
++      put_long (addr + 4, words[1]);
++      put_long (addr + 8, words[2]);
++      break;
++    case 3:
++    case 7:
++      {
++	// Static k-factor in the extension word, or dynamic in a data
++	// register; seven bits, signed.
++	int k = (size == 7 ? m68k_dreg (regs, (extra >> 4) & 7) : extra) & 0x7f;
++	if (k & 0x40)
++	  k -= 0x80;
++	to_packed (value, k, words);
++	put_long (addr, words[0]);
++	put_long (addr + 4, words[1]);
++	put_long (addr + 8, words[2]);
++      }
++      break;
++    case 4:
++      put_word (addr, to_integer (value, 4));
++      break;
++    case 5:
++      to_double (value, words);
++      put_long (addr, words[0]);
++      put_long (addr + 4, words[1]);
++      break;
++    case 6:
++      put_byte (addr, to_integer (value, 6));
++      break;
++    }
++
++  switch (mode)
++    {
++    case 3:
++      m68k_areg (regs, reg) += reg == 7 ? sz2[size] : sz1[size];
++      break;
++    case 4:
++      m68k_areg (regs, reg) -= reg == 7 ? sz2[size] : sz1[size];
++      break;
++    }
++
++  update_exceptions ();
++  return true;
++}
++
++static bool
++fpuop_fmovem_control (uae_u32 opcode, uae_u32 extra)
++{
++  int list, mode, reg;
++  uae_u32 addr;
++
++  list = (extra >> 10) & 7;
++  mode = (opcode >> 3) & 7;
++  reg = opcode & 7;
++
++  if (list == 0)
++    return false;
++
++  if (extra & 0x2000)
++    {
++      // FMOVEM to <ea>
++      if (mode == 0)
++	{
++	  switch (list)
++	    {
++	    case 1:
++	      m68k_dreg (regs, reg) = fpu.instruction_address;
++	      break;
++	    case 2:
++	      m68k_dreg (regs, reg) = get_fpsr ();
++	      break;
++	    case 4:
++	      m68k_dreg (regs, reg) = get_fpcr ();
++	      break;
++	    default:
++	      return false;
++	    }
++	}
++      else if (mode == 1)
++	{
++	  if (list != 1)
++	    return false;
++	  m68k_areg (regs, reg) = fpu.instruction_address;
++	}
++      else
++	{
++	  int nwords;
++
++	  if (!get_fp_addr (opcode, &addr, true))
++	    return false;
++	  nwords = (list & 1) + ((list >> 1) & 1) + ((list >> 2) & 1);
++	  if (mode == 4)
++	    addr -= nwords * 4;
++	  if (list & 4)
++	    {
++	      put_long (addr, get_fpcr ());
++	      addr += 4;
++	    }
++	  if (list & 2)
++	    {
++	      put_long (addr, get_fpsr ());
++	      addr += 4;
++	    }
++	  if (list & 1)
++	    {
++	      put_long (addr, fpu.instruction_address);
++	      addr += 4;
++	    }
++	  if (mode == 4)
++	    m68k_areg (regs, reg) = addr - nwords * 4;
++	  else if (mode == 3)
++	    m68k_areg (regs, reg) = addr;
++	}
++    }
++  else
++    {
++      // FMOVEM from <ea>
++
++      if (mode == 0)
++	{
++	  switch (list)
++	    {
++	    case 1:
++	      fpu.instruction_address = m68k_dreg (regs, reg);
++	      break;
++	    case 2:
++	      set_fpsr (m68k_dreg (regs, reg));
++	      break;
++	    case 4:
++	      set_fpcr (m68k_dreg (regs, reg));
++	      break;
++	    default:
++	      return false;
++	    }
++	}
++      else if (mode == 1)
++	{
++	  if (list != 1)
++	    return false;
++	  fpu.instruction_address = m68k_areg (regs, reg);
++	}
++      else if ((opcode & 077) == 074)
++	{
++	  switch (list)
++	    {
++	    case 1:
++	      fpu.instruction_address = next_ilong ();
++	      break;
++	    case 2:
++	      set_fpsr (next_ilong ());
++	      break;
++	    case 4:
++	      set_fpcr (next_ilong ());
++	      break;
++	    default:
++	      return false;
++	    }
++	}
++      else
++	{
++	  int nwords;
++
++	  if (!get_fp_addr (opcode, &addr, false))
++	    return false;
++	  nwords = (list & 1) + ((list >> 1) & 1) + ((list >> 2) & 1);
++	  if (mode == 4)
++	    addr -= nwords * 4;
++	  if (list & 4)
++	    {
++	      set_fpcr (get_long (addr));
++	      addr += 4;
++	    }
++	  if (list & 2)
++	    {
++	      set_fpsr (get_long (addr));
++	      addr += 4;
++	    }
++	  if (list & 1)
++	    {
++	      fpu.instruction_address = get_long (addr);
++	      addr += 4;
++	    }
++	  if (mode == 4)
++	    m68k_areg (regs, reg) = addr - nwords * 4;
++	  else if (mode == 3)
++	    m68k_areg (regs, reg) = addr;
++	}
++    }
++
++  return true;
++}
++
++static bool
++fpuop_fmovem_register (uae_u32 opcode, uae_u32 extra)
++{
++  uae_u32 addr;
++  uae_u32 words[3];
++  int list;
++  int i;
++
++  if (!get_fp_addr (opcode, &addr, extra & 0x2000))
++    return false;
++  if (extra & 0x800)
++    list = m68k_dreg (regs, (extra >> 4) & 7) & 0xff;
++  else
++    list = extra & 0xff;
++
++  if (extra & 0x2000)
++    {
++      // FMOVEM to memory
++
++      switch (opcode & 070)
++	{
++	case 030:
++	  return false;
++	case 040:
++	  if (extra & 0x1000)
++	    return false;
++	  for (i = 7; i >= 0; i--)
++	    if (list & (1 << i))
++	      {
++		to_extended_raw (fpu.registers[i], words);
++		addr -= 12;
++		put_long (addr, words[0]);
++		put_long (addr + 4, words[1]);
++		put_long (addr + 8, words[2]);
++	      }
++	  m68k_areg (regs, opcode & 7) = addr;
++	  break;
++	default:
++	  if ((extra & 0x1000) == 0)
++	    return false;
++	  for (i = 0; i < 8; i++)
++	    if (list & (0x80 >> i))
++	      {
++		to_extended_raw (fpu.registers[i], words);
++		put_long (addr, words[0]);
++		put_long (addr + 4, words[1]);
++		put_long (addr + 8, words[2]);
++		addr += 12;
++	      }
++	  if ((opcode & 070) == 030)
++	    m68k_areg (regs, opcode & 7) = addr;
++	  break;
++	}
++    }
++  else
++    {
++      // FMOVEM from memory
++
++      if ((opcode & 070) == 040)
++	return false;
++
++      if ((extra & 0x1000) == 0)
++	return false;
++      for (i = 0; i < 8; i++)
++	if (list & (0x80 >> i))
++	  {
++	    words[0] = get_long (addr);
++	    words[1] = get_long (addr + 4);
++	    words[2] = get_long (addr + 8);
++	    addr += 12;
++	    put_fx (fpu.registers[i], from_extended (words));
++	  }
++      if ((opcode & 070) == 030)
++	m68k_areg (regs, opcode & 7) = addr;
++    }
++  return true;
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- FMOVECR                                                          --- */
++/* ------------------------------------------------------------------------ */
++
++// The 68881's constant ROM as FMOVECR returns it in round-to-nearest, and
++// what it does in the other modes: rounded_up means the stored value is
++// above the true one, so towards zero and towards minus infinity it
++// returns one unit less; rounded_down means it is below, so towards plus
++// infinity it returns one more. The values were computed here to 1,300
++// digits and agree with the stored ones, save that the hardware keeps
++// log10(2) and e truncated rather than rounded, and raises no inexact
++// for log10(e) (both as measured on a 68882 for WinUAE).
++enum { exact = 0, rounded_up = 1, rounded_down = 2 };
++
++struct constant_rom_entry {
++  uae_u8 offset;
++  uae_u16 high;
++  uae_u64 low;
++  uae_u8 rounded;
++};
++
++static const constant_rom_entry constant_rom[] = {
++  { 0x00, 0x4000, 0xc90fdaa22168c235ULL, rounded_up },   // pi
++  { 0x0b, 0x3ffd, 0x9a209a84fbcff798ULL, rounded_down }, // log10(2), truncated
++  { 0x0c, 0x4000, 0xadf85458a2bb4a9aULL, rounded_down }, // e, truncated
++  { 0x0d, 0x3fff, 0xb8aa3b295c17f0bcULL, rounded_up },   // log2(e)
++  { 0x0e, 0x3ffd, 0xde5bd8a937287195ULL, exact },        // log10(e), no INEX2
++  { 0x0f, 0x0000, 0x0000000000000000ULL, exact },        // 0.0
++  { 0x30, 0x3ffe, 0xb17217f7d1cf79acULL, rounded_up },   // ln(2)
++  { 0x31, 0x4000, 0x935d8dddaaa8ac17ULL, rounded_up },   // ln(10)
++  { 0x32, 0x3fff, 0x8000000000000000ULL, exact },        // 1e0
++  { 0x33, 0x4002, 0xa000000000000000ULL, exact },        // 1e1
++  { 0x34, 0x4005, 0xc800000000000000ULL, exact },        // 1e2
++  { 0x35, 0x400c, 0x9c40000000000000ULL, exact },        // 1e4
++  { 0x36, 0x4019, 0xbebc200000000000ULL, exact },        // 1e8
++  { 0x37, 0x4034, 0x8e1bc9bf04000000ULL, exact },        // 1e16
++  { 0x38, 0x4069, 0x9dc5ada82b70b59eULL, rounded_up },   // 1e32
++  { 0x39, 0x40d3, 0xc2781f49ffcfa6d5ULL, rounded_down }, // 1e64
++  { 0x3a, 0x41a8, 0x93ba47c980e98ce0ULL, rounded_up },   // 1e128
++  { 0x3b, 0x4351, 0xaa7eebfb9df9de8eULL, rounded_up },   // 1e256
++  { 0x3c, 0x46a3, 0xe319a0aea60e91c7ULL, rounded_up },   // 1e512
++  { 0x3d, 0x4d48, 0xc976758681750c17ULL, rounded_down }, // 1e1024
++  { 0x3e, 0x5a92, 0x9e8b3b5dc53d5de5ULL, rounded_up },   // 1e2048
++  { 0x3f, 0x7525, 0xc46052028a20979bULL, rounded_up },   // 1e4096
++};
++
++static floatx80
++constant_rom_value (int offset)
++{
++  for (size_t i = 0; i < sizeof (constant_rom) / sizeof (constant_rom[0]); i++)
++    {
++      const constant_rom_entry &c = constant_rom[i];
++      if (c.offset != offset)
++	continue;
++
++      uae_u64 low = c.low;
++      if (c.rounded != exact)
++	{
++	  fs.float_exception_flags |= float_flag_inexact;
++	  switch (get_rounding_mode ())
++	    {
++	    case FPCR_ROUND_ZERO:
++	    case FPCR_ROUND_MINF:
++	      if (c.rounded == rounded_up)
++		low--;
++	      break;
++	    case FPCR_ROUND_PINF:
++	      if (c.rounded == rounded_down)
++		low++;
++	      break;
++	    }
++	}
++      floatx80 value = make_fx (c.high, low);
++      // Then to FPCR's precision, keeping the extended exponent range.
++      if (fs.floatx80_rounding_precision == 32)
++	value = floatx80_round32 (value, &fs);
++      else if (fs.floatx80_rounding_precision == 64)
++	value = floatx80_round64 (value, &fs);
++      return value;
++    }
++  // The undefined offsets hold odd values on a real 68881; this answers
++  // zero for them, as fpu_mpfr.cpp did.
++  return make_fx (0, 0);
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- General operations                                               --- */
++/* ------------------------------------------------------------------------ */
++
++static bool
++fpuop_general (uae_u32 opcode, uae_u32 extra)
++{
++  int reg = (extra >> 7) & 7;
++  floatx80 value;
++
++  begin_instruction ();
++  cur_instruction_address = m68k_getpc () - 4;
++  if ((extra & 0xfc00) == 0x5c00)
++    {
++      // FMOVECR
++      set_fp_register (reg, constant_rom_value (extra & 0x7f), true);
++    }
++  else if (extra & 0x40)
++    {
++      // The 68040's forms that round to single (FS...) or double (FD...)
++      // whatever FPCR says.
++      static const char valid[64] =
++	{
++	  1, 1, 0, 0, 1, 1, 0, 0,
++	  0, 0, 0, 0, 0, 0, 0, 0,
++	  0, 0, 0, 0, 0, 0, 0, 0,
++	  1, 0, 1, 0, 1, 0, 1, 0,
++	  1, 0, 1, 1, 1, 0, 1, 1,
++	  1, 0, 0, 0, 1, 0, 0, 0
++	};
++
++      if (!fpu.is_integral)
++	return false;
++      if (!valid[extra & 0x3b])
++	return false;
++      if (!get_fp_value (opcode, extra, value))
++	return false;
++
++      fs.floatx80_rounding_precision = (extra & 4) ? 64 : 32;
++      floatx80 dest = fx (fpu.registers[reg]);
++      floatx80 result;
++      switch (extra & 0x3b)
++	{
++	case 0: // FSMOVE, FDMOVE
++	  result = floatx80_move (value, &fs);
++	  break;
++	case 1: // FSSQRT, FDSQRT
++	  result = floatx80_sqrt (value, &fs);
++	  break;
++	case 24: // FSABS, FDABS
++	  result = floatx80_abs (value, &fs);
++	  break;
++	case 26: // FSNEG, FDNEG
++	  result = floatx80_neg (value, &fs);
++	  break;
++	case 32: // FSDIV, FDDIV
++	  result = floatx80_div (dest, value, &fs);
++	  break;
++	case 34: // FSADD, FDADD
++	  result = floatx80_add (dest, value, &fs);
++	  break;
++	case 35: // FSMUL, FDMUL
++	  result = floatx80_mul (dest, value, &fs);
++	  break;
++	default: // 40: FSSUB, FDSUB
++	  result = floatx80_sub (dest, value, &fs);
++	  break;
++	}
++      set_fp_register (reg, result, true);
++    }
++  else if ((extra & 0x30) == 0x30)
++    {
++      if ((extra & 15) > 10 || (extra & 15) == 9)
++	return false;
++      if (!get_fp_value (opcode, extra, value))
++	return false;
++
++      if ((extra & 15) < 8)
++	{
++	  // FSINCOS: the cosine to FPc, the sine to FPs, which wins if
++	  // they are the same register.
++	  floatx80 cosine;
++	  floatx80 sine = floatx80_sincos (value, &cosine, &fs);
++	  set_fp_register (extra & 7, cosine, false);
++	  set_fp_register (reg, sine, true);
++	}
++      else if ((extra & 15) == 8)
++	// FCMP: the codes of destination minus source, nothing stored
++	set_condition_codes (floatx80_cmp (fx (fpu.registers[reg]), value, &fs));
++      else
++	// FTST
++	set_condition_codes (floatx80_tst (value, &fs));
++    }
++  else
++    {
++      static const char valid[64] =
++	{
++	  1, 1, 1, 1, 1, 0, 1, 0,
++	  1, 1, 1, 0, 1, 1, 1, 1,
++	  1, 1, 1, 0, 1, 1, 1, 0,
++	  1, 1, 1, 0, 1, 1, 1, 1,
++	  1, 1, 1, 1, 1, 1, 1, 1,
++	  1
++	};
++      if (!valid[extra & 0x3f])
++	return false;
++      if (!get_fp_value (opcode, extra, value))
++	return false;
++
++      floatx80 dest = fx (fpu.registers[reg]);
++      floatx80 result;
++      uint64_t quotient = 0;
++      flag quotient_sign = 0;
++
++      switch (extra & 0x3f)
++	{
++	case 0: // FMOVE
++	  result = floatx80_move (value, &fs);
++	  break;
++	case 1: // FINT
++	  result = floatx80_round_to_int (value, &fs);
++	  break;
++	case 2: // FSINH
++	  result = floatx80_sinh (value, &fs);
++	  break;
++	case 3: // FINTRZ
++	  result = floatx80_round_to_int_toward_zero (value, &fs);
++	  break;
++	case 4: // FSQRT
++	  result = floatx80_sqrt (value, &fs);
++	  break;
++	case 6: // FLOGNP1
++	  result = floatx80_lognp1 (value, &fs);
++	  break;
++	case 8: // FETOXM1
++	  result = floatx80_etoxm1 (value, &fs);
++	  break;
++	case 9: // FTANH
++	  result = floatx80_tanh (value, &fs);
++	  break;
++	case 10: // FATAN
++	  result = floatx80_atan (value, &fs);
++	  break;
++	case 12: // FASIN
++	  result = floatx80_asin (value, &fs);
++	  break;
++	case 13: // FATANH
++	  result = floatx80_atanh (value, &fs);
++	  break;
++	case 14: // FSIN
++	  result = floatx80_sin (value, &fs);
++	  break;
++	case 15: // FTAN
++	  result = floatx80_tan (value, &fs);
++	  break;
++	case 16: // FETOX
++	  result = floatx80_etox (value, &fs);
++	  break;
++	case 17: // FTWOTOX
++	  result = floatx80_twotox (value, &fs);
++	  break;
++	case 18: // FTENTOX
++	  result = floatx80_tentox (value, &fs);
++	  break;
++	case 20: // FLOGN
++	  result = floatx80_logn (value, &fs);
++	  break;
++	case 21: // FLOG10
++	  result = floatx80_log10 (value, &fs);
++	  break;
++	case 22: // FLOG2
++	  result = floatx80_log2 (value, &fs);
++	  break;
++	case 24: // FABS
++	  result = floatx80_abs (value, &fs);
++	  break;
++	case 25: // FCOSH
++	  result = floatx80_cosh (value, &fs);
++	  break;
++	case 26: // FNEG
++	  result = floatx80_neg (value, &fs);
++	  break;
++	case 28: // FACOS
++	  result = floatx80_acos (value, &fs);
++	  break;
++	case 29: // FCOS
++	  result = floatx80_cos (value, &fs);
++	  break;
++	case 30: // FGETEXP
++	  result = floatx80_getexp (value, &fs);
++	  break;
++	case 31: // FGETMAN
++	  result = floatx80_getman (value, &fs);
++	  break;
++	case 32: // FDIV
++	  result = floatx80_div (dest, value, &fs);
++	  break;
++	case 33: // FMOD
++	  result = floatx80_mod (dest, value, &quotient, &quotient_sign, &fs);
++	  fpu.fpsr.quotient = ((quotient & 0x7f) << 16) | (quotient_sign ? 0x800000 : 0);
++	  break;
++	case 34: // FADD
++	  result = floatx80_add (dest, value, &fs);
++	  break;
++	case 35: // FMUL
++	  result = floatx80_mul (dest, value, &fs);
++	  break;
++	case 36: // FSGLDIV
++	  result = floatx80_sgldiv (dest, value, &fs);
++	  break;
++	case 37: // FREM
++	  result = floatx80_rem (dest, value, &quotient, &quotient_sign, &fs);
++	  fpu.fpsr.quotient = ((quotient & 0x7f) << 16) | (quotient_sign ? 0x800000 : 0);
++	  break;
++	case 38: // FSCALE
++	  result = floatx80_scale (dest, value, &fs);
++	  break;
++	case 39: // FSGLMUL
++	  result = floatx80_sglmul (dest, value, &fs);
++	  break;
++	default: // 40: FSUB
++	  result = floatx80_sub (dest, value, &fs);
++	  break;
++	}
++      set_fp_register (reg, result, true);
++    }
++  update_exceptions ();
++  return true;
++}
++
++void
++fpuop_arithmetic (uae_u32 opcode, uae_u32 extra)
++{
++  bool valid;
++
++  switch ((extra >> 13) & 7)
++    {
++    case 3:
++      valid = fpuop_fmove_memory (opcode, extra);
++      break;
++    case 4:
++    case 5:
++      valid = fpuop_fmovem_control (opcode, extra);
++      break;
++    case 6:
++    case 7:
++      valid = fpuop_fmovem_register (opcode, extra);
++      break;
++    case 0:
++    case 2:
++      valid = fpuop_general (opcode, extra);
++      break;
++    default:
++      valid = false;
++      break;
++    }
++
++  if (!valid)
++    {
++      m68k_setpc (m68k_getpc () - 4);
++      op_illg (opcode);
++    }
++}
++
++/* ------------------------------------------------------------------------ */
++/* --- Conditions and system control                                    --- */
++/* ------------------------------------------------------------------------ */
++
++static bool
++check_fp_cond (uae_u32 pred)
++{
++  uae_u32 fpcc = get_fpccr ();
++
++  if ((pred & 16) != 0 && (fpcc & FPSR_CCB_NAN) != 0)
++    {
++      // IEEE non-aware test
++      set_exception_status (get_exception_status () | FPSR_EXCEPTION_BSUN);
++      set_accrued_exception (get_accrued_exception () | FPSR_ACCR_IOP);
++    }
++
++  switch (pred & 15)
++    {
++    case 0: // F / SF
++      return false;
++    case 1: // EQ /SEQ
++      return (fpcc & FPSR_CCB_ZERO) != 0;
++    case 2: // OGT / GT
++      return (fpcc & (FPSR_CCB_NAN | FPSR_CCB_ZERO | FPSR_CCB_NEGATIVE)) == 0;
++    case 3: // OGE / GE
++      return (fpcc & FPSR_CCB_ZERO) != 0 || (fpcc & (FPSR_CCB_NAN | FPSR_CCB_NEGATIVE)) == 0;
++    case 4: // OLT / LT
++      return (fpcc & (FPSR_CCB_NEGATIVE | FPSR_CCB_NAN | FPSR_CCB_ZERO)) == FPSR_CCB_NEGATIVE;
++    case 5: // OLE / LE
++      return (fpcc & FPSR_CCB_ZERO) != 0 || (fpcc & (FPSR_CCB_NEGATIVE | FPSR_CCB_NAN)) == FPSR_CCB_NEGATIVE;
++    case 6: // OGL / GL
++      return (fpcc & (FPSR_CCB_NAN | FPSR_CCB_ZERO)) == 0;
++    case 7: // OR / GLE
++      return (fpcc & FPSR_CCB_NAN) == 0;
++    case 8: // UN / NGLE
++      return (fpcc & FPSR_CCB_NAN) != 0;
++    case 9: // UEQ / NGL
++      return (fpcc & (FPSR_CCB_NAN | FPSR_CCB_ZERO)) != 0;
++    case 10: // UGT / NLE
++      return (fpcc & FPSR_CCB_NAN) != 0 || (fpcc & (FPSR_CCB_NEGATIVE | FPSR_CCB_ZERO)) == 0;
++    case 11: // UGE / NLT
++      return (fpcc & (FPSR_CCB_NEGATIVE | FPSR_CCB_NAN | FPSR_CCB_ZERO)) != FPSR_CCB_NEGATIVE;
++    case 12: // ULT / NGE
++      return (fpcc & FPSR_CCB_NAN) != 0 || (fpcc & (FPSR_CCB_NEGATIVE | FPSR_CCB_ZERO)) == FPSR_CCB_NEGATIVE;
++    case 13: // ULE / NGT
++      return (fpcc & (FPSR_CCB_NAN | FPSR_CCB_ZERO | FPSR_CCB_NEGATIVE)) != 0;
++    case 14: // NE / SNE
++      return (fpcc & FPSR_CCB_ZERO) == 0;
++    case 15: // T / ST
++      return true;
++    default:
++      return false;
++    }
++}
++
++void
++fpuop_bcc (uae_u32 opcode, uaecptr pc, uae_u32 disp)
++{
++  if (check_fp_cond (opcode))
++    {
++      if (!(opcode & (1 << 6)))
++	disp = (uae_s16) disp;
++      m68k_setpc (pc + disp);
++    }
++}
++
++void
++fpuop_scc (uae_u32 opcode, uae_u32 extra)
++{
++  uae_u32 addr;
++  int value = check_fp_cond (extra) ? 0xff : 0;
++  if ((opcode & 070) == 0)
++    {
++      int reg = opcode & 7;
++      m68k_dreg (regs, reg) = (m68k_dreg (regs, reg) & ~0xff) | value;
++    }
++  else if (!get_fp_addr (opcode, &addr, true))
++    {
++      m68k_setpc (m68k_getpc () - 4);
++      op_illg (opcode);
++    }
++  else
++    {
++      switch (opcode & 070)
++	{
++	case 030:
++	  m68k_areg (regs, opcode & 7) += (opcode & 7) == 7 ? 2 : 1;
++	  break;
++	case 040:
++	  addr -= (opcode & 7) == 7 ? 2 : 1;
++	  m68k_areg (regs, opcode & 7) = addr;
++	}
++      put_byte (addr, value);
++    }
++}
++
++void
++fpuop_dbcc (uae_u32 opcode, uae_u32 extra)
++{
++  uaecptr pc = m68k_getpc ();
++  uae_s16 disp = next_iword ();
++
++  if (!check_fp_cond (extra))
++    {
++      int reg = opcode & 7;
++      uae_u16 cnt = (m68k_dreg (regs, reg) & 0xffff) - 1;
++      m68k_dreg (regs, reg) = (m68k_dreg (regs, reg) & ~0xffff) | cnt;
++      if (cnt != 0xffff)
++	m68k_setpc (pc + disp);
++    }
++}
++
++void
++fpuop_trapcc (uae_u32, uaecptr oldpc, uae_u32 extra)
++{
++  if (check_fp_cond (extra))
++    Exception (7, oldpc - 2);
++}
++
++void
++fpuop_save (uae_u32 opcode)
++{
++  uae_u32 addr;
++
++  if ((opcode & 070) == 030
++      || !get_fp_addr (opcode, &addr, true))
++    {
++      m68k_setpc (m68k_getpc () - 2);
++      op_illg (opcode);
++      return;
++    }
++
++  if (fpu.is_integral)
++    {
++      // 4 byte 68040 IDLE frame
++      // FIXME: generate proper FPU stack frames that does not result
++      // in undefined behaviour from FPSP040
++      if ((opcode & 070) == 040)
++	{
++	  addr -= 4;
++	  m68k_areg (regs, opcode & 7) = addr;
++	}
++      put_long (addr, 0x41000000);
++    }
++  else
++    {
++      // 28 byte 68881 IDLE frame
++      if ((opcode & 070) == 040)
++	{
++	  addr -= 28;
++	  m68k_areg (regs, opcode & 7) = addr;
++	}
++      put_long (addr, 0x1f180000);
++      for (int i = 0; i < 6; i++)
++	{
++	  addr += 4;
++	  put_long (addr, 0);
++	}
++    }
++}
++
++void
++fpuop_restore (uae_u32 opcode)
++{
++  uae_u32 addr;
++  uae_u32 format;
++
++  if ((opcode & 070) == 040
++      || !get_fp_addr (opcode, &addr, false))
++    {
++      m68k_setpc (m68k_getpc () - 2);
++      op_illg (opcode);
++      return;
++    }
++
++  format = get_long (addr);
++  addr += 4;
++  if ((format & 0xff000000) == 0)
++    // NULL frame
++    fpu_reset ();
++  else
++    addr += (format & 0xff0000) >> 16;
++  if ((opcode & 070) == 030)
++    m68k_areg (regs, opcode & 7) = addr;
++}
++
++void fpu_set_fpsr(uae_u32 new_fpsr)
++{
++	set_fpsr(new_fpsr);
++}
++
++uae_u32 fpu_get_fpsr(void)
++{
++	return get_fpsr();
++}
++
++void fpu_set_fpcr(uae_u32 new_fpcr)
++{
++	set_fpcr(new_fpcr);
++}
++
++uae_u32 fpu_get_fpcr(void)
++{
++	return get_fpcr();
++}
++
++#endif

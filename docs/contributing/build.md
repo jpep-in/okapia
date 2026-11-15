@@ -113,7 +113,8 @@ the shared ones and the merge intermediates.
 
 | Option | Effect |
 |---|---|
-| `OKAPIA_TRACE=1` | trace build: disk read/write wraps with short-read detection, exception and trap traces, FPU instruction counts, `DIRECT_ADDRESSING_GUARD`, `FPU_SELFTEST`, `SOUND_SELFTEST`, `NET_SELFTEST` |
+| `OKAPIA_TRACE=1` | trace build: disk read/write wraps with short-read detection, exception and trap traces, FPU instruction counts and times, `DIRECT_ADDRESSING_GUARD`, `FPU_SELFTEST`, `SOUND_SELFTEST`, `NET_SELFTEST` |
+| `OKAPIA_FPU` | `softfloat` (default): the 68881 in 80-bit softfloat; `ieee`: the binary128 core, to compare against. `okapia-clean` when switching ([68k engine](../topics/engine-68k.md#fpu-the-68881-in-80-bit-softfloat)) |
 | `OPTIMIZE` | `-O2` by default. `-O3` measured no faster, and vectorised `GfxBlit()` into an alignment fault on Device memory ([Display](../topics/display.md)) |
 | `OKAPIA_BUILD_TIME` | the clock's fallback, `date +%s` by default ([Clock and PRAM](../topics/clock-and-pram.md)) |
 
@@ -138,11 +139,14 @@ applied is skipped.
 | macemu `0005` rsrc_patches: say whether the idle patch went in | `HasIdleTime()` |
 | macemu `0006` disk_generic: let a backend say its medium can be taken out | removable media and file size asked of the backend |
 | macemu `0007` memory: name the guest address before the host fault | `DIRECT_ADDRESSING_GUARD` |
-| macemu `0008` fpu: give the 68881 a register that can hold it | the C99 core in IEEE binary128 ([Decisions](../project/decisions.md#fpu-fpu_ieee-in-ieee-binary128)) |
+| macemu `0008` fpu: give the 68881 a register that can hold it | the C99 core in IEEE binary128, built only with `OKAPIA_FPU=ieee` since 2026-11-15 |
 | macemu `0009` uae_cpu_2021: stop paying per instruction for what nothing reads | `M68K_NO_FAULT_PC`; `SPCFLAGS` without a lock |
 | macemu `0010` uae_cpu_2021: fetch through pc_p, as uae_cpu did | instruction fetch through `regs.pc_p` |
 | macemu `0011` video: let a port offer the sizes it can show | SheepShaver resolutions past `APPLE_ID_MAX` |
 | macemu `0012` uae_cpu_2021: a 68k to AArch64 translator | the experimental translator, compiled only with `OKAPIA_JIT_ARM64=1` |
+| macemu `0013` fpu: the 68K softfloat from Previous and WinUAE | `fpu/softfloat/`, unchanged but for include paths and two undefined behaviours ([Decisions](../project/decisions.md#fpu-the-68881-in-80-bit-softfloat)) |
+| macemu `0014` fpu: a 68881 core on the 68K softfloat | `fpu_softfloat.cpp`, from `fpu_mpfr.cpp`; the default FPU |
+| macemu `0015` configure: offer the softfloat FPU core | `--enable-fpe=softfloat` upstream; Okapia's Makefile does not use it |
 | circle-stdlib `0001` configure: optimise newlib outside debug builds | newlib at `-O2` (libm was `-O0`) |
 | circle-stdlib `0002` libgloss/circle: seek with an off_t | files read past 2 GiB ([Storage](../topics/storage.md#volumes-past-2-gib)) |
 

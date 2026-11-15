@@ -125,7 +125,7 @@ for S2. `spcflags` sharing a cache line with the PC is negligible at ≤ 1 kHz.
 | 14 | `SD_HIGH_SPEED` | sequential ×1.5–2 | 1 code, 3 validation | open |
 | 15 | Tail-call dispatch (`[[gnu::musttail]]`) | 5–25% | 4 | only if branch mispredictions exceed ~10% of cycles |
 | 16 | ExtFS listing cache | Finder O(N) | 3 | open |
-| 17 | Exact `floatx80` FPU core | FPU ×1.5–3 | 5 | only on demand; check the source's licence |
+| 17 | Exact `floatx80` FPU core | FPU ×1.5–3 | 5 | **done** (2026-11-15, `fpu_softfloat`, licences checked); speed on the Pi unmeasured |
 | 18 | 2 MB blocks for Mac RAM (64 KB pages today) | 0–5% | 3 | only if TLB refills are high |
 | 19 | Handler layout, compact table, `-O3` on the engine only | ±5–10% | 2–3 | never `-O3` on frame buffer writers |
 | 20 | Pre-decoded blocks | ×1.2–1.8 | 5 | after 10 and 15; must hook `FlushCodeCache()` |

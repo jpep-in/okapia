@@ -3,7 +3,8 @@
 > Basilisk II on Circle: the CPU and FPU cores, the ROM and the model it announces, the core's build, and
 > what it costs. Main files: `src/kernel/kernel.cpp`, `src/circle/main_circle.cpp`,
 > `src/circle/cpu_ticks_circle.cpp`, `src/circle/emul_op_hook_circle.cpp`, `src/circle/config.h`,
-> `src/circle/compat/`, `patches/macemu/0003`, `0005`–`0010`, `scripts/gen-cpu.sh`, `scripts/check-rom.py`.
+> `src/circle/compat/`, `src/circle/fpu_selftest.h`, `patches/macemu/0003`, `0005`–`0010`, `0013`–`0015`,
+> `scripts/gen-cpu.sh`, `scripts/check-rom.py`.
 
 ## Using it
 
@@ -97,11 +98,29 @@ Result (Speedometer 4, Pi 4, before → after the first seven): CPU 2.25 → 6.8
 FPU 1.12 → 2.98, colour 1.92 → 5.58 — 5.2× a Quadra 650 on CPU. See [Benchmarks](../contributing/benchmarks.md)
 and the [bottleneck study](../notes/research/bottlenecks.md) for the remaining ranks.
 
-### FPU: binary128
+### FPU: the 68881 in 80-bit softfloat
 
-See [Decisions](../project/decisions.md#fpu-fpu_ieee-in-ieee-binary128). `patches/macemu/0008` enables the quad
-path and fixes what upstream disabled it for. `fpu_selftest_extended()` runs at startup under
-`OKAPIA_TRACE`; `trace_fpu_circle.cpp` wraps `fpuop_arithmetic` to count FPU instructions.
+See [Decisions](../project/decisions.md#fpu-the-68881-in-80-bit-softfloat). `fpu_softfloat.cpp`
+(`patches/macemu/0014`) is upstream's `fpu_mpfr.cpp` with MPFR replaced by the 68K softfloat of WinUAE and
+Previous (`0013`, `uae_cpu_2021/fpu/softfloat/`, provenance in its `README`):
+
+- **The register is the 68881's own value**: sign, 15-bit exponent, 64-bit significand with its integer bit,
+  laid out as softfloat's `floatx80` (`fpu/types.h`).
+- **Every result is rounded as FPCR says** (mode and precision), and softfloat's flags become the exception
+  byte, the accrued byte following. The 68040's `FS…`/`FD…` forms round to single or double regardless.
+- **The transcendentals are the 68040 FPSP's algorithms**, the ones a Quadra runs from its ROM; packed decimal
+  goes through softfloat's conversions; `FMOVECR` returns the constant ROM as a 68881 does, its two truncated
+  entries included.
+- **Only 64-bit integers**: no `long double`, no host floating-point state, no allocation. The same bits on
+  every host — the digest below is identical on Apple silicon (Clang) and AArch64 (GCC).
+- **Not done**: exceptions enabled in FPCR are recorded, not taken (as in `fpu_mpfr.cpp`); `FMOVECR`'s
+  undefined offsets read zero.
+
+`OKAPIA_FPU=ieee` builds the binary128 core of `patches/macemu/0008` instead, to compare against; the
+`macemu-jit` route (`OKAPIA_JIT=1`) has only that one. Under `OKAPIA_TRACE`, `kernel.cpp` runs
+`src/circle/fpu_selftest.h` before the Macintosh starts: sixteen answers computed independently, then the
+digest of 60,000 operations over every mode and precision, compared with the constant `tests/host/check_fpu`
+pins on the development machine. `trace_fpu_circle.cpp` counts and times the instructions.
 
 ### The translator (`OKAPIA_JIT_ARM64=1`, experimental)
 
@@ -153,6 +172,12 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [x] Finder reached under QEMU (2026-08-26) and on a Pi 4 (2026-09-12)
 - [x] `modelid` from the installed System (2026-08-29)
 - [x] FPU in binary128 with a self-test (2026-09-08)
+- [x] FPU replaced by the 68881 in 80-bit softfloat; same bits on the Mac and under QEMU, System 7.5.5 to the
+      Finder (2026-11-15)
+- [ ] The softfloat FPU on a Pi 4: the traced boot's digest line, then Speedometer's FPU tests against
+      `OKAPIA_FPU=ieee` and the time per operation from `trace_fpu_circle.cpp`
+- [ ] FPU instructions in the translator: called without leaving the block, `FBcc` translated; then, if the
+      measurement asks for it, the common operations inline
 - [x] Seam recalibrated to 1 kHz (2026-09-08)
 - [x] Bottleneck ranks 1–7 and the `pc_p` fetch (2026-09-13)
 - [ ] Log the initial PC and SP at 68040 initialisation
@@ -186,6 +211,16 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - **`gencpu` and `gencomp` are built for the host** and run during the build.
 - **A Macintosh boot proves nothing about the FPU.** System 7.1 reaches the Finder in four FPU instructions,
   which is how upstream's binary128 case sat broken for twenty years with 1.0 coming back as 1.5.
+- **More bits than a 68881 is not more exact.** The binary128 core kept 113 bits and so gave answers a 68881
+  never gives, ignored FPCR's mode and precision, and raised no exception but in `FSCALE`. Reading it for the
+  softfloat change found four more defects: `isnan()`/`isinf()` took the `double` branch under
+  `USE_QUAD_DOUBLE` (`mathlib.h:363`, `:423`), so every operation called `__trunctfdf2` four or five times and
+  any finite value past 1.8e308 counted as infinite; `FINT`, `FINTRZ`, `FMOD`, `FREM` and `FMOVE` to an integer
+  went through `(int)x` and `(int)(x + 0.5)` (`mathlib.h:1223-1232`), wrong past 2^31, for negatives and for
+  ties; `FMOVE.X` out truncated; and by reading, `FMOVE.D` set a fraction bit worth 2^-49
+  (`extract_double()`). The known answers in `fpu_selftest.h` are those cases.
+- **An overflow raises OVFL, not OVFL and INEX2.** Motorola's accrued rule ORs `OVFL` into `INEX` for that
+  reason; a test written from IEEE 754 expects both and is wrong.
 - **`quit_program` stays set** after the interpreter leaves; see
   [Startup and shutdown](startup-and-shutdown.md).
 - **`DEPTH` is compiled into `libcircle.a`**, so `-DDEPTH=8` in an application Makefile does nothing.
@@ -206,6 +241,10 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   `-display none` changed guest behaviour at the time (question-mark floppy headless, Happy Mac windowed).
 - **2026-08-29** — `modelid 14` stops System 7.1 at an empty Welcome box; the model follows the System.
 - **2026-09-08** — `fpu_uae` replaced by binary128 after 1.0 came back as 1.5 in upstream's disabled path.
+- **2026-11-15** — With the translator, FPU 1.3× against 5.4× on CPU. Binary128 replaced by the 68K softfloat
+  (patches `0013`–`0015`): the same digest on an Apple M4 and under QEMU's AArch64, clean under UBSan and ASan.
+  On the M4, add 8.8 ns, mul 7.2, div 19.5, sqrt 17.8, sin 208, etox 160. Kernel 3,408 KB (the core 12 KB,
+  the softfloat 68 KB).
 - **2026-09-13** — Pi 4 performance: frequency, libraries and loop taxes before any architectural work; see the
   bottleneck study.
 

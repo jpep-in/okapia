@@ -51,7 +51,7 @@ Outranks performance and features: when in doubt, lose speed, never data. Detail
 ## Settled decisions
 
 Don't reopen without new evidence ([Decisions](docs/project/decisions.md)): 256 MB Mac RAM · `DIRECT_ADDRESSING` ·
-`uae_cpu_2021` · `fpu_ieee` in IEEE binary128 · circle-stdlib `STDLIB_SUPPORT=3` · the `F1ACAD13` Quadra ROM for the
+`uae_cpu_2021` · the 68881 in 80-bit softfloat (`fpu_softfloat`) · circle-stdlib `STDLIB_SUPPORT=3` · the `F1ACAD13` Quadra ROM for the
 68k engine · a fixed output frame buffer and a compositor · network by sharing the Pi's MAC · no JIT · GPLv3.
 Multicore (S1) is a goal, not implemented: everything runs on core 0 today.
 
