@@ -103,6 +103,37 @@ See [Decisions](../project/decisions.md#fpu-fpu_ieee-in-ieee-binary128). `patche
 path and fixes what upstream disabled it for. `fpu_selftest_extended()` runs at startup under
 `OKAPIA_TRACE`; `trace_fpu_circle.cpp` wraps `fpuop_arithmetic` to count FPU instructions.
 
+### The translator (`OKAPIA_JIT_ARM64=1`, experimental)
+
+`patches/macemu/0012` adds a 68k to AArch64 translator beside the interpreter, in `uae_cpu_2021/jit_arm64/`.
+It is compiled with `make -C src/kernel OKAPIA_JIT_ARM64=1` (after `okapia-clean`) and used when the card says
+`jit true`; the interpreter, its tables and the binary128 FPU are the ones described above, and are what runs
+every instruction the translator does not know.
+
+- **Registers**: D0–D7 in `w19`–`w26`, A0–A7 in `w8`–`w15`, for as long as translated code runs. Condition
+  codes are the host's NZCV; X is in `w17`.
+- **Blocks** branch to each other directly; returns and indirect jumps go through a table of 65,536 entries.
+  Every backward transfer spends a budget kept in `w16`, so the execution loop is reached every few thousand
+  of them: that is where interrupts are seen and where `jit_arm64_host_poll()` calls the seam by the clock.
+- **A-line traps** are the 68040's exception written out in the block, in supervisor state with no trace.
+- **Coherence**: a `CPUSHA`, or a `FlushCodeCache()` over translated code, raises an epoch. A block of an
+  older epoch leaves at its first instruction and is compared, byte for byte, with its source before it runs
+  again; nothing is rewritten in translated code for that, and no checksum stands in for the comparison.
+- **Circle's side** is `jit_arm64_circle.cpp`: 16 MB of heap made executable once (`execmem_circle.cpp`),
+  claimed after the Mac RAM block, and the 1 kHz seam.
+
+It was developed and tested in upstream Basilisk II on macOS (Apple silicon), where it boots System 7.5.5 and
+runs a benchmark of twenty tests in a tenth of the interpreter's time, with identical results.
+
+On Circle (2026-11-15): the kernel builds for QEMU (3,406 KB) and for the Pi 4 (3,455 KB). Under QEMU, System
+7.5.5 reaches the Finder with `jit true` in 14 s, the screen is the interpreter's, and
+`OKAPIA_EXTRA_PREFS='jit true' ./scripts/run-test.sh 40` gives its usual verdict (killed, scavenged, clean).
+On a Pi 4 it was seen running from the serial port only, 160 s into a session with `qdaccel sync` on as well;
+its boot lines were not captured and **nothing has been measured there**.
+
+With the translator the `k opcodes` figure of the five-second line is not a speed: the seam is reached by the
+clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh does).
+
 ### Build glue
 
 - A hand-written **`config.h`** replaces autoconf's: it **declares and never includes** — pulled in ahead of
@@ -131,11 +162,25 @@ path and fixes what upstream disabled it for. `fpu_selftest_extended()` runs at 
       the unredirected ASC address is the leading hypothesis, unconfirmed
 - [ ] System 6 in 24-bit mode as a third engine configuration — see the [study](../notes/research/system6-24bit.md)
 - [ ] Automatic ROM selection, as `modelid` is automatic
-- [ ] 68k JIT — experimental behind `OKAPIA_JIT=1`; boots System 7.1 under QEMU. Open: Shut Down and restart,
-      the Pi 4 (cache flush, Speedometer), the carried patches 0009 and 0010
+- [ ] 68k JIT of `macemu-jit` — experimental behind `OKAPIA_JIT=1`; boots System 7.1 under QEMU, at best parity
+      with the interpreter on a Pi 4. Superseded by the translator below, kept for reference
       ([study](../notes/research/jit-68k.md#first-boot-2026-11-14))
+- [ ] 68k translator (`OKAPIA_JIT_ARM64=1`, `patches/macemu/0012`) — boots System 7.5.5 under QEMU and passes
+      `run-test.sh` with `jit true`; runs on a Pi 4 (2026-11-15). Open, in order: System 7.1 and 7.6.1, five
+      restarts and Shut Down, a timed benchmark on the Pi 4 (Speedometer, MacBench), the Mac's tick count
+      against the clock under load; then the allocations it makes while the Macintosh runs
 
 ## Pitfalls
+
+- **The translator allocates while the Macintosh runs** (`malloc` per block for its copy of the source,
+  `std::unordered_map` and `std::vector` for its bookkeeping). That breaks the resource rule of `AGENTS.md`
+  and is owed before it can be anything but an experiment: preallocated arenas, reset when everything is
+  forgotten.
+- **A translator makes 68040-clean code a requirement.** Code modified without a cache flush runs stale until
+  the next one, as it would on a real 68040 with a larger cache than any ever built. The interpreter forgives
+  it; `jit true` does not.
+- **`qdaccel` and the translator can be on together**: the hooks' `EmulOp` is run by the interpreter's handler
+  with the exact PC. Nobody has tried it.
 
 - **`uae_cpu_2021`, not `uae_cpu`**: the latter is not what macemu builds on AArch64.
 - **`gencpu` and `gencomp` are built for the host** and run during the build.

@@ -77,6 +77,10 @@
 - **What exists** (2026-11-14): `OKAPIA_JIT=1` builds the 68k core of `rcarmo/macemu-jit` (`external/macemu-jit`,
   pinned) in place of `uae_cpu_2021`; with `jit true` in the preferences System 7.1 reaches the Finder under QEMU and
   a hard kill is repaired as without it. See [68k JIT study](../notes/research/jit-68k.md#first-boot-2026-11-14).
+- **A second one** (2026-11-15): `OKAPIA_JIT_ARM64=1` builds a translator of our own beside `uae_cpu_2021`
+  (`patches/macemu/0012`), with the registers pinned and an exact source compare after every cache flush. On
+  macOS it runs a twenty-test benchmark ten times faster than the interpreter; on Circle it boots System 7.5.5
+  under QEMU, passes the durability test, and runs on a Pi 4 where nothing has been measured yet. See [68k engine](../topics/engine-68k.md#the-translator-okapia_jit_arm641-experimental).
 - **Would become the default**: a Speedometer gain on the Pi 4 at least 2× the interpreter's CPU score, the
   [durability tests](../contributing/testing-and-debugging.md) green with it on, and a clean Shut Down and restart.
 

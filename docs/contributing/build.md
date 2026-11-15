@@ -142,6 +142,7 @@ applied is skipped.
 | macemu `0009` uae_cpu_2021: stop paying per instruction for what nothing reads | `M68K_NO_FAULT_PC`; `SPCFLAGS` without a lock |
 | macemu `0010` uae_cpu_2021: fetch through pc_p, as uae_cpu did | instruction fetch through `regs.pc_p` |
 | macemu `0011` video: let a port offer the sizes it can show | SheepShaver resolutions past `APPLE_ID_MAX` |
+| macemu `0012` uae_cpu_2021: a 68k to AArch64 translator | the experimental translator, compiled only with `OKAPIA_JIT_ARM64=1` |
 | circle-stdlib `0001` configure: optimise newlib outside debug builds | newlib at `-O2` (libm was `-O0`) |
 | circle-stdlib `0002` libgloss/circle: seek with an off_t | files read past 2 GiB ([Storage](../topics/storage.md#volumes-past-2-gib)) |
 
@@ -183,6 +184,9 @@ applied is skipped.
   the JIT's compile handlers, into `build/generated-jit`) and `okapia-clean` — objects do not know which core they
   were built from. It needs `external/macemu-jit` (`bootstrap.sh` clones it at its pinned commit) and the patches of
   `patches/macemu-jit/`. Without `OKAPIA_JIT` nothing of it is compiled.
+- **The translator build** is `make -C src/kernel OKAPIA_JIT_ARM64=1` after `okapia-clean`. It needs nothing
+  but `patches/macemu/0012`: same core, same generated tables, no second submodule. It cannot be combined with
+  `OKAPIA_JIT=1`.
 - **A library patch is in the sources before it is in the libraries.** `apply-patches.sh --check` and the kernel's
   `patches-check` look at `external/`, not at `libcirclenewlib.a`: a target restored from `build/libs/` was built
   before the patch. `build-libs.sh` compares its stamp for that reason; on the active target, rebuild with

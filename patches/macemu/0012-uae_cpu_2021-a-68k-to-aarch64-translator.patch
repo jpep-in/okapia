@@ -1,0 +1,2897 @@
+uae_cpu_2021: a 68k to AArch64 translator
+
+The interpreter-only core gets a translator beside it, in jit_arm64/. It is
+compiled when the build defines JIT_ARM64 and used when the "jit" preference
+is set; without the define nothing here changes.
+
+The design, in four rules, is at the head of jit_arm64.cpp: the 68k registers
+live in AArch64 registers for as long as translated code runs, the condition
+codes are the host's NZCV, anything the translator does not know is run by
+the interpreter's own handler on the same register file, and blocks branch
+to each other directly.
+
+A flush of the 68040 instruction cache raises an epoch. A block whose epoch
+is older leaves for the execution loop, which compares its source byte for
+byte with what memory holds before the block may run again: an exact
+compare, not a checksum, and no translated instruction is rewritten for it.
+flush_internals(), which every CINV and CPUSH handler already calls, is
+where the core tells the translator; FlushCodeCache() is the host's side.
+
+The host supplies executable memory and a call between two runs of
+translated code (JIT_ARM64_OWN_MEMORY, JIT_ARM64_OWN_POLL); a hosted build
+has defaults for both.
+
+codegen_arm64.h is UAE4ARM's AArch64 emitter (TomB, 2019, GPL-2.0-or-later),
+unchanged from rcarmo/macemu-jit at ba4a541.
+
+Developed in kanjitalk755/macemu's tree (branch jit-aarch64 of the author's
+clone), where jit-test/ holds its vectors, its fuzzer and MacBench. On an
+Apple M3 MacBench runs in 3.9 s against 40.6 s interpreted.
+
+diff --git a/BasiliskII/src/uae_cpu_2021/basilisk_glue.cpp b/BasiliskII/src/uae_cpu_2021/basilisk_glue.cpp
+index 9a794b48..9c19688e 100644
+--- a/BasiliskII/src/uae_cpu_2021/basilisk_glue.cpp
++++ b/BasiliskII/src/uae_cpu_2021/basilisk_glue.cpp
+@@ -31,6 +31,10 @@
+ #include "readcpu.h"
+ #include "newcpu.h"
+ #include "compiler/compemu.h"
++#ifdef JIT_ARM64
++#include "jit_arm64/jit_arm64.h"
++static bool UseJITArm64 = false;
++#endif
+ 
+ 
+ // RAM and ROM pointers
+@@ -102,6 +106,11 @@ bool Init680x0(void)
+ #endif
+ 
+ 	init_m68k();
++#ifdef JIT_ARM64
++	UseJITArm64 = PrefsFindBool("jit") && jit_arm64_init();
++	if (UseJITArm64)
++		printf("68k to AArch64 translator enabled\n");
++#endif
+ #if USE_JIT
+ 	UseJIT = compiler_use_jit();
+ 	if (UseJIT)
+@@ -143,6 +152,12 @@ void InitFrameBufferMapping(void)
+ void Start680x0(void)
+ {
+ 	m68k_reset();
++#ifdef JIT_ARM64
++	if (UseJITArm64) {
++		m68k_jit_execute();
++		return;
++	}
++#endif
+ #if USE_JIT
+     if (UseJIT)
+ 	m68k_compile_execute();
+diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/codegen_arm64.h b/BasiliskII/src/uae_cpu_2021/jit_arm64/codegen_arm64.h
+new file mode 100644
+index 00000000..f3886f05
+--- /dev/null
++++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/codegen_arm64.h
+@@ -0,0 +1,502 @@
++/*
++ * compiler/codegen_armA64.h - AARCH64 code generator
++ *
++ * Copyright (c) 2019 TomB
++ *
++ * This file is part of the UAE4ARM project.
++ *
++ * JIT compiler m68k -> ARMv8.1
++ *
++ * Original 68040 JIT compiler for UAE, copyright 2000-2002 Bernd Meyer
++ * This file is derived from CCG, copyright 1999-2003 Ian Piumarta
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
++ */
++
++#ifndef ARM_ASMA64_H
++#define ARM_ASMA64_H
++
++
++/* CPSR flags */
++
++#define ARM_N_FLAG        0x80000000
++#define ARM_Z_FLAG        0x40000000
++#define ARM_C_FLAG        0x20000000
++#define ARM_V_FLAG        0x10000000
++#define ARM_CV_FLAGS      (ARM_C_FLAG|ARM_V_FLAG)
++
++
++/* AArch64 instructions are always 32-bit words. Force the final encoding
++ * back to uae_u32 before emission so signed intermediate literals in the
++ * macro encoders do not get sign-extended to uintptr-sized temporaries when
++ * combined with 64-bit offsets/operands on AArch64 builds. */
++#define _W(c) emit_long((uae_u32)(c))
++
++
++#define MIN_EL0           0b011
++
++#define EX_UXTB   0b000
++#define EX_UXTH   0b001
++#define EX_UXTW   0b010
++#define EX_UXTX   0b011
++#define EX_SXTB   0b100
++#define EX_SXTH   0b101
++#define EX_SXTW   0b110
++#define EX_SXTX   0b111
++
++#define immEncode(N,immr,imms)    (N << 22) | (immr << 16) | (imms << 10)
++
++
++/* read/write flags */
++// move from sysreg
++#define MRS_NZCV_x(Xt)    _W((0b1101010100111 << 19) | (MIN_EL0 << 16) | (0b0100 << 12) | (0b0010 << 8) | (0b000 << 5) | (Xt))
++#define MRS_FPCR_x(Xt)    _W((0b1101010100111 << 19) | (MIN_EL0 << 16) | (0b0100 << 12) | (0b0100 << 8) | (0b000 << 5) | (Xt))
++#define MRS_FPSR_x(Xt)    _W((0b1101010100111 << 19) | (MIN_EL0 << 16) | (0b0100 << 12) | (0b0100 << 8) | (0b001 << 5) | (Xt))
++// move to sysreg
++#define MSR_NZCV_x(Xt)		_W((0b1101010100011 << 19) | (MIN_EL0 << 16) | (0b0100 << 12) | (0b0010 << 8) | (0b000 << 5) | (Xt))
++#define MSR_FPCR_x(Xt)    _W((0b1101010100011 << 19) | (MIN_EL0 << 16) | (0b0100 << 12) | (0b0100 << 8) | (0b000 << 5) | (Xt))
++#define MSR_FPSR_x(Xt)    _W((0b1101010100011 << 19) | (MIN_EL0 << 16) | (0b0100 << 12) | (0b0100 << 8) | (0b001 << 5) | (Xt))
++
++
++/*----------------------------------------
++ * branch instructions
++ *----------------------------------------*/
++// i is the number of instructions, i.e. 4 bytes
++#define B_i(i)            _W((0b000101 << 26) | ((i) & 0x03ffffff))
++#define BL_i(i)           _W((0b100101 << 26) | ((i) & 0x03ffffff))
++#define BLR_x(Xn)         _W((0b11010110001 << 21) | (0b11111 << 16) | (0 << 10) | ((Xn) << 5) | 0)
++#define BR_x(Xn)          _W((0b11010110000 << 21) | (0b11111 << 16) | (0 << 10) | ((Xn) << 5) | 0)
++
++#define CC_B_i(cc,i)      _W((0b01010100 << 24) | (((i) & 0x0007ffff) << 5) | (cc))
++#define BEQ_i(i)          CC_B_i(NATIVE_CC_EQ,i)
++#define BNE_i(i)          CC_B_i(NATIVE_CC_NE,i)
++#define BCS_i(i)          CC_B_i(NATIVE_CC_CS,i)
++#define BCC_i(i)          CC_B_i(NATIVE_CC_CC,i)
++#define BMI_i(i)          CC_B_i(NATIVE_CC_MI,i)
++#define BPL_i(i)          CC_B_i(NATIVE_CC_PL,i)
++#define BVS_i(i)          CC_B_i(NATIVE_CC_VS,i)
++#define BVC_i(i)          CC_B_i(NATIVE_CC_VC,i)
++#define BHI_i(i)          CC_B_i(NATIVE_CC_HI,i)
++#define BLS_i(i)          CC_B_i(NATIVE_CC_LS,i)
++#define BGE_i(i)          CC_B_i(NATIVE_CC_GE,i)
++#define BLT_i(i)          CC_B_i(NATIVE_CC_LT,i)
++#define BGT_i(i)          CC_B_i(NATIVE_CC_GT,i)
++#define BLE_i(i)          CC_B_i(NATIVE_CC_LE,i)
++
++#define RET               _W((0b11010110010 << 21) | (0b11111 << 16) | (0 << 10) | ((30) << 5) | (0))
++
++/* compare and branch */
++// these instructions do not affect condition flags
++#define CBNZ_wi(Wt,i)       _W((0b00110101 << 24) | (((i) & 0x0007ffff) << 5) | (Wt))
++#define CBNZ_xi(Xt,i)       _W((0b10110101 << 24) | (((i) & 0x0007ffff) << 5) | (Xt))
++#define CBZ_wi(Wt,i)        _W((0b00110100 << 24) | (((i) & 0x0007ffff) << 5) | (Wt))
++#define CBZ_xi(Xt,i)        _W((0b10110100 << 24) | (((i) & 0x0007ffff) << 5) | (Xt))
++
++/* test bit and branch */
++// these instructions do not affect condition flags
++#define TBNZ_xii(Xt,bit,i)  _W((((bit) & 0x20u) << 26) | (0b0110111 << 24) | (((bit) & 0x1f) << 19) | (((i) & 0x3fff) << 5) | (Xt))
++#define TBNZ_wii(Wt,bit,i)  _W((0 << 31) | (0b0110111 << 24) | (((bit) & 0x1f) << 19) | (((i) & 0x3fff) << 5) | (Wt))
++#define TBZ_xii(Xt,bit,i)   _W((((bit) & 0x20u) << 26) | (0b0110110 << 24) | (((bit) & 0x1f) << 19) | (((i) & 0x3fff) << 5) | (Xt))
++#define TBZ_wii(Wt,bit,i)   _W((0 << 31) | (0b0110110 << 24) | (((bit) & 0x1f) << 19) | (((i) & 0x3fff) << 5) | (Wt))
++
++
++/*----------------------------------------
++ * load/store registers
++ *---------------------------------------- */
++// i is number of bytes
++#define LDP_wwXi(Wt1,Wt2,Xn,i)    _W((0b0010100101 << 22) | ((((i)/4) & 0x7f) << 15) | ((Wt2) << 10) | ((Xn) << 5) | (Wt1))
++#define LDP_xxXi(Xt1,Xt2,Xn,i)    _W((0b1010100101 << 22) | ((((i)/8) & 0x7f) << 15) | ((Xt2) << 10) | ((Xn) << 5) | (Xt1))
++#define LDP_xxXpost(Xt1,Xt2,Xn,i) _W((0b1010100011 << 22) | ((((i)/8) & 0x7f) << 15) | ((Xt2) << 10) | ((Xn) << 5) | (Xt1))
++#define LDR_wXi(Wt,Xn,i)          _W((0b1011100101 << 22) | ((((i)/4) & 0xfff) << 10) | ((Xn) << 5) | (Wt))
++#define LDR_xXi(Xt,Xn,i)          _W((0b1111100101 << 22) | ((((i)/8) & 0xfff) << 10) | ((Xn) << 5) | (Xt))
++#define LDR_xXpost(Xt,Xn,i)       _W((0b11111000010 << 21) | (((i) & 0x1ff) << 12) | (0b01 << 10) | ((Xn) << 5) | (Xt))
++#define LDR_wPCi(Wt,i)            _W((0b00011000 << 24) | ((((i)/4) & 0x7ffff) << 5) | (Wt))
++#define LDR_xPCi(Xt,i)            _W((0b01011000 << 24) | ((((i)/4) & 0x7ffff) << 5) | (Xt))
++/* JIT direct memory helpers pass (addr_reg, R_MEMSTART).
++ * Use UXTW to zero-extend 32-bit M68k addresses to 64-bit host offsets.
++ * SXTW was used historically when natmem lived at 0x80000000, but sign-extending
++ * addresses with bit 31 set wraps BELOW natmem on platforms where natmem > 2GB
++ * (e.g., macOS ARM64 at 0x300000000), causing SIGBUS. */
++#define LDR_wXx(Wt,Xn,Xm)         _W((0b10111000011 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Wt))
++#define LDR_xXx(Xt,Xn,Xm)         _W((0b11111000011 << 21) | ((Xm) << 16) | (0b011 << 13) | (0 << 12) | (0b10 << 10) | ((Xn) << 5) | (Xt))
++// i=0 no shift, i=1 LSL 2 (W) or LSL 3 (X)
++#define LDR_wXxLSLi(Wt,Xn,Xm,i)   _W((0b10111000011 << 21) | ((Xm) << 16) | (0b011 << 13) | (((i)&1) << 12) | (0b10 << 10) | ((Xn) << 5) | (Wt))
++#define LDR_xXxLSLi(Xt,Xn,Xm,i)   _W((0b11111000011 << 21) | ((Xm) << 16) | (0b011 << 13) | (((i)&1) << 12) | (0b10 << 10) | ((Xn) << 5) | (Xt))
++#define LDRB_wXi(Wt,Xn,i)         _W((0b0011100101 << 22) | (((i) & 0xfff) << 10) | ((Xn) << 5) | (Wt))
++#define LDRB_wXx(Wt,Xn,Xm)        _W((0b00111000011 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Wt))
++#define LDRH_wXi(Wt,Xn,i)         _W((0b0111100101 << 22) | ((((i)/2) &0xfff) << 10) | ((Xn) << 5) | (Wt))
++#define LDRH_wXx(Wt,Xn,Xm)        _W((0b01111000011 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Wt))
++
++#define STP_wwXi(Wt1,Wt2,Xn,i)    _W((0b0010100100 << 22) | ((((i)/4) & 0x7f) << 15) | ((Wt2) << 10) | ((Xn) << 5) | (Wt1))
++#define STP_xxXi(Xt1,Xt2,Xn,i)    _W((0b1010100100 << 22) | ((((i)/8) & 0x7f) << 15) | ((Xt2) << 10) | ((Xn) << 5) | (Xt1))
++#define STP_xxXpre(Xt1,Xt2,Xn,i)  _W((0b1010100110 << 22) | ((((i)/8) & 0x7f) << 15) | ((Xt2) << 10) | ((Xn) << 5) | (Xt1))
++#define STR_wXi(Wt,Xn,i)          _W((0b1011100100 << 22) | ((((i)/4) & 0xfff) << 10) | ((Xn) << 5) | (Wt))
++#define STR_xXi(Xt,Xn,i)          _W((0b1111100100 << 22) | ((((i)/8) & 0xfff) << 10) | ((Xn) << 5) | (Xt))
++#define STR_xXpre(Xt,Xn,i)        _W((0b11111000000 << 21) | (((i) & 0x1ff) << 12) | (0b11 << 10) | ((Xn) << 5) | (Xt))
++#define STR_wXx(Wt,Xn,Xm)         _W((0b10111000001 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Wt))
++#define STR_xXx(Xt,Xn,Xm)         _W((0b11111000001 << 21) | ((Xm) << 16) | (0b011 << 13) | (0 << 12) | (0b10 << 10) | ((Xn) << 5) | (Xt))
++// i=0 no shift, i=1 LSL 2 (W) or LSL 3 (X)
++#define STR_wXxLSLi(Wt,Xn,Xm,i)   _W((0b10111000001 << 21) | ((Xm) << 16) | (0b011 << 13) | (((i)&1) << 12) | (0b10 << 10) | ((Xn) << 5) | (Wt))
++#define STRB_wXi(Wt,Xn,i)         _W((0b0011100100 << 22) | (((i) & 0xfff) << 10) | ((Xn) << 5) | (Wt))
++#define STRB_wXx(Wt,Xn,Xm)        _W((0b00111000001 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Wt))
++#define STRH_wXi(Wt,Xn,i)         _W((0b0111100100 << 22) | ((((i)/2) &0xfff) << 10) | ((Xn) << 5) | (Wt))
++#define STRH_wXx(Wt,Xn,Xm)        _W((0b01111000001 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Wt))
++
++#define STUR_wXi(Wt,Xn,i)         _W((0b10111000000 << 21) | ((i & 0x1ff) << 12) | ((Xn) << 5) | (Wt))
++#define STURH_wXi(Wt,Xn,i)        _W((0b01111000000 << 21) | ((i & 0x1ff) << 12) | ((Xn) << 5) | (Wt))
++
++/*----------------------------------------
++ * move immediate/register
++ *----------------------------------------*/
++#define MOV_wi(Wd,i16)            _W((0b01010010100 << 21) | (((i16) & 0xffff) << 5) | (Wd))
++#define MOV_xi(Xd,i16)            _W((0b11010010100 << 21) | (((i16) & 0xffff) << 5) | (Xd))
++// sh in bits (multiple of 16)
++#define MOV_wish(Wd,i16,sh)       _W((0b010100101 << 23) | (((sh)/16) << 21) | (((i16) & 0xffff) << 5) | (Wd))
++#define MOV_xish(Xd,i16,sh)       _W((0b110100101 << 23) | (((sh)/16) << 21) | (((i16) & 0xffff) << 5) | (Xd))
++#define MOV_ww(Wd,Wm)             _W((0b00101010000 << 21) | ((Wm) << 16) | (0 << 10) | (0b11111 << 5) | (Wd))
++#define MOV_xx(Xd,Xm)             _W((0b10101010000 << 21) | ((Xm) << 16) | (0 << 10) | (0b11111 << 5) | (Xd))
++#define MOVK_wi(Wd,i16)           _W((0b01110010100 << 21) | (((i16) & 0xffff) << 5) | (Wd))
++#define MOVK_xi(Xd,i16)           _W((0b11110010100 << 21) | (((i16) & 0xffff) << 5) | (Xd))
++#define MOVK_wish(Wd,i16,sh)      _W((0b011100101 << 23) | (((sh)/16) << 21) | (((i16) & 0xffff) << 5) | (Wd))
++#define MOVK_xish(Xd,i16,sh)      _W((0b111100101 << 23) | (((sh)/16) << 21) | (((i16) & 0xffff) << 5) | (Xd))
++#define MOVN_wi(Wd,i16)           _W((0b00010010100 << 21) | (((i16) & 0xffff) << 5) | (Wd))
++#define MOVN_xi(Xd,i16)           _W((0b10010010100 << 21) | (((i16) & 0xffff) << 5) | (Xd))
++#define MOVN_wish(Wd,i16,sh)      _W((0b000100101 << 23) | (((sh)/16) << 21) | (((i16) & 0xffff) << 5) | (Wd))
++#define MOVN_xish(Xd,i16,sh)      _W((0b100100101 << 23) | (((sh)/16) << 21) | (((i16) & 0xffff) << 5) | (Xd))
++#define MVN_ww(Wd,Wm)             _W((0b00101010001 << 21) | ((Wm) << 16) | (0 << 10) | (0b11111 << 5) | (Wd))
++#define MVN_xx(Xd,Xm)             _W((0b10101010001 << 21) | ((Xm) << 16) | (0 << 10) | (0b11111 << 5) | (Xd))
++
++
++/*----------------------------------------
++ * arithmetic
++ *----------------------------------------*/
++/* ADD */
++#define ADC_www(Wd,Wn,Wm)         _W((0b00011010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define ADC_xxx(Xd,Xn,Xm)         _W((0b10011010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define ADCS_www(Wd,Wn,Wm)        _W((0b00111010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define ADCS_xxx(Xd,Xn,Xm)        _W((0b10111010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define ADD_wwwEX(Wd,Wn,Wm,ex)    _W((0b00001011001 << 21) | ((Wm) << 16) | ((ex) << 13) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define ADD_xxwEX(Xd,Xn,Wm,ex)    _W((0b10001011001 << 21) | ((Wm) << 16) | ((ex) << 13) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define ADD_wwi(Wd,Wn,i12)        _W((0b0001000100 << 22) | (((i12) & 0xfff) << 10) | ((Wn) << 5) | (Wd))
++#define ADD_xxi(Xd,Xn,i12)        _W((0b1001000100 << 22) | (((i12) & 0xfff) << 10) | ((Xn) << 5) | (Xd))
++#define ADD_www(Wd,Wn,Wm)         _W((0b00001011000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define ADD_xxx(Xd,Xn,Xm)         _W((0b10001011000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define ADD_wwwLSLi(Wd,Wn,Wm,i)   _W((0b00001011000 << 21) | ((Wm) << 16) | (((i) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define ADD_xxxLSLi(Xd,Xn,Xm,i)   _W((0b10001011000 << 21) | ((Xm) << 16) | (((i) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++#define ADDS_wwi(Wd,Wn,i12)       _W((0b0011000100 << 22) | (((i12) & 0xfff) << 10) | ((Wn) << 5) | (Wd))
++#define ADDS_xxi(Xd,Xn,i12)       _W((0b1011000100 << 22) | (((i12) & 0xfff) << 10) | ((Xn) << 5) | (Xd))
++#define ADDS_www(Wd,Wn,Wm)        _W((0b00101011000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define ADDS_xxx(Xd,Xn,Xm)        _W((0b10101011000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define ADDS_wwwLSLi(Wd,Wn,Wm,i)  _W((0b00101011000 << 21) | ((Wm) << 16) | (((i) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define ADDS_xxxLSLi(Xd,Xn,Xm,i)  _W((0b10101011000 << 21) | ((Xm) << 16) | (((i) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++
++/* compare */
++#define CMP_wi(Wn,i12)            _W((0b0111000100 << 22) | (((i12) & 0xfff) << 10) | ((Wn) << 5) | (0b11111))
++#define CMP_xi(Xn,i12)            _W((0b1111000100 << 22) | (((i12) & 0xfff) << 10) | ((Xn) << 5) | (0b11111))
++#define CMP_ww(Wn,Wm)             _W((0b01101011000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (0b11111))
++#define CMP_xx(Xn,Xm)             _W((0b11101011000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (0b11111))
++#define CMP_wwLSLi(Wn,Wm,i)       _W((0b01101011000 << 21) | ((Wm) << 16) | (((i) & 0x1f) << 10) | ((Wn) << 5) | (0b11111))
++#define CMP_xxLSLi(Xn,Xm,i)       _W((0b11101011000 << 21) | ((Xm) << 16) | (((i) & 0x3f) << 10) | ((Xn) << 5) | (0b11111))
++#define CMP_wwEX(Wn,Wm,ex)        _W((0b01101011001 << 21) | ((Wm) << 16) | ((ex) << 13) | (0 << 10) | ((Wn) << 5) | (0b11111))
++
++/* MUL */
++#define MUL_www(Wd,Wn,Wm)         _W((0b00011011000 << 21) | ((Wm) << 16) | (0b011111 << 10) | ((Wn) << 5) | (Wd))
++#define MUL_xxx(Xd,Xn,Xm)         _W((0b10011011000 << 21) | ((Xm) << 16) | (0b011111 << 10) | ((Xn) << 5) | (Xd))
++// Xd = (Xn*Xm)[127...64]
++#define SMULH_xxx(Xd,Xn,Xm)       _W((0b10011011010 << 21) | ((Xm) << 16) | (0b011111 << 10) | ((Xn) << 5) | (Xd))
++#define UMULH_xxx(Xd,Xn,Xm)       _W((0b10011011110 << 21) | ((Xm) << 16) | (0b011111 << 10) | ((Xn) << 5) | (Xd))
++// Xd = (Wn*Wm)[63...0]
++#define SMULL_xww(Xd,Wn,Wm)       _W((0b10011011001 << 21) | ((Wm) << 16) | (0b011111 << 10) | ((Wn) << 5) | (Xd))
++#define UMULL_xww(Xd,Wn,Wm)       _W((0b10011011101 << 21) | ((Wm) << 16) | (0b011111 << 10) | ((Wn) << 5) | (Xd))
++
++/* multiply sub */
++// Wd = Wa - (Wn * Wm)
++#define MSUB_wwww(Wd,Wn,Wm,Wa)    _W((0b00011011000 << 21) | ((Wm) << 16) | (1 << 15) | ((Wa) << 10) | ((Wn) << 5) | (Wd))
++#define MSUB_xxxx(Xd,Xn,Xm,Xa)    _W((0b10011011000 << 21) | ((Xm) << 16) | (1 << 15) | ((Xa) << 10) | ((Xn) << 5) | (Xd))
++
++/* DIV */
++// Wd = Wn / Wm
++#define SDIV_www(Wd,Wn,Wm)        _W((0b00011010110 << 21) | ((Wm) << 16) | (0b000011 << 10) | ((Wn) << 5) | (Wd))
++#define SDIV_xxx(Xd,Xn,Xm)        _W((0b10011010110 << 21) | ((Xm) << 16) | (0b000011 << 10) | ((Xn) << 5) | (Xd))
++#define UDIV_www(Wd,Wn,Wm)        _W((0b00011010110 << 21) | ((Wm) << 16) | (0b000010 << 10) | ((Wn) << 5) | (Wd))
++#define UDIV_xxx(Xd,Xn,Xm)        _W((0b10011010110 << 21) | ((Xm) << 16) | (0b000010 << 10) | ((Xn) << 5) | (Xd))
++
++/* NEG */
++#define NEG_ww(Wd,Wm)             _W((0b01001011000 << 21) | ((Wm) << 16) | (0 << 10) | (0b11111 << 5) | (Wd))
++#define NEG_xx(Xd,Xm)             _W((0b11001011000 << 21) | ((Xm) << 16) | (0 << 10) | (0b11111 << 5) | (Xd))
++#define NEGS_ww(Wd,Wm)            _W((0b01101011000 << 21) | ((Wm) << 16) | (0 << 10) | (0b11111 << 5) | (Wd))
++#define NEGS_xx(Xd,Xm)            _W((0b11101011000 << 21) | ((Xm) << 16) | (0 << 10) | (0b11111 << 5) | (Xd))
++#define NGC_ww(Wd,Wm)             _W((0b01011010000 << 21) | ((Wm) << 16) | (0 << 10) | (0b11111 << 5) | (Wd))
++#define NGC_xx(Xd,Xm)             _W((0b11011010000 << 21) | ((Xm) << 16) | (0 << 10) | (0b11111 << 5) | (Xd))
++#define NGCS_ww(Wd,Wm)            _W((0b01111010000 << 21) | ((Wm) << 16) | (0 << 10) | (0b11111 << 5) | (Wd))
++#define NGCS_xx(Xd,Xm)            _W((0b11111010000 << 21) | ((Xm) << 16) | (0 << 10) | (0b11111 << 5) | (Xd))
++
++/* SUB */
++// Wd = Wn - Wm
++#define SBC_www(Wd,Wn,Wm)         _W((0b01011010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define SBC_xxx(Xd,Xn,Xm)         _W((0b11011010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define SBCS_www(Wd,Wn,Wm)        _W((0b01111010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define SBCS_xxx(Xd,Xn,Xm)        _W((0b11111010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define SUB_wwi(Wd,Wn,i12)        _W((0b0101000100 << 22) | (((i12) & 0xfff) << 10) | ((Wn) << 5) | (Wd))
++#define SUB_xxi(Xd,Xn,i12)        _W((0b1101000100 << 22) | (((i12) & 0xfff) << 10) | ((Xn) << 5) | (Xd))
++#define SUB_www(Wd,Wn,Wm)         _W((0b01001011000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define SUB_xxx(Xd,Xn,Xm)         _W((0b11001011000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define SUB_wwwEX(Wd,Wn,Wm,ex)    _W((0b11001011001 << 21) | ((Wm) << 16) | ((ex) << 13) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define SUBS_wwi(Wd,Wn,i12)       _W((0b0111000100 << 22) | (((i12) & 0xfff) << 10) | ((Wn) << 5) | (Wd))
++#define SUBS_xxi(Xd,Xn,i12)       _W((0b1111000100 << 22) | (((i12) & 0xfff) << 10) | ((Xn) << 5) | (Xd))
++// sh: 0 - no shift, 1 - LSL 12
++#define SUBS_wwish(Wd,Wn,i12,sh)  _W((0b011100010 << 23) | (((sh) & 1) << 22) | (((i12) & 0xfff) << 10) | ((Wn) << 5) | (Wd))
++#define SUBS_xxish(Xd,Xn,i12,sh)  _W((0b111100010 << 23) | (((sh) & 1) << 22) | (((i12) & 0xfff) << 10) | ((Xn) << 5) | (Xd))
++#define SUBS_www(Wd,Wn,Wm)        _W((0b01101011000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define SUBS_xxx(Xd,Xn,Xm)        _W((0b11101011000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define SUBS_wwwLSLi(Wd,Wn,Wm,i)  _W((0b01101011000 << 21) | ((Wm) << 16) | (((i) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define SUBS_xxxLSLi(Xd,Xn,Xm,i)  _W((0b11101011000 << 21) | ((Xm) << 16) | (((i) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++
++/* signed extend */
++#define SBFM_wwii(Wd,Wn,immr,imms)  _W((0b0001001100 << 22) | ((immr) << 16) | ((imms) << 10) | ((Wn) << 5) | (Wd))
++#define SBFM_xxii(Xd,Xn,immr,imms)  _W((0b1001001101 << 22) | ((immr) << 16) | ((imms) << 10) | ((Xn) << 5) | (Xd))
++#define SXTB_ww(Wd,Wn)              SBFM_wwii(Wd,Wn,0,7)
++#define SXTB_xx(Xd,Xn)              SBFM_xxii(Xd,Xn,0,7)
++#define SXTH_ww(Wd,Wn)              SBFM_wwii(Wd,Wn,0,15)
++#define SXTH_xx(Xd,Xn)              SBFM_xxii(Xd,Xn,0,15)
++#define SXTW_xw(Xd,Wn)              SBFM_xxii(Xd,Wn,0,31)
++
++/* unsigned extend */
++#define UBFM_wwii(Wd,Wn,immr,imms)  _W((0b0101001100 << 22) | ((immr) << 16) | ((imms) << 10) | ((Wn) << 5) | (Wd))
++#define UBFM_xxii(Xd,Xn,immr,imms)  _W((0b1101001101 << 22) | ((immr) << 16) | ((imms) << 10) | ((Xn) << 5) | (Xd))
++#define UXTB_ww(Wd,Wn)              UBFM_wwii(Wd,Wn,0,7)
++#define UXTB_xx(Xd,Xn)              UBFM_xxii(Xd,Xn,0,7)
++#define UXTH_ww(Wd,Wn)              UBFM_wwii(Wd,Wn,0,15)
++#define UXTH_xx(Xd,Xn)              UBFM_xxii(Xd,Xn,0,15)
++
++
++/*----------------------------------------
++ * logical
++ *----------------------------------------*/
++/* AND */
++#define AND_www(Wd,Wn,Wm)         _W((0b00001010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define AND_xxx(Xd,Xn,Xm)         _W((0b10001010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define AND_xx1f(Xd,Xn)           _W((0b100100100 << 23) | immEncode(1,0b000000,0b000100) | ((Xn) << 5) | (Xd))
++#define AND_ww3f(Wd,Wn)           _W((0b000100100 << 23) | immEncode(0,0b000000,0b000101) | ((Wn) << 5) | (Wd))
++#define AND_ww1f(Wd,Wn)           _W((0b000100100 << 23) | immEncode(0,0b000000,0b000100) | ((Wn) << 5) | (Wd))
++#define ANDS_www(Wd,Wn,Wm)        _W((0b01101010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define ANDS_xxx(Xd,Xn,Xm)        _W((0b11101010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define ANDS_xx7fff(Xd,Xn)        _W((0b111100100 << 23) | immEncode(1,0b000000,0b001110) | ((Xn) << 5) | (Xd))
++#define ANDS_xx1f(Xd,Xn)          _W((0b111100100 << 23) | immEncode(1,0b000000,0b000100) | ((Xn) << 5) | (Xd))
++#define ANDS_ww7f(Wd,Wn)          _W((0b011100100 << 23) | immEncode(0,0b000000,0b000110) | ((Wn) << 5) | (Wd))
++#define ANDS_ww3f(Wd,Wn)          _W((0b011100100 << 23) | immEncode(0,0b000000,0b000101) | ((Wn) << 5) | (Wd))
++#define ANDS_ww1f(Wd,Wn)          _W((0b011100100 << 23) | immEncode(0,0b000000,0b000100) | ((Wn) << 5) | (Wd))
++
++/* EOR */
++#define EOR_www(Wd,Wn,Wm)         _W((0b01001010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define EOR_xxx(Xd,Xn,Xm)         _W((0b11001010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define EOR_wwwLSLi(Wd,Wn,Wm,i)   _W((0b01001010000 << 21) | ((Wm) << 16) | (((i) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define EOR_xxxLSLi(Xd,Xn,Xm,i)   _W((0b11001010000 << 21) | ((Xm) << 16) | (((i) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++
++/* ORR */
++#define ORR_www(Wd,Wn,Wm)         _W((0b00101010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define ORR_xxx(Xd,Xn,Xm)         _W((0b10101010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++#define ORR_wwwLSLi(Wd,Wn,Wm,i)   _W((0b00101010000 << 21) | ((Wm) << 16) | (((i) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define ORR_xxxLSLi(Xd,Xn,Xm,i)   _W((0b10101010000 << 21) | ((Xm) << 16) | (((i) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++#define ORR_wwwLSRi(Wd,Wn,Wm,i)   _W((0b00101010010 << 21) | ((Wm) << 16) | (((i) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define ORR_xxxLSRi(Xd,Xn,Xm,i)   _W((0b10101010010 << 21) | ((Xm) << 16) | (((i) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++
++/* TST */
++#define TST_ww(Wn,Wm)             _W((0b01101010000 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (0b11111))
++#define TST_xx(Xn,Xm)             _W((0b11101010000 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (0b11111))
++
++
++/*----------------------------------------
++ * shift
++ *----------------------------------------*/
++#define ASR_www(Wd,Wn,Wm)         _W((0b00011010110 << 21) | ((Wm) << 16) | (0b001010 << 10) | ((Wn) << 5) | (Wd))
++#define ASR_xxx(Xd,Xn,Xm)         _W((0b10011010110 << 21) | ((Xm) << 16) | (0b001010 << 10) | ((Xn) << 5) | (Xd))
++#define ASR_wwi(Wd,Wn,i)          _W((0b0001001100 << 22) | (((i) & 0x1f) << 16) | (0b011111 << 10) | ((Wn) << 5) | (Wd))
++#define ASR_xxi(Xd,Xn,i)          _W((0b1001001101 << 22) | (((i) & 0x3f) << 16) | (0b111111 << 10) | ((Xn) << 5) | (Xd))
++#define LSL_www(Wd,Wn,Wm)         _W((0b00011010110 << 21) | ((Wm) << 16) | (0b001000 << 10) | ((Wn) << 5) | (Wd))
++#define LSL_xxx(Xd,Xn,Xm)         _W((0b10011010110 << 21) | ((Xm) << 16) | (0b001000 << 10) | ((Xn) << 5) | (Xd))
++#define LSL_wwi(Wd,Wn,i)          _W((0b0101001100 << 22) | (((32-(i)) & 0x1f) << 16) | (((31-(i)) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define LSL_xxi(Xd,Xn,i)          _W((0b1101001101 << 22) | (((64-(i)) & 0x3f) << 16) | (((63-(i)) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++#define LSR_www(Wd,Wn,Wm)         _W((0b00011010110 << 21) | ((Wm) << 16) | (0b001001 << 10) | ((Wn) << 5) | (Wd))
++#define LSR_xxx(Xd,Xn,Xm)         _W((0b10011010110 << 21) | ((Xm) << 16) | (0b001001 << 10) | ((Xn) << 5) | (Xd))
++#define LSR_wwi(Wd,Wn,i)          _W((0b0101001100 << 22) | (((i) & 0x1f) << 16) | (0b011111 << 10) | ((Wn) << 5) | (Wd))
++#define LSR_xxi(Xd,Xn,i)          _W((0b1101001101 << 22) | (((i) & 0x3f) << 16) | (0b111111 << 10) | ((Xn) << 5) | (Xd))
++#define ROR_wwi(Wd,Ws,i)          _W((0b00010011100 << 21) | ((Ws) << 16) | (((i) & 0x1f) << 10) | ((Ws) << 5) | (Wd))
++#define ROR_xxi(Xd,Xs,i)          _W((0b10010011110 << 21) | ((Xs) << 16) | (((i) & 0x3f) << 10) | ((Xs) << 5) | (Xd))
++#define ROR_www(Wd,Wn,Wm)         _W((0b00011010110 << 21) | ((Wm) << 16) | (0b001011 << 10) | ((Wn) << 5) | (Wd))
++#define ROR_xxx(Xd,Xn,Xm)         _W((0b10011010110 << 21) | ((Xm) << 16) | (0b001011 << 10) | ((Xn) << 5) | (Xd))
++
++
++/*----------------------------------------
++ * bit ops
++ *----------------------------------------*/
++/* extract */
++// Wd[31...0] = Wn[31-lsb...0]Wm[31...lsb]
++// Xd[63...0] = Xn[63-lsb...0]Xm[63...lsb]
++#define EXTR_wwwi(Wd,Wn,Wm,lsb)   _W((0b00010011100 << 21) | ((Wm) << 16) | (((lsb) & 0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define EXTR_xxxi(Xd,Xn,Xm,lsb)   _W((0b10010011110 << 21) | ((Xm) << 16) | (((lsb) & 0x3f) << 10) | ((Xn) << 5) | (Xd))
++
++/* bitfield */
++// dst[lsb+width-1...lsb] = src[width-1...0]
++#define BFI_wwii(Wd,Wn,lsb,width)     _W((0b0011001100 << 22) | (((32-(lsb))&0x1f) << 16) | ((((width)-1)&0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define BFI_xxii(Xd,Xn,lsb,width)     _W((0b1011001101 << 22) | (((64-(lsb))&0x3f) << 16) | ((((width)-1)&0x3f) << 10) | ((Xn) << 5) | (Xd))
++#define SBFIZ_wwii(Wd,Wn,lsb,width)   _W((0b0001001100 << 22) | (((32-(lsb))&0x1f) << 16) | ((((width)-1)&0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define SBFIZ_xxii(Xd,Xn,lsb,width)   _W((0b1001001101 << 22) | (((64-(lsb))&0x3f) << 16) | ((((width)-1)&0x3f) << 10) | ((Xn) << 5) | (Xd))
++#define UBFIZ_wwii(Wd,Wn,lsb,width)   _W((0b0101001100 << 22) | (((32-(lsb))&0x1f) << 16) | ((((width)-1)&0x1f) << 10) | ((Wn) << 5) | (Wd))
++#define UBFIZ_xxii(Xd,Xn,lsb,width)   _W((0b1101001101 << 22) | (((64-(lsb))&0x3f) << 16) | ((((width)-1)&0x3f) << 10) | ((Xn) << 5) | (Xd))
++
++// dst[width-1...0] = src[lsb+width-1...lsb]
++#define BFXIL_wwii(Wd,Wn,lsb,width)   _W((0b0011001100 << 22) | (((lsb)&0x1f) << 16) | ((((lsb)+(width)-1)&0x3f) << 10) | ((Wn) << 5) | (Wd))
++#define BFXIL_xxii(Xd,Xn,lsb,width)   _W((0b1011001101 << 22) | (((lsb)&0x3f) << 16) | ((((lsb)+(width)-1)&0x3f) << 10) | ((Xn) << 5) | (Xd))
++#define SBFX_wwii(Wd,Wn,lsb,width)    _W((0b0001001100 << 22) | (((lsb)&0x1f) << 16) | ((((lsb)+(width)-1)&0x3f) << 10) | ((Wn) << 5) | (Wd))
++#define SBFX_xxii(Xd,Xn,lsb,width)    _W((0b1001001101 << 22) | (((lsb)&0x3f) << 16) | ((((lsb)+(width)-1)&0x3f) << 10) | ((Xn) << 5) | (Xd))
++#define UBFX_wwii(Wd,Wn,lsb,width)    _W((0b0101001100 << 22) | (((lsb)&0x1f) << 16) | ((((lsb)+(width)-1)&0x3f) << 10) | ((Wn) << 5) | (Wd))
++#define UBFX_xxii(Xd,Xn,lsb,width)    _W((0b1101001101 << 22) | (((lsb)&0x3f) << 16) | ((((lsb)+(width)-1)&0x3f) << 10) | ((Xn) << 5) | (Xd))
++
++#define BIC_www(Wd,Wn,Wm)         _W((0b00001010001 << 21) | ((Wm) << 16) | (0 << 10) | ((Wn) << 5) | (Wd))
++#define BIC_xxx(Xd,Xn,Xm)         _W((0b10001010001 << 21) | ((Xm) << 16) | (0 << 10) | ((Xn) << 5) | (Xd))
++
++/* reverse */
++#define REV_ww(Wd,Wn)             _W((0b01011010110 << 21) | (0b00000 << 16) | (0b000010 << 10) | ((Wn) << 5) | (Wd))
++#define REV_xx(Xd,Xn)             _W((0b11011010110 << 21) | (0b00000 << 16) | (0b000011 << 10) | ((Xn) << 5) | (Xd))
++#define REV16_ww(Wd,Wn)           _W((0b01011010110 << 21) | (0b00000 << 16) | (0b000001 << 10) | ((Wn) << 5) | (Wd))
++#define REV16_xx(Xd,Xn)           _W((0b11011010110 << 21) | (0b00000 << 16) | (0b000001 << 10) | ((Xn) << 5) | (Xd))
++#define REV32_xx(Xd,Xn)           _W((0b11011010110 << 21) | (0b00000 << 16) | (0b000010 << 10) | ((Xn) << 5) | (Xd))
++
++#define CLS_ww(Wd,Wn)             _W((0b01011010110 << 21) | (0b00000000101 << 10) | ((Wn) << 5) | (Wd))
++#define CLZ_ww(Wd,Wn)             _W((0b01011010110 << 21) | (0b00000000100 << 10) | ((Wn) << 5) | (Wd))
++
++
++/*----------------------------------------
++ * conditional ops
++ *----------------------------------------*/
++/* conditional compare */
++#define CCMP_wwfc(Wn,Wm,nzcv,cond)  _W((0b01111010010 << 21) | ((Wm) << 16) | ((cond) << 12) | (0b00 << 10) | ((Wn) << 5) | (nzcv))
++#define CCMP_xxfc(Xn,Xm,nzcv,cond)  _W((0b11111010010 << 21) | ((Xm) << 16) | ((cond) << 12) | (0b00 << 10) | ((Xn) << 5) | (nzcv))
++
++/* conditional select */
++#define CSEL_wwwc(Wd,Wn,Wm,cond)  _W((0b00011010100 << 21) | ((Wm) << 16) | ((cond) << 12) | (0b00 << 10) | ((Wn) << 5) | (Wd))
++#define CSEL_xxxc(Xd,Xn,Xm,cond)  _W((0b10011010100 << 21) | ((Xm) << 16) | ((cond) << 12) | (0b00 << 10) | ((Xn) << 5) | (Xd))
++
++/* conditional set */
++#define CSET_wc(Wd,cond)          _W((0b00011010100 << 21) | (0b11111 << 16) | ((cond^1) << 12) | (0b01 << 10) | (0b11111 << 5) | (Wd))
++#define CSET_xc(Xd,cond)          _W((0b10011010100 << 21) | (0b11111 << 16) | ((cond^1) << 12) | (0b01 << 10) | (0b11111 << 5) | (Xd))
++
++/* conditional set mask */
++#define CSETM_wc(Wd,cond)         _W((0b01011010100 << 21) | (0b11111 << 16) | ((cond^1) << 12) | (0b00 << 10) | (0b11111 << 5) | (Wd))
++#define CSETM_xc(Xd,cond)         _W((0b11011010100 << 21) | (0b11111 << 16) | ((cond^1) << 12) | (0b00 << 10) | (0b11111 << 5) | (Xd))
++
++
++/*----------------------------------------
++ * some special defines
++ *----------------------------------------*/
++// immediate encoding for flags:
++//   N  N=1 immr=100001 imms=000000
++//   Z  N=1 immr=100010 imms=000000
++//   C  N=1 immr=100011 imms=000000
++//   V  N=1 immr=100100 imms=000000
++//  ~N  N=1 immr=100000 imms=111110
++//  ~Z  N=1 immr=100001 imms=111110
++//  ~C  N=1 immr=100010 imms=111110
++//  ~V  N=1 immr=100011 imms=111110
++#define immNflag                  immEncode(1, 0b100001, 0b000000)
++#define immZflag                  immEncode(1, 0b100010, 0b000000)
++#define immCflag                  immEncode(1, 0b100011, 0b000000)
++#define immVflag                  immEncode(1, 0b100100, 0b000000)
++
++#define immNflagInv               immEncode(1, 0b100000, 0b111110)
++#define immZflagInv               immEncode(1, 0b100001, 0b111110)
++#define immCflagInv               immEncode(1, 0b100010, 0b111110)
++#define immVflagInv               immEncode(1, 0b100011, 0b111110)
++
++#define immOP_EOR                 (0b110100100 << 23)
++#define immOP_AND                 (0b100100100 << 23)
++#define immOP_ORR                 (0b101100100 << 23)
++
++// R_MEMSTART is in 32bit address space and never 0, so CCMN(R_MEMSTART, #0, #0, #<any cond>) will always clear NZCV
++#define CLEAR_NZCV()              _W((0b10111010010 << 21) | (0 << 16) | (NATIVE_CC_EQ << 12) | (0b10 << 10) | (R_MEMSTART << 5) | (0))
++
++#define EOR_xxCflag(Xd,Xn)        _W(immCflag | immOP_EOR | ((Xn) << 5) | (Xd))
++#define CLEAR_xxZflag(Xd,Xn)      _W(immZflagInv | immOP_AND | ((Xn) << 5) | (Xd))
++#define CLEAR_xxCflag(Xd,Xn)      _W(immCflagInv | immOP_AND | ((Xn) << 5) | (Xd))
++#define CLEAR_xxVflag(Xd,Xn)      _W(immVflagInv | immOP_AND | ((Xn) << 5) | (Xd))
++#define SET_xxZflag(Xd,Xn)        _W(immZflag | immOP_ORR | ((Xn) << 5) | (Xd))
++#define SET_xxVflag(Xd,Xn)        _W(immVflag | immOP_ORR | ((Xn) << 5) | (Xd))
++#define SET_xxCflag(Xd,Xn)        _W(immCflag | immOP_ORR | ((Xn) << 5) | (Xd))
++
++#define EOR_xxbit(Xd,Xn,bit)      _W(immOP_EOR | immEncode(1, ((-(bit)) & 0x3f), 0b000000) | ((Xn) << 5) | (Xd))
++#define CLEAR_xxbit(Xd,Xn,bit)    _W(immOP_AND | immEncode(1, ((-((bit)+1)) & 0x3f), 0b111110) | ((Xn) << 5) | (Xd))
++#define SET_xxbit(Xd,Xn,bit)      _W(immOP_ORR | immEncode(1, ((-(bit)) & 0x3f), 0b000000) | ((Xn) << 5) | (Xd))
++
++#define CLEAR_LOW4_xx(Xd,Xn)      _W(immOP_AND | immEncode(1, 0b111100, 0b111011) | ((Xn) << 5) | (Xd))
++#define CLEAR_LOW8_xx(Xd,Xn)      _W(immOP_AND | immEncode(1, 0b111000, 0b110111) | ((Xn) << 5) | (Xd))
++#define CLEAR_LOW16_xx(Xd,Xn)     _W(immOP_AND | immEncode(1, 0b110000, 0b101111) | ((Xn) << 5) | (Xd))
++
++#define SET_LOW8_xx(Xd,Xn)        _W(immOP_ORR | immEncode(1, 0b000000, 0b000111) | ((Xn) << 5) | (Xd))
++
++// Floatingpoint
++
++#define LDR_dXi(Dt,Xn,i)      _W((0b1111110101 << 22) | (((i)/8) << 10) | ((Xn) << 5) | (Dt))
++#define LDR_sXi(St,Xn,i)      _W((0b1011110101 << 22) | (((i)/4) << 10) | ((Xn) << 5) | (St))
++#define LDR_dXx(Dt,Xn,Xm)     _W((0b11111100011 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Dt))
++
++#define STR_dXi(Dt,Xn,i)      _W((0b1111110100 << 22) | (((i)/8) << 10) | ((Xn) << 5) | (Dt))
++#define STR_sXi(St,Xn,i)      _W((0b1011110100 << 22) | (((i)/4) << 10) | ((Xn) << 5) | (St))
++#define STR_dXx(Dt,Xn,Xm)     _W((0b11111100001 << 21) | ((Xn) << 16) | (EX_UXTW << 13) | (0 << 12) | (0b10 << 10) | ((Xm) << 5) | (Dt))
++#define FMOV_dd(Dd,Dn)        _W((0b00011110011 << 21) | (0b00000010000 << 10) | ((Dn) << 5) | (Dd))
++#define FMOV_ss(Sd,Sn)        _W((0b00011110001 << 21) | (0b00000010000 << 10) | ((Sn) << 5) | (Sd))
++#define FMOV_dx(Dd,Xn)        _W((0b10011110011 << 21) | (0b00111000000 << 10) | ((Xn) << 5) | (Dd))
++#define FMOV_xd(Xd,Dn)        _W((0b10011110011 << 21) | (0b00110000000 << 10) | ((Dn) << 5) | (Xd))
++#define FMOV_sw(Sd,Wn)        _W((0b00011110001 << 21) | (0b00111000000 << 10) | ((Wn) << 5) | (Sd))
++#define FMOV_ws(Wd,Sn)        _W((0b00011110001 << 21) | (0b00110000000 << 10) | ((Sn) << 5) | (Wd))
++#define FMOV_di(Dd,i)         _W((0b00011110011 << 21) | ((i) << 13) | (0b10000000 << 5) | (Dd))
++#define FMOV_si(Sd,i)         _W((0b00011110001 << 21) | ((i) << 13) | (0b10000000 << 5) | (Sd))
++#define MOVI_di(Dd,i)         _W((0b0010111100000 << 19) | ((((i) >> 5) & 0x7) << 16) | (0b111001 << 10) | (((i) & 0x1f) << 5) | (Dd))
++#define FCVT_ds(Dd,Sn)        _W((0b00011110001 << 21) | (0b00010110000 << 10) | ((Sn) << 5) | (Dd))
++#define FCVT_sd(Sd,Dn)        _W((0b00011110011 << 21) | (0b00010010000 << 10) | ((Dn) << 5) | (Sd))
++#define FRINTA_dd(Dd,Dn)      _W((0b00011110011 << 21) | (0b00110010000 << 10) | ((Dn) << 5) | (Dd))
++#define FRINTI_dd(Dd,Dn)      _W((0b00011110011 << 21) | (0b00111110000 << 10) | ((Dn) << 5) | (Dd))
++#define FRINTZ_dd(Dd,Dn)      _W((0b00011110011 << 21) | (0b00101110000 << 10) | ((Dn) << 5) | (Dd))
++#define FCVTAS_wd(Wd,Dn)      _W((0b00011110011 << 21) | (0b00100000000 << 10) | ((Dn) << 5) | (Wd))
++#define FCVTAS_xd(Xd,Dn)      _W((0b10011110011 << 21) | (0b00100000000 << 10) | ((Dn) << 5) | (Xd))
++#define FCVTZS_xd(Xd,Dn)      _W((0b10011110011 << 21) | (0b11000000000 << 10) | ((Dn) << 5) | (Xd))
++#define SCVTF_dw(Dd,Wn)       _W((0b00011110011 << 21) | (0b00010000000 << 10) | ((Wn) << 5) | (Dd))
++#define SCVTF_sw(Sd,Wn)       _W((0b00011110001 << 21) | (0b00010000000 << 10) | ((Wn) << 5) | (Sd))
++#define SCVTF_dx(Dd,Xn)       _W((0b10011110011 << 21) | (0b00010000000 << 10) | ((Xn) << 5) | (Dd))
++
++#define FABS_dd(Dd,Dn)        _W((0b00011110011 << 21) | (0b00000110000 << 10) | ((Dn) << 5) | (Dd))
++#define FABS_ss(Sd,Sn)        _W((0b00011110001 << 21) | (0b00000110000 << 10) | ((Sn) << 5) | (Sd))
++#define FADD_ddd(Dd,Dn,Dm)    _W((0b00011110011 << 21) | ((Dm) << 16) | (0b001010 << 10) | ((Dn) << 5) | (Dd))
++#define FADD_sss(Sd,Sn,Sm)    _W((0b00011110001 << 21) | ((Sm) << 16) | (0b001010 << 10) | ((Sn) << 5) | (Sd))
++#define FCMP_dd(Dn,Dm)        _W((0b00011110011 << 21) | ((Dm) << 16) | (0b001000 << 10) | ((Dn) << 5) | (0b00000))
++#define FCMP_d0(Dn)           _W((0b00011110011 << 21) | (0 << 16) | (0b001000 << 10) | ((Dn) << 5) | (0b01000))
++#define FCMP_ss(Sn,Sm)        _W((0b00011110001 << 21) | ((Sm) << 16) | (0b001000 << 10) | ((Sn) << 5) | (0b00000))
++#define FDIV_ddd(Dd,Dn,Dm)    _W((0b00011110011 << 21) | ((Dm) << 16) | (0b000110 << 10) | ((Dn) << 5) | (Dd))
++#define FDIV_sss(Sd,Sn,Sm)    _W((0b00011110001 << 21) | ((Sm) << 16) | (0b000110 << 10) | ((Sn) << 5) | (Sd))
++#define FMUL_ddd(Dd,Dn,Dm)    _W((0b00011110011 << 21) | ((Dm) << 16) | (0b000010 << 10) | ((Dn) << 5) | (Dd))
++#define FMUL_sss(Sd,Sn,Sm)    _W((0b00011110001 << 21) | ((Sm) << 16) | (0b000010 << 10) | ((Sn) << 5) | (Sd))
++#define FMSUB_dddd(Dd,Dn,Dm,Da) _W((0b00011111010 << 21) | ((Dm) << 16) | (1 << 15) | ((Da) << 10) | ((Dn) << 5) | (Dd))
++#define FNEG_dd(Dd,Dn)        _W((0b00011110011 << 21) | (0b00001010000 << 10) | ((Dn) << 5) | (Dd))
++#define FNEG_ss(Sd,Sn)        _W((0b00011110001 << 21) | (0b00001010000 << 10) | ((Sn) << 5) | (Sd))
++#define FSQRT_dd(Dd,Dn)       _W((0b00011110011 << 21) | (0b00001110000 << 10) | ((Dn) << 5) | (Dd))
++#define FSQRT_ss(Sd,Sn)       _W((0b00011110001 << 21) | (0b00001110000 << 10) | ((Sn) << 5) | (Sd))
++#define FSUB_ddd(Dd,Dn,Dm)    _W((0b00011110011 << 21) | ((Dm) << 16) | (0b001110 << 10) | ((Dn) << 5) | (Dd))
++#define FSUB_sss(Sd,Sn,Sm)    _W((0b00011110001 << 21) | ((Sm) << 16) | (0b001110 << 10) | ((Sn) << 5) | (Sd))
++
++#define REV64_dd(Vd,Vn)       _W((0b0000111000 << 22) | (0b100000000010 << 10) | ((Vn) << 5) | (Vd))
++
++#endif /* ARM_ASMA64_H */
++#define LDAR_wXi(Wt,Xn,i)  do { if ((i)==0) { _W(0x88DFFC00u | ((Xn) << 5) | (Wt)); } else { ADD_xxi(REG_WORK1,(Xn),(i)); _W(0x88DFFC00u | (REG_WORK1 << 5) | (Wt)); } } while(0)
++#define LDAR_wX(Wt,Xbase,offset)  do { ADD_xxi(REG_WORK4,(Xbase),(offset)); _W(0x88DFFC00u | (REG_WORK4 << 5) | (Wt)); } while(0)
+diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
+new file mode 100644
+index 00000000..5405e72b
+--- /dev/null
++++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
+@@ -0,0 +1,2247 @@
++/*
++ *  jit_arm64.cpp - 68k to AArch64 translator for the uae_cpu_2021 core
++ *
++ *  Basilisk II (C) 1997-2008 Christian Bauer
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ *
++ *  Design, in four rules:
++ *
++ *  1. The sixteen 68k registers live in AArch64 registers for as long as
++ *     translated code runs (D0-D7 in w19-w26, A0-A7 in w8-w15). They are
++ *     loaded once on the way in and stored once on the way out, never around
++ *     a block. A pinned register is only ever written as a W register, so
++ *     its upper half is zero and it can index guest memory directly.
++ *  2. The condition codes are the host's NZCV. The translator remembers at
++ *     compile time whether C holds the 68k carry or its complement (AArch64
++ *     subtracts with an inverted borrow) and picks the branch condition
++ *     accordingly; the stored form, at every exit, is the 68k one. X is kept
++ *     apart in w17.
++ *  3. Anything the translator does not know ends the block: the interpreter
++ *     runs that one instruction, from the same register file, and translation
++ *     resumes after it. The interpreter is the reference and the fallback.
++ *  4. A branch back to the head of its own block is a loop inside the block.
++ *     An exit to a known guest PC is patched into a direct branch once that
++ *     PC has a translation; a return looks its target up in a small table.
++ *     Nothing sits between two blocks. Every backward transfer spends one
++ *     unit of a budget kept in w16, so that the host gets control back.
++ */
++
++#include "sysdeps.h"
++#include "cpu_emulation.h"
++#include "main.h"
++#include "emul_op.h"
++#include "m68k.h"
++#include "memory.h"
++#include "readcpu.h"
++#include "newcpu.h"
++#include "jit_arm64.h"
++
++#include <cstddef>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <unordered_map>
++#include <vector>
++#ifndef JIT_ARM64_OWN_MEMORY
++#include <sys/mman.h>
++#endif
++#ifdef __APPLE__
++#include <pthread.h>
++#include <libkern/OSCacheControl.h>
++#endif
++
++extern int quit_program;
++
++/*
++ *  Code buffer and emitter
++ */
++
++static uae_u32 *code_base, *code_ptr, *code_end;
++static const size_t CODE_SIZE = 16 * 1024 * 1024;
++
++static inline void emit_long(uae_u32 w) { *code_ptr++ = w; }
++
++enum {
++	NATIVE_CC_EQ = 0, NATIVE_CC_NE, NATIVE_CC_CS, NATIVE_CC_CC, NATIVE_CC_MI, NATIVE_CC_PL,
++	NATIVE_CC_VS, NATIVE_CC_VC, NATIVE_CC_HI, NATIVE_CC_LS, NATIVE_CC_GE, NATIVE_CC_LT,
++	NATIVE_CC_GT, NATIVE_CC_LE, NATIVE_CC_AL
++};
++
++#include "codegen_arm64.h"
++
++// Fixed roles
++enum {
++	R_REGS = 27,		// &regs
++	R_MEM = 28,			// MEMBaseDiff: host address of guest address 0
++	R_X = 17,			// the 68k X flag, 0 or 1
++	R_BUDGET = 16,		// back-edges left before the host is given control
++	R_FLUSH = 7,		// scratch reserved for flag materialisation
++	R_SP = 31
++};
++static inline int DREG(int n) { return 19 + n; }
++static inline int AREG(int n) { return 8 + n; }
++
++static void write_begin(void)
++{
++#ifdef __APPLE__
++	pthread_jit_write_protect_np(0);
++#endif
++}
++
++static void write_end(uae_u32 *from)
++{
++#ifdef __APPLE__
++	pthread_jit_write_protect_np(1);
++	sys_icache_invalidate(from, (char *)code_ptr - (char *)from);
++#else
++	__builtin___clear_cache((char *)from, (char *)code_ptr);
++#endif
++}
++
++static void emit_mov64(int xd, uint64_t v)
++{
++	MOV_xi(xd, v & 0xffff);
++	if ((v >> 16) & 0xffff) MOVK_xish(xd, (v >> 16) & 0xffff, 16);
++	if ((v >> 32) & 0xffff) MOVK_xish(xd, (v >> 32) & 0xffff, 32);
++	if ((v >> 48) & 0xffff) MOVK_xish(xd, (v >> 48) & 0xffff, 48);
++}
++
++static void emit_mov32(int wd, uae_u32 v)
++{
++	if ((v & 0xffff0000) == 0) MOV_wi(wd, v);
++	else if ((v & 0xffff0000) == 0xffff0000) MOVN_wi(wd, ~v & 0xffff);
++	else if ((v & 0xffff) == 0) MOV_wish(wd, v >> 16, 16);
++	else { MOV_wi(wd, v & 0xffff); MOVK_wish(wd, v >> 16, 16); }
++}
++
++// wd = wn + imm, flags untouched
++static void emit_add_imm(int wd, int wn, uae_s32 imm)
++{
++	if (imm == 0) { if (wd != wn) MOV_ww(wd, wn); }
++	else if (imm > 0 && imm < 4096) ADD_wwi(wd, wn, imm);
++	else if (imm < 0 && imm > -4096) SUB_wwi(wd, wn, -imm);
++	else { emit_mov32(R_FLUSH, (uae_u32)imm); ADD_www(wd, wn, R_FLUSH); }
++}
++
++/*
++ *  State shared with the entry and exit thunks
++ */
++
++// x29 points here while translated code runs
++static const unsigned MAX_SLOTS = 1 << 20;
++static struct JitState {
++	uae_u32 nzcv;		// N Z C V in bits 31..28, C being the 68k carry
++	uae_u32 x;
++	uae_u32 budget;		// w16, across a call to the interpreter
++	uae_u32 epoch;		// raised by every flush
++	uae_u32 slot[MAX_SLOTS];	// per block: the epoch at which its source was last found unchanged
++} *jit_state_ptr;
++#define jit_state (*jit_state_ptr)		// allocated at start: four megabytes that have no place in .bss
++#define jit_epoch jit_state.epoch
++enum { R_STATE = 29 };
++
++static uint64_t jit_helper_interp(uae_u32 pc);
++// Opcodes the translator has declined at least once: when several follow each
++// other, the interpreter runs them in one call
++static uae_u8 opcode_declined[65536];
++static uae_u32 *helper_thunk, *exit_nostore;
++
++typedef uae_u32 (*enter_fn)(void *code);
++static enter_fn jit_enter;
++static uae_u32 *exit_thunk;
++
++// Why translated code went back to the host, counted on the way out
++enum { EXIT_BUDGET, EXIT_UNLINKED, EXIT_TABLE, EXIT_STALE, EXIT_ASK, EXIT_KINDS };
++static uint64_t exit_count[EXIT_KINDS];
++static uae_u32 *exit_via[EXIT_KINDS];
++
++static void build_thunks(void)
++{
++	write_begin();
++	uae_u32 *start = code_ptr;
++
++	// uae_u32 jit_enter(void *code)
++	jit_enter = (enter_fn)code_ptr;
++	STP_xxXpre(29, 30, R_SP, -96);
++	STP_xxXi(19, 20, R_SP, 16);
++	STP_xxXi(21, 22, R_SP, 32);
++	STP_xxXi(23, 24, R_SP, 48);
++	STP_xxXi(25, 26, R_SP, 64);
++	STP_xxXi(27, 28, R_SP, 80);
++	MOV_xx(2, 0);
++	emit_mov64(R_STATE, (uint64_t)&jit_state);
++	emit_mov64(R_REGS, (uint64_t)&regs);
++	emit_mov64(R_MEM, (uint64_t)MEMBaseDiff);
++	for (int i = 0; i < 8; i += 2) {
++		LDP_wwXi(DREG(i), DREG(i + 1), R_REGS, i * 4);
++		LDP_wwXi(AREG(i), AREG(i + 1), R_REGS, 32 + i * 4);
++	}
++	emit_mov64(1, (uint64_t)&jit_state);
++	LDR_wXi(0, 1, 0);
++	MSR_NZCV_x(0);
++	LDR_wXi(R_X, 1, 4);
++	MOV_wi(R_BUDGET, 4096);
++	BR_x(2);
++
++	// Reached by a branch, w0 = the next guest PC
++	exit_thunk = code_ptr;
++	for (int i = 0; i < 8; i += 2) {
++		STP_wwXi(DREG(i), DREG(i + 1), R_REGS, i * 4);
++		STP_wwXi(AREG(i), AREG(i + 1), R_REGS, 32 + i * 4);
++	}
++	emit_mov64(1, (uint64_t)&jit_state);
++	MRS_NZCV_x(2);
++	STR_wXi(2, 1, 0);
++	STR_wXi(R_X, 1, 4);
++	exit_nostore = code_ptr;		// the register file in memory is already the truth
++	LDP_xxXi(19, 20, R_SP, 16);
++	LDP_xxXi(21, 22, R_SP, 32);
++	LDP_xxXi(23, 24, R_SP, 48);
++	LDP_xxXi(25, 26, R_SP, 64);
++	LDP_xxXi(27, 28, R_SP, 80);
++	LDP_xxXpost(29, 30, R_SP, 96);
++	emit_long(0xd65f03c0);		// RET
++
++	for (int k = 0; k < EXIT_KINDS; k++) {
++		exit_via[k] = code_ptr;
++		emit_mov64(1, (uint64_t)&exit_count[k]);
++		LDR_xXi(2, 1, 0);
++		ADD_xxi(2, 2, 1);
++		STR_xXi(2, 1, 0);
++		B_i(exit_thunk - code_ptr);
++	}
++
++	// Called from a block with w0 = the PC of an instruction the translator does
++	// not know: the interpreter's handler runs it on the register file, and the
++	// block gets everything back, with w0 = the PC that follows. If the handler
++	// asked for anything else (an interrupt, a flush, the end), translated code is
++	// left for the host instead.
++	helper_thunk = code_ptr;
++	STR_xXpre(30, R_SP, -16);
++	for (int i = 0; i < 8; i += 2) {
++		STP_wwXi(DREG(i), DREG(i + 1), R_REGS, i * 4);
++		STP_wwXi(AREG(i), AREG(i + 1), R_REGS, 32 + i * 4);
++	}
++	emit_mov64(1, (uint64_t)&jit_state);
++	MRS_NZCV_x(2);
++	STR_wXi(2, 1, 0);
++	STR_wXi(R_X, 1, 4);
++	STR_wXi(R_BUDGET, 1, 8);
++	emit_mov64(2, (uint64_t)&jit_helper_interp);
++	BLR_x(2);
++	LDR_xXpost(30, R_SP, 16);
++	LSR_xxi(1, 0, 32);
++	CBNZ_wi(1, 0);
++	uae_u32 *leave = code_ptr - 1;
++	for (int i = 0; i < 8; i += 2) {
++		LDP_wwXi(DREG(i), DREG(i + 1), R_REGS, i * 4);
++		LDP_wwXi(AREG(i), AREG(i + 1), R_REGS, 32 + i * 4);
++	}
++	emit_mov64(1, (uint64_t)&jit_state);
++	LDR_wXi(2, 1, 0);
++	MSR_NZCV_x(2);
++	LDR_wXi(R_X, 1, 4);
++	LDR_wXi(R_BUDGET, 1, 8);
++	emit_long(0xd65f03c0);		// RET: a BR would defeat the return predictor at every call
++	*leave |= ((code_ptr - leave) & 0x7ffff) << 5;
++	MOV_ww(0, 0);
++	B_i(exit_nostore - code_ptr);
++
++	write_end(start);
++}
++
++/*
++ *  Translation context
++ */
++
++enum { SZ_B = 0, SZ_W = 1, SZ_L = 2 };
++static inline int size_bytes(int sz) { return 1 << sz; }
++static inline int size_shift(int sz) { return sz == SZ_B ? 24 : sz == SZ_W ? 16 : 0; }
++
++struct Stub {
++	uae_u32 *branch;	// conditional branch to patch
++	uae_u32 target;		// guest PC to leave with
++	bool c_inv;
++	bool bail;			// the instruction at `target` must be run by the interpreter
++};
++
++// An exit to a guest PC known at translation time, to be turned into a branch
++struct ExitSite {
++	uae_u32 *first;		// first instruction of the exit; may jump straight to a block that ignores incoming flags
++	uae_u32 *last;		// its final branch to the exit thunk; may jump to any block
++	uae_u32 target;
++	bool c_inv;			// at `first`, C is still the complement of the 68k carry
++};
++
++// Where a return or an indirect jump finds its target without leaving translated code
++struct LutEntry {
++	uae_u32 pc;
++	uae_u32 unused;
++	void *code;
++};
++static const unsigned LUT_BITS = 16;
++static LutEntry *jit_lut;
++// ROM and RAM addresses differ in their upper half: fold it in, or a routine in
++// ROM and one in RAM would keep taking the same entry from each other
++static inline unsigned lut_index(uae_u32 pc) { return ((pc ^ (pc >> 16)) >> 1) & ((1 << LUT_BITS) - 1); }
++
++struct Ctx {
++	uae_u32 start;		// guest PC of the block
++	uae_u32 pc;			// guest PC of the instruction being translated
++	uae_u32 next;		// cursor past the words already fetched
++	bool c_inv;			// host C is the complement of the 68k carry
++	int pend_reg;		// N and Z are those of this register's value, C = V = 0, not yet computed (-1: none)
++	int pend_size;
++	int x_cc;			// X is this host condition, not yet in w17 (-1: none)
++	bool head_dirty;	// something before the first flag setter reads flags or leaves the block
++	bool head_known;	// the first flag setter has been seen
++	size_t n_stubs;
++};
++
++static Ctx cx;
++static std::vector<Stub> stubs;
++static std::vector<ExitSite> sites;
++
++static inline uae_u16 fetch16(void)
++{
++	uae_u16 w = get_word(cx.next);
++	cx.next += 2;
++	return w;
++}
++
++static inline uae_u32 fetch32(void)
++{
++	uae_u32 l = get_long(cx.next);
++	cx.next += 4;
++	return l;
++}
++
++// Bring N Z C V up to date
++static void flush_x(void);
++
++static void flush_flags(void)
++{
++	if (cx.pend_reg >= 0) {
++		flush_x();		// X may still be a condition on the flags about to be replaced
++		if (cx.pend_size == SZ_L)
++			TST_ww(cx.pend_reg, cx.pend_reg);
++		else {
++			LSL_wwi(R_FLUSH, cx.pend_reg, size_shift(cx.pend_size));
++			TST_ww(R_FLUSH, R_FLUSH);
++		}
++		cx.pend_reg = -1;
++		cx.c_inv = false;
++	}
++}
++
++// Bring w17 up to date; must run before the host flags it depends on change
++static void flush_x(void)
++{
++	if (cx.x_cc >= 0) {
++		CSET_wc(R_X, cx.x_cc);
++		cx.x_cc = -1;
++	}
++}
++
++// A pinned register is about to change without the flags changing
++static void touch(int reg)
++{
++	if (cx.pend_reg == reg)
++		flush_flags();
++}
++
++static void flip_c(void)
++{
++	MRS_NZCV_x(R_FLUSH);
++	EOR_xxCflag(R_FLUSH, R_FLUSH);
++	MSR_NZCV_x(R_FLUSH);
++}
++
++// The instruction being translated replaces N Z C V: what was pending is dead
++static void flags_replaced(void)
++{
++	flush_x();
++	cx.pend_reg = -1;
++	if (!cx.head_known)
++		cx.head_known = true;
++}
++
++static void flags_needed(void)
++{
++	if (!cx.head_known)
++		cx.head_dirty = true;
++	flush_x();
++	flush_flags();
++}
++
++// Leave translated code for good, for a guest PC known at translation time
++static void emit_exit_hard(uae_u32 target, bool c_inv, int why)
++{
++	if (c_inv)
++		flip_c();
++	emit_mov32(0, target);
++	B_i(exit_via[why] - code_ptr);
++}
++
++// Leave the block for a guest PC known at translation time; the exit becomes
++// a branch to that PC's translation when there is one
++static void emit_exit(uae_u32 target, bool c_inv)
++{
++	const bool backward = target <= cx.pc;
++	uae_u32 *budget = NULL;
++	if (backward) {
++		SUB_wwi(R_BUDGET, R_BUDGET, 1);
++		CBZ_wi(R_BUDGET, 0);
++		budget = code_ptr - 1;
++	}
++	ExitSite site;
++	site.first = code_ptr;
++	site.target = target;
++	site.c_inv = c_inv;
++	B_i(1);
++	if (c_inv)
++		flip_c();
++	emit_mov32(0, target);
++	site.last = code_ptr;
++	B_i(exit_via[EXIT_UNLINKED] - code_ptr);
++	sites.push_back(site);
++	if (backward) {
++		*budget |= ((code_ptr - budget) & 0x7ffff) << 5;
++		emit_exit_hard(target, c_inv, EXIT_BUDGET);
++	}
++}
++
++// Leave with the guest PC in w0
++static void emit_lut_jump(void);
++
++static void emit_exit_dynamic(void)
++{
++	flags_needed();
++	if (cx.c_inv)
++		flip_c();
++	emit_lut_jump();
++}
++
++// w0 = a guest PC, the flags in 68k form: go to its translation if the table
++// has it, to the host otherwise
++static void emit_lut_jump(void)
++{
++	SUB_wwi(R_BUDGET, R_BUDGET, 1);
++	CBZ_wi(R_BUDGET, 0);
++	uae_u32 *miss1 = code_ptr - 1;
++	emit_mov64(2, (uint64_t)jit_lut);
++	emit_long((0b01001010010u << 21) | (0 << 16) | (16 << 10) | (0 << 5) | 1);	// eor w1, w0, w0, lsr #16
++	UBFX_wwii(1, 1, 1, LUT_BITS);
++	ADD_xxxLSLi(1, 2, 1, 4);
++	LDR_wXi(3, 1, 0);
++	EOR_www(3, 3, 0);
++	CBNZ_wi(3, 0);
++	uae_u32 *miss2 = code_ptr - 1;
++	LDR_xXi(2, 1, 8);
++	BR_x(2);
++	*miss2 |= ((code_ptr - miss2) & 0x7ffff) << 5;
++	B_i(exit_via[EXIT_TABLE] - code_ptr);
++	*miss1 |= ((code_ptr - miss1) & 0x7ffff) << 5;
++	B_i(exit_via[EXIT_BUDGET] - code_ptr);
++}
++
++static void end_block(uae_u32 target)
++{
++	flags_needed();
++	emit_exit(target, cx.c_inv);
++}
++
++/*
++ *  Effective addresses
++ */
++
++enum { EA_REG, EA_MEM, EA_IMM };
++
++struct EA {
++	int kind;
++	int reg;			// EA_REG: the pinned register; EA_MEM: register holding the guest address
++	uae_u32 imm;
++};
++
++// The index register of an extension word, scaled, added to `scratch`; w5 is used
++static void emit_add_index(int scratch, uae_u16 ext)
++{
++	const int xr = (ext & 0x8000) ? AREG((ext >> 12) & 7) : DREG((ext >> 12) & 7);
++	if (ext & 0x800) MOV_ww(5, xr); else SXTH_ww(5, xr);
++	ADD_wwwLSLi(scratch, scratch, 5, (ext >> 9) & 3);
++}
++
++// The 68020 full-format extension word: base and index can each be left out,
++// the base displacement is a word or a long, and the address can be fetched
++// from memory before or after the index is added. base_reg < 0: the base is
++// the constant base_const (PC-relative).
++static bool decode_full_ext(int base_reg, uae_u32 base_const, uae_u16 ext, int scratch)
++{
++	const int bdsz = (ext >> 4) & 3, iis = ext & 7;
++	const bool bs = ext & 0x80, is = ext & 0x40;
++	if (bdsz == 0 || (ext & 8) || (is && iis >= 4))
++		return false;
++	const uae_s32 bd = bdsz == 2 ? (uae_s32)(uae_s16)fetch16() : bdsz == 3 ? (uae_s32)fetch32() : 0;
++	uae_s32 od = 0;
++	if ((iis & 3) == 2) od = (uae_s16)fetch16();
++	else if ((iis & 3) == 3) od = (uae_s32)fetch32();
++
++	if (bs) emit_mov32(scratch, (uae_u32)bd);
++	else if (base_reg >= 0) emit_add_imm(scratch, base_reg, bd);
++	else emit_mov32(scratch, base_const + bd);
++	const bool post = !is && (iis & 4);
++	if (!is && !post)
++		emit_add_index(scratch, ext);
++	if (iis) {
++		LDR_wXx(scratch, scratch, R_MEM);
++		REV_ww(scratch, scratch);
++		if (post)
++			emit_add_index(scratch, ext);
++		emit_add_imm(scratch, scratch, od);
++	}
++	return true;
++}
++
++// Scratch registers: w0-w3 belong to the operation, w4-w5 to the source address,
++// w6 to the destination address
++static bool decode_ea(int mode, int reg, int sz, EA &ea, int scratch)
++{
++	switch (mode) {
++	case 0: ea.kind = EA_REG; ea.reg = DREG(reg); return true;
++	case 1: if (sz == SZ_B) return false; ea.kind = EA_REG; ea.reg = AREG(reg); return true;
++	case 2: ea.kind = EA_MEM; ea.reg = AREG(reg); return true;
++	case 3: {	// (An)+
++		int step = (reg == 7 && sz == SZ_B) ? 2 : size_bytes(sz);
++		touch(AREG(reg));
++		MOV_ww(scratch, AREG(reg));
++		ADD_wwi(AREG(reg), AREG(reg), step);
++		ea.kind = EA_MEM; ea.reg = scratch;
++		return true;
++	}
++	case 4: {	// -(An)
++		int step = (reg == 7 && sz == SZ_B) ? 2 : size_bytes(sz);
++		touch(AREG(reg));
++		SUB_wwi(AREG(reg), AREG(reg), step);
++		ea.kind = EA_MEM; ea.reg = AREG(reg);
++		return true;
++	}
++	case 5: {	// d16(An)
++		uae_s32 d = (uae_s16)fetch16();
++		emit_add_imm(scratch, AREG(reg), d);
++		ea.kind = EA_MEM; ea.reg = scratch;
++		return true;
++	}
++	case 6: {	// d8(An,Xn), brief format
++		const uae_u16 ext = fetch16();
++		if (ext & 0x100) {
++			if (!decode_full_ext(AREG(reg), 0, ext, scratch)) return false;
++			ea.kind = EA_MEM; ea.reg = scratch;
++			return true;
++		}
++		const int xr = (ext & 0x8000) ? AREG((ext >> 12) & 7) : DREG((ext >> 12) & 7);
++		if (ext & 0x800) MOV_ww(scratch, xr); else SXTH_ww(scratch, xr);
++		ADD_wwwLSLi(scratch, AREG(reg), scratch, (ext >> 9) & 3);
++		emit_add_imm(scratch, scratch, (uae_s8)(ext & 0xff));
++		ea.kind = EA_MEM; ea.reg = scratch;
++		return true;
++	}
++	case 7:
++		switch (reg) {
++		case 3: {	// d8(PC,Xn), brief format
++			const uae_u32 base = cx.next;
++			const uae_u16 ext = fetch16();
++			if (ext & 0x100) {
++				if (!decode_full_ext(-1, base, ext, scratch)) return false;
++				ea.kind = EA_MEM; ea.reg = scratch;
++				return true;
++			}
++			const int xr = (ext & 0x8000) ? AREG((ext >> 12) & 7) : DREG((ext >> 12) & 7);
++			if (ext & 0x800) MOV_ww(scratch, xr); else SXTH_ww(scratch, xr);
++			LSL_wwi(scratch, scratch, (ext >> 9) & 3);
++			emit_add_imm(scratch, scratch, (uae_s32)(base + (uae_s8)(ext & 0xff)));
++			ea.kind = EA_MEM; ea.reg = scratch;
++			return true;
++		}
++		case 0: emit_mov32(scratch, (uae_u32)(uae_s32)(uae_s16)fetch16()); ea.kind = EA_MEM; ea.reg = scratch; return true;
++		case 1: emit_mov32(scratch, fetch32()); ea.kind = EA_MEM; ea.reg = scratch; return true;
++		case 2: {	// d16(PC)
++			uae_u32 base = cx.next;
++			emit_mov32(scratch, base + (uae_s32)(uae_s16)fetch16());
++			ea.kind = EA_MEM; ea.reg = scratch;
++			return true;
++		}
++		case 4:
++			ea.kind = EA_IMM;
++			ea.imm = sz == SZ_L ? fetch32() : sz == SZ_W ? fetch16() : (fetch16() & 0xff);
++			return true;
++		}
++		return false;
++	}
++	return false;
++}
++
++// Value of an operand in a register. A pinned register is returned as it is:
++// only its low `sz` part is meaningful. A loaded value is zero-extended.
++static int load_ea(const EA &ea, int sz, int scratch)
++{
++	switch (ea.kind) {
++	case EA_REG:
++		return ea.reg;
++	case EA_IMM:
++		emit_mov32(scratch, ea.imm);
++		return scratch;
++	default:
++		if (sz == SZ_L) { LDR_wXx(scratch, ea.reg, R_MEM); REV_ww(scratch, scratch); }
++		else if (sz == SZ_W) { LDRH_wXx(scratch, ea.reg, R_MEM); REV16_ww(scratch, scratch); }
++		else LDRB_wXx(scratch, ea.reg, R_MEM);
++		return scratch;
++	}
++}
++
++static void store_ea(const EA &ea, int sz, int val, int scratch)
++{
++	if (ea.kind == EA_REG) {
++		touch(ea.reg);
++		if (sz == SZ_L) { if (ea.reg != val) MOV_ww(ea.reg, val); }
++		else BFI_wwii(ea.reg, val, 0, sz == SZ_W ? 16 : 8);
++		return;
++	}
++	if (sz == SZ_L) { REV_ww(scratch, val); STR_wXx(scratch, ea.reg, R_MEM); }
++	else if (sz == SZ_W) { REV16_ww(scratch, val); STRH_wXx(scratch, ea.reg, R_MEM); }
++	else STRB_wXx(val, ea.reg, R_MEM);
++}
++
++/*
++ *  Operations on a sized value
++ */
++
++static void emit_tst(int v, int sz)
++{
++	if (sz == SZ_L)
++		TST_ww(v, v);
++	else {
++		LSL_wwi(1, v, size_shift(sz));
++		TST_ww(1, 1);
++	}
++	cx.c_inv = false;
++}
++
++enum { OP_ADD, OP_SUB };
++
++// res = d op s on the low `sz` part of the registers, N Z C V from that part.
++// d and s may be pinned or scratch, w1 excepted; with `compare` nothing is kept.
++static void emit_arith(int op, int sz, int res, int d, int s, bool compare, bool set_x)
++{
++	flags_replaced();
++	if (sz == SZ_L) {
++		if (op == OP_ADD) ADDS_www(res, d, s);
++		else if (compare) CMP_ww(d, s);
++		else SUBS_www(res, d, s);
++	} else {
++		const int sh = size_shift(sz);
++		if (op == OP_ADD) {
++			LSL_wwi(1, s, sh);
++			ADDS_wwwLSLi(1, 1, d, sh);
++		} else {
++			LSL_wwi(1, d, sh);
++			SUBS_wwwLSLi(1, 1, s, sh);
++		}
++		if (!compare)
++			LSR_wwi(res, 1, sh);
++	}
++	cx.c_inv = (op == OP_SUB);
++	if (set_x)
++		cx.x_cc = (op == OP_SUB) ? NATIVE_CC_CC : NATIVE_CC_CS;
++}
++
++enum { B_ADD, B_SUB, B_CMP, B_AND, B_OR, B_EOR };
++
++// dst = dst op s, dst being a register or memory; s holds the source value
++static void emit_binop(int bop, int sz, const EA &dst, int s)
++{
++	const bool reg_long = dst.kind == EA_REG && sz == SZ_L;
++	const int d = load_ea(dst, sz, 2);
++	const int res = reg_long ? dst.reg : 3;
++	if (bop <= B_CMP) {
++		emit_arith(bop == B_ADD ? OP_ADD : OP_SUB, sz, res, d, s, bop == B_CMP, bop != B_CMP);
++		if (bop != B_CMP && !reg_long)
++			store_ea(dst, sz, 3, 1);
++		return;
++	}
++	flags_replaced();
++	if (bop == B_AND) AND_www(res, d, s);
++	else if (bop == B_OR) ORR_www(res, d, s);
++	else EOR_www(res, d, s);
++	if (dst.kind == EA_REG) {
++		if (!reg_long)
++			BFI_wwii(dst.reg, 3, 0, sz == SZ_W ? 16 : 8);
++		cx.pend_reg = dst.reg; cx.pend_size = sz;
++	} else {
++		store_ea(dst, sz, 3, 1);
++		emit_tst(3, sz);
++	}
++}
++
++// Host condition for a 68k condition code (2..15), given what C currently means
++static int host_cc(int cc)
++{
++	switch (cc) {
++	case 2: case 3:		// HI, LS: natural only with the inverted carry
++		if (!cx.c_inv) { flip_c(); cx.c_inv = true; }
++		return cc == 2 ? NATIVE_CC_HI : NATIVE_CC_LS;
++	case 4: return cx.c_inv ? NATIVE_CC_CS : NATIVE_CC_CC;
++	case 5: return cx.c_inv ? NATIVE_CC_CC : NATIVE_CC_CS;
++	case 6: return NATIVE_CC_NE;
++	case 7: return NATIVE_CC_EQ;
++	case 8: return NATIVE_CC_VC;
++	case 9: return NATIVE_CC_VS;
++	case 10: return NATIVE_CC_PL;
++	case 11: return NATIVE_CC_MI;
++	case 12: return NATIVE_CC_GE;
++	case 13: return NATIVE_CC_LT;
++	case 14: return NATIVE_CC_GT;
++	default: return NATIVE_CC_LE;
++	}
++}
++
++// One back-edge to the head of the block. The head was translated believing C
++// is the 68k carry.
++static void emit_loop_edge(uae_u32 *head)
++{
++	if (cx.c_inv && cx.head_dirty)
++		flip_c();
++	SUB_wwi(R_BUDGET, R_BUDGET, 1);
++	CBNZ_wi(R_BUDGET, head - code_ptr);
++	emit_exit_hard(cx.start, cx.c_inv && !cx.head_dirty, EXIT_BUDGET);
++}
++
++static inline void patch_here(uae_u32 *branch)
++{
++	*branch |= ((code_ptr - branch) & 0x7ffff) << 5;
++}
++
++// Push a long on the guest stack; v must not be w1
++static void emit_push(int v)
++{
++	touch(AREG(7));
++	SUB_wwi(AREG(7), AREG(7), 4);
++	REV_ww(1, v);
++	STR_wXx(1, AREG(7), R_MEM);
++}
++
++/*
++ *  One instruction. Returns 0 when it cannot be translated (nothing is kept),
++ *  1 when translation goes on, 2 when the block ends with it.
++ */
++
++static int translate_one(uae_u32 *head)
++{
++	const uae_u16 op = fetch16();
++	const int mode = (op >> 3) & 7, reg = op & 7, reg9 = (op >> 9) & 7;
++	EA src, dst;
++
++	if (op == 0x4e71)	// NOP
++		return 1;
++
++	switch (op >> 12) {
++	case 1: case 2: case 3: {	// MOVE, MOVEA
++		const int sz = (op >> 12) == 1 ? SZ_B : (op >> 12) == 3 ? SZ_W : SZ_L;
++		const int dmode = (op >> 6) & 7;
++		if (!decode_ea(mode, reg, sz, src, 4)) return 0;
++		int v = load_ea(src, sz, 0);
++		if (dmode == 1) {		// MOVEA: no flags, word sign-extended
++			if (sz == SZ_B) return 0;
++			touch(AREG(reg9));
++			if (sz == SZ_W) SXTH_ww(AREG(reg9), v);
++			else if (AREG(reg9) != v) MOV_ww(AREG(reg9), v);
++			return 1;
++		}
++		if (dmode == 7 && reg9 > 1) return 0;
++		if ((dmode == 3 || dmode == 4) && v == AREG(reg9)) {
++			// The destination moves the register being stored: store what it held
++			MOV_ww(0, v);
++			v = 0;
++		}
++		if (!decode_ea(dmode, reg9, sz, dst, 6)) return 0;
++		flags_replaced();
++		store_ea(dst, sz, v, 2);
++		if (dst.kind == EA_REG) { cx.pend_reg = dst.reg; cx.pend_size = sz; }
++		else if (v >= 8 && src.kind == EA_REG) { cx.pend_reg = v; cx.pend_size = sz; }
++		else emit_tst(v, sz);
++		return 1;
++	}
++
++	case 7:		// MOVEQ
++		if (op & 0x100) return 0;
++		flags_replaced();
++		emit_mov32(DREG(reg9), (uae_u32)(uae_s32)(uae_s8)(op & 0xff));
++		cx.pend_reg = DREG(reg9); cx.pend_size = SZ_L;
++		return 1;
++
++	case 5: {	// ADDQ, SUBQ, Scc, DBcc
++		const int sz = (op >> 6) & 3;
++		const int cc = (op >> 8) & 15;
++		if (sz == 3) {
++			if (mode == 1) {		// DBcc
++				const uae_u32 base = cx.next;
++				const uae_u32 target = base + (uae_s32)(uae_s16)fetch16();
++				if (cc == 0) return 1;		// DBT: never loops, never counts
++				flags_needed();
++				touch(DREG(reg));
++				uae_u32 *done = NULL;
++				if (cc != 1) {
++					CC_B_i(host_cc(cc), 0);
++					done = code_ptr - 1;
++				}
++				UXTH_ww(0, DREG(reg));
++				SUB_wwi(1, DREG(reg), 1);
++				BFI_wwii(DREG(reg), 1, 0, 16);
++				if (target == cx.start) {
++					CBZ_wi(0, 0);
++					uae_u32 *skip = code_ptr - 1;
++					emit_loop_edge(head);
++					patch_here(skip);
++				} else {
++					CBNZ_wi(0, 0);
++					stubs.push_back({ code_ptr - 1, target, cx.c_inv, false });
++				}
++				if (done)
++					patch_here(done);
++				return 1;
++			}
++			// Scc
++			if (mode == 7 && reg > 1) return 0;
++			if (!decode_ea(mode, reg, SZ_B, dst, 6)) return 0;
++			flags_needed();
++			if (cc == 0) MOVN_wi(0, 0);
++			else if (cc == 1) MOV_wi(0, 0);
++			else CSETM_wc(0, host_cc(cc));
++			store_ea(dst, SZ_B, 0, 1);
++			return 1;
++		}
++		const int q = reg9 ? reg9 : 8;
++		const bool sub = op & 0x100;
++		if (mode == 1) {		// to an address register: whole register, no flags
++			touch(AREG(reg));
++			if (sub) SUB_wwi(AREG(reg), AREG(reg), q); else ADD_wwi(AREG(reg), AREG(reg), q);
++			return 1;
++		}
++		if (mode == 7 && reg > 1) return 0;
++		if (!decode_ea(mode, reg, sz, dst, 6)) return 0;
++		MOV_wi(0, q);
++		emit_binop(sub ? B_SUB : B_ADD, sz, dst, 0);
++		return 1;
++	}
++
++	case 6: {	// Bcc, BRA, BSR
++		const int cc = (op >> 8) & 15;
++		const uae_u32 base = cx.next;
++		uae_s32 disp = (uae_s8)(op & 0xff);
++		if (disp == 0) disp = (uae_s16)fetch16();
++		else if (disp == -1) disp = (uae_s32)fetch32();
++		const uae_u32 target = base + disp;
++		if (cc == 0) {			// BRA
++			flags_needed();
++			if (target == cx.start) emit_loop_edge(head);
++			else emit_exit(target, cx.c_inv);
++			return 2;
++		}
++		if (cc == 1) {			// BSR
++			emit_mov32(0, cx.next);
++			emit_push(0);
++			end_block(target);
++			return 2;
++		}
++		flags_needed();
++		const int hcc = host_cc(cc);
++		if (target == cx.start) {
++			CC_B_i(hcc ^ 1, 0);
++			uae_u32 *skip = code_ptr - 1;
++			emit_loop_edge(head);
++			patch_here(skip);
++		} else {
++			CC_B_i(hcc, 0);
++			stubs.push_back({ code_ptr - 1, target, cx.c_inv, false });
++		}
++		return 1;
++	}
++
++	case 4: {
++		if (op == 0x4e75) {		// RTS
++			touch(AREG(7));
++			LDR_wXx(0, AREG(7), R_MEM);
++			REV_ww(0, 0);
++			ADD_wwi(AREG(7), AREG(7), 4);
++			emit_exit_dynamic();
++			return 2;
++		}
++		if (op == 0x4e74) {		// RTD
++			const uae_s32 d = (uae_s16)fetch16();
++			touch(AREG(7));
++			LDR_wXx(0, AREG(7), R_MEM);
++			REV_ww(0, 0);
++			emit_add_imm(AREG(7), AREG(7), 4 + d);
++			emit_exit_dynamic();
++			return 2;
++		}
++		if ((op & 0xff80) == 0x4e80) {	// JSR, JMP
++			const bool jsr = !(op & 0x40);
++			if (mode != 2 && mode != 5 && mode != 6 && !(mode == 7 && reg <= 3)) return 0;
++			if (mode == 7 && reg != 3) {	// the target is a constant
++				uae_u32 target;
++				if (reg == 0) target = (uae_u32)(uae_s32)(uae_s16)fetch16();
++				else if (reg == 1) target = fetch32();
++				else { const uae_u32 base = cx.next; target = base + (uae_s32)(uae_s16)fetch16(); }
++				if (jsr) { emit_mov32(0, cx.next); emit_push(0); }
++				end_block(target);
++				return 2;
++			}
++			if (!decode_ea(mode, reg, SZ_L, src, 4)) return 0;
++			if (src.reg != 4) MOV_ww(4, src.reg);
++			if (jsr) { emit_mov32(0, cx.next); emit_push(0); }
++			MOV_ww(0, 4);
++			emit_exit_dynamic();
++			return 2;
++		}
++		if ((op & 0xf1c0) == 0x41c0) {	// LEA
++			if (mode != 2 && mode != 5 && mode != 6 && !(mode == 7 && reg <= 3)) return 0;
++			if (!decode_ea(mode, reg, SZ_L, src, 4)) return 0;
++			touch(AREG(reg9));
++			if (AREG(reg9) != src.reg) MOV_ww(AREG(reg9), src.reg);
++			return 1;
++		}
++		if ((op & 0xffc0) == 0x4840 && mode != 0) {	// PEA
++			if (mode != 2 && mode != 5 && mode != 6 && !(mode == 7 && reg <= 3)) return 0;
++			if (!decode_ea(mode, reg, SZ_L, src, 4)) return 0;
++			if (src.reg != 4) MOV_ww(4, src.reg);
++			emit_push(4);
++			return 1;
++		}
++		if ((op & 0xfff8) == 0x4840) {	// SWAP
++			flags_replaced();
++			ROR_wwi(DREG(reg), DREG(reg), 16);
++			cx.pend_reg = DREG(reg); cx.pend_size = SZ_L;
++			return 1;
++		}
++		if ((op & 0xfff8) == 0x4880 || (op & 0xfff8) == 0x48c0 || (op & 0xfff8) == 0x49c0) {	// EXT.W, EXT.L, EXTB
++			const int d = DREG(reg);
++			flags_replaced();
++			if ((op & 0xfff8) == 0x4880) { SXTB_ww(0, d); BFI_wwii(d, 0, 0, 16); cx.pend_size = SZ_W; }
++			else if ((op & 0xfff8) == 0x48c0) { SXTH_ww(d, d); cx.pend_size = SZ_L; }
++			else { SXTB_ww(d, d); cx.pend_size = SZ_L; }
++			cx.pend_reg = d;
++			return 1;
++		}
++		if ((op & 0xffc0) == 0x4c00) {	// MULU.L, MULS.L
++			const uae_u16 ext = fetch16();
++			if (ext & 0x83f8) return 0;
++			if (mode == 1) return 0;
++			if (!decode_ea(mode, reg, SZ_L, src, 4)) return 0;
++			const int v = load_ea(src, SZ_L, 0);
++			const int dl = DREG((ext >> 12) & 7), dh = DREG(ext & 7);
++			const bool is_signed = ext & 0x800;
++			flags_replaced();
++			if (is_signed) SMULL_xww(1, dl, v); else UMULL_xww(1, dl, v);
++			// N and Z are those of the 64-bit product in both forms, as the
++			// interpreter has them; Dl is written last, so it wins when Dh is Dl
++			if (ext & 0x400) {		// 64-bit product in Dh:Dl
++				LSR_xxi(2, 1, 32);
++				MOV_ww(dh, 2);
++				MOV_ww(dl, 1);
++				TST_xx(1, 1);
++				cx.c_inv = false;
++				return 1;
++			}
++			// 32-bit product: V says it did not fit
++			if (is_signed) { SXTW_xw(2, 1); CMP_xx(2, 1); }
++			else { LSR_xxi(2, 1, 32); CMP_wi(2, 0); }
++			CSET_wc(3, NATIVE_CC_NE);
++			MOV_ww(dl, 1);
++			TST_xx(1, 1);
++			MRS_NZCV_x(R_FLUSH);
++			ORR_xxxLSLi(R_FLUSH, R_FLUSH, 3, 28);
++			MSR_NZCV_x(R_FLUSH);
++			cx.c_inv = false;
++			return 1;
++		}
++		if ((op & 0xffc0) == 0x4c40) {	// DIVU.L, DIVS.L, 32 bits by 32
++			const uae_u16 ext = fetch16();
++			if (ext & 0x87f8) return 0;				// the 64-bit dividend is the interpreter's
++			if (mode == 1 || mode == 3 || mode == 4) return 0;	// a trap must find nothing moved
++			if (!decode_ea(mode, reg, SZ_L, src, 4)) return 0;
++			const int v = load_ea(src, SZ_L, 0);
++			const int dq = DREG((ext >> 12) & 7), dr = DREG(ext & 7);
++			const bool is_signed = ext & 0x800;
++			flags_needed();
++			CBZ_wi(v, 0);
++			stubs.push_back({ code_ptr - 1, cx.pc, cx.c_inv, true });
++			if (is_signed) {
++				// The one overflow: the most negative number divided by -1
++				ADD_wwi(2, v, 1);
++				CBNZ_wi(2, 0);
++				uae_u32 *fine = code_ptr - 1;
++				emit_mov32(3, 0x80000000);
++				EOR_www(2, dq, 3);
++				CBZ_wi(2, 0);
++				stubs.push_back({ code_ptr - 1, cx.pc, cx.c_inv, true });
++				patch_here(fine);
++				SDIV_www(1, dq, v);
++			} else
++				UDIV_www(1, dq, v);
++			MSUB_wwww(2, 1, v, dq);
++			flags_replaced();
++			if (dr != dq) MOV_ww(dr, 2);
++			MOV_ww(dq, 1);
++			cx.pend_reg = dq; cx.pend_size = SZ_L;
++			return 1;
++		}
++		if ((op & 0xfb80) == 0x4880) {	// MOVEM
++			const bool to_regs = op & 0x400;
++			const int sz = (op & 0x40) ? SZ_L : SZ_W;
++			const int step = size_bytes(sz);
++			const uae_u16 mask = fetch16();
++			if (!to_regs && mode == 4) {
++				// Bit 0 is A7 here; the registers go down from A7 to D0
++				if (mask & (0x8000 >> (8 + reg))) return 0;	// storing the pointer itself: the interpreter's
++				touch(AREG(reg));
++				for (int i = 0; i < 16; i++) {
++					if (!(mask & (1 << i))) continue;
++					const int r = 15 - i;
++					const int hr = r < 8 ? DREG(r) : AREG(r - 8);
++					SUB_wwi(AREG(reg), AREG(reg), step);
++					if (sz == SZ_L) { REV_ww(1, hr); STR_wXx(1, AREG(reg), R_MEM); }
++					else { REV16_ww(1, hr); STRH_wXx(1, AREG(reg), R_MEM); }
++				}
++				return 1;
++			}
++			if (to_regs ? (mode == 3) : false) {
++				MOV_ww(6, AREG(reg));
++			} else {
++				if (mode != 2 && mode != 5 && mode != 6 && !(mode == 7 && (reg <= 1 || (to_regs && reg <= 3)))) return 0;
++				if (!decode_ea(mode, reg, sz, src, 6)) return 0;
++				if (src.reg != 6) MOV_ww(6, src.reg);
++			}
++			for (int r = 0; r < 16; r++) {
++				if (!(mask & (1 << r))) continue;
++				const int hr = r < 8 ? DREG(r) : AREG(r - 8);
++				if (to_regs) {
++					touch(hr);
++					if (sz == SZ_L) { LDR_wXx(hr, 6, R_MEM); REV_ww(hr, hr); }
++					else { LDRH_wXx(1, 6, R_MEM); REV16_ww(1, 1); SXTH_ww(hr, 1); }
++				} else {
++					if (sz == SZ_L) { REV_ww(1, hr); STR_wXx(1, 6, R_MEM); }
++					else { REV16_ww(1, hr); STRH_wXx(1, 6, R_MEM); }
++				}
++				ADD_wwi(6, 6, step);
++			}
++			if (to_regs && mode == 3) {
++				touch(AREG(reg));
++				MOV_ww(AREG(reg), 6);
++			}
++			return 1;
++		}
++		if ((op & 0xfff8) == 0x4e50) {	// LINK
++			if (reg == 7) return 0;
++			const uae_s32 d = (uae_s16)fetch16();
++			emit_push(AREG(reg));
++			touch(AREG(reg));
++			MOV_ww(AREG(reg), AREG(7));
++			emit_add_imm(AREG(7), AREG(7), d);
++			return 1;
++		}
++		if ((op & 0xfff8) == 0x4e58) {	// UNLK
++			if (reg == 7) return 0;
++			touch(AREG(7));
++			touch(AREG(reg));
++			LDR_wXx(0, AREG(reg), R_MEM);
++			ADD_wwi(AREG(7), AREG(reg), 4);
++			REV_ww(AREG(reg), 0);
++			return 1;
++		}
++		const int sz = (op >> 6) & 3;
++		const int kind = op & 0xff00;
++		if (sz != 3 && (kind == 0x4200 || kind == 0x4400 || kind == 0x4600 || kind == 0x4a00)) {	// CLR NEG NOT TST
++			if (mode == 1 && (kind != 0x4a00 || sz == SZ_B)) return 0;
++			if (mode == 7 && reg > (kind == 0x4a00 ? 3 : 1)) return 0;
++			if (!decode_ea(mode, reg, sz, dst, 6)) return 0;
++			const bool reg_long = dst.kind == EA_REG && sz == SZ_L;
++			if (kind == 0x4a00) {
++				const int v = load_ea(dst, sz, 0);
++				flags_replaced();
++				if (dst.kind == EA_REG) { cx.pend_reg = v; cx.pend_size = sz; }
++				else emit_tst(v, sz);
++				return 1;
++			}
++			if (kind == 0x4200) {
++				flags_replaced();
++				MOV_wi(3, 0);
++				store_ea(dst, sz, 3, 1);
++				if (dst.kind == EA_REG) { cx.pend_reg = dst.reg; cx.pend_size = sz; }
++				else emit_tst(3, sz);
++				return 1;
++			}
++			const int v = load_ea(dst, sz, 2);
++			const int res = reg_long ? dst.reg : 3;
++			flags_replaced();
++			if (kind == 0x4600) {		// NOT
++				MVN_ww(res, v);
++				if (dst.kind == EA_REG) {
++					if (!reg_long) BFI_wwii(dst.reg, 3, 0, sz == SZ_W ? 16 : 8);
++					cx.pend_reg = dst.reg; cx.pend_size = sz;
++				} else {
++					store_ea(dst, sz, 3, 1);
++					emit_tst(3, sz);
++				}
++				return 1;
++			}
++			// NEG
++			if (sz == SZ_L) NEGS_ww(res, v);
++			else {
++				LSL_wwi(1, v, size_shift(sz));
++				NEGS_ww(1, 1);
++				LSR_wwi(3, 1, size_shift(sz));
++			}
++			cx.c_inv = true;
++			cx.x_cc = NATIVE_CC_CC;
++			if (!reg_long)
++				store_ea(dst, sz, 3, 1);
++			return 1;
++		}
++		return 0;
++	}
++
++	case 9: case 11: case 13: {	// SUB, CMP, EOR, ADD and their address forms
++		const int line = op >> 12;
++		const int opmode = (op >> 6) & 7;
++		if (opmode == 3 || opmode == 7) {	// SUBA, CMPA, ADDA
++			const int sz = opmode == 3 ? SZ_W : SZ_L;
++			if (!decode_ea(mode, reg, sz, src, 4)) return 0;
++			int v = load_ea(src, sz, 0);
++			if (sz == SZ_W) { SXTH_ww(0, v); v = 0; }
++			if (line == 11) {
++				flags_replaced();
++				CMP_ww(AREG(reg9), v);
++				cx.c_inv = true;
++			} else {
++				touch(AREG(reg9));
++				if (line == 13) ADD_www(AREG(reg9), AREG(reg9), v);
++				else SUB_www(AREG(reg9), AREG(reg9), v);
++			}
++			return 1;
++		}
++		if (opmode > 3) {		// Dn to <ea>; for line B this is EOR
++			const int sz = opmode - 4;
++			if (mode == 1 && line == 11) {		// CMPM (Ay)+,(Ax)+
++				if (!decode_ea(3, reg, sz, src, 4)) return 0;
++				const int sv = load_ea(src, sz, 0);
++				if (!decode_ea(3, reg9, sz, dst, 6)) return 0;
++				emit_binop(B_CMP, sz, dst, sv);
++				return 1;
++			}
++			if (mode == 1) return 0;						// ADDX, SUBX
++			if (mode == 0 && line != 11) {		// ADDX, SUBX Dy,Dx
++				if (sz != SZ_L) return 0;
++				const int d = DREG(reg9);
++				flags_needed();						// Z and X go in
++				CSET_wc(4, NATIVE_CC_NE);			// Z only ever goes from set to clear
++				if (line == 13) {
++					CMP_wi(R_X, 1);					// host carry = X
++					ADCS_www(d, d, DREG(reg));
++				} else {
++					CMP_ww(31, R_X);				// host carry = not X: no borrow
++					SBCS_www(d, d, DREG(reg));
++				}
++				MRS_NZCV_x(R_FLUSH);
++				LSL_xxi(4, 4, 30);
++				BIC_xxx(R_FLUSH, R_FLUSH, 4);
++				MSR_NZCV_x(R_FLUSH);
++				cx.c_inv = (line == 9);
++				cx.x_cc = (line == 9) ? NATIVE_CC_CC : NATIVE_CC_CS;
++				return 1;
++			}
++			if (mode == 7 && reg > 1) return 0;
++			if (!decode_ea(mode, reg, sz, dst, 6)) return 0;
++			emit_binop(line == 13 ? B_ADD : line == 9 ? B_SUB : B_EOR, sz, dst, DREG(reg9));
++			return 1;
++		}
++		const int sz = opmode;
++		if (mode == 1 && sz == SZ_B) return 0;
++		if (!decode_ea(mode, reg, sz, src, 4)) return 0;
++		const int v = load_ea(src, sz, 0);
++		dst.kind = EA_REG; dst.reg = DREG(reg9);
++		emit_binop(line == 13 ? B_ADD : line == 9 ? B_SUB : B_CMP, sz, dst, v);
++		return 1;
++	}
++
++	case 0: {
++		const int sz = (op >> 6) & 3;
++		if (op & 0x100 || (op & 0xff00) == 0x0800) {	// BTST, BCHG, BCLR, BSET
++			if (mode == 1) return 0;			// MOVEP
++			const int bitop = (op >> 6) & 3;
++			const bool dynamic = op & 0x100;
++			const int bit = dynamic ? 0 : (fetch16() & 0xff);
++			if (mode == 7 && reg > (bitop == 0 ? 3 : 1)) return 0;
++			const int bsz = mode == 0 ? SZ_L : SZ_B;
++			if (!decode_ea(mode, reg, bsz, dst, 6)) return 0;
++			const int v = load_ea(dst, bsz, 2);
++			flags_needed();
++			// w3 = the bit number within the operand
++			if (dynamic) {
++				if (bsz == SZ_L) MOV_ww(3, DREG(reg9));		// the shifts below take it modulo 32
++				else UBFX_wwii(3, DREG(reg9), 0, 3);
++			} else
++				MOV_wi(3, bit & (bsz == SZ_L ? 31 : 7));
++			// Z = the bit was clear; the other flags stay
++			LSR_www(0, v, 3);
++			MVN_ww(0, 0);
++			UBFX_wwii(0, 0, 0, 1);
++			MRS_NZCV_x(R_FLUSH);
++			CLEAR_xxZflag(R_FLUSH, R_FLUSH);
++			ORR_xxxLSLi(R_FLUSH, R_FLUSH, 0, 30);
++			MSR_NZCV_x(R_FLUSH);
++			if (bitop != 0) {
++				MOV_wi(0, 1);
++				LSL_www(0, 0, 3);
++				if (bitop == 1) EOR_www(3, v, 0);
++				else if (bitop == 2) BIC_www(3, v, 0);
++				else ORR_www(3, v, 0);
++				store_ea(dst, bsz, 3, 1);
++			}
++			return 1;
++		}
++		const int kind = (op >> 8) & 15;	// ORI ANDI SUBI ADDI . EORI CMPI
++		if (sz == 3 || mode == 1) return 0;
++		if (kind != 0 && kind != 2 && kind != 4 && kind != 6 && kind != 10 && kind != 12) return 0;
++		if (mode == 7 && reg > (kind == 12 ? 3 : 1)) return 0;	// includes the CCR and SR forms
++		emit_mov32(0, sz == SZ_L ? fetch32() : sz == SZ_W ? fetch16() : (fetch16() & 0xff));
++		if (!decode_ea(mode, reg, sz, dst, 6)) return 0;
++		emit_binop(kind == 0 ? B_OR : kind == 2 ? B_AND : kind == 4 ? B_SUB : kind == 6 ? B_ADD
++		         : kind == 10 ? B_EOR : B_CMP, sz, dst, 0);
++		return 1;
++	}
++
++	case 8: case 12: {	// OR, AND, MULU, MULS, EXG
++		const int opmode = (op >> 6) & 7;
++		const bool is_and = (op >> 12) == 12;
++		if (is_and && (opmode == 3 || opmode == 7)) {	// MULU, MULS word
++			if (mode == 1) return 0;
++			if (!decode_ea(mode, reg, SZ_W, src, 4)) return 0;
++			const int v = load_ea(src, SZ_W, 0);
++			const int d = DREG(reg9);
++			flags_replaced();
++			if (opmode == 3) { UXTH_ww(1, v); UXTH_ww(2, d); }
++			else { SXTH_ww(1, v); SXTH_ww(2, d); }
++			MUL_www(d, 1, 2);
++			cx.pend_reg = d; cx.pend_size = SZ_L;
++			return 1;
++		}
++		if (is_and && (op & 0xf1f8) == 0xc100) {	// ABCD Dy,Dx, as a 68040 does it: N and V stay
++			const int d = DREG(reg9);
++			flags_needed();
++			MRS_NZCV_x(R_FLUSH);
++			UXTB_ww(0, DREG(reg));
++			UXTB_ww(1, d);
++			UBFX_wwii(2, 0, 0, 4);
++			UBFX_wwii(3, 1, 0, 4);
++			ADD_www(4, 0, 1);
++			SUB_www(4, 4, 2);
++			SUB_www(4, 4, 3);				// the two high digits
++			ADD_www(2, 2, 3);
++			ADD_www(2, 2, R_X);				// the low digits and the carry in
++			ADD_www(4, 4, 2);
++			CMP_wi(2, 9);
++			ADD_wwi(5, 4, 6);
++			CSEL_wwwc(4, 5, 4, NATIVE_CC_HI);
++			UBFX_wwii(5, 4, 4, 6);
++			CMP_wi(5, 9);
++			CSET_wc(6, NATIVE_CC_HI);		// the decimal carry out
++			ADD_wwi(5, 4, 0x60);
++			CSEL_wwwc(4, 5, 4, NATIVE_CC_HI);
++			MOV_ww(R_X, 6);
++			UXTB_ww(5, 4);
++			CMP_wi(5, 0);
++			CSET_wc(5, NATIVE_CC_NE);		// Z only ever goes from set to clear
++			BFI_wwii(d, 4, 0, 8);
++			CLEAR_xxCflag(R_FLUSH, R_FLUSH);
++			ORR_xxxLSLi(R_FLUSH, R_FLUSH, 6, 29);
++			LSL_xxi(5, 5, 30);
++			BIC_xxx(R_FLUSH, R_FLUSH, 5);
++			MSR_NZCV_x(R_FLUSH);
++			cx.c_inv = false;
++			return 1;
++		}
++		if (is_and && (op & 0xf1f8) == 0xc140) {	// EXG Dx,Dy
++			touch(DREG(reg9)); touch(DREG(reg));
++			MOV_ww(0, DREG(reg9)); MOV_ww(DREG(reg9), DREG(reg)); MOV_ww(DREG(reg), 0);
++			return 1;
++		}
++		if (is_and && (op & 0xf1f8) == 0xc148) {	// EXG Ax,Ay
++			touch(AREG(reg9)); touch(AREG(reg));
++			MOV_ww(0, AREG(reg9)); MOV_ww(AREG(reg9), AREG(reg)); MOV_ww(AREG(reg), 0);
++			return 1;
++		}
++		if (is_and && (op & 0xf1f8) == 0xc188) {	// EXG Dx,Ay
++			touch(DREG(reg9)); touch(AREG(reg));
++			MOV_ww(0, DREG(reg9)); MOV_ww(DREG(reg9), AREG(reg)); MOV_ww(AREG(reg), 0);
++			return 1;
++		}
++		if (!is_and && (opmode == 3 || opmode == 7)) {	// DIVU, DIVS word
++			// A zero divisor traps and an overflow leaves the operands alone: both are
++			// left to the interpreter, which is only possible if nothing has moved yet
++			if (mode == 1 || mode == 3 || mode == 4) return 0;
++			if (!decode_ea(mode, reg, SZ_W, src, 4)) return 0;
++			int v = load_ea(src, SZ_W, 0);
++			const int d = DREG(reg9);
++			flags_needed();
++			if (opmode == 3) UXTH_ww(0, v); else SXTH_ww(0, v);
++			CBZ_wi(0, 0);
++			stubs.push_back({ code_ptr - 1, cx.pc, cx.c_inv, true });
++			if (opmode == 3) {
++				UDIV_www(1, d, 0);
++				LSR_wwi(2, 1, 16);
++			} else {
++				SDIV_www(1, d, 0);
++				SXTH_ww(2, 1);
++				EOR_www(2, 2, 1);
++			}
++			CBNZ_wi(2, 0);
++			stubs.push_back({ code_ptr - 1, cx.pc, cx.c_inv, true });
++			MSUB_wwww(2, 1, 0, d);			// remainder, with the sign of the dividend
++			flags_replaced();
++			UXTH_ww(1, 1);
++			ORR_wwwLSLi(d, 1, 2, 16);
++			cx.pend_reg = d; cx.pend_size = SZ_W;
++			return 1;
++		}
++		if (opmode == 3 || opmode == 7) return 0;
++		if (opmode > 3) {		// Dn to memory
++			if (mode < 2) return 0;					// SBCD, ABCD, PACK, UNPK
++			if (mode == 7 && reg > 1) return 0;
++			if (!decode_ea(mode, reg, opmode - 4, dst, 6)) return 0;
++			emit_binop(is_and ? B_AND : B_OR, opmode - 4, dst, DREG(reg9));
++			return 1;
++		}
++		if (mode == 1) return 0;
++		if (!decode_ea(mode, reg, opmode, src, 4)) return 0;
++		const int v = load_ea(src, opmode, 0);
++		dst.kind = EA_REG; dst.reg = DREG(reg9);
++		emit_binop(is_and ? B_AND : B_OR, opmode, dst, v);
++		return 1;
++	}
++
++	case 14: {	// shifts and rotates by a constant, bit fields in a data register
++		const int sz = (op >> 6) & 3;
++		if (sz == 3) {
++			if (!(op & 0x800)) return 0;				// shifts of a word in memory
++			const int bf = (op >> 8) & 7;				// TST EXTU CHG EXTS CLR FFO SET INS
++			const uae_u16 ext = fetch16();
++			if (bf == 5) return 0;						// BFFFO
++			const int offset = (ext >> 6) & 31;
++			const int width = (ext & 31) ? (ext & 31) : 32;
++			const int other = DREG((ext >> 12) & 7);
++			if (ext & 0x0820) {
++				// Offset or width in a register: everything is worked out at run time.
++				// w3 = bit offset, w5 = width (1..32), w7 = the mask of the field.
++				const bool writes = bf == 2 || bf == 4 || bf == 6 || bf == 7;
++				const bool mem = mode != 0;
++				if (mem) {
++					if (mode < 2 || mode == 3 || mode == 4 || (mode == 7 && reg > (writes ? 1 : 3))) return 0;
++					if (!decode_ea(mode, reg, SZ_L, src, 4)) return 0;
++				}
++				flags_replaced();
++				if (ext & 0x800) MOV_ww(3, DREG((ext >> 6) & 7)); else MOV_wi(3, offset);
++				if (ext & 0x20) {
++					UBFX_wwii(5, DREG(ext & 7), 0, 5);
++					CMP_wi(5, 0);
++					MOV_wi(1, 32);
++					CSEL_wwwc(5, 1, 5, NATIVE_CC_EQ);
++				} else
++					MOV_wi(5, width);
++				MOV_xi(R_FLUSH, 1);
++				LSL_xxx(R_FLUSH, R_FLUSH, 5);
++				SUB_xxi(R_FLUSH, R_FLUSH, 1);
++				if (mem) {
++					// The offset is a signed number of bits from the address
++					ASR_wwi(1, 3, 3);
++					ADD_www(4, src.reg, 1);
++					UBFX_wwii(3, 3, 0, 3);
++					LDR_wXx(0, 4, R_MEM);
++					REV_ww(0, 0);
++					ADD_wwi(1, 4, 4);
++					LDRB_wXx(1, 1, R_MEM);
++					ORR_xxxLSLi(0, 1, 0, 8);		// forty bits, the field somewhere inside
++					ADD_www(1, 3, 5);
++					MOV_wi(6, 40);
++					SUB_www(6, 6, 1);				// how far the field is from bit 0
++					LSR_xxx(2, 0, 6);
++					AND_xxx(2, 2, R_FLUSH);
++				} else {
++					const int d = DREG(reg);
++					ADD_www(6, 3, 5);
++					NEG_ww(6, 6);					// rotating right by this brings the field to bit 0
++					ROR_www(0, d, 6);
++					AND_www(2, 0, R_FLUSH);
++				}
++				// N and Z are those of the field, or of the value BFINS puts in
++				MOV_wi(3, 32);
++				SUB_www(3, 3, 5);
++				LSL_www(1, bf == 7 ? other : 2, 3);
++				TST_ww(1, 1);
++				cx.c_inv = false;
++				if (bf == 0) return 1;
++				if (bf == 1) { MOV_ww(other, 2); return 1; }
++				if (bf == 3) { LSL_www(1, 2, 3); ASR_www(other, 1, 3); return 1; }
++				if (bf == 2) MVN_ww(2, 2);
++				else if (bf == 4) MOV_wi(2, 0);
++				else if (bf == 6) MOVN_wi(2, 0);
++				else MOV_ww(2, other);
++				AND_xxx(2, 2, R_FLUSH);
++				if (mem) {
++					LSL_xxx(2, 2, 6);
++					LSL_xxx(R_FLUSH, R_FLUSH, 6);
++					BIC_xxx(0, 0, R_FLUSH);
++					ORR_xxx(0, 0, 2);
++					LSR_wwi(1, 6, 3);
++					CBNZ_wi(1, 0);					// eight bits or more below the field: the fifth byte is not part of it
++					uae_u32 *skip = code_ptr - 1;
++					ADD_wwi(1, 4, 4);
++					STRB_wXx(0, 1, R_MEM);
++					patch_here(skip);
++					LSR_xxi(0, 0, 8);
++					REV_ww(1, 0);
++					STR_wXx(1, 4, R_MEM);
++				} else {
++					const int d = DREG(reg);
++					BIC_www(0, 0, R_FLUSH);
++					ORR_www(0, 0, 2);
++					NEG_ww(6, 6);
++					ROR_www(d, 0, 6);
++				}
++				return 1;
++			}
++			if (mode != 0) {
++				// In memory the field starts `offset` bits after the address and may
++				// run over five bytes: four are read as a long, the fifth when needed
++				const bool writes = bf == 2 || bf == 4 || bf == 6 || bf == 7;
++				if (mode < 2 || mode == 3 || mode == 4 || (mode == 7 && reg > (writes ? 1 : 3))) return 0;
++				if (!decode_ea(mode, reg, SZ_L, src, 4)) return 0;
++				const int bo = offset & 7, span = bo + width;
++				const int pos = (span <= 32 ? 32 : 40) - span;
++				emit_add_imm(4, src.reg, offset >> 3);
++				flags_replaced();
++				LDR_wXx(0, 4, R_MEM);
++				REV_ww(0, 0);
++				if (span > 32) {
++					ADD_wwi(5, 4, 4);
++					LDRB_wXx(1, 5, R_MEM);
++					ORR_xxxLSLi(0, 1, 0, 8);
++				}
++				UBFX_xxii(2, 0, pos, width);
++				const int shown = bf == 7 ? other : 2;		// BFINS shows the value inserted
++				if (width < 32) { LSL_wwi(1, shown, 32 - width); TST_ww(1, 1); } else TST_ww(shown, shown);
++				cx.c_inv = false;
++				if (bf == 0) return 1;
++				if (bf == 1) { MOV_ww(other, 2); return 1; }
++				if (bf == 3) { if (width == 32) MOV_ww(other, 2); else SBFX_wwii(other, 2, 0, width); return 1; }
++				if (bf == 2) MVN_ww(2, 2);
++				else if (bf == 4) MOV_wi(2, 0);
++				else if (bf == 6) MOVN_wi(2, 0);
++				else MOV_ww(2, other);
++				BFI_xxii(0, 2, pos, width);
++				if (span > 32) {
++					STRB_wXx(0, 5, R_MEM);
++					LSR_xxi(0, 0, 8);
++				}
++				REV_ww(1, 0);
++				STR_wXx(1, 4, R_MEM);
++				return 1;
++			}
++			const int d = DREG(reg);
++			const int rot = (32 - ((offset + width) & 31)) & 31;	// brings the field down to bit 0
++			flags_replaced();
++			if (bf == 7) {
++				// BFINS: the flags are those of the value inserted
++				if (width < 32) { LSL_wwi(1, other, 32 - width); TST_ww(1, 1); } else TST_ww(other, other);
++				cx.c_inv = false;
++				if (rot) ROR_wwi(0, d, rot); else MOV_ww(0, d);
++				if (width < 32) BFI_wwii(0, other, 0, width); else MOV_ww(0, other);
++				if (rot) ROR_wwi(d, 0, 32 - rot); else MOV_ww(d, 0);
++				return 1;
++			}
++			if (rot) ROR_wwi(0, d, rot); else MOV_ww(0, d);
++			if (width < 32) { LSL_wwi(1, 0, 32 - width); TST_ww(1, 1); } else TST_ww(0, 0);
++			cx.c_inv = false;
++			if (bf == 0) return 1;
++			if (bf == 1 || bf == 3) {
++				if (width == 32) MOV_ww(other, 0);
++				else if (bf == 1) UBFX_wwii(other, 0, 0, width);
++				else SBFX_wwii(other, 0, 0, width);
++				return 1;
++			}
++			if (bf == 2) MVN_ww(2, 0);
++			else if (bf == 4) MOV_wi(2, 0);
++			else MOVN_wi(2, 0);
++			if (width < 32) BFI_wwii(0, 2, 0, width); else MOV_ww(0, 2);
++			if (rot) ROR_wwi(d, 0, 32 - rot); else MOV_ww(d, 0);
++			return 1;
++		}
++		const int kind = (op >> 3) & 3;		// AS LS ROX RO
++		const bool left = op & 0x100;
++		if (kind == 2) {
++			// ROXL, ROXR by a constant: a rotation of the operand and X together
++			if (op & 0x20) return 0;
++			const int n = reg9 ? reg9 : 8;
++			const int bits = 8 << sz, wide = bits + 1;
++			const int d = DREG(reg);
++			const int r = left ? wide - n : n;		// as a right rotation
++			flags_replaced();
++			if (sz == SZ_L) MOV_ww(0, d); else if (sz == SZ_W) UXTH_ww(0, d); else UXTB_ww(0, d);
++			ORR_xxxLSLi(0, 0, R_X, bits);
++			LSR_xxi(1, 0, r);
++			LSL_xxi(2, 0, wide - r);
++			ORR_xxx(1, 1, 2);
++			UBFX_xxii(2, 1, bits, 1);
++			if (sz == SZ_L) MOV_ww(d, 1); else BFI_wwii(d, 1, 0, bits);
++			emit_tst(d, sz);
++			MRS_NZCV_x(R_FLUSH);
++			ORR_xxxLSLi(R_FLUSH, R_FLUSH, 2, 29);
++			MSR_NZCV_x(R_FLUSH);
++			MOV_ww(R_X, 2);
++			return 1;
++		}
++		if (op & 0x20) {
++			// The count is a register, taken modulo 64. Zero leaves the operand and
++			// X alone and clears C; the 64-bit host shifts give the right answer for
++			// every count, including those larger than the operand.
++			const int bits = 8 << sz;
++			const int d = DREG(reg);
++			flags_replaced();
++			UBFX_wwii(3, DREG(reg9), 0, 6);
++			if (kind == 3) {
++				const int lg = sz == SZ_L ? 5 : sz == SZ_W ? 4 : 3;
++				UBFX_wwii(4, 3, 0, lg);
++				if (sz == SZ_L) {
++					if (left) NEG_ww(4, 4);
++					ROR_www(5, d, 4);
++					MOV_ww(d, 5);
++				} else {
++					if (sz == SZ_W) UXTH_ww(0, d); else UXTB_ww(0, d);
++					if (!left) { NEG_ww(4, 4); UBFX_wwii(4, 4, 0, lg); }	// as a left rotation
++					LSL_www(5, 0, 4);
++					MOV_wi(6, bits);
++					SUB_www(6, 6, 4);
++					LSR_www(6, 0, 6);
++					ORR_www(5, 5, 6);
++					BFI_wwii(d, 5, 0, bits);
++				}
++				UBFX_wwii(2, 5, left ? 0 : bits - 1, 1);
++				CMP_wi(3, 0);
++				CSEL_wwwc(2, 31, 2, NATIVE_CC_EQ);
++				emit_tst(d, sz);
++				MRS_NZCV_x(R_FLUSH);
++				ORR_xxxLSLi(R_FLUSH, R_FLUSH, 2, 29);
++				MSR_NZCV_x(R_FLUSH);
++				return 1;
++			}
++			const bool arith = kind == 0;
++			if (arith && !left) {
++				if (sz == SZ_L) SXTW_xw(0, d); else if (sz == SZ_W) SXTH_xx(0, d); else SXTB_xx(0, d);
++			} else {
++				if (sz == SZ_L) MOV_ww(0, d); else if (sz == SZ_W) UXTH_ww(0, d); else UXTB_ww(0, d);
++			}
++			if (left) {
++				LSL_xxx(1, 0, 3);
++				UBFX_xxii(2, 1, bits, 1);
++				if (arith) {
++					// V: the sign changed on the way, that is the result does not fit
++					if (sz == SZ_L) SXTW_xw(4, d); else if (sz == SZ_W) SXTH_xx(4, d); else SXTB_xx(4, d);
++					LSL_xxx(5, 4, 3);
++					if (sz == SZ_L) SXTW_xw(6, 5); else if (sz == SZ_W) SXTH_xx(6, 5); else SXTB_xx(6, 5);
++					CMP_xx(6, 5);
++					CSET_wc(6, NATIVE_CC_NE);
++					CMP_wi(0, 0);
++					CSET_wc(R_FLUSH, NATIVE_CC_NE);		// or everything left the operand
++					CMP_wi(3, bits);
++					CSEL_wwwc(6, R_FLUSH, 6, NATIVE_CC_CS);
++				}
++			} else {
++				LSL_xxi(2, 0, 1);
++				if (arith) { ASR_xxx(2, 2, 3); ASR_xxx(1, 0, 3); }
++				else { LSR_xxx(2, 2, 3); LSR_xxx(1, 0, 3); }
++				UBFX_xxii(2, 2, 0, 1);
++			}
++			CMP_wi(3, 0);
++			CSEL_wwwc(R_X, R_X, 2, NATIVE_CC_EQ);
++			if (sz == SZ_L) MOV_ww(d, 1); else BFI_wwii(d, 1, 0, bits);
++			emit_tst(d, sz);
++			MRS_NZCV_x(R_FLUSH);
++			ORR_xxxLSLi(R_FLUSH, R_FLUSH, 2, 29);
++			if (arith && left)
++				ORR_xxxLSLi(R_FLUSH, R_FLUSH, 6, 28);
++			MSR_NZCV_x(R_FLUSH);
++			return 1;
++		}
++		const int n = reg9 ? reg9 : 8;
++		const int bits = 8 << sz;
++		const int d = DREG(reg);
++		flags_replaced();
++		if (kind == 3) {
++			// ROL, ROR: C is the last bit moved, V is clear, X is untouched
++			if (sz == SZ_L) {
++				ROR_wwi(d, d, left ? 32 - n : n);
++				MOV_ww(3, d);
++			} else {
++				const int k = n % bits;
++				if (sz == SZ_W) UXTH_ww(0, d); else UXTB_ww(0, d);
++				if (k == 0) MOV_ww(3, 0);
++				else {
++					const int l = left ? k : bits - k;		// as a left rotation
++					LSL_wwi(3, 0, l);
++					ORR_wwwLSRi(3, 3, 0, bits - l);
++				}
++				BFI_wwii(d, 3, 0, bits);
++			}
++			UBFX_wwii(2, 3, left ? 0 : bits - 1, 1);
++			emit_tst(d, sz);
++			MRS_NZCV_x(R_FLUSH);
++			ORR_xxxLSLi(R_FLUSH, R_FLUSH, 2, 29);
++			MSR_NZCV_x(R_FLUSH);
++			return 1;
++		}
++		UBFX_wwii(2, d, left ? bits - n : n - 1, 1);		// the last bit out
++		if (kind == 0 && left) {
++			// ASL: V says whether the sign bit changed at any step, that is whether
++			// the top n+1 bits of the operand were not all alike
++			if (n >= bits) {
++				if (sz == SZ_W) UXTH_ww(3, d); else UXTB_ww(3, d);
++				CMP_wi(3, 0);
++				CSET_wc(3, NATIVE_CC_NE);
++			} else {
++				SBFX_wwii(3, d, bits - 1 - n, n + 1);
++				ADD_wwi(3, 3, 1);
++				CMP_wi(3, 1);
++				CSET_wc(3, NATIVE_CC_HI);
++			}
++		}
++		if (sz == SZ_L) {
++			if (left) LSL_wwi(d, d, n);
++			else if (kind == 1) LSR_wwi(d, d, n);
++			else ASR_wwi(d, d, n);
++		} else {
++			if (left) LSL_wwi(0, d, n);
++			else if (n == bits) { if (kind == 1) MOV_wi(0, 0); else SBFX_wwii(0, d, bits - 1, 1); }
++			else if (kind == 1) UBFX_wwii(0, d, n, bits - n);
++			else SBFX_wwii(0, d, n, bits - n);
++			BFI_wwii(d, 0, 0, bits);
++		}
++		emit_tst(d, sz);
++		MRS_NZCV_x(R_FLUSH);
++		ORR_xxxLSLi(R_FLUSH, R_FLUSH, 2, 29);
++		if (kind == 0 && left)
++			ORR_xxxLSLi(R_FLUSH, R_FLUSH, 3, 28);
++		MSR_NZCV_x(R_FLUSH);
++		MOV_ww(R_X, 2);
++		return 1;
++	}
++
++	case 10: {
++		// An A-line trap, every Toolbox and system call of a Macintosh: the 68040's
++		// exception, written out. In supervisor state with no trace and no master
++		// stack nothing else changes; any other state is left to the interpreter.
++		flags_needed();
++		if (cx.c_inv) { flip_c(); cx.c_inv = false; }
++		LDRB_wXi(1, R_REGS, offsetof(struct regstruct, s));
++		CBZ_wi(1, 0);
++		stubs.push_back({ code_ptr - 1, cx.pc, false, true });
++		LDRB_wXi(1, R_REGS, offsetof(struct regstruct, m));
++		LDRB_wXi(2, R_REGS, offsetof(struct regstruct, t1));
++		ORR_www(1, 1, 2);
++		LDRB_wXi(2, R_REGS, offsetof(struct regstruct, t0));
++		ORR_www(1, 1, 2);
++		CBNZ_wi(1, 0);
++		stubs.push_back({ code_ptr - 1, cx.pc, false, true });
++		// The status register as it stands
++		MRS_NZCV_x(1);
++		LDR_wXi(2, R_REGS, offsetof(struct regstruct, intmask));
++		MOV_wi(0, 0x2000);
++		ORR_wwwLSLi(0, 0, 2, 8);
++		ORR_wwwLSLi(0, 0, R_X, 4);
++		UBFX_wwii(2, 1, 31, 1); ORR_wwwLSLi(0, 0, 2, 3);	// N
++		UBFX_wwii(2, 1, 30, 1); ORR_wwwLSLi(0, 0, 2, 2);	// Z
++		UBFX_wwii(2, 1, 28, 1); ORR_wwwLSLi(0, 0, 2, 1);	// V
++		UBFX_wwii(2, 1, 29, 1); ORR_www(0, 0, 2);			// C
++		// The frame: status register, the trap's own address, format 0 and vector offset
++		touch(AREG(7));
++		SUB_wwi(AREG(7), AREG(7), 8);
++		REV16_ww(1, 0);
++		STRH_wXx(1, AREG(7), R_MEM);
++		emit_mov32(1, cx.pc);
++		REV_ww(1, 1);
++		ADD_wwi(2, AREG(7), 2);
++		STR_wXx(1, 2, R_MEM);
++		MOV_wi(1, 0x2800);		// $0028, already in memory order
++		ADD_wwi(2, AREG(7), 6);
++		STRH_wXx(1, 2, R_MEM);
++		LDR_wXi(2, R_REGS, offsetof(struct regstruct, vbr));
++		ADD_wwi(2, 2, 0x28);
++		LDR_wXx(0, 2, R_MEM);
++		REV_ww(0, 0);
++		emit_lut_jump();
++		return 2;
++	}
++
++	case 15:
++		if ((op & 0xfff8) == 0xf620) {	// MOVE16 (Ax)+,(Ay)+
++			const uae_u16 ext = fetch16();
++			const int ax = AREG(reg), ay = AREG((ext >> 12) & 7);
++			touch(ax); touch(ay);
++			CLEAR_LOW4_xx(4, ax);
++			CLEAR_LOW4_xx(6, ay);
++			ADD_xxx(4, 4, R_MEM);
++			ADD_xxx(6, 6, R_MEM);
++			LDP_xxXi(0, 1, 4, 0);
++			STP_xxXi(0, 1, 6, 0);
++			if (ax == ay) ADD_wwi(ax, ax, 16);		// the interpreter's answer for this odd case is checked by the fuzz
++			else { ADD_wwi(ax, ax, 16); ADD_wwi(ay, ay, 16); }
++			return 1;
++		}
++		return 0;
++	}
++	return 0;
++}
++
++/*
++ *  Blocks
++ */
++
++struct Block {
++	void *code;			// NULL: the instruction at this PC is the interpreter's
++	uae_u32 n_insns;
++	bool flags_dead;	// replaces N Z C V before reading them or leaving
++	uae_u32 epoch;		// current: runs; older: its head leaves at once, until it has been compared with its source
++	unsigned slot;		// where its head reads that epoch
++	uae_u32 *entry_inv;	// a second head for arrivals whose C is still inverted (blocks that ignore incoming flags)
++	uae_u32 src_len;
++	uae_u8 *src;		// the 68k bytes it was translated from
++	std::vector<ExitSite> sites;
++};
++
++// A flush raises the epoch and does nothing else to translated code. Every
++// block begins by comparing the epoch with the one stored for it, and leaves
++// for the host when they differ; the execution loop then compares the block's
++// source, byte for byte, with what memory holds now, and stores the new epoch
++// only if nothing changed. No instruction is rewritten for any of this, which
++// matters where rewriting code is expensive (a write-protected JIT region and
++// an instruction cache to flush).
++static unsigned next_slot;
++static unsigned flush_generation;			// raised when every translation is forgotten
++static std::vector<Block *> live;			// blocks of the current epoch that have code
++static std::vector<uae_u32> live_pc;		// and where their source is
++static const size_t CODE_BITS_SIZE = 1 << 23;
++static uae_u8 *code_bits;					// one bit per 64 bytes of guest memory some translation was made from
++
++static std::unordered_map<uae_u32, Block> blocks;
++static std::unordered_map<uae_u32, std::vector<ExitSite> > waiting;
++// Exits that jump to a block before putting C back in 68k form, because that
++// block ignores incoming flags; by target, in case its replacement does not
++static std::unordered_map<uae_u32, std::vector<ExitSite> > careless;
++
++static inline void patch_word(uae_u32 *where, uae_u32 word)
++{
++	*where = word;
++#ifdef __APPLE__
++	sys_icache_invalidate(where, 4);
++#else
++	__builtin___clear_cache((char *)where, (char *)(where + 1));
++#endif
++}
++
++static inline uae_u32 branch_to(const uae_u32 *from, const void *to)
++{
++	return (0b000101u << 26) | (((const uae_u32 *)to - from) & 0x03ffffff);
++}
++
++static void link_site(const ExitSite &site, const Block &to)
++{
++	if (to.flags_dead) {
++		// The block ignores incoming flags: skip the exit's own tidying of C. If C
++		// is inverted there, enter by the head that knows it.
++		patch_word(site.first, branch_to(site.first, site.c_inv ? (void *)to.entry_inv : to.code));
++		if (site.c_inv)
++			careless[site.target].push_back(site);
++	} else
++		patch_word(site.last, branch_to(site.last, to.code));
++	jit_stats.links++;
++}
++
++// The head of a block: leave if its source has not been compared since the last flush
++static uae_u32 *emit_epoch_check(unsigned slot)
++{
++	const uae_u32 off = offsetof(JitState, slot) + slot * 4;
++	LDR_wXi(1, R_STATE, offsetof(JitState, epoch));
++	if (off >> 12) {
++		emit_long((0b1001000101u << 22) | ((off >> 12) << 10) | (R_STATE << 5) | 2);	// add x2, x29, #hi, lsl #12
++		LDR_wXi(2, 2, off & 0xfff);
++	} else
++		LDR_wXi(2, R_STATE, off);
++	EOR_www(1, 1, 2);
++	CBNZ_wi(1, 0);
++	return code_ptr - 1;
++}
++
++static const unsigned MAX_BLOCK_INSNS = 64;
++
++jit_stats_t jit_stats;
++
++// Make a block of the current epoch reachable: the return table, its own exits,
++// the exits that were waiting for it. Call with the code buffer writable.
++static void make_live(uae_u32 pc, Block *b)
++{
++	LutEntry &e = jit_lut[lut_index(pc)];
++	e.pc = pc;
++	e.code = b->code;
++	live.push_back(b);
++	live_pc.push_back(pc);
++
++	for (size_t i = 0; i < b->sites.size(); i++) {
++		std::unordered_map<uae_u32, Block>::iterator t = blocks.find(b->sites[i].target);
++		if (t != blocks.end() && t->second.code)
++			link_site(b->sites[i], t->second);		// a block waiting to be compared leaves by itself
++		else
++			waiting[b->sites[i].target].push_back(b->sites[i]);
++	}
++	std::unordered_map<uae_u32, std::vector<ExitSite> >::iterator w = waiting.find(pc);
++	if (w != waiting.end()) {
++		for (size_t i = 0; i < w->second.size(); i++)
++			link_site(w->second[i], *b);
++		waiting.erase(w);
++	}
++}
++
++static Block *compile_block(uae_u32 pc);
++
++// A block of an older epoch was asked for: it comes back if its source has not
++// changed by one byte, and is translated again otherwise
++static Block *revalidate(uae_u32 pc, Block *b)
++{
++	if (memcmp(b->src, get_real_address(pc, 0, sz_word), b->src_len) == 0) {
++		b->epoch = jit_epoch;
++		if (b->code) {
++			jit_state.slot[b->slot] = jit_epoch;
++			live.push_back(b);
++			live_pc.push_back(pc);
++		}
++		jit_stats.revalidated++;
++		return b;
++	}
++
++	// The source changed. Branches into the old code remain; its slot never
++	// matches again, so whatever still arrives there leaves for the host.
++	uae_u32 * const old_head = (uae_u32 *)b->code;
++	uae_u32 * const old_inv = b->entry_inv;
++	const bool old_flags_dead = b->flags_dead;
++	free(b->src);
++	b->src = NULL;
++	jit_stats.discarded++;
++	const unsigned generation = flush_generation;
++	Block *n = compile_block(pc);
++	if (!old_head || generation != flush_generation)	// nothing branched there, or everything was just forgotten
++		return n;
++	write_begin();
++	if (old_flags_dead) {
++		if (n->flags_dead)
++			patch_word(old_inv, branch_to(old_inv, n->entry_inv));
++		else {
++			// Some exits reach the old code without having put C back in 68k form,
++			// because it ignored incoming flags; the new code does not. Those
++			// exits go back to their long way round.
++			std::unordered_map<uae_u32, std::vector<ExitSite> >::iterator c = careless.find(pc);
++			if (c != careless.end()) {
++				for (size_t i = 0; i < c->second.size(); i++) {
++					const ExitSite &site = c->second[i];
++					patch_word(site.first, (0b000101u << 26) | 1);
++					patch_word(site.last, branch_to(site.last, n->code));
++				}
++				careless.erase(c);
++			}
++			jit_stats.hard_flushes++;		// counts these events; nothing is forgotten
++		}
++	}
++	patch_word(old_head, branch_to(old_head, n->code));
++	write_end(code_ptr);
++	return n;
++}
++
++// The guest flushed its instruction cache: nothing translated may run again
++// before it has been compared with its source.
++//
++// The blocks that have run since the last flush are compared here and now: a
++// flush is nearly always followed by the same code, and comparing a few hundred
++// short sources costs less than letting each block leave and come back. Every
++// sixteenth flush skips that, so that a block which is no longer used stops
++// being compared.
++void jit_arm64_invalidate_all(void)
++{
++	if (!code_base)			// the translator is built in but not in use
++		return;
++	jit_epoch++;
++	jit_stats.invalidations++;
++	if (live.empty())
++		return;
++	size_t kept = 0;
++	if ((jit_stats.invalidations & 15) != 0)
++		for (size_t i = 0; i < live.size(); i++) {
++			Block *b = live[i];
++			if (memcmp(b->src, get_real_address(live_pc[i], 0, sz_word), b->src_len) != 0)
++				continue;
++			b->epoch = jit_epoch;
++			jit_state.slot[b->slot] = jit_epoch;
++			live[kept] = b;
++			live_pc[kept++] = live_pc[i];
++		}
++	live.resize(kept);
++	live_pc.resize(kept);
++}
++
++// The host wrote into guest memory
++void jit_arm64_invalidate_range(uae_u32 addr, uae_u32 len)
++{
++	if (len == 0 || !code_base)
++		return;
++	jit_stats.range_flushes++;
++	for (uae_u32 a = addr >> 6; a <= (addr + len - 1) >> 6; a++)
++		if (code_bits[a >> 3] & (1 << (a & 7))) {
++			jit_stats.range_hits++;
++			jit_arm64_invalidate_all();
++			return;
++		}
++}
++
++static Block *compile_block(uae_u32 pc)
++{
++	if ((size_t)(code_end - code_ptr) < 4096 || next_slot >= MAX_SLOTS)
++		jit_arm64_flush();
++
++	write_begin();
++	uae_u32 *start = code_ptr;
++	const unsigned slot = next_slot++;
++	uae_u32 *stale = emit_epoch_check(slot);
++	uae_u32 *head = code_ptr;
++	stubs.clear();
++	sites.clear();
++	cx = Ctx();
++	cx.start = cx.pc = cx.next = pc;
++	cx.pend_reg = -1;
++	cx.x_cc = -1;
++
++	unsigned n = 0;
++	bool ended = false;
++	while (n < MAX_BLOCK_INSNS) {
++		const Ctx saved = cx;
++		uae_u32 * const saved_ptr = code_ptr;
++		const size_t saved_stubs = stubs.size();
++		const size_t saved_sites = sites.size();
++		cx.pc = cx.next;
++		const int r = translate_one(head);
++		if (r == 0) {
++			// Not an instruction the translator knows: the interpreter's handler
++			// runs it, from inside the block, and the block ends there because
++			// only the handler knows where the instruction ends
++			cx = saved;
++			code_ptr = saved_ptr;
++			stubs.resize(saved_stubs);
++			sites.resize(saved_sites);
++			opcode_declined[get_word(cx.next)] = 1;
++			flags_needed();
++			if (cx.c_inv) { flip_c(); cx.c_inv = false; }
++			emit_mov32(0, cx.next);
++			BL_i(helper_thunk - code_ptr);
++			emit_lut_jump();
++			cx.next += 2;		// its opcode word belongs to the source that is compared
++			n++;
++			ended = true;
++			break;
++		}
++		n++;
++		if (r == 2) { ended = true; break; }
++	}
++
++	Block b;
++	b.code = NULL; b.n_insns = n; b.flags_dead = false;
++	b.epoch = jit_epoch;
++	b.slot = slot;
++	b.entry_inv = NULL;
++	b.src_len = n > 0 ? cx.next - pc : 2;
++	b.src = (uae_u8 *)malloc(b.src_len);
++	memcpy(b.src, get_real_address(pc, 0, sz_word), b.src_len);
++	for (uae_u32 a = pc >> 6; a <= (pc + b.src_len - 1) >> 6; a++)
++		code_bits[a >> 3] |= 1 << (a & 7);
++	if (n > 0) {
++		if (!ended)
++			end_block(cx.next);
++		for (size_t i = 0; i < stubs.size(); i++) {
++			const Stub &s = stubs[i];
++			*s.branch |= ((code_ptr - s.branch) & 0x7ffff) << 5;
++			if (s.bail) emit_exit_hard(s.target | 1, s.c_inv, EXIT_ASK);	// an odd PC: a request, not an address
++			else emit_exit(s.target, s.c_inv);
++		}
++		b.code = start;
++		b.flags_dead = cx.head_known && !cx.head_dirty;
++		patch_here(stale);
++		emit_exit_hard(pc, false, EXIT_STALE);
++		if (b.flags_dead) {
++			b.entry_inv = code_ptr;
++			stale = emit_epoch_check(slot);
++			B_i(head - code_ptr);
++			patch_here(stale);
++			emit_exit_hard(pc, true, EXIT_STALE);		// C goes back to the 68k form on the way out
++		}
++		jit_state.slot[slot] = jit_epoch;
++		jit_stats.blocks++;
++		jit_stats.guest_insns += n;
++		jit_stats.host_insns += code_ptr - start;
++	} else {
++		code_ptr = start;
++		sites.clear();
++	}
++
++	b.sites = sites;
++	Block *stored = &(blocks[pc] = b);
++	if (b.code)
++		make_live(pc, stored);
++	write_end(start);
++
++	return stored;
++}
++
++void jit_arm64_flush(void)
++{
++	for (std::unordered_map<uae_u32, Block>::iterator it = blocks.begin(); it != blocks.end(); ++it)
++		free(it->second.src);
++	blocks.clear();
++	waiting.clear();
++	careless.clear();
++	live.clear();
++	live_pc.clear();
++	memset(code_bits, 0, CODE_BITS_SIZE);
++	jit_epoch++;
++	flush_generation++;
++	next_slot = 0;
++	for (unsigned i = 0; i < (1u << LUT_BITS); i++) {
++		jit_lut[i].pc = 0xffffffff;		// odd: never a guest PC
++		jit_lut[i].code = NULL;
++	}
++	code_ptr = code_base;
++	build_thunks();
++}
++
++/*
++ *  What the host provides. A hosted build takes the two below; a port with
++ *  no mmap (a bare-metal kernel) defines JIT_ARM64_OWN_MEMORY and supplies its
++ *  own jit_arm64_host_alloc_code(). Likewise JIT_ARM64_OWN_POLL for
++ *  jit_arm64_host_poll(), called every time translated code comes back to
++ *  the execution loop: at least once every few thousand backward branches.
++ */
++
++#ifndef JIT_ARM64_OWN_MEMORY
++void *jit_arm64_host_alloc_code(size_t size)
++{
++	int flags = MAP_PRIVATE | MAP_ANON;
++#ifdef __APPLE__
++	flags |= MAP_JIT;
++#endif
++	void *p = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, flags, -1, 0);
++	if (p == MAP_FAILED) {
++		perror("jit_arm64: mmap");
++		return NULL;
++	}
++	return p;
++}
++#endif
++
++#ifndef JIT_ARM64_OWN_POLL
++void jit_arm64_host_poll(void)
++{
++	cpu_check_ticks();
++}
++#endif
++
++// Everything is allocated once, here. Called again (the Macintosh restarts, or
++// another one starts in the same process) it forgets every translation and
++// builds its entry code anew, since guest memory may have moved.
++bool jit_arm64_init(void)
++{
++	if (code_base) {
++		jit_arm64_flush();
++		return true;
++	}
++	jit_state_ptr = (JitState *)calloc(1, sizeof(JitState));
++	jit_lut = (LutEntry *)calloc((size_t)1 << LUT_BITS, sizeof(LutEntry));
++	code_bits = (uae_u8 *)calloc(1, CODE_BITS_SIZE);
++	void *p = jit_state_ptr && jit_lut && code_bits ? jit_arm64_host_alloc_code(CODE_SIZE) : NULL;
++	if (!p) {
++		free(jit_state_ptr); free(jit_lut); free(code_bits);
++		jit_state_ptr = NULL; jit_lut = NULL; code_bits = NULL;
++		return false;
++	}
++	jit_state.epoch = 1;		// a slot that was never written holds 0 and matches nothing
++	code_base = code_ptr = (uae_u32 *)p;
++	code_end = code_base + CODE_SIZE / 4;
++	jit_arm64_flush();
++	return true;
++}
++
++/*
++ *  Condition codes between the interpreter's representation and ours
++ */
++
++static inline void flags_to_jit(void)
++{
++	jit_state.nzcv = (GET_NFLG() ? 0x80000000u : 0) | (GET_ZFLG() ? 0x40000000u : 0)
++	               | (GET_CFLG() ? 0x20000000u : 0) | (GET_VFLG() ? 0x10000000u : 0);
++	jit_state.x = GET_XFLG() ? 1 : 0;
++}
++
++static inline void flags_from_jit(void)
++{
++	const uae_u32 f = jit_state.nzcv;
++	SET_NFLG((f >> 31) & 1);
++	SET_ZFLG((f >> 30) & 1);
++	SET_CFLG((f >> 29) & 1);
++	SET_VFLG((f >> 28) & 1);
++	SET_XFLG(jit_state.x & 1);
++}
++
++/*
++ *  The execution loop: translated blocks where there are some, the
++ *  interpreter's own handler for everything else
++ */
++
++static unsigned long stats_every, stats_count;
++static unsigned long why_new, why_stale, why_evicted, why_other, helper_leaves;
++static uae_u32 *opcode_histogram;
++
++// The opcodes the interpreter was asked for most, to know what to translate next
++static void print_histogram(void)
++{
++	for (int rank = 0; rank < 30; rank++) {
++		unsigned best = 0;
++		for (unsigned i = 1; i < 65536; i++)
++			if (opcode_histogram[i] > opcode_histogram[best]) best = i;
++		if (!opcode_histogram[best]) break;
++		fprintf(stderr, "jit: interpreted %04x %u times\n", (unsigned)((best >> 8) | ((best & 0xff) << 8)), opcode_histogram[best]);
++		opcode_histogram[best] = 0;
++	}
++	memset(opcode_histogram, 0, 65536 * sizeof(uae_u32));
++}
++
++// One instruction by the interpreter, on behalf of translated code. Returns the
++// PC that follows, with a nonzero upper half when translated code must be left.
++static uint64_t jit_helper_interp(uae_u32 pc)
++{
++	const uae_u32 epoch = jit_epoch;
++	flags_from_jit();
++	m68k_setpc(pc);
++	for (;;) {
++		const uae_u32 opcode = GET_OPCODE;
++		if (opcode_histogram)
++			opcode_histogram[opcode]++;
++		(*cpufunctbl[opcode])(opcode);
++		jit_stats.interpreted++;
++		if (SPCFLAGS_TEST(SPCFLAG_ALL) || quit_program || jit_epoch != epoch) {
++			helper_leaves++;
++			flags_to_jit();
++			return m68k_getpc() | ((uint64_t)1 << 32);
++		}
++		// Go on while what follows is the interpreter's as well
++		if (!opcode_declined[get_word(m68k_getpc())])
++			break;
++	}
++	flags_to_jit();
++	return m68k_getpc();
++}
++
++void m68k_jit_execute(void)
++{
++	if (const char *e = getenv("B2_JIT_STATS"))
++		stats_every = strtoul(e, NULL, 0);		// a line every so many turns of the loop
++	if (getenv("B2_JIT_HISTOGRAM"))
++		opcode_histogram = (uae_u32 *)calloc(65536, sizeof(uae_u32));
++
++	for (;;) {
++		if (quit_program > 0) {
++			if (quit_program == 1)
++				break;
++			quit_program = 0;
++			m68k_reset();
++		}
++
++		const uae_u32 pc = m68k_getpc();
++		std::unordered_map<uae_u32, Block>::iterator it = blocks.find(pc);
++		if (stats_every) {
++			// Why did translated code come back here?
++			if (it == blocks.end()) why_new++;
++			else if (it->second.epoch != jit_epoch) why_stale++;
++			else if (jit_lut[lut_index(pc)].pc != pc) why_evicted++;
++			else why_other++;
++		}
++		Block *b = it != blocks.end() ? &it->second : compile_block(pc);
++		if (b->epoch != jit_epoch)
++			b = revalidate(pc, b);
++		else if (b->code) {
++			// Whatever sent us here may look this PC up again: the entry is its own
++			LutEntry &e = jit_lut[lut_index(pc)];
++			e.pc = pc;
++			e.code = b->code;
++		}
++
++		if (b->code) {
++			flags_to_jit();
++			const uae_u32 next = jit_enter(b->code);
++			flags_from_jit();
++			m68k_setpc(next & ~1);
++			jit_stats.entries++;
++			if (next & 1) {
++				// Translated code met a case it leaves to the interpreter (a divide
++				// that traps or overflows): this one instruction is the interpreter's
++				const uae_u32 opcode = GET_OPCODE;
++				(*cpufunctbl[opcode])(opcode);
++				jit_stats.interpreted++;
++			}
++		} else {
++			const uae_u32 opcode = GET_OPCODE;
++			if (opcode_histogram)
++				opcode_histogram[opcode]++;		// GET_OPCODE is the table index: byte-swapped on this host
++			(*cpufunctbl[opcode])(opcode);
++			jit_stats.interpreted++;
++		}
++		jit_arm64_host_poll();
++
++		if (SPCFLAGS_TEST(SPCFLAG_ALL_BUT_EXEC_RETURN))
++			m68k_do_specialties();		// what it asks for is in quit_program
++
++		if (stats_every && ++stats_count >= stats_every) {
++			stats_count = 0;
++			fprintf(stderr, "jit: pc=%08x blocks=%lu guest=%lu host=%lu links=%lu entries=%lu interp=%lu inval=%lu reval=%lu disc=%lu hard=%lu range=%lu hits=%lu\n",
++				m68k_getpc(), jit_stats.blocks, jit_stats.guest_insns, jit_stats.host_insns, jit_stats.links,
++				jit_stats.entries, jit_stats.interpreted, jit_stats.invalidations, jit_stats.revalidated, jit_stats.discarded,
++				jit_stats.hard_flushes, jit_stats.range_flushes, jit_stats.range_hits);
++			fprintf(stderr, "jit: back to the host for a PC that was new=%lu stale=%lu evicted=%lu other=%lu\n",
++				why_new, why_stale, why_evicted, why_other);
++			fprintf(stderr, "jit: left by budget=%llu unlinked=%llu table=%llu stale=%llu ask=%llu helper=%lu\n",
++				exit_count[EXIT_BUDGET], exit_count[EXIT_UNLINKED], exit_count[EXIT_TABLE], exit_count[EXIT_STALE],
++				exit_count[EXIT_ASK], helper_leaves);
++			if (opcode_histogram)
++				print_histogram();
++		}
++	}
++}
+diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.h b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.h
+new file mode 100644
+index 00000000..de229bca
+--- /dev/null
++++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.h
+@@ -0,0 +1,43 @@
++/*
++ *  jit_arm64.h - 68k to AArch64 translator for the uae_cpu_2021 core
++ *
++ *  Basilisk II (C) 1997-2008 Christian Bauer
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ */
++
++#ifndef JIT_ARM64_H
++#define JIT_ARM64_H
++
++#include <stddef.h>
++
++struct jit_stats_t {
++	unsigned long blocks;		// blocks translated
++	unsigned long guest_insns;	// 68k instructions in them
++	unsigned long host_insns;	// AArch64 instructions emitted for them, exits included
++	unsigned long links;		// exits turned into direct branches
++	unsigned long entries;		// times translated code was entered from the host
++	unsigned long interpreted;	// instructions left to the interpreter
++	unsigned long invalidations;	// flushes that had something to put aside
++	unsigned long revalidated;	// blocks found unchanged after a flush
++	unsigned long discarded;	// blocks whose source had changed
++	unsigned long hard_flushes;	// times everything had to be forgotten
++	unsigned long range_flushes;	// host writes into guest memory announced
++	unsigned long range_hits;	// of which touched a page some translation came from
++};
++extern jit_stats_t jit_stats;
++
++// Supplied by the host: see jit_arm64.cpp
++extern void *jit_arm64_host_alloc_code(size_t size);	// memory that can be written and run
++extern void jit_arm64_host_poll(void);					// between two runs of translated code
++
++extern bool jit_arm64_init(void);
++extern void jit_arm64_flush(void);		// forget every translation
++extern void jit_arm64_invalidate_all(void);	// the guest flushed its instruction cache
++extern void jit_arm64_invalidate_range(uae_u32 addr, uae_u32 len);	// the host wrote into guest memory
++extern void m68k_jit_execute(void);		// m68k_execute(), with translated blocks
++
++#endif
+diff --git a/BasiliskII/src/uae_cpu_2021/memory.h b/BasiliskII/src/uae_cpu_2021/memory.h
+index c30c0794..f3e78f45 100644
+--- a/BasiliskII/src/uae_cpu_2021/memory.h
++++ b/BasiliskII/src/uae_cpu_2021/memory.h
+@@ -140,7 +140,12 @@ static __inline__ uae_u32 get_virtual_address(uae_u8 *addr)
+ #endif /* DIRECT_ADDRESSING */
+ 
+ static __inline__ void check_ram_boundary(uaecptr addr, int size, bool write) {}
++#ifdef JIT_ARM64
++extern void jit_arm64_invalidate_all(void);
++static inline void flush_internals() { jit_arm64_invalidate_all(); }
++#else
+ static inline void flush_internals() {}
++#endif
+ 
+ #endif /* MEMORY_H */
+ 

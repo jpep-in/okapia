@@ -378,6 +378,13 @@ void FlushCodeCache (void *start, uint32 size)
         return;
     }
 #endif
+#ifdef JIT_ARM64
+    // The host changed 68k code (a ROM or resource patch, a hook's thunk): the
+    // translator puts aside what it made from that range. Nothing happens when
+    // it is built but not in use.
+    extern void jit_arm64_invalidate_range (uae_u32 addr, uae_u32 len);
+    jit_arm64_invalidate_range (Host2MacAddr ((uint8 *) start), size);
+#endif
     InvalidateInstructionCache ();
 }
 

@@ -114,7 +114,7 @@ They are written back unchanged, so a value that seems ignored is ignored on pur
 | Keywords | Why |
 |---|---|
 | `displaycolordepth`, `title`, `init_grab`, `hotkey`, `scale_*`, `mag_rate`, `gammaramp`, `sdlrender`, `nogui` | they configure a window on a host desktop; the Mac owns the frame buffer and Monitors picks the depth |
-| `jit*` | Circle marks everything past `_etext` non-executable; the interpreter is the only CPU here |
+| `jit*` | the interpreter is the only CPU in a standard kernel. `jit true` is read by the experimental kernels only (`OKAPIA_JIT_ARM64=1`, `OKAPIA_JIT=1`) |
 | `etherconfig`, `redir`, `host_domain` | host network scripts and slirp's forwarding; the Mac is a node on the real network |
 | `udptunnel`, `udpport` | no UDP tunnel: `udptunnel true` means no network |
 | `seriala`, `serialb` | the Pi's usable UART carries Okapia's log |

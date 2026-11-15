@@ -41,6 +41,18 @@ ifeq ($(ENGINE),basilisk)
   # The 68k core and where its generated tables are (scripts/gen-cpu.sh).
   UAE            = $(MACEMU)/uae_cpu_2021
   CPUGEN         = $(GEN)
+  ifeq ($(OKAPIA_JIT_ARM64),1)
+    # Experimental, off by default: the 68k to AArch64 translator that sits
+    # beside the interpreter in uae_cpu_2021 (patches/macemu/0012), used when
+    # the card says "jit true". The interpreter, its tables and its FPU are the
+    # same as without it. Circle supplies the executable memory and the clock
+    # (jit_arm64_circle.cpp). okapia-clean when switching either way.
+    # See docs/topics/engine-68k.md.
+    ifeq ($(OKAPIA_JIT),1)
+      $(error OKAPIA_JIT_ARM64 and OKAPIA_JIT are two different JITs: choose one)
+    endif
+    ENGINE_DEFINES += -DJIT_ARM64 -DJIT_ARM64_OWN_MEMORY -DJIT_ARM64_OWN_POLL
+  endif
   ifeq ($(OKAPIA_JIT),1)
     # Experimental, off by default: the 68k core of rcarmo/macemu-jit and its
     # AArch64 JIT, in place of uae_cpu_2021. Only the core changes — Basilisk
@@ -117,6 +129,9 @@ CPU_SRCS    = $(UAE)/basilisk_glue.cpp $(UAE)/memory.cpp $(UAE)/newcpu.cpp \
               $(UAE)/readcpu.cpp $(UAE)/fpu/fpu_ieee.cpp \
               $(MACEMU)/CrossPlatform/video_blit.cpp
 GEN_SRCS    = $(CPUGEN)/cpudefs.cpp $(CPUGEN)/cpustbl.cpp $(CPUGEN)/cpufunctbl.cpp
+ifeq ($(OKAPIA_JIT_ARM64),1)
+CPU_SRCS   += $(UAE)/jit_arm64/jit_arm64.cpp
+endif
 ifeq ($(OKAPIA_JIT),1)
 # compemu_support.cpp includes the emitter, the midfuncs and the ARM support
 # file; compstbl.cpp is the table of the generated compile handlers.
@@ -417,7 +432,7 @@ EMU_FLAGS = $(EMU_DEFINES) -fexceptions -Wno-narrowing -Wno-write-strings
 # resolves a name to the first directory that has it. Ahead, and a SheepShaver
 # kernel would compile Basilisk's platform; unconditionally, and the Basilisk
 # kernel compiles SheepShaver's. Both were seen, in that order.
-VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(UAE):$(UAE)/fpu:$(UAE)/compiler:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(CPUGEN):$(GEN)
+VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(UAE):$(UAE)/fpu:$(UAE)/compiler:$(UAE)/jit_arm64:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(CPUGEN):$(GEN)
 
 # The USB HID -> ADB key table, derived from Basilisk's own keycodes file rather
 # than typed out: SDL2 scancodes are HID usage IDs, so its "sdl cocoa" section
