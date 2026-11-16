@@ -20,6 +20,8 @@
  *  a 68881 whatever the host, a double-precision one does not.
  */
 
+#include <Gestalt.h>
+
 #include "fpu.h"
 
 #ifndef SCALE
@@ -216,4 +218,348 @@ unsigned long tFpuMove(void)
 		}
 	}
 	return hashX(hash(2166136261UL, xs, sizeof xs), s);
+}
+
+/* ---- every form of the FPU's instructions, by hand ----
+
+   The tests above are C, and a compiler uses few of the 68881's forms. This
+   one is written instruction by instruction so that a translator meets each
+   form a Macintosh program may use: every source format (long, single,
+   extended, packed, word, double, byte) from every kind of address
+   ((An), (An)+, -(An), d16(An), d8(An,Xn), d16(PC), immediate, a data
+   register), every operation, the transcendentals, FMOVECR, FMOVE to every
+   format with both k-factors, FMOVEM with static and dynamic lists and of
+   the control registers, the rounding modes and precisions FPCR selects,
+   FBcc, FDBcc and FScc on all 32 predicates, with a NaN now and then for
+   BSUN, and, on a 68040, its FS... and FD... forms. Everything computed goes
+   to memory and into the check. */
+
+/* The working area, at fixed offsets the assembly below names:
+     0  8 doubles in        192  8 doubles out      384  64 condition bytes
+    64  4 extendeds in      256  4 extendeds out    448  FPCR FPSR FPIAR saved
+   112  4 singles in        304  4 singles out      464  2 extendeds for FMOVEM (An)
+   128  4 longs in          320  4 longs out        496  data registers out
+   144  4 words in          336  4 words out        768  FMOVEM stack (grows down)
+   152  4 bytes in          344  4 bytes out
+   156  3 packed in         348  3 packed out */
+static unsigned char work[768];
+
+static void put_bytes(int at, const void *p, int n) { const unsigned char *s = (const unsigned char *)p; while (n--) work[at++] = *s++; }
+
+static void forms_inputs(long i)
+{
+	int j;
+	for (j = 0; j < 8; j++) {
+		double d = (double)((i * 13 + j * 7) % 2000 - 1000) / 127.0;
+		put_bytes(j * 8, &d, 8);
+	}
+	for (j = 0; j < 4; j++) {
+		extended x = (extended)((i * 29 + j * 11) % 3000 - 1500) / 61.0L;
+		float s = (float)((i * 17 + j * 5) % 500 - 250) / 9.0f;
+		long l = (i * 7919 + j * 104729) % 200001 - 100000;
+		short w = (short)((i * 31 + j * 3) % 2001 - 1000);
+		signed char b = (signed char)((i * 3 + j) % 201 - 100);
+		put_bytes(64 + j * 12, &x, 12);
+		put_bytes(112 + j * 4, &s, 4);
+		put_bytes(128 + j * 4, &l, 4);
+		put_bytes(144 + j * 2, &w, 2);
+		work[152 + j] = (unsigned char)b;
+	}
+	{	/* packed: +1.25E+0, -3.5E-2, and +9.87654321E+(i % 40) */
+		static const unsigned long p[9] = { 0x00000001, 0x25000000, 0, 0xC0020003, 0x50000000, 0,
+		                                    0x00000009, 0x87654321, 0 };
+		unsigned long q[9];
+		int e = (int)(i % 40);
+		for (j = 0; j < 9; j++) q[j] = p[j];
+		q[6] |= (unsigned long)(((e / 10) << 4) | (e % 10)) << 16;
+		put_bytes(156, q, 36);
+	}
+}
+
+static void forms_once(long i)
+{
+	register unsigned char *w __asm__("a0") = work;
+	register long n __asm__("d0") = i;
+	__asm__ volatile (
+		/* loads: every format, every kind of address */
+		"fmoved %%a0@,%%fp0\n\t"
+		"lea %%a0@(64),%%a1\n\t"
+		"fmovex %%a1@+,%%fp1\n\t"
+		"fmovex %%a1@+,%%fp2\n\t"
+		"fmoves %%a0@(112),%%fp3\n\t"
+		"movel %%d0,%%d1\n\t"
+		"andl #7,%%d1\n\t"
+		"fmoved %%a0@(0,%%d1:l:8),%%fp4\n\t"
+		"fmovel %%a0@(128),%%fp5\n\t"
+		"fmovew %%a0@(144),%%fp6\n\t"
+		"fmoveb %%a0@(152),%%fp7\n\t"
+		"fmovel %%d1,%%fp7\n\t"
+		"lea %%a0@(144),%%a1\n\t"
+		"faddw %%a1@+,%%fp6\n\t"
+		"faddw %%a1@+,%%fp6\n\t"
+		"lea %%a0@(124),%%a1\n\t"
+		"fadds %%a1@-,%%fp3\n\t"
+		"fmovep %%a0@(156),%%fp5\n\t"
+		"fmulp %%a0@(168),%%fp5\n\t"
+		"faddp %%a0@(180),%%fp5\n\t"
+		"faddd %%pc@(9f),%%fp0\n\t"
+		"faddd #0r0.5,%%fp0\n\t"
+		"fsubx #0r1.25,%%fp1\n\t"
+		"fmuls #0r0.75,%%fp2\n\t"
+		"fsubl #3,%%fp4\n\t"
+		"faddw #7,%%fp6\n\t"
+		"faddb #3,%%fp7\n\t"
+		"fmuld %%a0@(8),%%fp0\n\t"
+		"fdivd %%a0@(16),%%fp1\n\t"
+		/* operations */
+		"faddx %%fp1,%%fp0\n\t"
+		"fsubx %%fp2,%%fp1\n\t"
+		"fmulx %%fp3,%%fp2\n\t"
+		"fdivx %%fp4,%%fp3\n\t"
+		"fsglmulx %%fp5,%%fp4\n\t"
+		"fsgldivx %%fp6,%%fp5\n\t"
+		"fmodx %%fp7,%%fp6\n\t"
+		"fremx %%fp5,%%fp7\n\t"
+		"fscalel #2,%%fp0\n\t"
+		"fgetexpx %%fp1,%%fp4\n\t"
+		"fgetmanx %%fp2,%%fp5\n\t"
+		"fintx %%fp3,%%fp6\n\t"
+		"fintrzx %%fp3,%%fp7\n\t"
+		"fabsx %%fp0,%%fp0\n\t"
+		"fnegx %%fp1,%%fp1\n\t"
+		"fsqrtx %%fp0,%%fp2\n\t"
+		"fmovecrx #0x00,%%fp3\n\t"
+		"fmovecrx #0x0c,%%fp4\n\t"
+		"fmovecrx #0x34,%%fp5\n\t"
+		"fmovemx %%fp0-%%fp7,%%a0@(192+0)\n\t"
+		"fmoved %%fp0,%%a0@(192)\n\t"
+		/* the transcendentals, on values kept in their domains */
+		"fmoved %%a0@,%%fp0\n\t"
+		"fdivl #200,%%fp0\n\t"
+		"fsinx %%fp0,%%fp1\n\t"
+		"fcosx %%fp0,%%fp2\n\t"
+		"ftanx %%fp0,%%fp3\n\t"
+		"fatanx %%fp0,%%fp4\n\t"
+		"fasinx %%fp0,%%fp5\n\t"
+		"facosx %%fp0,%%fp6\n\t"
+		"faddx %%fp1,%%fp2\n\t"
+		"faddx %%fp3,%%fp4\n\t"
+		"faddx %%fp5,%%fp6\n\t"
+		"fmoved %%fp2,%%a0@(200)\n\t"
+		"fmoved %%fp4,%%a0@(208)\n\t"
+		"fmoved %%fp6,%%a0@(216)\n\t"
+		"fetoxx %%fp0,%%fp1\n\t"
+		"fetoxm1x %%fp0,%%fp2\n\t"
+		"ftwotoxx %%fp0,%%fp3\n\t"
+		"ftentoxx %%fp0,%%fp4\n\t"
+		"fsinhx %%fp0,%%fp5\n\t"
+		"fcoshx %%fp0,%%fp6\n\t"
+		"ftanhx %%fp0,%%fp7\n\t"
+		"faddx %%fp1,%%fp2\n\t"
+		"faddx %%fp3,%%fp4\n\t"
+		"faddx %%fp5,%%fp6\n\t"
+		"faddx %%fp7,%%fp6\n\t"
+		"fmoved %%fp2,%%a0@(224)\n\t"
+		"fmoved %%fp4,%%a0@(232)\n\t"
+		"fmoved %%fp6,%%a0@(240)\n\t"
+		"fabsx %%fp0,%%fp1\n\t"
+		"faddl #1,%%fp1\n\t"
+		"flognx %%fp1,%%fp2\n\t"
+		"flognp1x %%fp0,%%fp3\n\t"
+		"flog10x %%fp1,%%fp4\n\t"
+		"flog2x %%fp1,%%fp5\n\t"
+		"fatanhx %%fp0,%%fp6\n\t"
+		"fsincosx %%fp0,%%fp7:%%fp1\n\t"
+		"faddx %%fp2,%%fp3\n\t"
+		"faddx %%fp4,%%fp5\n\t"
+		"faddx %%fp6,%%fp7\n\t"
+		"faddx %%fp1,%%fp7\n\t"
+		"fmovex %%fp3,%%a0@(256)\n\t"
+		"fmovex %%fp5,%%a0@(268)\n\t"
+		"fmovex %%fp7,%%a0@(280)\n\t"
+		/* stores: every format, both k-factors, a data register */
+		"fmoved %%a0@(8),%%fp0\n\t"
+		"fmuld %%a0@(24),%%fp0\n\t"
+		"fmoves %%fp0,%%a0@(304)\n\t"
+		"lea %%a0@(320),%%a1\n\t"
+		"fmovel %%fp0,%%a1@+\n\t"
+		"fmovel %%fp1,%%a1@+\n\t"
+		"fmovew %%fp0,%%a0@(336)\n\t"
+		"fmoveb %%fp6,%%a0@(344)\n\t"
+		"fmovep %%fp0,%%a0@(348){#5}\n\t"
+		"moveq #-3,%%d2\n\t"
+		"fmovep %%fp1,%%a0@(360){%%d2}\n\t"
+		"fmovep %%fp3,%%a0@(372){#17}\n\t"
+		"fmovel %%fp0,%%d3\n\t"
+		"movel %%d3,%%a0@(496)\n\t"
+		"fmovew %%fp2,%%d3\n\t"
+		"movel %%d3,%%a0@(500)\n\t"
+		"lea %%a0@(256),%%a1\n\t"
+		"fmovex %%fp4,%%a1@-\n\t"
+		"fmoved %%fp5,%%a0@(184+64)\n\t"
+		/* FMOVEM: static and dynamic lists, -(An), (An)+, (An), d16(An) */
+		"lea %%a0@(768),%%a1\n\t"
+		"fmovemx %%fp0-%%fp7,%%a1@-\n\t"
+		"fmovemx %%a1@+,%%fp0-%%fp7\n\t"
+		"moveq #0x5a,%%d2\n\t"
+		"fmovemx %%d2,%%a1@-\n\t"
+		"fmovemx %%a1@+,%%d2\n\t"
+		"fmovemx %%fp2/%%fp3,%%a0@(464)\n\t"
+		"fmovemx %%a0@(464),%%fp4/%%fp5\n\t"
+		"lea %%a0@(464),%%a1\n\t"
+		"fmovemx %%a1@,%%fp6\n\t"
+		"fmovex %%fp6,%%a0@(292)\n\t"
+		/* rounding: every mode at every precision, then FPCR as it was */
+		"fmoveml %%fpcr/%%fpsr,%%a0@(448)\n\t"
+		"fmoved %%a0@(16),%%fp0\n\t"
+		"fmoved %%a0@(24),%%fp1\n\t"
+		"fmovel #0x10,%%fpcr\n\t"
+		"fdivx %%fp1,%%fp0\n\t"
+		"fmoved %%fp0,%%a0@(248)\n\t"
+		"fmovel #0x60,%%fpcr\n\t"
+		"fdivx %%fp1,%%fp0\n\t"
+		"fmovex %%fp0,%%a0@(256)\n\t"
+		"fmovel #0xb0,%%fpcr\n\t"
+		"faddx %%fp1,%%fp0\n\t"
+		"fmovex %%fp0,%%a0@(268)\n\t"
+		"movel %%d0,%%d2\n\t"
+		"andl #0xf0,%%d2\n\t"
+		"fmovel %%d2,%%fpcr\n\t"
+		"fsqrtx %%fp1,%%fp2\n\t"
+		"fintx %%fp2,%%fp3\n\t"
+		"fmovel %%fp2,%%a0@(332)\n\t"
+		"fmovex %%fp3,%%a0@(280)\n\t"
+		"fmoveml %%a0@(448),%%fpcr/%%fpsr\n\t"
+		"lea %%a0@(456),%%a1\n\t"
+		"fmovel %%fpiar,%%a1@\n\t"
+		/* conditions: FScc on all 32 predicates, after a compare that is
+		   now and then against a NaN; FBcc and FDBcc */
+		"fmoved %%a0@,%%fp0\n\t"
+		"fmoved %%a0@(8),%%fp1\n\t"
+		"btst #2,%%d0\n\t"
+		"beqs 1f\n\t"
+		"fmovecrx #0x0f,%%fp1\n\t"
+		"fdivx %%fp1,%%fp1\n"			/* 0/0: a quiet NaN */
+		"1:\n\t"
+		"fcmpx %%fp1,%%fp0\n\t"
+		"lea %%a0@(384),%%a1\n\t"
+		"fsf %%a1@+\n\tfseq %%a1@+\n\tfsogt %%a1@+\n\tfsoge %%a1@+\n\t"
+		"fsolt %%a1@+\n\tfsole %%a1@+\n\tfsogl %%a1@+\n\tfsor %%a1@+\n\t"
+		"fsun %%a1@+\n\tfsueq %%a1@+\n\tfsugt %%a1@+\n\tfsuge %%a1@+\n\t"
+		"fsult %%a1@+\n\tfsule %%a1@+\n\tfsne %%a1@+\n\tfst %%a1@+\n\t"
+		"fssf %%a1@+\n\tfsseq %%a1@+\n\tfsgt %%a1@+\n\tfsge %%a1@+\n\t"
+		"fslt %%a1@+\n\tfsle %%a1@+\n\tfsgl %%a1@+\n\tfsgle %%a1@+\n\t"
+		"fsngle %%a1@+\n\tfsngl %%a1@+\n\tfsnle %%a1@+\n\tfsnlt %%a1@+\n\t"
+		"fsnge %%a1@+\n\tfsngt %%a1@+\n\tfssne %%a1@+\n\tfsst %%a1@+\n\t"
+		"ftstx %%fp0\n\t"
+		"fslt %%d3\n\t"
+		"moveb %%d3,%%a1@+\n\t"
+		"moveq #0,%%d3\n\t"
+		"fbogt 2f\n\t"
+		"addql #1,%%d3\n"
+		"2:\n\t"
+		"fbule 3f\n\t"
+		"addql #2,%%d3\n"
+		"3:\n\t"
+		"fbgl 4f\n\t"
+		"addql #4,%%d3\n"
+		"4:\n\t"
+		"moveb %%d3,%%a1@+\n\t"
+		"fmovel #1,%%fp2\n\t"
+		"fmovel #0,%%fp3\n\t"
+		"moveq #20,%%d3\n"
+		"5:\n\t"
+		"faddx %%fp2,%%fp3\n\t"
+		"fcmpl #7,%%fp3\n\t"
+		"fdbge %%d3,5b\n\t"
+		"moveb %%d3,%%a1@+\n\t"
+		"fmovex %%fp3,%%a0@(292)\n\t"
+		"fmovel %%fpsr,%%a0@(452)\n\t"
+		"bras 8f\n\t"
+		".even\n"
+		"9: .double 0r0.0078125\n"
+		"8:\n\t"
+		: "+a" (w), "+d" (n)
+		:
+		: "a1", "d1", "d2", "d3", "fp0", "fp1", "fp2", "fp3", "fp4", "fp5", "fp6", "fp7", "memory", "cc");
+}
+
+/* The 68040's forms that round to single (FS...) or to double (FD...)
+   whatever FPCR says; a 68881 or a 68882 has none. */
+static void forms_040(void)
+{
+	register unsigned char *w __asm__("a0") = work;
+	__asm__ volatile (
+		/* encoded by hand: an assembler for the 68020 refuses them */
+		".short 0xf210,0x5440\n\t"		/* fsmove.d (a0),fp0 */
+		".short 0xf228,0x54c4,0x0008\n\t"	/* fdmove.d 8(a0),fp1 */
+		".short 0xf200,0x0462\n\t"		/* fsadd.x fp1,fp0 */
+		".short 0xf228,0x54ec,0x0010\n\t"	/* fdsub.d 16(a0),fp1 */
+		".short 0xf200,0x00e3\n\t"		/* fsmul.x fp0,fp1 */
+		".short 0xf200,0x00e4\n\t"		/* fddiv.x fp0,fp1 */
+		".short 0xf200,0x0141\n\t"		/* fssqrt.x fp0,fp2 */
+		".short 0xf200,0x01c5\n\t"		/* fdsqrt.x fp0,fp3 */
+		".short 0xf200,0x0658\n\t"		/* fsabs.x fp1,fp4 */
+		".short 0xf200,0x06de\n\t"		/* fdneg.x fp1,fp5 */
+		".short 0xf200,0x09e6\n\t"		/* fdadd.x fp2,fp3 */
+		".short 0xf200,0x12e8\n\t"		/* fssub.x fp4,fp5 */
+		"fmovex %%fp3,%%a0@(268)\n\t"
+		"fmovex %%fp5,%%a0@(280)\n\t"
+		"fmoved %%fp1,%%a0@(208)\n\t"
+		: "+a" (w)
+		:
+		: "fp0", "fp1", "fp2", "fp3", "fp4", "fp5", "memory", "cc");
+}
+
+unsigned long tFpuForms(void)
+{
+	long i;
+	long cpu = 0;
+	unsigned long h = 2166136261UL;
+	Gestalt(gestaltProcessorType, &cpu);
+	for (i = 0; i < 120000L * SCALE; i++) {
+		forms_inputs(i);
+		forms_once(i);
+		if (cpu >= gestalt68040)
+			forms_040();
+		h = hash(h, work + 192, 512 - 192);
+	}
+	return h;
+}
+
+/* ---- calls, as compiled code makes them ----
+
+   Speedometer's own code saves and restores the FPU registers it uses at
+   every call (FMOVEM to and from the stack) and passes doubles through
+   memory; MacBench's other tests are too well optimised to. These functions
+   are kept apart so that the compiler does the same. */
+
+static __attribute__((noinline)) double poly(double x, double a, double b, double c)
+{
+	extended t = (extended)x * a + b;	/* in extended registers it must save */
+	extended u = t * x + c;
+	extended v = u * t - x;
+	return (double)(v * u + t);
+}
+
+static __attribute__((noinline)) double step(double x, double y)
+{
+	extended a = poly(x, 0.5, -0.25, 0.125);
+	extended b = poly(y, -0.75, 0.5, 0.0625);
+	extended c = a * b + x - y;
+	return (double)(c / (1.0L + a * a + b * b));
+}
+
+unsigned long tFpuCalls(void)
+{
+	long i;
+	double x = 0.25, y = -0.5;
+	unsigned long h = 2166136261UL;
+	for (i = 0; i < 2000000L * SCALE; i++) {
+		double z = step(x, y);
+		y = x;
+		x = z + (double)(i & 15) * 0.01;
+		if ((i & 1023) == 0) h = hash(h, &x, sizeof x);
+	}
+	return hash(h, &x, sizeof x);
 }

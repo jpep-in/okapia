@@ -12,5 +12,7 @@ unsigned long tFpuWhet(void);
 unsigned long tFpuMatrix(void);
 unsigned long tFpuTrig(void);
 unsigned long tFpuMove(void);
+unsigned long tFpuForms(void);
+unsigned long tFpuCalls(void);
 
 #endif

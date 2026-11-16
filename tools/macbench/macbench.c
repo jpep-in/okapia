@@ -14,7 +14,7 @@
  *  `check` is a hash of what the test computed or drew: two machines that
  *  disagree on it did not do the same work.
  *
- *  With an FPU (Gestalt), five floating-point tests follow (fpu.c).
+ *  With an FPU (Gestalt), seven floating-point tests follow (fpu.c).
  */
 
 #include <Quickdraw.h>
@@ -598,6 +598,8 @@ int main(void)
 			run("fpu_matrix", tFpuMatrix);
 			run("fpu_trig", tFpuTrig);
 			run("fpu_move", tFpuMove);
+			run("fpu_forms", tFpuForms);
+			run("fpu_calls", tFpuCalls);
 		}
 	}
 	put("END\r");

@@ -22,8 +22,13 @@ Speedometer's averages are pulled by `K'Whet`; the median of the ten integer sub
 **Not the Ziff-Davis MacBench of the period**: Okapia's own 68k application, in [`tools/macbench/`](../../tools/macbench/)
 (C for [Retro68](https://github.com/autc04/Retro68), under the MIT licence so that Basilisk II or anyone else can take it). It runs twenty tests
 by itself at startup — five of the processor (`cpu_*`), three of the Toolbox (`tb_*`), twelve of QuickDraw (`qd_*`) —
-and five of the FPU when Gestalt reports one (`fpu_*`, [`fpu.c`](../../tools/macbench/fpu.c), compiled for the 68881: a
-Fourier transform, a Whetstone, a matrix product, the transcendentals, extended values to and from memory) —
+and seven of the FPU when Gestalt reports one (`fpu_*`, [`fpu.c`](../../tools/macbench/fpu.c), compiled for the 68881: a
+Fourier transform, a Whetstone, a matrix product, the transcendentals, extended values to and from memory;
+`fpu_forms`, written instruction by instruction, every source format from every kind of address including immediate
+data, every operation, `FMOVECR`, packed decimal with both k-factors, `FMOVEM` with static and dynamic lists and of the
+control registers, every rounding mode and precision, `FBcc`, `FDBcc` and `FScc` on all 32 predicates with a NaN now
+and then, and the 68040's `FS…`/`FD…` forms on a 68040; `fpu_calls`, small functions that save their FPU registers
+with `FMOVEM` at every call, as compiled code of the period does) —
 each a fixed amount of work timed with `TickCount`, and writes `name ticks check` lines to **MacBench Results**: at the
 root of a volume named `Unix` when there is one (a desktop Basilisk II's shared folder), otherwise next to the
 application. `check` hashes what the test computed or drew, the window read from the frame buffer at any depth: two
@@ -278,6 +283,11 @@ interpreter during the first passes, each now ending its block on its own where 
 them in one call: the likely cost of the first passes and of FFT and Matrix slipping 5 to 7 %. Immediate operands,
 the one mode still declined, are translated since; `jit: declined` in a trace build names what is left.
 
+**Then with immediates translated** (kernel of 10:47, one run, trace build): FFT 4.64, Matrix 5.87, FPU K'Whet 8.1 on
+its first pass and 10.7 after, Math 377, the benchmark section's K'Whet 85 then 97. Not one FPU instruction reached
+the interpreter after the boot (no `okapia-fpu` line at all), and `jit: declined` named only `CPUSHA`, `FSAVE`,
+`FRESTORE` and Basilisk's own `FE05` trap. What is left of the first pass's deficit is not the FPU's.
+
 - FFT and Matrix, which the softfloat core had made slower than binary128, are now twice what they were before T1;
   K'Whet, heavy in transcendentals, gains least, as the M4 profile said it would.
 - 6.26 against 9.21 for interpreted Basilisk II on the M4 (MPFR) and 27.74 for the iMac G3, whose Speedometer runs
@@ -304,6 +314,10 @@ Desktop Basilisk II built from the translator's clone, System 7.5.5, 8-bit 640×
   for `FADD`, `FSUB`, `FMUL`, `FMOVE` and `FMOVE.D` out (T3), 1.75 times as fast; checks identical to the interpreter's
   on all twenty-five tests. Profiled after: the arithmetic itself is most of what is left, the call into the core about
   a tenth.
+- **The C tests do not see what the Pi's trace saw.** The translator from before `FMOVEM` and immediates were
+  translated runs `fpu_fft` to `fpu_move` within 4 % of the one after, but `fpu_calls` 1.53 times and `fpu_forms` 1.15
+  times slower (75 and 55 ticks against 49 and 48): those two exist for that. Baseline in
+  `build/native/baseline-forms.json` (not kept in the repository).
 - **Okapia's own kernel computes the same numbers**: built with GCC, under QEMU's AArch64 with `jit true` and the
   translator's FPU, its five `fpu_*` checks are the M4's to the bit (and so are the `cpu_*` ones). Its times under
   QEMU mean nothing.
