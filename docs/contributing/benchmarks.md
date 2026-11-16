@@ -22,6 +22,8 @@ Speedometer's averages are pulled by `K'Whet`; the median of the ten integer sub
 **Not the Ziff-Davis MacBench of the period**: Okapia's own 68k application, in [`tools/macbench/`](../../tools/macbench/)
 (C for [Retro68](https://github.com/autc04/Retro68), under the MIT licence so that Basilisk II or anyone else can take it). It runs twenty tests
 by itself at startup — five of the processor (`cpu_*`), three of the Toolbox (`tb_*`), twelve of QuickDraw (`qd_*`) —
+and five of the FPU when Gestalt reports one (`fpu_*`, [`fpu.c`](../../tools/macbench/fpu.c), compiled for the 68881: a
+Fourier transform, a Whetstone, a matrix product, the transcendentals, extended values to and from memory) —
 each a fixed amount of work timed with `TickCount`, and writes `name ticks check` lines to **MacBench Results**: at the
 root of a volume named `Unix` when there is one (a desktop Basilisk II's shared folder), otherwise next to the
 application. `check` hashes what the test computed or drew, the window read from the frame buffer at any depth: two
@@ -42,6 +44,23 @@ switches the screen first; `-DREPEAT=<n>` runs each test n times to see whether 
 `-DSCALE=<n>` multiplies every iteration count; `-DSTRETCH_DEBUG` hashes `qd_stretch` part by part.
 `tools/macbench/run.py` boots a desktop Basilisk II once per configuration and prints the table; on Okapia, read the
 results file off the volume after Special → Shut Down.
+
+**On the Mac, automatically.** `scripts/build-native-basilisk.sh <name> [configure options]` builds a desktop Basilisk II
+from a copy of the `kanjitalk755/macemu` clone (`MACEMU_CLONE`) with Okapia's FPU patches and its translator, against the
+dependencies of `MACEMU_DEPS`, into `build/native/<name>/BasiliskII`. `run.py` then compares builds and settings:
+
+```
+./scripts/build-native-basilisk.sh softfloat --enable-fpe=softfloat --enable-jit-arm64
+./scripts/build-native-basilisk.sh mpfr --enable-jit-arm64                       # upstream's FPU on ARM
+python3 tools/macbench/run.py --repeat 3 --only fpu_ --save base.json \
+    build/native/softfloat/BasiliskII qemu/sd-contents/okapia.rom systems/prepared/sys755.img /tmp/mb \
+    "jit=jit true" "interp=jit false" "mpfr=build/native/mpfr/BasiliskII|jit true"
+python3 tools/macbench/run.py --repeat 3 --compare base.json ...                 # after a change
+```
+
+A configuration is `name=prefs` or `name=binary|prefs`; `--repeat` keeps each test's median, `--save` and `--compare`
+keep a baseline, and the last column says whether every configuration computed the same: an exact FPU gives a 68881's
+bits on any host, so `fpu_*` checks agree between exact cores and runs, interpreted or translated.
 
 ## Results
 
@@ -237,6 +256,31 @@ Read off two screenshots; the reference values of Bubble Sort, 2 Bit, 4 Bit and 
 - **Owed**: both columns again with a kernel that carries the fix, MacBench beside Speedometer, the System
   version, depth and `frameskip` written down.
 
+### MacBench's FPU tests on the MacBook Pro M4 (2026-11-16)
+
+Desktop Basilisk II built from the translator's clone, System 7.5.5, 8-bit 640×480, median of three runs, in ticks
+(lower is better):
+
+| Test | MPFR, translator | softfloat, interpreter | softfloat, translator (before) | softfloat, translator (T1–T3) |
+|---|---:|---:|---:|---:|
+| `fpu_fft` | 177 | 45 | 43 | 24 |
+| `fpu_whet` | 192 | 48 | 48 | 25 |
+| `fpu_matrix` | 134 | 39 | 38 | 19 |
+| `fpu_trig` | 105 | 22 | 21 | 17 |
+| `fpu_move` | 164 | 34 | 35 | 21 |
+| **total** | **772** | **188** | **185** | **106** |
+
+- **softfloat is 4.2 times as fast as MPFR**, upstream's FPU on Apple silicon, with the same results on everything but
+  the transcendentals (MPFR rounds them correctly, the 68040's FPSP does not).
+- **Before T1, the translator gave the FPU nothing** (185 against 188 interpreted): every FPU instruction left the block.
+  With it calling the FPU core from inside the block (T1), translating `FBcc`, `FDBcc` and `FScc` (T2) and direct paths
+  for `FADD`, `FSUB`, `FMUL`, `FMOVE` and `FMOVE.D` out (T3), 1.75 times as fast; checks identical to the interpreter's
+  on all twenty-five tests. Profiled after: the arithmetic itself is most of what is left, the call into the core about
+  a tenth.
+- **Okapia's own kernel computes the same numbers**: built with GCC, under QEMU's AArch64 with `jit true` and the
+  translator's FPU, its five `fpu_*` checks are the M4's to the bit (and so are the `cpu_*` ones). Its times under
+  QEMU mean nothing.
+
 ## Status
 
 - [x] First QEMU baseline (2026-08-27)
@@ -249,6 +293,8 @@ Read off two screenshots; the reference values of Bubble Sort, 2 Bit, 4 Bit and 
       before changing the I/O path
 - [ ] Profile PowerPC gaps: `Dhry`, `Towers`, `FPU FFT`, `FPU Matrix`, `Graf` — opcode rate, PMU counters, composite
       time
+- [x] MacBench's FPU tests, and native builds compared automatically on the Mac (2026-11-16)
+- [ ] MacBench's FPU tests on the Pi 4, interpreter and translator
 - [ ] Real workloads: StuffIt decompression, file copies, Finder, Doom, MacBench
 - [ ] A native SheepShaver run on the M4 for a homogeneous PowerPC comparison
 - [ ] Period references also worth recording: Norton System Info, MacBench

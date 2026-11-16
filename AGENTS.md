@@ -114,4 +114,5 @@ make -C tests/host                    # host tests and the firmware specimen
 ./scripts/run-qemu.sh [kernel] -s -S  # bare kernel, GDB on :1234
 ./scripts/make-pi-sd.sh               # stage a Pi 4 card in rpi4-sd-contents/
 ./scripts/build-macbench.sh [image]   # MacBench (tools/macbench, Retro68), into Startup Items
+./scripts/build-native-basilisk.sh <name> [configure options]  # desktop Basilisk II for tools/macbench/run.py
 ```

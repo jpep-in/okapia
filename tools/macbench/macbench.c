@@ -13,6 +13,8 @@
  *  shares with its host), or next to the application when there is none.
  *  `check` is a hash of what the test computed or drew: two machines that
  *  disagree on it did not do the same work.
+ *
+ *  With an FPU (Gestalt), five floating-point tests follow (fpu.c).
  */
 
 #include <Quickdraw.h>
@@ -27,6 +29,9 @@
 #include <ToolUtils.h>
 #include <OSUtils.h>
 #include <TextUtils.h>
+#include <Gestalt.h>	/* gestaltFPUType: 0 when there is none */
+
+#include "fpu.h"
 
 #ifdef DEPTH	/* the Palette Manager's depth calls, which these headers leave out */
 pascal short HasDepth(GDHandle device, short depth, short whichFlags, short flags) M68K_INLINE(0x303C, 0x0A14, 0xAAA2);
@@ -585,6 +590,16 @@ int main(void)
 	run("qd_pictures", tPictures);
 	run("qd_windows", tWindows);
 	run("qd_textedit", tTextEdit);
+	{
+		long fpuType = 0;
+		if (Gestalt(gestaltFPUType, &fpuType) == noErr && fpuType != 0) {
+			run("fpu_fft", tFpuFft);
+			run("fpu_whet", tFpuWhet);
+			run("fpu_matrix", tFpuMatrix);
+			run("fpu_trig", tFpuTrig);
+			run("fpu_move", tFpuMove);
+		}
+	}
 	put("END\r");
 	writeResults();
 #ifdef HOLD_TICKS	/* leave the last drawing on screen for a while, to be looked at */

@@ -8958,10 +8958,10 @@ index 00000000..b2b29527
 +};
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h b/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h
 new file mode 100644
-index 00000000..f374076e
+index 00000000..e0ef9c9b
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,137 @@
 +/*
 + * fpu/softfloat_fast.h - the common case of FADD, FSUB and FMUL in 64-bit arithmetic
 + *
@@ -9010,14 +9010,12 @@ index 00000000..f374076e
 +	return (uint32_t) (high & 0x7fff) - 1 < 0x7ffe && (low >> 63) != 0;
 +}
 +
-+/* Rounds the 128-bit significand s, whose top bit is set, to its upper 64
-+   bits, to nearest and ties to even; e is the exponent of that top bit.
-+   Fails when the result is not a normal extended value. */
-+static inline int fpu_fast_round (uint16_t sign, int32_t e, fpu_fast_u128 s,
++/* Rounds the significand mant, followed by the 64 bits rest, to 64 bits, to
++   nearest and ties to even; e is the exponent of mant's top bit, which is
++   set. Fails when the result is not a normal extended value. */
++static inline int fpu_fast_round (uint16_t sign, int32_t e, uint64_t mant, uint64_t rest,
 +	uint16_t *high, uint64_t *low, int *inexact)
 +{
-+	uint64_t mant = (uint64_t) (s >> 64);
-+	uint64_t rest = (uint64_t) s;
 +	if (rest > 0x8000000000000000ULL || (rest == 0x8000000000000000ULL && (mant & 1))) {
 +		if (++mant == 0) {
 +			mant = 0x8000000000000000ULL;
@@ -9045,10 +9043,13 @@ index 00000000..f374076e
 +		e++;
 +	else
 +		p <<= 1;
-+	return fpu_fast_round ((ah ^ bh) & 0x8000, e, p, high, low, inexact);
++	return fpu_fast_round ((ah ^ bh) & 0x8000, e, (uint64_t) (p >> 64), (uint64_t) p,
++		high, low, inexact);
 +}
 +
-+/* a + b, or a - b when subtract is set. */
++/* a + b, or a - b when subtract is set. In 64-bit halves: a's significand,
++   and b's shifted right by the difference of the exponents into b_high and
++   the bits that fall below it, b_low. */
 +static inline int fpu_fast_add (uint16_t ah, uint64_t al, uint16_t bh, uint64_t bl, int subtract,
 +	uint16_t *high, uint64_t *low, int *inexact)
 +{
@@ -9065,28 +9066,34 @@ index 00000000..f374076e
 +		int32_t te = ea; ea = eb; eb = te;
 +	}
 +	uint32_t d = (uint32_t) (ea - eb);
-+	/* Both significands in 128 bits with one bit of headroom: a's top bit
-+	   at 126, b's d places lower. Up to d = 63 nothing of b falls off. */
++	/* Up to 63 places, nothing of b falls off the 128 bits. */
 +	if (d > 63)
 +		return 0;
-+	fpu_fast_u128 A = (fpu_fast_u128) al << 63;
-+	fpu_fast_u128 B = ((fpu_fast_u128) bl << 63) >> d;
++	uint64_t b_high = bl >> d;
++	uint64_t b_low = d ? bl << (64 - d) : 0;
 +
 +	if (((ah ^ bh) & 0x8000) == 0) {
-+		fpu_fast_u128 s = A + B;
-+		/* A carry into bit 127 raises the exponent; otherwise bit 126 is the top. */
-+		if (s >> 127)
-+			return fpu_fast_round (ah & 0x8000, ea + 1, s, high, low, inexact);
-+		return fpu_fast_round (ah & 0x8000, ea, s << 1, high, low, inexact);
++		uint64_t sum = al + b_high;
++		if (sum < al)	/* a carry: one place right, the bit that falls off kept sticky */
++			return fpu_fast_round (ah & 0x8000, ea + 1, (sum >> 1) | 0x8000000000000000ULL,
++				(sum << 63) | (b_low >> 1) | (b_low & 1), high, low, inexact);
++		return fpu_fast_round (ah & 0x8000, ea, sum, b_low, high, low, inexact);
 +	}
 +
-+	fpu_fast_u128 s = A - B;
-+	if (s == 0)
++	uint64_t lo = 0 - b_low;
++	uint64_t hi = al - b_high - (b_low != 0);
++	if (hi >> 63)
++		return fpu_fast_round (ah & 0x8000, ea, hi, lo, high, low, inexact);
++	if (hi == 0 && lo == 0)
 +		return 0;	/* an exact zero: its sign is softfloat's business */
-+	uint64_t top = (uint64_t) (s >> 64);
-+	int lz = top ? __builtin_clzll (top) : 64 + __builtin_clzll ((uint64_t) s);
-+	/* Bit 126 had a's exponent; the top bit is lz - 1 places below it. */
-+	return fpu_fast_round (ah & 0x8000, ea + 1 - lz, s << lz, high, low, inexact);
++	/* Cancellation: normalise. */
++	if (hi) {
++		int lz = __builtin_clzll (hi);
++		return fpu_fast_round (ah & 0x8000, ea - lz, (hi << lz) | (lo >> (64 - lz)), lo << lz,
++			high, low, inexact);
++	}
++	int lz = __builtin_clzll (lo);
++	return fpu_fast_round (ah & 0x8000, ea - 64 - lz, lo << lz, 0, high, low, inexact);
 +}
 +
 +#endif /* __SIZEOF_INT128__ */

@@ -17,6 +17,17 @@ compare, not a checksum, and no translated instruction is rewritten for it.
 flush_internals(), which every CINV and CPUSH handler already calls, is
 where the core tells the translator; FlushCodeCache() is the host's side.
 
+With the softfloat FPU (FPU_SOFTFLOAT), FPU instructions are translated
+too, against fpu/fpu_jit.h: a general operation, an FMOVE to or from
+memory or a data register is a call into the FPU core from inside the
+block, through a thunk that keeps the 68k registers, with the effective
+address computed and the source already fetched; FBcc, FDBcc and FScc
+test FPSR's condition codes in the block and branch like their integer
+forms. FMOVEM and the control registers stay the interpreter's. On an
+Apple M4, MacBench's FPU tests ran 1.2 to 2 times faster than with every
+FPU instruction leaving the block, with the same results as the
+interpreter.
+
 The host supplies executable memory and a call between two runs of
 translated code (JIT_ARM64_OWN_MEMORY, JIT_ARM64_OWN_POLL); a hosted build
 has defaults for both.
@@ -68,6 +79,23 @@ index 9a794b48..9c19688e 100644
  #if USE_JIT
      if (UseJIT)
  	m68k_compile_execute();
+diff --git a/BasiliskII/src/uae_cpu_2021/memory.h b/BasiliskII/src/uae_cpu_2021/memory.h
+index c30c0794..f3e78f45 100644
+--- a/BasiliskII/src/uae_cpu_2021/memory.h
++++ b/BasiliskII/src/uae_cpu_2021/memory.h
+@@ -140,7 +140,12 @@ static __inline__ uae_u32 get_virtual_address(uae_u8 *addr)
+ #endif /* DIRECT_ADDRESSING */
+ 
+ static __inline__ void check_ram_boundary(uaecptr addr, int size, bool write) {}
++#ifdef JIT_ARM64
++extern void jit_arm64_invalidate_all(void);
++static inline void flush_internals() { jit_arm64_invalidate_all(); }
++#else
+ static inline void flush_internals() {}
++#endif
+ 
+ #endif /* MEMORY_H */
+ 
 diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/codegen_arm64.h b/BasiliskII/src/uae_cpu_2021/jit_arm64/codegen_arm64.h
 new file mode 100644
 index 00000000..f3886f05
@@ -578,10 +606,10 @@ index 00000000..f3886f05
 +#define LDAR_wX(Wt,Xbase,offset)  do { ADD_xxi(REG_WORK4,(Xbase),(offset)); _W(0x88DFFC00u | (REG_WORK4 << 5) | (Wt)); } while(0)
 diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
 new file mode 100644
-index 00000000..39b43feb
+index 00000000..1192cf94
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
-@@ -0,0 +1,2288 @@
+@@ -0,0 +1,2532 @@
 +/*
 + *  jit_arm64.cpp - 68k to AArch64 translator for the uae_cpu_2021 core
 + *
@@ -628,6 +656,11 @@ index 00000000..39b43feb
 +#include "readcpu.h"
 +#include "newcpu.h"
 +#include "jit_arm64.h"
++#ifdef FPU_SOFTFLOAT
++// The FPU's own entry points: FPU instructions are translated against them
++#include "fpu/fpu_jit.h"
++#define JIT_ARM64_FPU 1
++#endif
 +
 +#include <cstddef>
 +#include <cstdio>
@@ -738,6 +771,7 @@ index 00000000..39b43feb
 +// other, the interpreter runs them in one call
 +static uae_u8 opcode_declined[65536];
 +static uae_u32 *helper_thunk, *exit_nostore;
++static uae_u32 *call_thunk;
 +
 +typedef uae_u32 (*enter_fn)(void *code);
 +static enter_fn jit_enter;
@@ -839,6 +873,29 @@ index 00000000..39b43feb
 +	*leave |= ((code_ptr - leave) & 0x7ffff) << 5;
 +	MOV_ww(0, 0);
 +	B_i(exit_nostore - code_ptr);
++
++	// Called from a block with x4 = a C function and its arguments in w0-w3,
++	// which returns in w0: the block goes on after it. The function sees no
++	// 68k register; what it may clobber that a block keeps (A0-A7, the
++	// budget, X, the flags) is saved here, the data registers and the bases
++	// being callee-saved already.
++	call_thunk = code_ptr;
++	STP_xxXpre(8, 9, R_SP, -96);
++	STP_xxXi(10, 11, R_SP, 16);
++	STP_xxXi(12, 13, R_SP, 32);
++	STP_xxXi(14, 15, R_SP, 48);
++	STP_xxXi(16, 17, R_SP, 64);
++	MRS_NZCV_x(5);
++	STP_xxXi(30, 5, R_SP, 80);
++	BLR_x(4);
++	LDP_xxXi(30, 5, R_SP, 80);
++	MSR_NZCV_x(5);
++	LDP_xxXi(16, 17, R_SP, 64);
++	LDP_xxXi(14, 15, R_SP, 48);
++	LDP_xxXi(12, 13, R_SP, 32);
++	LDP_xxXi(10, 11, R_SP, 16);
++	LDP_xxXpost(8, 9, R_SP, 96);
++	emit_long(0xd65f03c0);		// RET
 +
 +	write_end(start);
 +}
@@ -1321,6 +1378,217 @@ index 00000000..39b43feb
 +	REV_ww(1, v);
 +	STR_wXx(1, AREG(7), R_MEM);
 +}
++
++#ifdef JIT_ARM64_FPU
++/*
++ *  FPU instructions. Their arithmetic stays the FPU core's: a translated FPU
++ *  instruction is a call to it, with the operand already fetched or
++ *  addressed, from inside the block (fpu_jit.h). What the translator does
++ *  itself is decode the instruction once, compute its effective address and
++ *  test the FPU's condition codes for the conditional forms.
++ */
++
++// A call through call_thunk; the arguments are in w0-w3 already
++static void emit_fpu_call(const void *fn)
++{
++	emit_mov64(4, (uint64_t)fn);
++	BL_i(call_thunk - code_ptr);
++}
++
++// Bytes of each operand format: L S X P W D B, and P with a dynamic k-factor
++static const int fpu_format_bytes[8] = { 4, 4, 12, 12, 2, 8, 1, 12 };
++
++// The register holding the guest address of an FPU operand, or -1 for a mode
++// the translator leaves alone (a data or address register, immediate data;
++// for a destination, anything relative to the PC). Uses w4, w5 and w7.
++static int fpu_operand_address(int mode, int reg, int bytes, bool write)
++{
++	const int step = (reg == 7 && bytes == 1) ? 2 : bytes;
++	switch (mode) {
++	case 2:
++		return AREG(reg);
++	case 3:
++		touch(AREG(reg));
++		MOV_ww(4, AREG(reg));
++		ADD_wwi(AREG(reg), AREG(reg), step);
++		return 4;
++	case 4:
++		touch(AREG(reg));
++		SUB_wwi(AREG(reg), AREG(reg), step);
++		return AREG(reg);
++	case 5: case 6: case 7: {
++		if (mode == 7 && (reg > 3 || (write && reg >= 2)))
++			return -1;
++		EA ea;
++		if (!decode_ea(mode, reg, SZ_L, ea, 4) || ea.kind != EA_MEM)
++			return -1;
++		return ea.reg;
++	}
++	}
++	return -1;
++}
++
++// w2 = whether FPU predicate pred holds, from FPSR's condition codes; an
++// IEEE-aware predicate signals BSUN on a NaN first, as the interpreter does
++static void emit_fpu_condition(uae_u32 pred)
++{
++	const uae_u32 mask = fpu_jit_cond_mask(pred);
++	emit_mov64(1, (uint64_t)fpu_jit_condition_codes());
++	LDR_wXi(1, 1, 0);
++	UBFX_wwii(1, 1, 24, 4);		// N Z I NAN
++	if (pred & 16) {
++		TBZ_wii(1, 0, 0);
++		uae_u32 *no_nan = code_ptr - 1;
++		emit_fpu_call((const void *)fpu_jit_bsun);
++		emit_mov64(1, (uint64_t)fpu_jit_condition_codes());
++		LDR_wXi(1, 1, 0);
++		UBFX_wwii(1, 1, 24, 4);
++		patch_here(no_nan);
++	}
++	emit_mov32(2, mask);
++	LSR_www(2, 2, 1);
++	UBFX_wwii(2, 2, 0, 1);
++}
++
++// FADD, FSUB, FMUL and FMOVE: the operations fpu_jit_arith() has a direct
++// path for
++static inline bool fpu_common(uae_u16 ext)
++{
++	const int o = ext & 0x7f;
++	return o == 0x00 || o == 0x22 || o == 0x23 || o == 0x28;
++}
++
++static int translate_fpu(uae_u16 op, uae_u32 *head)
++{
++	const int type = (op >> 6) & 7, mode = (op >> 3) & 7, reg = op & 7;
++	const uae_u32 pc = cx.pc;
++
++	if (type == 0) {
++		const uae_u16 ext = fetch16();
++		const int cls = ext >> 13, fmt = (ext >> 10) & 7;
++		if (cls == 0 || (cls == 2 && (ext & 0xfc00) == 0x5c00)) {	// FPm,FPn; FMOVECR
++			if ((op & 0x3f) != 0 || !fpu_jit_general_ok(ext))
++				return 0;
++			emit_mov32(0, ext);
++			emit_mov32(1, pc);
++			emit_fpu_call(cls == 0 && fpu_common(ext) ? (const void *)fpu_jit_arith
++			                                          : (const void *)fpu_jit_general);
++			return 1;
++		}
++		if (cls == 2) {												// <ea>,FPn
++			if (!fpu_jit_general_ok(ext))
++				return 0;
++			if (mode == 0) {
++				if (!fpu_jit_general_dn_ok(ext))
++					return 0;
++				MOV_ww(1, DREG(reg));
++				emit_mov32(0, ext);
++				emit_mov32(2, pc);
++				emit_fpu_call((const void *)fpu_jit_general_dn);
++				return 1;
++			}
++			if (fmt == 7)
++				return 0;
++			const int a = fpu_operand_address(mode, reg, fpu_format_bytes[fmt], false);
++			if (a < 0)
++				return 0;
++			MOV_ww(1, a);
++			emit_mov32(0, ext);
++			emit_mov32(2, pc);
++			emit_fpu_call((fmt == 2 || fmt == 5) && fpu_common(ext) ? (const void *)fpu_jit_arith_mem
++			                                                         : (const void *)fpu_jit_general_mem);
++			return 1;
++		}
++		if (cls == 3) {												// FMOVE FPn,<ea>
++			if (mode == 0) {
++				if (!fpu_jit_move_dn_ok(ext))
++					return 0;
++				MOV_ww(1, DREG(reg));
++				emit_mov32(0, ext);
++				emit_mov32(2, pc);
++				emit_fpu_call((const void *)fpu_jit_move_dn);
++				touch(DREG(reg));
++				MOV_ww(DREG(reg), 0);
++				return 1;
++			}
++			const int a = fpu_operand_address(mode, reg, fpu_format_bytes[fmt], true);
++			if (a < 0)
++				return 0;
++			MOV_ww(1, a);
++			MOV_ww(2, DREG((ext >> 4) & 7));
++			emit_mov32(0, ext);
++			emit_mov32(3, pc);
++			emit_fpu_call(fmt == 5 ? (const void *)fpu_jit_move_mem_double : (const void *)fpu_jit_move_mem);
++			return 1;
++		}
++		return 0;		// FMOVE and FMOVEM of the control registers, FMOVEM: the interpreter's
++	}
++
++	if (type == 2 || type == 3) {									// FBcc, FNOP
++		const uae_u32 pred = op & 0x3f;
++		const uae_u32 base = cx.next;
++		const uae_s32 disp = type == 2 ? (uae_s32)(uae_s16)fetch16() : (uae_s32)fetch32();
++		const uae_u32 target = base + disp;
++		if ((pred & 15) == 0) {		// never: FBF, FBSF, and FNOP
++			if (pred & 16)
++				emit_fpu_condition(pred);
++			return 1;
++		}
++		emit_fpu_condition(pred);
++		flags_needed();
++		if (target == cx.start) {
++			CBZ_wi(2, 0);
++			uae_u32 *skip = code_ptr - 1;
++			emit_loop_edge(head);
++			patch_here(skip);
++		} else {
++			CBNZ_wi(2, 0);
++			stubs.push_back({ code_ptr - 1, target, cx.c_inv, false });
++		}
++		return 1;
++	}
++
++	if (type == 1) {
++		const uae_u16 ext = fetch16();
++		if (ext & 0xffc0)
++			return 0;
++		const uae_u32 pred = ext & 0x3f;
++		if (mode == 1) {											// FDBcc
++			const uae_u32 base = cx.next;
++			const uae_u32 target = base + (uae_s32)(uae_s16)fetch16();
++			emit_fpu_condition(pred);
++			flags_needed();
++			touch(DREG(reg));
++			CBNZ_wi(2, 0);		// the condition holds: no count, no branch
++			uae_u32 *done = code_ptr - 1;
++			UXTH_ww(0, DREG(reg));
++			SUB_wwi(1, DREG(reg), 1);
++			BFI_wwii(DREG(reg), 1, 0, 16);
++			if (target == cx.start) {
++				CBZ_wi(0, 0);
++				uae_u32 *skip = code_ptr - 1;
++				emit_loop_edge(head);
++				patch_here(skip);
++			} else {
++				CBNZ_wi(0, 0);
++				stubs.push_back({ code_ptr - 1, target, cx.c_inv, false });
++			}
++			patch_here(done);
++			return 1;
++		}
++		if (mode == 7)
++			return 0;			// FTRAPcc, and no FScc to the PC or immediate
++		emit_fpu_condition(pred);										// FScc
++		EA dst;
++		if (!decode_ea(mode, reg, SZ_B, dst, 6))
++			return 0;
++		NEG_ww(0, 2);
++		store_ea(dst, SZ_B, 0, 1);
++		return 1;
++	}
++	return 0;		// FSAVE, FRESTORE
++}
++#endif
 +
 +/*
 + *  One instruction. Returns 0 when it cannot be translated (nothing is kept),
@@ -2325,6 +2593,10 @@ index 00000000..39b43feb
 +			else { ADD_wwi(ax, ax, 16); ADD_wwi(ay, ay, 16); }
 +			return 1;
 +		}
++#ifdef JIT_ARM64_FPU
++		if ((op & 0x0e00) == 0x0200 && FPUType)	// coprocessor 1, when there is an FPU
++			return translate_fpu(op, head);
++#endif
 +		return 0;
 +	}
 +	return 0;
@@ -2919,20 +3191,3 @@ index 00000000..de229bca
 +extern void m68k_jit_execute(void);		// m68k_execute(), with translated blocks
 +
 +#endif
-diff --git a/BasiliskII/src/uae_cpu_2021/memory.h b/BasiliskII/src/uae_cpu_2021/memory.h
-index c30c0794..f3e78f45 100644
---- a/BasiliskII/src/uae_cpu_2021/memory.h
-+++ b/BasiliskII/src/uae_cpu_2021/memory.h
-@@ -140,7 +140,12 @@ static __inline__ uae_u32 get_virtual_address(uae_u8 *addr)
- #endif /* DIRECT_ADDRESSING */
- 
- static __inline__ void check_ram_boundary(uaecptr addr, int size, bool write) {}
-+#ifdef JIT_ARM64
-+extern void jit_arm64_invalidate_all(void);
-+static inline void flush_internals() { jit_arm64_invalidate_all(); }
-+#else
- static inline void flush_internals() {}
-+#endif
- 
- #endif /* MEMORY_H */
- 

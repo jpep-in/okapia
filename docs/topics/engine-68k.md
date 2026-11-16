@@ -143,6 +143,12 @@ every instruction the translator does not know.
   Every backward transfer spends a budget kept in `w16`, so the execution loop is reached every few thousand
   of them: that is where interrupts are seen and where `jit_arm64_host_poll()` calls the seam by the clock.
 - **A-line traps** are the 68040's exception written out in the block, in supervisor state with no trace.
+- **FPU instructions** (with the softfloat FPU) are calls into the FPU core from inside the block
+  (`fpu/fpu_jit.h`), through `call_thunk`, which keeps A0–A7, the budget, X and the flags: the translator decodes
+  the instruction, computes the effective address and passes the source fetched or addressed; `FADD`, `FSUB`,
+  `FMUL`, `FMOVE` and `FMOVE.D` out take direct paths when FPCR is zero. `FBcc`, `FDBcc` and `FScc` test FPSR's
+  condition codes in the block against a mask the core computes at translation time, and branch like `Bcc`.
+  `FMOVEM`, the control registers, `FTRAPcc`, `FSAVE` and `FRESTORE` stay the interpreter's.
 - **What it does not know leaves the block**: the instruction is run by the interpreter's handler, called from
   translated code, and the block ends there. An emulator opcode is one of those, so every `EmulOp` is a
   journey: the sixteen registers and the flags written out, the handler, everything read back, and a jump
@@ -190,8 +196,11 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [x] The softfloat FPU on a Pi 4: Speedometer's FPU tests (2026-11-16, see the development notes)
 - [ ] The fast paths on a Pi 4: the traced boot's lines, Speedometer's FPU tests, and the time per operation
       from `trace_fpu_circle.cpp`
-- [ ] FPU instructions in the translator: called without leaving the block, `FBcc` translated; then, if the
-      measurement asks for it, the common operations inline
+- [x] FPU instructions in the translator: the core called from inside the block (T1), `FBcc`, `FDBcc`, `FScc`
+      translated (T2), direct paths for the common operations (T3); MacBench's FPU tests 1.75 times as fast on the
+      M4, same checks as the interpreter (2026-11-16)
+- [ ] The same on a Pi 4; `FMOVEM` translated; code generated inline for `FADD` and `FMUL` only if a profile says the
+      call is what costs
 - [x] Seam recalibrated to 1 kHz (2026-09-08)
 - [x] Bottleneck ranks 1–7 and the `pc_p` fetch (2026-09-13)
 - [ ] Log the initial PC and SP at 68040 initialisation
