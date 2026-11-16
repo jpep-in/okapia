@@ -155,7 +155,9 @@ a register read.
 ### The bench
 
 `net_bench_circle.cpp` measures what the interface carries with no Macintosh in the way, against
-`scripts/netbench.py` on another machine. `netbench <address>` in the preferences runs it once per power-on, before the
+`scripts/netbench.py` on another machine. It is a measuring tool, so a normal kernel does not carry it: build with
+`$MAKE -C src/kernel OKAPIA_NETBENCH=1` (after `okapia-clean`); without it a `netbench` line only earns one line in
+the log saying it is ignored. `netbench <address>` in the preferences runs it once per power-on, before the
 window: the board takes the clock's DHCP lease (so `ntp` must name a server), finds the other machine by ARP, says
 `HELLO` on UDP 9000 until the script answers, then sends 1472-byte datagrams for the seconds asked and receives them
 for as long. Both ends print frames, Mbit/s and losses; the board's lines start `Network bench:`. `--rate` caps what
@@ -217,6 +219,13 @@ DHCP. Internet Sharing works too, but only switched on **after** the link is up 
 
 ## Pitfalls
 
+- **`netbench` holds up every start for as long as it waits**, before the window: the link (Wi-Fi associates in
+  about seven seconds), the lease, the other machine's ARP, the script. A card left with the line after the bench
+  measured a 22-second boot on 2026-11-15 — Wi-Fi joined, NTP answered, then ten seconds of ARP for a Mac no longer
+  on the cable. The waits are now 20 s for the lease, 15 s for the link and 2 s for ARP; the line belongs on the
+  card only while measuring, and a normal kernel no longer carries the bench at all (`OKAPIA_NETBENCH`). Without it
+  nothing on the network blocks the start but the Wi-Fi firmware's download
+  (about 0.7 s, in `BoardNetStart()`): association, DHCP and NTP run in the background.
 - **Internet Sharing on a Mac with an ASIX AX88179 adapter stops hearing the Pi when the link goes down and up.**
   Sharing bridges the adapter (`bridge100`, its own MAC) and asks the adapter to take frames for the bridge; with
   ASIX's DriverKit driver (2.4.0, macOS 27) that holds only if Sharing starts after the link is up. Every restart of

@@ -8,7 +8,8 @@
  * the interface takes them, then as fast as it gives them, against
  * scripts/netbench.py on another machine, which counts the other end.
  *
- * Asked for with the `netbench` preference: the other machine's address, and
+ * Built only with OKAPIA_NETBENCH=1 (src/kernel/Makefile). Asked for with the
+ * `netbench` preference: the other machine's address, and
  * this board's after it when nothing on the cable serves DHCP; it
  * runs once per power-on, before the window and before the Macintosh, and says
  * what it found in the log. Nothing here runs when the preference is empty.
@@ -31,10 +32,19 @@
 #include <circle/types.h>
 
 // From the firmware's start: does nothing unless `netbench` names a machine,
-// and nothing after the first time.
+// and nothing after the first time. In a kernel built without the bench it
+// only says, once, that a `netbench` line is ignored.
 void NetBenchRun (void);
 
-// From BoardNetPoll(): true for a frame that was the bench's.
+// From BoardNetPoll(): true for a frame that was the bench's. Without the
+// bench, nothing is ever the bench's, and the test costs nothing per frame.
+#if OKAPIA_NETBENCH
 bool NetBenchTake (const u8 *pFrame, unsigned nLength);
+#else
+static inline bool NetBenchTake (const u8 *, unsigned)
+{
+    return false;
+}
+#endif
 
 #endif

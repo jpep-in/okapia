@@ -114,6 +114,7 @@ the shared ones and the merge intermediates.
 | Option | Effect |
 |---|---|
 | `OKAPIA_TRACE=1` | trace build: disk read/write wraps with short-read detection, exception and trap traces, FPU instruction counts and times, `DIRECT_ADDRESSING_GUARD`, `FPU_SELFTEST`, `SOUND_SELFTEST`, `NET_SELFTEST` |
+| `OKAPIA_NETBENCH=1` | the network bench, run at power-on when the card names a machine with `netbench` ([Network](../topics/network.md#the-bench)); absent from a normal kernel |
 | `OKAPIA_FPU` | `softfloat` (default): the 68881 in 80-bit softfloat; `ieee`: the binary128 core, to compare against. `okapia-clean` when switching ([68k engine](../topics/engine-68k.md#fpu-the-68881-in-80-bit-softfloat)) |
 | `OPTIMIZE` | `-O2` by default. `-O3` measured no faster, and vectorised `GfxBlit()` into an alignment fault on Device memory ([Display](../topics/display.md)) |
 | `OKAPIA_BUILD_TIME` | the clock's fallback, `date +%s` by default ([Clock and PRAM](../topics/clock-and-pram.md)) |

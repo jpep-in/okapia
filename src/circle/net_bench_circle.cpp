@@ -22,6 +22,27 @@
 
 #define FROM "okapia-bench"
 
+#if !OKAPIA_NETBENCH
+
+void NetBenchRun (void)
+{
+    static bool s_bSaid;
+    if (s_bSaid)
+    {
+        return;
+    }
+    s_bSaid = true;
+    const char *pHost = PrefsFindString ("netbench");
+    if (pHost != 0 && pHost[0] != '\0')
+    {
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "netbench %s ignored: this kernel was built without the bench "
+                                "(OKAPIA_NETBENCH=1)", pHost);
+    }
+}
+
+#else
+
 static const u16 PORT_SCRIPT = 9000;
 static const u16 PORT_BOARD  = 9001;
 
@@ -301,14 +322,14 @@ void NetBenchRun (void)
 
     // The address: the clock's lease, which the clock asks for on its own a
     // few seconds after the link comes up (`ntp` must not be empty).
-    const u64 nGiveUp = Now () + 60 * 1000000ull;
+    const u64 nGiveUp = Now () + 20 * 1000000ull;
     while (s_nAddress == 0 && !ClockNetLease (&s_nAddress) && Now () < nGiveUp)
     {
         BoardNetPoll ();
     }
     // A fixed address still waits for the link, which the ARP below needs.
     // Asked ten times a second: each question reconfigures the MAC from the PHY.
-    const u64 nLinkBy = Now () + 30 * 1000000ull;
+    const u64 nLinkBy = Now () + 15 * 1000000ull;
     u64 nNextAsk = 0;
     bool bLink = false;
     while (!bLink && Now () < nLinkBy)
@@ -323,7 +344,7 @@ void NetBenchRun (void)
     if (s_nAddress == 0)
     {
         CLogger::Get ()->Write (FROM, LogWarning,
-                                "Network bench: no address after 60 s (the bench takes the "
+                                "Network bench: no address after 20 s (the bench takes the "
                                 "clock's DHCP lease, so `ntp` must name a server)");
         s_bActive = false;
         return;
@@ -332,7 +353,9 @@ void NetBenchRun (void)
     // The other machine's MAC.
     static const u8 Broadcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
     static const u8 Zero[6] = { 0, 0, 0, 0, 0, 0 };
-    for (unsigned i = 0; i < 20 && !s_bHostKnown; i++)
+    // Two seconds, not ten: the bench holds up the start, and a card that
+    // still names a machine no longer on the cable must not cost every boot.
+    for (unsigned i = 0; i < 4 && !s_bHostKnown; i++)
     {
         const unsigned n = NetArpBuild (s_Frame, BoardNetMAC (), s_nAddress, 1, Broadcast, Zero,
                                         s_nHost);
@@ -381,3 +404,5 @@ void NetBenchRun (void)
     s_bActive = false;
     CLogger::Get ()->Write (FROM, LogNotice, "Network bench: done");
 }
+
+#endif  // OKAPIA_NETBENCH

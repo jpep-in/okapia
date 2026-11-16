@@ -352,7 +352,13 @@ include $(CIRCLEHOME)/Rules.mk
 # dates into a volume makes its MDB inconsistent; the build time is a
 # plausible floor until phase 10 provides a real source.
 OKAPIA_BUILD_TIME := $(shell date +%s)
-EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME)
+# The network bench (src/circle/net_bench_circle.cpp), a tool for measuring and
+# not a feature: compiled in only with OKAPIA_NETBENCH=1, so that a `netbench`
+# line left on a card costs a normal kernel nothing. Like OKAPIA_TRACE, toggling
+# it needs okapia-clean.
+OKAPIA_NETBENCH ?= 0
+EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD_TIME) \
+              -DOKAPIA_NETBENCH=$(OKAPIA_NETBENCH)
 # The engine's own config.h comes first, which is the whole reason it lives in
 # a directory of its own.
 # CPUGEN ahead of GEN: both hold a cputbl.h when the JIT core is built.

@@ -105,7 +105,7 @@ blank line.
 | `wifissid` | — | the Wi-Fi network's name, 1 to 32 bytes |
 | `wifipassword` | — | its WPA2 passphrase, 8 to 63 printable ASCII characters, or the key as 64 hex digits; empty for an open network. Kept in clear on the card. WPA3-only networks cannot be joined |
 | `wificountry` | `US` when absent (the boot menu offers `FR` in French, `US` otherwise) | two letters for the radio's channels (`FR`, `DE`, …); without it channels 12 and 13 are out of reach |
-| `netbench` | — | the address of a machine running `scripts/netbench.py`, then this board's own when nothing on the cable serves DHCP (`192.168.2.1 192.168.2.2`): the network is measured once at power-on, before the window ([Network](topics/network.md#the-bench)). Empty: never |
+| `netbench` | — | the address of a machine running `scripts/netbench.py`, then this board's own when nothing on the cable serves DHCP (`192.168.2.1 192.168.2.2`): the network is measured once at power-on, before the window, by a kernel built with `OKAPIA_NETBENCH=1` ([Network](topics/network.md#the-bench)). Empty, or a normal kernel: never |
 | `nonet` | `false` | **ignored**: `ether` decides. Every card written before the network existed says `true` |
 
 ## Keywords that do nothing here
