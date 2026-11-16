@@ -38,7 +38,8 @@ register and every operation on it:
 
 For a translator, fpu/fpu_jit.h: the same operations entered with the
 instruction already decoded - the source fetched or addressed, the
-condition codes' predicates as masks - and, when FPCR is zero, direct
+condition codes' predicates as masks, FMOVEM and the control registers
+with the address computed - and, when FPCR is zero, direct
 paths for FADD, FSUB, FMUL and FMOVE of normal values and for FMOVE.D to
 memory, which give the general path's result, codes and exception bytes.
 
@@ -86,10 +87,10 @@ diff --git a/BasiliskII/src/uae_cpu_2021/fpu/types.h b/BasiliskII/src/uae_cpu_20
  union fpu_register_parts {
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/fpu_jit.h b/BasiliskII/src/uae_cpu_2021/fpu/fpu_jit.h
 new file mode 100644
-index 00000000..3b556591
+index 00000000..2334272f
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/fpu_jit.h
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,58 @@
 +/*
 + * fpu/fpu_jit.h - what a translator calls instead of fpuop_arithmetic()
 + *
@@ -135,6 +136,14 @@ index 00000000..3b556591
 +void fpu_jit_arith(uae_u32 extra, uae_u32 pc);
 +void fpu_jit_arith_mem(uae_u32 extra, uae_u32 addr, uae_u32 pc);
 +void fpu_jit_move_mem_double(uae_u32 extra, uae_u32 addr, uae_u32 kdn, uae_u32 pc);
++/* FMOVEM of FP0-FP7, and FMOVE(M) of FPCR, FPSR and FPIAR. For memory, addr
++   is the effective address, or An itself for -(An) and (An)+, and the return
++   is what An becomes for those two; mode is the effective address's mode. */
++bool fpu_jit_fmovem_ok(uae_u32 extra, uae_u32 mode);
++uae_u32 fpu_jit_fmovem(uae_u32 extra, uae_u32 addr, uae_u32 dn, uae_u32 mode);
++bool fpu_jit_control_ok(uae_u32 extra, uae_u32 mode, uae_u32 reg);
++uae_u32 fpu_jit_control_reg(uae_u32 extra, uae_u32 value);	/* Dn, An, #imm: the register's value after */
++uae_u32 fpu_jit_control_mem(uae_u32 extra, uae_u32 addr, uae_u32 mode);
 +uae_u32 fpu_jit_cond_mask(uae_u32 pred);
 +uae_u32 *fpu_jit_condition_codes(void);
 +void fpu_jit_bsun(void);
@@ -142,10 +151,10 @@ index 00000000..3b556591
 +#endif
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp b/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp
 new file mode 100644
-index 00000000..685c6597
+index 00000000..24df1f82
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp
-@@ -0,0 +1,1891 @@
+@@ -0,0 +1,2009 @@
 +/*
 + * fpu/fpu_softfloat.cpp - MC68881/68882 and MC68040 FPU in exact 80-bit softfloat
 + *
@@ -1992,6 +2001,124 @@ index 00000000..685c6597
 +	}
 +    }
 +  fpu_jit_move_mem (extra, addr, kdn, pc);
++}
++
++// FMOVEM of the data registers, as fpuop_fmovem_register() has it. addr is
++// the effective address of a control mode, or An itself for -(An) and (An)+;
++// the return is what An becomes for those two. dn is the register of a
++// dynamic list.
++bool
++fpu_jit_fmovem_ok (uae_u32 extra, uae_u32 mode)
++{
++  if (extra & 0x2000)
++    {
++      if (mode == 3)
++	return false;
++      return mode == 4 ? (extra & 0x1000) == 0 : (extra & 0x1000) != 0;
++    }
++  return mode != 4 && (extra & 0x1000) != 0;
++}
++
++uae_u32
++fpu_jit_fmovem (uae_u32 extra, uae_u32 addr, uae_u32 dn, uae_u32 mode)
++{
++  const int list = (extra & 0x800) ? (dn & 0xff) : (extra & 0xff);
++  uae_u32 words[3];
++  if (extra & 0x2000)
++    {
++      if (mode == 4)
++	{
++	  for (int i = 7; i >= 0; i--)
++	    if (list & (1 << i))
++	      {
++		to_extended_raw (fpu.registers[i], words);
++		addr -= 12;
++		put_long (addr, words[0]);
++		put_long (addr + 4, words[1]);
++		put_long (addr + 8, words[2]);
++	      }
++	  return addr;
++	}
++      for (int i = 0; i < 8; i++)
++	if (list & (0x80 >> i))
++	  {
++	    to_extended_raw (fpu.registers[i], words);
++	    put_long (addr, words[0]);
++	    put_long (addr + 4, words[1]);
++	    put_long (addr + 8, words[2]);
++	    addr += 12;
++	  }
++      return addr;
++    }
++  for (int i = 0; i < 8; i++)
++    if (list & (0x80 >> i))
++      {
++	words[0] = get_long (addr);
++	words[1] = get_long (addr + 4);
++	words[2] = get_long (addr + 8);
++	addr += 12;
++	put_fx (fpu.registers[i], from_extended (words));
++      }
++  return addr;
++}
++
++// FMOVE and FMOVEM of FPCR, FPSR and FPIAR, as fpuop_fmovem_control() has
++// them: with a data or address register or immediate data (control_reg), or
++// with memory (control_mem, addressed as for FMOVEM).
++bool
++fpu_jit_control_ok (uae_u32 extra, uae_u32 mode, uae_u32 reg)
++{
++  const int list = (extra >> 10) & 7;
++  const bool single = list == 1 || list == 2 || list == 4;
++  if (list == 0)
++    return false;
++  if (mode == 0)
++    return single;
++  if (mode == 1)
++    return list == 1;
++  if (extra & 0x2000)
++    return !(mode == 7 && reg >= 2);
++  if (mode == 7 && reg == 4)
++    return single;
++  return !(mode == 7 && reg > 4);
++}
++
++uae_u32
++fpu_jit_control_reg (uae_u32 extra, uae_u32 value)
++{
++  const int list = (extra >> 10) & 7;
++  if (extra & 0x2000)
++    return list == 1 ? fpu.instruction_address : list == 2 ? get_fpsr () : get_fpcr ();
++  if (list == 1)
++    fpu.instruction_address = value;
++  else if (list == 2)
++    set_fpsr (value);
++  else
++    set_fpcr (value);
++  return value;
++}
++
++uae_u32
++fpu_jit_control_mem (uae_u32 extra, uae_u32 addr, uae_u32 mode)
++{
++  const int list = (extra >> 10) & 7;
++  const int nwords = (list & 1) + ((list >> 1) & 1) + ((list >> 2) & 1);
++  if (mode == 4)
++    addr -= nwords * 4;
++  const uae_u32 start = addr;
++  if (extra & 0x2000)
++    {
++      if (list & 4) { put_long (addr, get_fpcr ()); addr += 4; }
++      if (list & 2) { put_long (addr, get_fpsr ()); addr += 4; }
++      if (list & 1) { put_long (addr, fpu.instruction_address); addr += 4; }
++    }
++  else
++    {
++      if (list & 4) { set_fpcr (get_long (addr)); addr += 4; }
++      if (list & 2) { set_fpsr (get_long (addr)); addr += 4; }
++      if (list & 1) { fpu.instruction_address = get_long (addr); addr += 4; }
++    }
++  return mode == 4 ? start : addr;
 +}
 +
 +uae_u32

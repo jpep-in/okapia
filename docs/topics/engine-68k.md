@@ -148,7 +148,8 @@ every instruction the translator does not know.
   the instruction, computes the effective address and passes the source fetched or addressed; `FADD`, `FSUB`,
   `FMUL`, `FMOVE` and `FMOVE.D` out take direct paths when FPCR is zero. `FBcc`, `FDBcc` and `FScc` test FPSR's
   condition codes in the block against a mask the core computes at translation time, and branch like `Bcc`.
-  `FMOVEM`, the control registers, `FTRAPcc`, `FSAVE` and `FRESTORE` stay the interpreter's.
+  `FMOVEM` and the moves of `FPCR`, `FPSR` and `FPIAR` are calls too; only `FTRAPcc`, `FSAVE` and `FRESTORE`
+  stay the interpreter's.
 - **What it does not know leaves the block**: the instruction is run by the interpreter's handler, called from
   translated code, and the block ends there. An emulator opcode is one of those, so every `EmulOp` is a
   journey: the sixteen registers and the flags written out, the handler, everything read back, and a jump
@@ -199,8 +200,14 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [x] FPU instructions in the translator: the core called from inside the block (T1), `FBcc`, `FDBcc`, `FScc`
       translated (T2), direct paths for the common operations (T3); MacBench's FPU tests 1.75 times as fast on the
       M4, same checks as the interpreter (2026-11-16)
-- [ ] The same on a Pi 4; `FMOVEM` translated; code generated inline for `FADD` and `FMUL` only if a profile says the
-      call is what costs
+- [x] The same on a Pi 4: Speedometer's FPU average 6.26 against 3.81 with binary128, FFT and Matrix doubled
+      ([Benchmarks](../contributing/benchmarks.md#raspberry-pi-4-the-fpu-translated-2026-11-16), 2026-11-16)
+- [x] On a Pi 4, the trace build's self-test: the same bits as the Mac (2026-11-16)
+- [x] `FMOVEM` and the control registers translated, and declined F-line instructions no longer marked by their
+      opcode word (2026-11-16): on the Pi, the trace had shown ~270,000 `FDIV`, `FSUB`, `FMOVE.D` a second run by the
+      interpreter after an `FMOVEM` sharing their opcode word
+- [ ] Speedometer on the Pi with that; `trace_fpu_circle.cpp` to time the translator's calls (`fpu_jit_*`), which
+      it does not see; code generated inline for `FADD` and `FMUL` only if that profile says the call is what costs
 - [x] Seam recalibrated to 1 kHz (2026-09-08)
 - [x] Bottleneck ranks 1–7 and the `pc_p` fetch (2026-09-13)
 - [ ] Log the initial PC and SP at 68040 initialisation
@@ -242,6 +249,11 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - **`gencpu` and `gencomp` are built for the host** and run during the build.
 - **A Macintosh boot proves nothing about the FPU.** System 7.1 reaches the Finder in four FPU instructions,
   which is how upstream's binary128 case sat broken for twenty years with 1.0 coming back as 1.5.
+- **The interpreter's chaining of declined opcodes must not key F-line instructions by their opcode word.** After
+  an instruction the translator declines, the interpreter goes on with the next ones whose opcode word was declined
+  before (`opcode_declined`); an FPU instruction's opcode word only says its effective address, so an `FMOVEM
+  d16(A6)` declined once took every `FSUB.D d16(A6)` after it into the interpreter. Seen on the Pi 4 by the trace
+  build: ~270,000 interpreted FPU instructions a second during Speedometer, with the translator on.
 - **More bits than a 68881 is not more exact.** The binary128 core kept 113 bits and so gave answers a 68881
   never gives, ignored FPCR's mode and precision, and raised no exception but in `FSCALE`. Reading it for the
   softfloat change found four more defects: `isnan()`/`isinf()` took the `double` branch under

@@ -23,7 +23,11 @@ memory or a data register is a call into the FPU core from inside the
 block, through a thunk that keeps the 68k registers, with the effective
 address computed and the source already fetched; FBcc, FDBcc and FScc
 test FPSR's condition codes in the block and branch like their integer
-forms. FMOVEM and the control registers stay the interpreter's. On an
+forms; FMOVEM and the moves of FPCR, FPSR and FPIAR are calls too. An
+F-line instruction the translator declines is not marked by its opcode
+word, which an FMOVEM shares with the FSUB.D or FMUL.X it could translate:
+marked, it dragged them into the interpreter after it. Only FTRAPcc,
+FSAVE and FRESTORE stay the interpreter's. On an
 Apple M4, MacBench's FPU tests ran 1.2 to 2 times faster than with every
 FPU instruction leaving the block, with the same results as the
 interpreter.
@@ -606,10 +610,10 @@ index 00000000..f3886f05
 +#define LDAR_wX(Wt,Xbase,offset)  do { ADD_xxi(REG_WORK4,(Xbase),(offset)); _W(0x88DFFC00u | (REG_WORK4 << 5) | (Wt)); } while(0)
 diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
 new file mode 100644
-index 00000000..1192cf94
+index 00000000..a19a8bc9
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
-@@ -0,0 +1,2532 @@
+@@ -0,0 +1,2578 @@
 +/*
 + *  jit_arm64.cpp - 68k to AArch64 translator for the uae_cpu_2021 core
 + *
@@ -1521,7 +1525,49 @@ index 00000000..1192cf94
 +			emit_fpu_call(fmt == 5 ? (const void *)fpu_jit_move_mem_double : (const void *)fpu_jit_move_mem);
 +			return 1;
 +		}
-+		return 0;		// FMOVE and FMOVEM of the control registers, FMOVEM: the interpreter's
++		if (cls == 4 || cls == 5) {									// FMOVE(M) of FPCR, FPSR, FPIAR
++			if (!fpu_jit_control_ok(ext, mode, reg))
++				return 0;
++			if (mode == 0 || mode == 1 || (mode == 7 && reg == 4)) {
++				const int r = mode == 0 ? DREG(reg) : mode == 1 ? AREG(reg) : -1;
++				if (r >= 0) MOV_ww(1, r); else emit_mov32(1, fetch32());
++				emit_mov32(0, ext);
++				emit_fpu_call((const void *)fpu_jit_control_reg);
++				if (r >= 0 && (ext & 0x2000)) {
++					touch(r);
++					MOV_ww(r, 0);
++				}
++				return 1;
++			}
++			const bool step = mode == 3 || mode == 4;
++			if (step) touch(AREG(reg));
++			const int a = step ? AREG(reg) : fpu_operand_address(mode, reg, 0, ext & 0x2000);
++			if (a < 0)
++				return 0;
++			MOV_ww(1, a);
++			emit_mov32(0, ext);
++			emit_mov32(2, mode);
++			emit_fpu_call((const void *)fpu_jit_control_mem);
++			if (step) MOV_ww(AREG(reg), 0);
++			return 1;
++		}
++		if (cls == 6 || cls == 7) {									// FMOVEM of FP0-FP7
++			if (mode < 2 || !fpu_jit_fmovem_ok(ext, mode))
++				return 0;
++			const bool step = mode == 3 || mode == 4;
++			if (step) touch(AREG(reg));
++			const int a = step ? AREG(reg) : fpu_operand_address(mode, reg, 0, ext & 0x2000);
++			if (a < 0)
++				return 0;
++			MOV_ww(1, a);
++			MOV_ww(2, DREG((ext >> 4) & 7));
++			emit_mov32(0, ext);
++			emit_mov32(3, mode);
++			emit_fpu_call((const void *)fpu_jit_fmovem);
++			if (step) MOV_ww(AREG(reg), 0);
++			return 1;
++		}
++		return 0;
 +	}
 +
 +	if (type == 2 || type == 3) {									// FBcc, FNOP
@@ -2843,7 +2889,11 @@ index 00000000..1192cf94
 +			code_ptr = saved_ptr;
 +			stubs.resize(saved_stubs);
 +			sites.resize(saved_sites);
-+			opcode_declined[get_word(cx.next)] = 1;
++			// An FPU instruction is declined for its extension word, not its
++			// opcode word, which an FMOVEM shares with the FSUB.D or FMUL.X
++			// beside it that the translator does know
++			if ((get_word(cx.next) & 0xf000) != 0xf000)
++				opcode_declined[get_word(cx.next)] = 1;
 +			flags_needed();
 +			if (cx.c_inv) { flip_c(); cx.c_inv = false; }
 +			emit_mov32(0, cx.next);

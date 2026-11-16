@@ -256,6 +256,26 @@ Read off two screenshots; the reference values of Bubble Sort, 2 Bit, 4 Bit and 
 - **Owed**: both columns again with a kernel that carries the fix, MacBench beside Speedometer, the System
   version, depth and `frameskip` written down.
 
+### Raspberry Pi 4, the FPU translated (2026-11-16)
+
+Speedometer 4.0.2, read off the screen by the owner, one run; kernel with the softfloat FPU and the translator's
+FPU instructions (T1–T3), `jit true`, System 7.6.1, ARM at 1500 MHz. Not the trace build, so no `okapia-fpu` timing.
+Earlier columns from the runs above, with the translator:
+
+| Test | binary128 (2026-11-15) | softfloat before T1 (2026-11-16) | softfloat, T1–T3 | vs binary128 |
+|---|---:|---:|---:|---:|
+| FPU FFT | 2.68 | 2.29 | 4.70 | 1.75× |
+| FPU K'Whet | 5.09 | 6.09 | 7.89 | 1.55× |
+| FPU Matrix | 3.66 | 3.00 | 6.18 | 1.69× |
+| FPU average (computed) | 3.81 | 3.79 | 6.26 | 1.64× |
+| Math | 177.67 | 241.45 | 276 | 1.55× |
+| K'Whet (benchmark section) | 36.09 | 44.97 | 72.22 | 2.00× |
+
+- FFT and Matrix, which the softfloat core had made slower than binary128, are now twice what they were before T1;
+  K'Whet, heavy in transcendentals, gains least, as the M4 profile said it would.
+- 6.26 against 9.21 for interpreted Basilisk II on the M4 (MPFR) and 27.74 for the iMac G3, whose Speedometer runs
+  PowerPC code on a hardware double FPU.
+
 ### MacBench's FPU tests on the MacBook Pro M4 (2026-11-16)
 
 Desktop Basilisk II built from the translator's clone, System 7.5.5, 8-bit 640×480, median of three runs, in ticks
