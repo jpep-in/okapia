@@ -148,8 +148,9 @@ every instruction the translator does not know.
   the instruction, computes the effective address and passes the source fetched or addressed; `FADD`, `FSUB`,
   `FMUL`, `FMOVE` and `FMOVE.D` out take direct paths when FPCR is zero. `FBcc`, `FDBcc` and `FScc` test FPSR's
   condition codes in the block against a mask the core computes at translation time, and branch like `Bcc`.
-  `FMOVEM` and the moves of `FPCR`, `FPSR` and `FPIAR` are calls too; only `FTRAPcc`, `FSAVE` and `FRESTORE`
-  stay the interpreter's.
+  `FMOVEM` and the moves of `FPCR`, `FPSR` and `FPIAR` are calls too, and an immediate operand is read where it
+  lies in the instruction stream; only `FTRAPcc`, `FSAVE` and `FRESTORE` stay the interpreter's. A trace build
+  (`JIT_ARM64_REPORT_DECLINES`) prints each F-line form left to the interpreter, once, as `jit: declined`.
 - **What it does not know leaves the block**: the instruction is run by the interpreter's handler, called from
   translated code, and the block ends there. An emulator opcode is one of those, so every `EmulOp` is a
   journey: the sixteen registers and the flags written out, the handler, everything read back, and a jump

@@ -271,6 +271,13 @@ Earlier columns from the runs above, with the translator:
 | Math | 177.67 | 241.45 | 276 | 1.55× |
 | K'Whet (benchmark section) | 36.09 | 44.97 | 72.22 | 2.00× |
 
+**Then with `FMOVEM` translated and declined F-line instructions no longer chained** (kernel of 10:21, one run, trace
+build): FFT 4.36, Matrix 5.86, FPU K'Whet 2.4 on its first pass and 10.2 on the next ones, Math 387, the benchmark
+section's K'Whet 34 then 84. The trace showed about 250,000 `FDIV`, `FSUB` and `FMOVE.D` a second still run by the
+interpreter during the first passes, each now ending its block on its own where the chaining used to run a run of
+them in one call: the likely cost of the first passes and of FFT and Matrix slipping 5 to 7 %. Immediate operands,
+the one mode still declined, are translated since; `jit: declined` in a trace build names what is left.
+
 - FFT and Matrix, which the softfloat core had made slower than binary128, are now twice what they were before T1;
   K'Whet, heavy in transcendentals, gains least, as the M4 profile said it would.
 - 6.26 against 9.21 for interpreted Basilisk II on the M4 (MPFR) and 27.74 for the iMac G3, whose Speedometer runs
