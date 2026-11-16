@@ -113,9 +113,12 @@ Previous (`0013`, `uae_cpu_2021/fpu/softfloat/`, provenance in its `README`):
   entries included.
 - **Only 64-bit integers**: no `long double`, no host floating-point state, no allocation. The same bits on
   every host — the digest below is identical on Apple silicon (Clang) and AArch64 (GCC).
-- **A fast path for the common case** (`fpu/softfloat_fast.h`): `FADD`, `FSUB` and `FMUL` of two normal values
-  at extended precision rounded to nearest, in one 128-bit integer, softfloat's result bit for bit; and
-  softfloat's `mul64To128()` as `mul` + `umulh`.
+- **A fast path for the common case** (`fpu/softfloat_fast.h`, inside softfloat's `floatx80_add`, `_sub` and
+  `_mul`): two normal values at extended precision rounded to nearest, in one 128-bit integer, softfloat's
+  result bit for bit — the FPSP's transcendentals run that way inside and gain too; and softfloat's
+  `mul64To128()` as `mul` + `umulh`. Around it, FPCR's mode is read only when it changes and an instruction
+  that raises nothing or only `INEX2` skips the general exception logic.
+- **Unnormal operands are normalised first**, as the 6888x does in hardware and the FPSP in software.
 - **Not done**: exceptions enabled in FPCR are recorded, not taken (as in `fpu_mpfr.cpp`); `FMOVECR`'s
   undefined offsets read zero.
 
@@ -123,7 +126,9 @@ Previous (`0013`, `uae_cpu_2021/fpu/softfloat/`, provenance in its `README`):
 `macemu-jit` route (`OKAPIA_JIT=1`) has only that one. Under `OKAPIA_TRACE`, `kernel.cpp` runs
 `src/circle/fpu_selftest.h` before the Macintosh starts: sixteen answers computed independently, then the
 digest of 60,000 operations over every mode and precision, compared with the constant `tests/host/check_fpu`
-pins on the development machine, and the fast paths against softfloat over 600,000 operations. `trace_fpu_circle.cpp` counts and times the instructions.
+pins on the development machine, and the fast paths against softfloat over 600,000 operations. On the host,
+`tests/host/check_fpu_core` runs `fpu_softfloat.cpp` itself on a million random instructions and pins the hash
+of the FPU state. `trace_fpu_circle.cpp` counts and times the instructions.
 
 ### The translator (`OKAPIA_JIT_ARM64=1`, experimental)
 
@@ -236,6 +241,9 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   went through `(int)x` and `(int)(x + 0.5)` (`mathlib.h:1223-1232`), wrong past 2^31, for negatives and for
   ties; `FMOVE.X` out truncated; and by reading, `FMOVE.D` set a fraction bit worth 2^-49
   (`extract_double()`). The known answers in `fpu_selftest.h` are those cases.
+- **softfloat must never see an unnormal.** It reads one as an invalid encoding, and its FPSP algorithms do not
+  expect one: `FSIN` of an unnormal near 2^3919, loaded with `FMOVE.X`, never returned — a guest could hang the
+  emulator. Found by `check_fpu_core`'s random stream on its first run; `normalized()` in `fpu_softfloat.cpp`.
 - **An overflow raises OVFL, not OVFL and INEX2.** Motorola's accrued rule ORs `OVFL` into `INEX` for that
   reason; a test written from IEEE 754 expects both and is wrong.
 - **`quit_program` stays set** after the interpreter leaves; see
@@ -269,6 +277,11 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   2.2 ns against 8.3; 179 million operations compared with softfloat, none differing; the same under QEMU's
   AArch64. Not yet measured on the Pi. The iMac G3 the owner compared with (FPU 27.74) runs Speedometer's
   PowerPC code on a hardware double FPU.
+- **2026-11-16** — The fast path moved inside softfloat, the core's per-instruction work trimmed, unnormals
+  normalised (the `FSIN` hang). On the M4, softfloat alone: mul 2.5 ns (8.3 before both changes), div 7.3
+  (19.5), sin 104 (208); through `fpuop_arithmetic`: `FMOVE` 4.8 ns (8.7), `FTST` 4.6 (6.4), `FADD` 8.4, `FMUL`
+  7.2, `FSIN` 118. A sine is some thirty FPSP additions and multiplications; staying the Quadra's bits keeps
+  it there. The traced kernel under QEMU: same digest, fast paths identical, Finder.
 - **2026-09-13** — Pi 4 performance: frequency, libraries and loop taxes before any architectural work; see the
   bottleneck study.
 

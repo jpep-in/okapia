@@ -23,21 +23,31 @@ algorithms a 68040 Macintosh runs from its ROM for FSIN and the rest — and
 packed decimal. It needs only 64-bit integer arithmetic, so it gives the
 same bits on every host. The files are WinUAE's copy, as Hatari vendors it;
 fpu/softfloat/README says where they come from, under which licences
-(SoftFloat-2a, BSD, GPL-2.0-or-later), and the five changes made here:
+(SoftFloat-2a, BSD, GPL-2.0-or-later), and the six changes made here:
 include paths, WinUAE's logging headers, two undefined behaviours
-(negating INT32_MIN or INT64_MIN, a 128-bit shift by 64), and
-mul64To128() as one 128-bit multiply where the compiler has one (mul and
-umulh on AArch64) instead of four 32-bit products. The arithmetic is
-unchanged.
+(negating INT32_MIN or INT64_MIN, a 128-bit shift by 64), mul64To128()
+as one 128-bit multiply where the compiler has one (mul and umulh on
+AArch64) instead of four 32-bit products, and a fast path in front of
+floatx80_add(), floatx80_sub() and floatx80_mul(). No result changes.
+
+The fast path is fpu/softfloat_fast.h, new here (GPL-2.0-or-later): two
+normal operands at extended precision rounded to nearest, a normal
+result, the significands in one unsigned __int128, rounded to 64 bits,
+ties to even; anything else falls through to softfloat. The FPSP's
+transcendentals run that way inside, so they gain too. Compared with
+softfloat itself over 179 million operations drawn to reach equal and
+adjacent exponents, cancellation, carries and ties: none differs in value
+or flag. On an Apple M4, with both changes, a multiplication costs 2.5 ns
+against 8.3, a division 7.3 against 19.5, a sine 104 against 208.
 
 The next patch builds a core on it.
 
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat/README b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/README
 new file mode 100644
-index 00000000..8d6c0404
+index 00000000..f25bc48b
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/README
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,65 @@
 +68K softfloat
 +=============
 +
@@ -95,6 +105,12 @@ index 00000000..8d6c0404
 +   it - mul and umulh on AArch64 - instead of four 32-bit products. The
 +   product is the same; every operation that multiplies significands is
 +   cheaper.
++6. floatx80_add(), floatx80_sub() and floatx80_mul() try the fast path of
++   ../softfloat_fast.h first when the status asks for extended precision
++   rounded to nearest - the FPSP's transcendentals run that way inside -
++   and fall through when it declines. It gives the same result and flags;
++   no_fast_path in the special flags turns it off, for the tests that
++   compare the two.
 +
 +The arithmetic itself is unchanged.
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat-macros.h b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat-macros.h
@@ -1362,16 +1378,17 @@ index 00000000..d7945090
 +
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat.c b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat.c
 new file mode 100644
-index 00000000..05ebb98a
+index 00000000..bdb1d145
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat.c
-@@ -0,0 +1,3561 @@
+@@ -0,0 +1,3607 @@
 +
 +#define SOFTFLOAT_68K
 +
 +#include <stdint.h>
 +#include <stdlib.h>
 +#include "softfloat.h" /* macemu: flattened, was "softfloat/softfloat.h" */
++#include "../softfloat_fast.h" /* macemu */
 +
 +
 +/*
@@ -3842,6 +3859,21 @@ index 00000000..05ebb98a
 +{
 +    flag aSign, bSign;
 +
++#ifdef FPU_SOFTFLOAT_FAST
++    /* macemu: two normal operands at extended precision rounded to nearest,
++       with a normal result: ../softfloat_fast.h gives the result below in
++       one 128-bit integer, bit for bit and flag for flag. */
++    if ( status->floatx80_rounding_precision == 80
++         && status->float_rounding_mode == float_round_nearest_even
++         && ! ( status->floatx80_special_flags & no_fast_path ) ) {
++        floatx80 z;
++        int inexact;
++        if ( fpu_fast_add( a.high, a.low, b.high, b.low, 0, &z.high, &z.low, &inexact ) ) {
++            if ( inexact ) float_raise( float_flag_inexact, status );
++            return z;
++        }
++    }
++#endif
 +    if (floatx80_invalid_encoding(a) || floatx80_invalid_encoding(b)) {
 +        float_raise(float_flag_invalid, status);
 +        return floatx80_default_nan(status);
@@ -3867,6 +3899,21 @@ index 00000000..05ebb98a
 +{
 +    flag aSign, bSign;
 +
++#ifdef FPU_SOFTFLOAT_FAST
++    /* macemu: two normal operands at extended precision rounded to nearest,
++       with a normal result: ../softfloat_fast.h gives the result below in
++       one 128-bit integer, bit for bit and flag for flag. */
++    if ( status->floatx80_rounding_precision == 80
++         && status->float_rounding_mode == float_round_nearest_even
++         && ! ( status->floatx80_special_flags & no_fast_path ) ) {
++        floatx80 z;
++        int inexact;
++        if ( fpu_fast_add( a.high, a.low, b.high, b.low, 1, &z.high, &z.low, &inexact ) ) {
++            if ( inexact ) float_raise( float_flag_inexact, status );
++            return z;
++        }
++    }
++#endif
 +    if (floatx80_invalid_encoding(a) || floatx80_invalid_encoding(b)) {
 +        float_raise(float_flag_invalid, status);
 +        return floatx80_default_nan(status);
@@ -3894,6 +3941,21 @@ index 00000000..05ebb98a
 +    int32_t aExp, bExp, zExp;
 +    uint64_t aSig, bSig, zSig0, zSig1;
 +
++#ifdef FPU_SOFTFLOAT_FAST
++    /* macemu: two normal operands at extended precision rounded to nearest,
++       with a normal result: ../softfloat_fast.h gives the result below in
++       one 128-bit integer, bit for bit and flag for flag. */
++    if ( status->floatx80_rounding_precision == 80
++         && status->float_rounding_mode == float_round_nearest_even
++         && ! ( status->floatx80_special_flags & no_fast_path ) ) {
++        floatx80 z;
++        int inexact;
++        if ( fpu_fast_mul( a.high, a.low, b.high, b.low, &z.high, &z.low, &inexact ) ) {
++            if ( inexact ) float_raise( float_flag_inexact, status );
++            return z;
++        }
++    }
++#endif
 +    if (floatx80_invalid_encoding(a) || floatx80_invalid_encoding(b)) {
 +        float_raise(float_flag_invalid, status);
 +        return floatx80_default_nan(status);
@@ -4929,10 +4991,10 @@ index 00000000..05ebb98a
 +}
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat.h b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat.h
 new file mode 100644
-index 00000000..3ad6f0ff
+index 00000000..db4bad39
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat.h
-@@ -0,0 +1,512 @@
+@@ -0,0 +1,515 @@
 +#define SOFTFLOAT_68K
 +
 +/*
@@ -5239,7 +5301,10 @@ index 00000000..3ad6f0ff
 +| Special flags for indicating some unique behavior is required.
 +*----------------------------------------------------------------------------*/
 +enum {
-+	cmp_signed_nan = 0x01, addsub_swap_inf = 0x02, infinity_clear_intbit = 0x04
++	cmp_signed_nan = 0x01, addsub_swap_inf = 0x02, infinity_clear_intbit = 0x04,
++	/* macemu: add, sub and mul without the fast path of ../softfloat_fast.h,
++	   for the tests that compare the two */
++	no_fast_path = 0x80
 +};
 +
 +static inline void set_special_flags(uint8_t flags, float_status *status)
@@ -8891,3 +8956,139 @@ index 00000000..b2b29527
 +	0x21580000, 0xA1100000, 0xA1FC0000, 0x21200000,
 +	0xA1480000, 0x21E80000, 0x20D00000, 0xA1800000
 +};
+diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h b/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h
+new file mode 100644
+index 00000000..f374076e
+--- /dev/null
++++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h
+@@ -0,0 +1,130 @@
++/*
++ * fpu/softfloat_fast.h - the common case of FADD, FSUB and FMUL in 64-bit arithmetic
++ *
++ * Copyright (C) 2026  Jonathan Pepin
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * Most floating-point instructions a Macintosh program executes add,
++ * subtract or multiply two normal extended values in round-to-nearest at
++ * extended precision, and the result is normal too. For that case the
++ * functions here compute softfloat's result directly: the significands
++ * held in one 128-bit integer, rounded to 64 bits, to nearest, ties to
++ * even. Anything else - another rounding mode or precision, a zero, an
++ * infinity, a NaN, a denormal or unnormal operand, a result that would
++ * overflow, underflow or be zero, operands too far apart to stay exact in
++ * 128 bits - makes them return false, and the caller asks softfloat.
++ *
++ * When they return true, the result and its inexact flag are the ones
++ * softfloat gives, bit for bit: tests/host/check_fpu in Okapia compares the
++ * two over millions of operands, on the host and on the board.
++ *
++ * Needs a compiler with unsigned __int128 (GCC and Clang on 64-bit hosts).
++ */
++
++#ifndef FPU_SOFTFLOAT_FAST_H
++#define FPU_SOFTFLOAT_FAST_H
++
++#include <stdint.h>
++
++#if defined(__SIZEOF_INT128__)
++#define FPU_SOFTFLOAT_FAST 1
++
++typedef unsigned __int128 fpu_fast_u128;
++
++/* A normal extended value: exponent 1 to 0x7ffe and the integer bit set. */
++static inline int fpu_fast_normal (uint16_t high, uint64_t low)
++{
++	return (uint32_t) (high & 0x7fff) - 1 < 0x7ffe && (low >> 63) != 0;
++}
++
++/* Rounds the 128-bit significand s, whose top bit is set, to its upper 64
++   bits, to nearest and ties to even; e is the exponent of that top bit.
++   Fails when the result is not a normal extended value. */
++static inline int fpu_fast_round (uint16_t sign, int32_t e, fpu_fast_u128 s,
++	uint16_t *high, uint64_t *low, int *inexact)
++{
++	uint64_t mant = (uint64_t) (s >> 64);
++	uint64_t rest = (uint64_t) s;
++	if (rest > 0x8000000000000000ULL || (rest == 0x8000000000000000ULL && (mant & 1))) {
++		if (++mant == 0) {
++			mant = 0x8000000000000000ULL;
++			e++;
++		}
++	}
++	if (e < 1 || e > 0x7ffe)
++		return 0;
++	*high = (uint16_t) (sign | e);
++	*low = mant;
++	*inexact = rest != 0;
++	return 1;
++}
++
++static inline int fpu_fast_mul (uint16_t ah, uint64_t al, uint16_t bh, uint64_t bl,
++	uint16_t *high, uint64_t *low, int *inexact)
++{
++	if (!fpu_fast_normal (ah, al) || !fpu_fast_normal (bh, bl))
++		return 0;
++	/* Two significands in [1, 2) multiply into [1, 4): one bit to normalise
++	   at most. The exponent is that of the product's bit 126. */
++	int32_t e = (int32_t) (ah & 0x7fff) + (int32_t) (bh & 0x7fff) - 0x3fff;
++	fpu_fast_u128 p = (fpu_fast_u128) al * bl;
++	if (p >> 127)
++		e++;
++	else
++		p <<= 1;
++	return fpu_fast_round ((ah ^ bh) & 0x8000, e, p, high, low, inexact);
++}
++
++/* a + b, or a - b when subtract is set. */
++static inline int fpu_fast_add (uint16_t ah, uint64_t al, uint16_t bh, uint64_t bl, int subtract,
++	uint16_t *high, uint64_t *low, int *inexact)
++{
++	if (!fpu_fast_normal (ah, al) || !fpu_fast_normal (bh, bl))
++		return 0;
++	if (subtract)
++		bh ^= 0x8000;
++
++	int32_t ea = ah & 0x7fff, eb = bh & 0x7fff;
++	/* The larger magnitude first. */
++	if (eb > ea || (eb == ea && bl > al)) {
++		uint16_t th = ah; ah = bh; bh = th;
++		uint64_t tl = al; al = bl; bl = tl;
++		int32_t te = ea; ea = eb; eb = te;
++	}
++	uint32_t d = (uint32_t) (ea - eb);
++	/* Both significands in 128 bits with one bit of headroom: a's top bit
++	   at 126, b's d places lower. Up to d = 63 nothing of b falls off. */
++	if (d > 63)
++		return 0;
++	fpu_fast_u128 A = (fpu_fast_u128) al << 63;
++	fpu_fast_u128 B = ((fpu_fast_u128) bl << 63) >> d;
++
++	if (((ah ^ bh) & 0x8000) == 0) {
++		fpu_fast_u128 s = A + B;
++		/* A carry into bit 127 raises the exponent; otherwise bit 126 is the top. */
++		if (s >> 127)
++			return fpu_fast_round (ah & 0x8000, ea + 1, s, high, low, inexact);
++		return fpu_fast_round (ah & 0x8000, ea, s << 1, high, low, inexact);
++	}
++
++	fpu_fast_u128 s = A - B;
++	if (s == 0)
++		return 0;	/* an exact zero: its sign is softfloat's business */
++	uint64_t top = (uint64_t) (s >> 64);
++	int lz = top ? __builtin_clzll (top) : 64 + __builtin_clzll ((uint64_t) s);
++	/* Bit 126 had a's exponent; the top bit is lz - 1 places below it. */
++	return fpu_fast_round (ah & 0x8000, ea + 1 - lz, s << lz, high, low, inexact);
++}
++
++#endif /* __SIZEOF_INT128__ */
++
++#endif /* FPU_SOFTFLOAT_FAST_H */

@@ -37,6 +37,7 @@ measurements are part of the build.
 | `check_platform` | unknown preference lines kept, System flavour, the PowerPC memory layout, the resolution lists, the ROM chime (fabricated ROMs, plus the local ROMs when present), compositor output writes at odd origins and pitches |
 | `check_blit` | upstream's pixel expanders at every depth |
 | `check_encoding` | MacRoman ↔ UTF-8 file names |
+| `check_fpu_core` | `fpu_softfloat.cpp` itself, built for the host with the few symbols of the 68k core it reaches: a million random FPU instructions (every operation and operand format, packed decimal, `FMOVECR`, every FPCR mode and precision, zeros, infinities, NaNs, denormals, unnormals), the FPU state hashed after each and the hash pinned; each instruction under a five-second watchdog; the `FSIN` of an unnormal that once never returned |
 | `check_fpu` | the 68K softfloat under `fpu_softfloat.cpp`: sixteen answers computed independently (FPCR precision, directed rounding to integers, ties, overflow, exponents a double cannot hold), the fast paths against softfloat over six million operations, and the digest of 60,000 operations that the traced kernel must reproduce on the board. `./check_fpu digest` prints it, to pin a deliberate change |
 
 The firmware's screens are pure (handed values, answering values; everything knowing about files or frame buffers

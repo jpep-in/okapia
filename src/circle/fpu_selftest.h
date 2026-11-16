@@ -297,6 +297,7 @@ static inline unsigned FpuCheckFastPaths (unsigned nCount, unsigned *pTaken)
             nTaken++;
             float_status Status = {};
             FpuSetMode (&Status, 80, 0);
+            Status.floatx80_special_flags = no_fast_path;   // softfloat's own arithmetic
             const floatx80 r = nOp == 2 ? floatx80_mul (a, b, &Status)
                              : nOp == 1 ? floatx80_sub (a, b, &Status)
                                         : floatx80_add (a, b, &Status);

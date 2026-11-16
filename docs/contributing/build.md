@@ -144,8 +144,8 @@ applied is skipped.
 | macemu `0010` uae_cpu_2021: fetch through pc_p, as uae_cpu did | instruction fetch through `regs.pc_p` |
 | macemu `0011` video: let a port offer the sizes it can show | SheepShaver resolutions past `APPLE_ID_MAX` |
 | macemu `0012` uae_cpu_2021: a 68k to AArch64 translator | the experimental translator, compiled only with `OKAPIA_JIT_ARM64=1` |
-| macemu `0013` fpu: the 68K softfloat from Previous and WinUAE | `fpu/softfloat/`, unchanged but for include paths, two undefined behaviours and a 128-bit `mul64To128()` ([Decisions](../project/decisions.md#fpu-the-68881-in-80-bit-softfloat)) |
-| macemu `0014` fpu: a 68881 core on the 68K softfloat | `fpu_softfloat.cpp`, from `fpu_mpfr.cpp`, and the fast path of `softfloat_fast.h`; the default FPU |
+| macemu `0013` fpu: the 68K softfloat from Previous and WinUAE | `fpu/softfloat/`, unchanged in its results; include paths, two undefined behaviours, a 128-bit `mul64To128()`, and the fast path of `softfloat_fast.h` in front of add, sub and mul ([Decisions](../project/decisions.md#fpu-the-68881-in-80-bit-softfloat)) |
+| macemu `0014` fpu: a 68881 core on the 68K softfloat | `fpu_softfloat.cpp`, from `fpu_mpfr.cpp`; the default FPU |
 | macemu `0015` configure: offer the softfloat FPU core | `--enable-fpe=softfloat` upstream; Okapia's Makefile does not use it |
 | circle-stdlib `0001` configure: optimise newlib outside debug builds | newlib at `-O2` (libm was `-O0`) |
 | circle-stdlib `0002` libgloss/circle: seek with an off_t | files read past 2 GiB ([Storage](../topics/storage.md#volumes-past-2-gib)) |

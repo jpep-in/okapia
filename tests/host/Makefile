@@ -207,8 +207,23 @@ check_fpu.o: check_fpu.cpp
 check_fpu: check_fpu.o $(SOFTFLOAT_OBJS)
 	$(CXX) -o $@ $^
 
+# fpu_softfloat.cpp itself, with the platform's headers as Basilisk II sees
+# them and the few symbols of the 68k core it reaches supplied by the test.
+FPU_CORE_CXXFLAGS = -O2 -Wall -Wno-unused-parameter -Wno-unused-function -std=c++14 \
+    -include shims/okapia_circle.h -Ishims -I$(CIRCLE) -I$(MACEMU)/include -I$(MACEMU)/Unix \
+    -I$(MACEMU)/uae_cpu_2021 -DDIRECT_ADDRESSING -DFPU_SOFTFLOAT
+
+fc_fpu_softfloat.o: $(MACEMU)/uae_cpu_2021/fpu/fpu_softfloat.cpp
+	$(CXX) $(FPU_CORE_CXXFLAGS) -w -MMD -MP -c -o $@ $<
+
+check_fpu_core.o: check_fpu_core.cpp
+	$(CXX) $(FPU_CORE_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+check_fpu_core: check_fpu_core.o fc_fpu_softfloat.o $(SOFTFLOAT_OBJS)
+	$(CXX) -o $@ $^
+
 check: check_geometry check_screen check_chooser check_pages check_platform check_blit \
-       check_encoding check_net check_clock check_quickdraw check_fpu
+       check_encoding check_net check_clock check_quickdraw check_fpu check_fpu_core
 	./check_geometry
 	./check_screen
 	./check_chooser
@@ -220,6 +235,7 @@ check: check_geometry check_screen check_chooser check_pages check_platform chec
 	./check_clock
 	./check_quickdraw
 	./check_fpu
+	./check_fpu_core
 
 # Every page, the count being the flow's to decide: naming them here again is
 # how the second page went stale the day a third appeared.
@@ -235,7 +251,7 @@ view: render_specimen
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
 	      check_chooser check_pages check_platform check_platform.tmp check_blit \
-	      check_encoding check_quickdraw check_fpu make_large_volume \
+	      check_encoding check_quickdraw check_fpu check_fpu_core make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean
