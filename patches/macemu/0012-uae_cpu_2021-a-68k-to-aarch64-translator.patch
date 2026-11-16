@@ -26,8 +26,10 @@ test FPSR's condition codes in the block and branch like their integer
 forms; FMOVEM and the moves of FPCR, FPSR and FPIAR are calls too. An
 F-line instruction the translator declines is not marked by its opcode
 word, which an FMOVEM shares with the FSUB.D or FMUL.X it could translate:
-marked, it dragged them into the interpreter after it. Only FTRAPcc,
-FSAVE and FRESTORE stay the interpreter's. On an
+marked, it dragged them into the interpreter after it. Immediate
+operands are read where they lie in the instruction stream. Only FTRAPcc,
+FSAVE and FRESTORE stay the interpreter's; JIT_ARM64_REPORT_DECLINES
+prints each F-line form left to the interpreter, once. On an
 Apple M4, MacBench's FPU tests ran 1.2 to 2 times faster than with every
 FPU instruction leaving the block, with the same results as the
 interpreter.
@@ -610,10 +612,10 @@ index 00000000..f3886f05
 +#define LDAR_wX(Wt,Xbase,offset)  do { ADD_xxi(REG_WORK4,(Xbase),(offset)); _W(0x88DFFC00u | (REG_WORK4 << 5) | (Wt)); } while(0)
 diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
 new file mode 100644
-index 00000000..a19a8bc9
+index 00000000..37b20172
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
-@@ -0,0 +1,2578 @@
+@@ -0,0 +1,2605 @@
 +/*
 + *  jit_arm64.cpp - 68k to AArch64 translator for the uae_cpu_2021 core
 + *
@@ -1493,10 +1495,21 @@ index 00000000..a19a8bc9
 +			}
 +			if (fmt == 7)
 +				return 0;
-+			const int a = fpu_operand_address(mode, reg, fpu_format_bytes[fmt], false);
++			int a;
++			if (mode == 7 && reg == 4) {
++				// Immediate data: the operand is the instruction stream itself,
++				// read where it lies (a byte is the low half of its word)
++				const uae_u32 imm = cx.next;
++				const int bytes = fpu_format_bytes[fmt];
++				cx.next += bytes == 1 ? 2 : bytes;
++				emit_mov32(1, bytes == 1 ? imm + 1 : imm);
++				a = 1;
++			} else
++				a = fpu_operand_address(mode, reg, fpu_format_bytes[fmt], false);
 +			if (a < 0)
 +				return 0;
-+			MOV_ww(1, a);
++			if (a != 1)
++				MOV_ww(1, a);
 +			emit_mov32(0, ext);
 +			emit_mov32(2, pc);
 +			emit_fpu_call((fmt == 2 || fmt == 5) && fpu_common(ext) ? (const void *)fpu_jit_arith_mem
@@ -2894,6 +2907,22 @@ index 00000000..a19a8bc9
 +			// beside it that the translator does know
 +			if ((get_word(cx.next) & 0xf000) != 0xf000)
 +				opcode_declined[get_word(cx.next)] = 1;
++#ifdef JIT_ARM64_REPORT_DECLINES
++			// Which FPU instructions are left to the interpreter, once each,
++			// for the first 64 forms seen
++			else {
++				static uae_u32 seen[64];
++				static unsigned n_seen;
++				const uae_u32 form = (get_word(cx.next) << 16) | get_word(cx.next + 2);
++				bool known = false;
++				for (unsigned i = 0; i < n_seen; i++)
++					known |= seen[i] == form;
++				if (!known && n_seen < 64) {
++					seen[n_seen++] = form;
++					fprintf(stderr, "jit: declined %04x %04x at %08x\n", form >> 16, form & 0xffff, cx.next);
++				}
++			}
++#endif
 +			flags_needed();
 +			if (cx.c_inv) { flip_c(); cx.c_inv = false; }
 +			emit_mov32(0, cx.next);

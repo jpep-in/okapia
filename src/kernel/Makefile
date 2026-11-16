@@ -65,6 +65,10 @@ ifeq ($(ENGINE),basilisk)
       $(error OKAPIA_JIT_ARM64 and OKAPIA_JIT are two different JITs: choose one)
     endif
     ENGINE_DEFINES += -DJIT_ARM64 -DJIT_ARM64_OWN_MEMORY -DJIT_ARM64_OWN_POLL
+    ifeq ($(OKAPIA_TRACE),1)
+      # Each FPU instruction form the translator leaves to the interpreter, once.
+      ENGINE_DEFINES += -DJIT_ARM64_REPORT_DECLINES
+    endif
   endif
   ifeq ($(OKAPIA_JIT),1)
     # Experimental, off by default: the 68k core of rcarmo/macemu-jit and its
