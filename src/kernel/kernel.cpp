@@ -367,6 +367,11 @@ bool CKernel::StartMacintosh (void)
                                     nFailed, s_FpuKnownAnswers[nFirst].pWhat, Got.high,
                                     (unsigned long) Got.low, nFlags);
         }
+        unsigned nTaken = 0;
+        const unsigned nDiffer = FpuCheckFastPaths (200000, &nTaken);
+        CLogger::Get ()->Write (FROM, nDiffer == 0 ? LogNotice : LogWarning,
+                                "FPU: fast paths took %u of 600000 operations, %u differ from softfloat",
+                                nTaken, nDiffer);
         CLogger::Get ()->Write (FROM, nDigest == kFpuDigestExpected ? LogNotice : LogWarning,
                                 "FPU: digest of %u operations %016lx in %u us, %s",
                                 kFpuDigestCount, (unsigned long) nDigest, nMicros,

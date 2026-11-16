@@ -37,7 +37,7 @@ measurements are part of the build.
 | `check_platform` | unknown preference lines kept, System flavour, the PowerPC memory layout, the resolution lists, the ROM chime (fabricated ROMs, plus the local ROMs when present), compositor output writes at odd origins and pitches |
 | `check_blit` | upstream's pixel expanders at every depth |
 | `check_encoding` | MacRoman ↔ UTF-8 file names |
-| `check_fpu` | the 68K softfloat under `fpu_softfloat.cpp`: sixteen answers computed independently (FPCR precision, directed rounding to integers, ties, overflow, exponents a double cannot hold), and the digest of 60,000 operations that the traced kernel must reproduce on the board. `./check_fpu digest` prints it, to pin a deliberate change |
+| `check_fpu` | the 68K softfloat under `fpu_softfloat.cpp`: sixteen answers computed independently (FPCR precision, directed rounding to integers, ties, overflow, exponents a double cannot hold), the fast paths against softfloat over six million operations, and the digest of 60,000 operations that the traced kernel must reproduce on the board. `./check_fpu digest` prints it, to pin a deliberate change |
 
 The firmware's screens are pure (handed values, answering values; everything knowing about files or frame buffers
 stays in `src/firmware/circle/`), which is what makes them measurable here. A fixed reproducible bug comes with a test,

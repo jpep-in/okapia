@@ -23,19 +23,21 @@ algorithms a 68040 Macintosh runs from its ROM for FSIN and the rest — and
 packed decimal. It needs only 64-bit integer arithmetic, so it gives the
 same bits on every host. The files are WinUAE's copy, as Hatari vendors it;
 fpu/softfloat/README says where they come from, under which licences
-(SoftFloat-2a, BSD, GPL-2.0-or-later), and the four changes made here:
-include paths, WinUAE's logging headers, and two undefined behaviours
-(negating INT32_MIN or INT64_MIN, a 128-bit shift by 64). The arithmetic
-is unchanged.
+(SoftFloat-2a, BSD, GPL-2.0-or-later), and the five changes made here:
+include paths, WinUAE's logging headers, two undefined behaviours
+(negating INT32_MIN or INT64_MIN, a 128-bit shift by 64), and
+mul64To128() as one 128-bit multiply where the compiler has one (mul and
+umulh on AArch64) instead of four 32-bit products. The arithmetic is
+unchanged.
 
 The next patch builds a core on it.
 
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat/README b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/README
 new file mode 100644
-index 00000000..29266525
+index 00000000..8d6c0404
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/README
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,59 @@
 +68K softfloat
 +=============
 +
@@ -89,14 +91,18 @@ index 00000000..29266525
 +4. shortShift128Left() accepts a count of 64, which normalising a
 +   significand whose high half is zero asks for; a C shift by 64 is
 +   undefined. Both were found by pom68k under ASan/UBSan.
++5. mul64To128() multiplies in one unsigned __int128 where the compiler has
++   it - mul and umulh on AArch64 - instead of four 32-bit products. The
++   product is the same; every operation that multiplies significands is
++   cheaper.
 +
 +The arithmetic itself is unchanged.
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat-macros.h b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat-macros.h
 new file mode 100644
-index 00000000..2ef3f34f
+index 00000000..254b6fdb
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat/softfloat-macros.h
-@@ -0,0 +1,800 @@
+@@ -0,0 +1,808 @@
 +/*
 + * QEMU float support macros
 + *
@@ -614,6 +620,13 @@ index 00000000..2ef3f34f
 +
 +static inline void mul64To128( uint64_t a, uint64_t b, uint64_t *z0Ptr, uint64_t *z1Ptr )
 +{
++#if defined(__SIZEOF_INT128__)
++    /* macemu: one multiply and its high half (mul and umulh on AArch64)
++       where the compiler has a 128-bit integer; the same product. */
++    unsigned __int128 p = (unsigned __int128) a * b;
++    *z1Ptr = (uint64_t) p;
++    *z0Ptr = (uint64_t) ( p>>64 );
++#else
 +    uint32_t aHigh, aLow, bHigh, bLow;
 +    uint64_t z0, zMiddleA, zMiddleB, z1;
 +
@@ -632,6 +645,7 @@ index 00000000..2ef3f34f
 +    z0 += ( z1 < zMiddleA );
 +    *z1Ptr = z1;
 +    *z0Ptr = z0;
++#endif
 +
 +}
 +

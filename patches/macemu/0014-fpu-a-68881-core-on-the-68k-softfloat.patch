@@ -25,6 +25,17 @@ register and every operation on it:
     entry moves by one unit in the directed modes as its rounding says.
     Undefined offsets read zero, as before.
   * Nothing is allocated, and nothing needs GMP, MPFR or a long double.
+  * FADD, FSUB and FMUL take a fast path (softfloat_fast.h) when both
+    operands are normal, FPCR asks for extended precision rounded to
+    nearest, the operands stay exact in 128 bits and the result is normal:
+    the significands in one unsigned __int128, rounded to 64 bits, ties
+    to even. Anything else returns false and softfloat answers. The
+    result is softfloat's, bit for bit and flag for flag: 179 million
+    operations drawn to reach equal and adjacent exponents, cancellation,
+    carries and ties, all but 0.3% on the fast path, none differing. On
+    an Apple M4 a multiplication costs 2.2 ns there against 8.3 ns through
+    softfloat. Measured on a Raspberry Pi 4 before it, Speedometer's FFT
+    and matrix tests had run 15 to 18% slower than on the binary128 core.
 
 The two fixes to the code taken over: FMOVE.P with a dynamic k-factor
 moved (An)+ and -(An) by nothing instead of twelve bytes, and FMOVE to
@@ -65,10 +76,10 @@ diff --git a/BasiliskII/src/uae_cpu_2021/fpu/types.h b/BasiliskII/src/uae_cpu_20
  union fpu_register_parts {
 diff --git a/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp b/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp
 new file mode 100644
-index 00000000..407cc465
+index 00000000..08d3c7e1
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/fpu/fpu_softfloat.cpp
-@@ -0,0 +1,1553 @@
+@@ -0,0 +1,1604 @@
 +/*
 + * fpu/fpu_softfloat.cpp - MC68881/68882 and MC68040 FPU in exact 80-bit softfloat
 + *
@@ -103,7 +114,9 @@ index 00000000..407cc465
 + *  - packed decimal goes through softfloat's decimal conversions;
 + *  - FMOVECR returns the constant ROM as a 68881 does, including the
 + *    entries it does not round to nearest;
-+ *  - nothing is allocated: no GMP, no MPFR, no malloc per instruction.
++ *  - nothing is allocated: no GMP, no MPFR, no malloc per instruction;
++ *  - FADD, FSUB and FMUL take the fast paths of softfloat_fast.h when the
++ *    operands and FPCR allow, with softfloat's result bit for bit.
 + *
 + * It needs only 64-bit integer arithmetic, so it gives the same bits on
 + * every host.
@@ -131,6 +144,7 @@ index 00000000..407cc465
 +#include "fpu/softfloat/softfloat.h"
 +#include "fpu/softfloat/softfloat-specialize.h"
 +}
++#include "fpu/softfloat_fast.h"
 +
 +fpu_t fpu;
 +
@@ -207,6 +221,54 @@ index 00000000..407cc465
 +  set_mode ();
 +  fs.float_exception_flags = 0;
 +  cur_exceptions = 0;
++}
++
++// FADD, FSUB and FMUL in the common case, softfloat otherwise. The fast
++// paths give softfloat's bits; they only apply at extended precision and to
++// nearest, which is what FPCR says unless a program changed it.
++static inline bool
++fast_paths_apply (void)
++{
++#ifdef FPU_SOFTFLOAT_FAST
++  return fs.floatx80_rounding_precision == 80
++    && fs.float_rounding_mode == float_round_nearest_even;
++#else
++  return false;
++#endif
++}
++
++static inline floatx80
++op_add (floatx80 a, floatx80 b, bool subtract)
++{
++#ifdef FPU_SOFTFLOAT_FAST
++  floatx80 r;
++  int inexact;
++  if (fast_paths_apply ()
++      && fpu_fast_add (a.high, a.low, b.high, b.low, subtract, &r.high, &r.low, &inexact))
++    {
++      if (inexact)
++	fs.float_exception_flags |= float_flag_inexact;
++      return r;
++    }
++#endif
++  return subtract ? floatx80_sub (a, b, &fs) : floatx80_add (a, b, &fs);
++}
++
++static inline floatx80
++op_mul (floatx80 a, floatx80 b)
++{
++#ifdef FPU_SOFTFLOAT_FAST
++  floatx80 r;
++  int inexact;
++  if (fast_paths_apply ()
++      && fpu_fast_mul (a.high, a.low, b.high, b.low, &r.high, &r.low, &inexact))
++    {
++      if (inexact)
++	fs.float_exception_flags |= float_flag_inexact;
++      return r;
++    }
++#endif
++  return floatx80_mul (a, b, &fs);
 +}
 +
 +static inline floatx80
@@ -1353,10 +1415,10 @@ index 00000000..407cc465
 +	  fpu.fpsr.quotient = ((quotient & 0x7f) << 16) | (quotient_sign ? 0x800000 : 0);
 +	  break;
 +	case 34: // FADD
-+	  result = floatx80_add (dest, value, &fs);
++	  result = op_add (dest, value, false);
 +	  break;
 +	case 35: // FMUL
-+	  result = floatx80_mul (dest, value, &fs);
++	  result = op_mul (dest, value);
 +	  break;
 +	case 36: // FSGLDIV
 +	  result = floatx80_sgldiv (dest, value, &fs);
@@ -1372,7 +1434,7 @@ index 00000000..407cc465
 +	  result = floatx80_sglmul (dest, value, &fs);
 +	  break;
 +	default: // 40: FSUB
-+	  result = floatx80_sub (dest, value, &fs);
++	  result = op_add (dest, value, true);
 +	  break;
 +	}
 +      set_fp_register (reg, result, true);
@@ -1622,3 +1684,139 @@ index 00000000..407cc465
 +}
 +
 +#endif
+diff --git a/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h b/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h
+new file mode 100644
+index 00000000..f374076e
+--- /dev/null
++++ b/BasiliskII/src/uae_cpu_2021/fpu/softfloat_fast.h
+@@ -0,0 +1,130 @@
++/*
++ * fpu/softfloat_fast.h - the common case of FADD, FSUB and FMUL in 64-bit arithmetic
++ *
++ * Copyright (C) 2026  Jonathan Pepin
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * Most floating-point instructions a Macintosh program executes add,
++ * subtract or multiply two normal extended values in round-to-nearest at
++ * extended precision, and the result is normal too. For that case the
++ * functions here compute softfloat's result directly: the significands
++ * held in one 128-bit integer, rounded to 64 bits, to nearest, ties to
++ * even. Anything else - another rounding mode or precision, a zero, an
++ * infinity, a NaN, a denormal or unnormal operand, a result that would
++ * overflow, underflow or be zero, operands too far apart to stay exact in
++ * 128 bits - makes them return false, and the caller asks softfloat.
++ *
++ * When they return true, the result and its inexact flag are the ones
++ * softfloat gives, bit for bit: tests/host/check_fpu in Okapia compares the
++ * two over millions of operands, on the host and on the board.
++ *
++ * Needs a compiler with unsigned __int128 (GCC and Clang on 64-bit hosts).
++ */
++
++#ifndef FPU_SOFTFLOAT_FAST_H
++#define FPU_SOFTFLOAT_FAST_H
++
++#include <stdint.h>
++
++#if defined(__SIZEOF_INT128__)
++#define FPU_SOFTFLOAT_FAST 1
++
++typedef unsigned __int128 fpu_fast_u128;
++
++/* A normal extended value: exponent 1 to 0x7ffe and the integer bit set. */
++static inline int fpu_fast_normal (uint16_t high, uint64_t low)
++{
++	return (uint32_t) (high & 0x7fff) - 1 < 0x7ffe && (low >> 63) != 0;
++}
++
++/* Rounds the 128-bit significand s, whose top bit is set, to its upper 64
++   bits, to nearest and ties to even; e is the exponent of that top bit.
++   Fails when the result is not a normal extended value. */
++static inline int fpu_fast_round (uint16_t sign, int32_t e, fpu_fast_u128 s,
++	uint16_t *high, uint64_t *low, int *inexact)
++{
++	uint64_t mant = (uint64_t) (s >> 64);
++	uint64_t rest = (uint64_t) s;
++	if (rest > 0x8000000000000000ULL || (rest == 0x8000000000000000ULL && (mant & 1))) {
++		if (++mant == 0) {
++			mant = 0x8000000000000000ULL;
++			e++;
++		}
++	}
++	if (e < 1 || e > 0x7ffe)
++		return 0;
++	*high = (uint16_t) (sign | e);
++	*low = mant;
++	*inexact = rest != 0;
++	return 1;
++}
++
++static inline int fpu_fast_mul (uint16_t ah, uint64_t al, uint16_t bh, uint64_t bl,
++	uint16_t *high, uint64_t *low, int *inexact)
++{
++	if (!fpu_fast_normal (ah, al) || !fpu_fast_normal (bh, bl))
++		return 0;
++	/* Two significands in [1, 2) multiply into [1, 4): one bit to normalise
++	   at most. The exponent is that of the product's bit 126. */
++	int32_t e = (int32_t) (ah & 0x7fff) + (int32_t) (bh & 0x7fff) - 0x3fff;
++	fpu_fast_u128 p = (fpu_fast_u128) al * bl;
++	if (p >> 127)
++		e++;
++	else
++		p <<= 1;
++	return fpu_fast_round ((ah ^ bh) & 0x8000, e, p, high, low, inexact);
++}
++
++/* a + b, or a - b when subtract is set. */
++static inline int fpu_fast_add (uint16_t ah, uint64_t al, uint16_t bh, uint64_t bl, int subtract,
++	uint16_t *high, uint64_t *low, int *inexact)
++{
++	if (!fpu_fast_normal (ah, al) || !fpu_fast_normal (bh, bl))
++		return 0;
++	if (subtract)
++		bh ^= 0x8000;
++
++	int32_t ea = ah & 0x7fff, eb = bh & 0x7fff;
++	/* The larger magnitude first. */
++	if (eb > ea || (eb == ea && bl > al)) {
++		uint16_t th = ah; ah = bh; bh = th;
++		uint64_t tl = al; al = bl; bl = tl;
++		int32_t te = ea; ea = eb; eb = te;
++	}
++	uint32_t d = (uint32_t) (ea - eb);
++	/* Both significands in 128 bits with one bit of headroom: a's top bit
++	   at 126, b's d places lower. Up to d = 63 nothing of b falls off. */
++	if (d > 63)
++		return 0;
++	fpu_fast_u128 A = (fpu_fast_u128) al << 63;
++	fpu_fast_u128 B = ((fpu_fast_u128) bl << 63) >> d;
++
++	if (((ah ^ bh) & 0x8000) == 0) {
++		fpu_fast_u128 s = A + B;
++		/* A carry into bit 127 raises the exponent; otherwise bit 126 is the top. */
++		if (s >> 127)
++			return fpu_fast_round (ah & 0x8000, ea + 1, s, high, low, inexact);
++		return fpu_fast_round (ah & 0x8000, ea, s << 1, high, low, inexact);
++	}
++
++	fpu_fast_u128 s = A - B;
++	if (s == 0)
++		return 0;	/* an exact zero: its sign is softfloat's business */
++	uint64_t top = (uint64_t) (s >> 64);
++	int lz = top ? __builtin_clzll (top) : 64 + __builtin_clzll ((uint64_t) s);
++	/* Bit 126 had a's exponent; the top bit is lz - 1 places below it. */
++	return fpu_fast_round (ah & 0x8000, ea + 1 - lz, s << lz, high, low, inexact);
++}
++
++#endif /* __SIZEOF_INT128__ */
++
++#endif /* FPU_SOFTFLOAT_FAST_H */

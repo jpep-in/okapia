@@ -28,6 +28,7 @@
 extern "C" {
 #include "fpu/softfloat/softfloat.h"
 }
+#include "fpu/softfloat_fast.h"
 
 enum TFpuOp
 {
@@ -241,6 +242,74 @@ static inline uint64_t FpuDigest (unsigned nCount)
         }
     }
     return nHash;
+}
+
+// The fast paths of fpu/softfloat_fast.h against softfloat itself: nCount
+// operand pairs, each tried as a sum, a difference and a product. Operands
+// are drawn to reach the paths' edges - equal and adjacent exponents,
+// cancellation, carries, low bits that make ties - as well as at random.
+// Returns the number of results that differ in value or inexact flag; how
+// many the fast paths took is left in *pTaken.
+static inline unsigned FpuCheckFastPaths (unsigned nCount, unsigned *pTaken)
+{
+    unsigned nDiffer = 0;
+    unsigned nTaken = 0;
+#ifdef FPU_SOFTFLOAT_FAST
+    uint64_t nState = 0xfeedfacecafebeefULL;
+    for (unsigned i = 0; i < nCount; i++)
+    {
+        uint64_t z[4];
+        for (unsigned k = 0; k < 4; k++)
+        {
+            nState += 0x9e3779b97f4a7c15ULL;
+            uint64_t x = nState;
+            x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+            x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+            z[k] = x ^ (x >> 31);
+        }
+        floatx80 a, b;
+        a.high = (uint16_t) (((z[0] >> 63) << 15) | (0x3fff + (int) (z[0] & 0xff) - 128));
+        a.low = z[1] | (1ULL << 63);
+        // b's exponent near a's most of the time, so that the shift is small.
+        const int nDelta = (z[2] & 3) == 0 ? (int) ((z[2] >> 8) & 0x7f) - 64 : (int) ((z[2] >> 8) & 7) - 3;
+        b.high = (uint16_t) ((((z[2] >> 62) & 1) << 15) | ((a.high & 0x7fff) + nDelta));
+        switch ((z[2] >> 16) & 7)
+        {
+        case 0:  b.low = a.low;                                     break;  // equal
+        case 1:  b.low = a.low ^ 1;                                 break;  // cancellation
+        case 2:  b.low = (a.low & ~0xffULL) | 0x80;                 break;  // ties
+        case 3:  b.low = 0x8000000000000000ULL | (z[3] & 0xffff);   break;  // short
+        case 4:  b.low = 0xffffffffffffffffULL;                     break;  // carry
+        default: b.low = z[3] | (1ULL << 63);                       break;
+        }
+        for (unsigned nOp = 0; nOp < 3; nOp++)
+        {
+            uint16_t nHigh = 0;
+            uint64_t nLow = 0;
+            int bInexact = 0;
+            const bool bFast = nOp == 2
+                ? fpu_fast_mul (a.high, a.low, b.high, b.low, &nHigh, &nLow, &bInexact)
+                : fpu_fast_add (a.high, a.low, b.high, b.low, nOp, &nHigh, &nLow, &bInexact);
+            if (!bFast)
+            {
+                continue;
+            }
+            nTaken++;
+            float_status Status = {};
+            FpuSetMode (&Status, 80, 0);
+            const floatx80 r = nOp == 2 ? floatx80_mul (a, b, &Status)
+                             : nOp == 1 ? floatx80_sub (a, b, &Status)
+                                        : floatx80_add (a, b, &Status);
+            if (r.high != nHigh || r.low != nLow
+                || Status.float_exception_flags != (bInexact ? float_flag_inexact : 0))
+            {
+                nDiffer++;
+            }
+        }
+    }
+#endif
+    *pTaken = nTaken;
+    return nDiffer;
 }
 
 // What FpuDigest (kFpuDigestCount) gives, measured on the development machine

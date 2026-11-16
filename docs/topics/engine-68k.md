@@ -113,6 +113,9 @@ Previous (`0013`, `uae_cpu_2021/fpu/softfloat/`, provenance in its `README`):
   entries included.
 - **Only 64-bit integers**: no `long double`, no host floating-point state, no allocation. The same bits on
   every host — the digest below is identical on Apple silicon (Clang) and AArch64 (GCC).
+- **A fast path for the common case** (`fpu/softfloat_fast.h`): `FADD`, `FSUB` and `FMUL` of two normal values
+  at extended precision rounded to nearest, in one 128-bit integer, softfloat's result bit for bit; and
+  softfloat's `mul64To128()` as `mul` + `umulh`.
 - **Not done**: exceptions enabled in FPCR are recorded, not taken (as in `fpu_mpfr.cpp`); `FMOVECR`'s
   undefined offsets read zero.
 
@@ -120,7 +123,7 @@ Previous (`0013`, `uae_cpu_2021/fpu/softfloat/`, provenance in its `README`):
 `macemu-jit` route (`OKAPIA_JIT=1`) has only that one. Under `OKAPIA_TRACE`, `kernel.cpp` runs
 `src/circle/fpu_selftest.h` before the Macintosh starts: sixteen answers computed independently, then the
 digest of 60,000 operations over every mode and precision, compared with the constant `tests/host/check_fpu`
-pins on the development machine. `trace_fpu_circle.cpp` counts and times the instructions.
+pins on the development machine, and the fast paths against softfloat over 600,000 operations. `trace_fpu_circle.cpp` counts and times the instructions.
 
 ### The translator (`OKAPIA_JIT_ARM64=1`, experimental)
 
@@ -179,8 +182,9 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [x] FPU in binary128 with a self-test (2026-09-08)
 - [x] FPU replaced by the 68881 in 80-bit softfloat; same bits on the Mac and under QEMU, System 7.5.5 to the
       Finder (2026-11-15)
-- [ ] The softfloat FPU on a Pi 4: the traced boot's digest line, then Speedometer's FPU tests against
-      `OKAPIA_FPU=ieee` and the time per operation from `trace_fpu_circle.cpp`
+- [x] The softfloat FPU on a Pi 4: Speedometer's FPU tests (2026-11-16, see the development notes)
+- [ ] The fast paths on a Pi 4: the traced boot's lines, Speedometer's FPU tests, and the time per operation
+      from `trace_fpu_circle.cpp`
 - [ ] FPU instructions in the translator: called without leaving the block, `FBcc` translated; then, if the
       measurement asks for it, the common operations inline
 - [x] Seam recalibrated to 1 kHz (2026-09-08)
@@ -258,6 +262,13 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   (patches `0013`–`0015`): the same digest on an Apple M4 and under QEMU's AArch64, clean under UBSan and ASan.
   On the M4, add 8.8 ns, mul 7.2, div 19.5, sqrt 17.8, sin 208, etox 160. Kernel 3,408 KB (the core 12 KB,
   the softfloat 68 KB).
+- **2026-11-16** — Speedometer 4 on the Pi 4 with the translator, softfloat against binary128 (one run each):
+  FPU average 3.79 against 3.81, but K'Whet +20% (6.09; the FPSP's transcendentals beat newlib's `long double`
+  ones) and FFT −15% (2.29), Matrix −18% (3.00): softfloat's add and multiply, written for 32-bit hosts, lost
+  to libgcc. Fast path for `FADD`/`FSUB`/`FMUL` and a 128-bit `mul64To128()` added: on the M4 a multiplication
+  2.2 ns against 8.3; 179 million operations compared with softfloat, none differing; the same under QEMU's
+  AArch64. Not yet measured on the Pi. The iMac G3 the owner compared with (FPU 27.74) runs Speedometer's
+  PowerPC code on a hardware double FPU.
 - **2026-09-13** — Pi 4 performance: frequency, libraries and loop taxes before any architectural work; see the
   bottleneck study.
 

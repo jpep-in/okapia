@@ -61,15 +61,22 @@ int main (int argc, char **argv)
         }
     }
 
+    char Line[128];
     unsigned nFirst = 0;
     floatx80 Got;
     uint8_t nFlags = 0;
     Expect (FpuCheckKnownAnswers (&nFirst, &Got, &nFlags) == s_nFailures,
             "the board's check agrees with this one");
 
+    printf ("Fast paths\n");
+    unsigned nTaken = 0;
+    const unsigned nDiffer = FpuCheckFastPaths (2000000, &nTaken);
+    snprintf (Line, sizeof Line, "add, sub, mul: %u of 6,000,000 taken, %u differ from softfloat",
+              nTaken, nDiffer);
+    Expect (nDiffer == 0 && nTaken > 4000000, Line);
+
     printf ("Same bits everywhere\n");
     const uint64_t nDigest = FpuDigest (kFpuDigestCount);
-    char Line[128];
     snprintf (Line, sizeof Line, "digest of %u operations is %016llx", kFpuDigestCount,
               (unsigned long long) nDigest);
     Expect (nDigest == kFpuDigestExpected, Line);
