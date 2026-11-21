@@ -115,4 +115,6 @@ make -C tests/host                    # host tests and the firmware specimen
 ./scripts/make-pi-sd.sh               # stage a Pi 4 card in rpi4-sd-contents/
 ./scripts/build-macbench.sh [image]   # MacBench (tools/macbench, Retro68), into Startup Items
 ./scripts/build-native-basilisk.sh <name> [configure options]  # desktop Basilisk II for tools/macbench/run.py
+make -C src/hosts/desktop             # build/desktop/okapia: Okapia on macOS (SDL3), docs/topics/desktop.md
+build/desktop/okapia --headless --work-dir DIR --screenshot F --seconds N <folder>  # native test run
 ```

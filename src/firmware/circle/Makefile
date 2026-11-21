@@ -35,7 +35,7 @@ OBJS = obj/specimen_main.o obj/specimen_kernel.o obj/okapia_input.o obj/hal_circ
 
 include $(CIRCLEHOME)/Rules.mk
 
-INCLUDE := -I$(FIRMWARE) -I$(CIRCLE) -I$(GEN) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
+INCLUDE := -I$(FIRMWARE) -I../../../src/common -I$(CIRCLE) -I$(GEN) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
 LIBS := $(CIRCLE_STDLIB_LIBS)
 
 # The fonts are converted from Circle's own console faces rather than typed out,

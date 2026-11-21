@@ -156,6 +156,13 @@ void PagePaint (TSurface *pSurface, const TPage *pPage)
     WidgetDrawAll (pSurface, pTheme, pPage->pWidgets, pPage->nCount);
 }
 
+static const char *s_pBootMenuHint;
+
+void PageChromeBootMenuHint (const char *pHint)
+{
+    s_pBootMenuHint = pHint;
+}
+
 void PageChromeBootMenu (bool bOn, bool bFocus)
 {
     s_bBootMenu      = bOn;
@@ -284,7 +291,7 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
     {
         // Under the tick box, ending where it ends, so that it reads as its
         // own note; it runs to the left, over the free part of the footer.
-        const char *pText = Str (StrBootMenuHint);
+        const char *pText = s_pBootMenuHint != 0 ? s_pBootMenuHint : Str (StrBootMenuHint);
         const unsigned nText = GfxTextWidth (pTheme->pBodyFont, pText);
         Hint = Rect (Hint.nX - (int) nText, Hint.nY, nText, Hint.nHeight);
         PageAdd (pPage, WidgetLabel, Hint, pText, StateDisabled);

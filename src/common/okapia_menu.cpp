@@ -1,28 +1,22 @@
 //
-// okapia_firmware.cpp — the boot firmware, as the kernel sees it.
+// okapia_menu.cpp — the boot menu's driver: the card, the preferences and the
+// pages, joined. The same on every host; what it needs of the machine goes
+// through okapia_host.h. It was src/firmware/circle/okapia_firmware.cpp until
+// the desktop host made the line between the two worth drawing.
 //
 // Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 
 #include "okapia_firmware.h"
+#include "okapia_host.h"
+#include "okapia_card.h"
+#include "okapia_keys.h"
 #include "okapia_version.h"
 
-#include <circle/bcmframebuffer.h>
-#include <circle/logger.h>
-#include <circle/machineinfo.h>
-#include <circle/sched/scheduler.h>
-#include <circle/timer.h>
-#include <circle/types.h>
-
-#include <wrap_fatfs.h>
-
-#include "board_net_circle.h"
-#include "clock_circle.h"
-#include "net_bench_circle.h"
 #include "net_config_circle.h"
-#include "wlan_circle.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -47,9 +41,8 @@
 #include "okapia_gfx.h"
 #include "okapia_screen.h"
 #include "okapia_strings.h"
-#include "okapia_input.h"
-#include "okapia_output.h"
 #include "okapia_theme.h"
+#include "okapia_clock.h"
 
 #define FROM "firmware"
 
@@ -70,25 +63,17 @@ static const unsigned WINDOW_MS = 2000;
 // first were true, and that is exactly the kind of thing not worth assuming.
 static const unsigned SLICE_MS = 20;
 
-// USB usage identifiers, which stop at okapia_input.cpp for everything except
-// this: the zap is asked for by two keys that mean nothing to a menu, so there
-// is no logical key to give them and inventing one would be worse.
-static const unsigned char KEY_P = 0x13;
-static const unsigned char KEY_R = 0x15;
+// USB usage identifiers, which stop at the host for everything except this:
+// the zap is asked for by two keys that mean nothing to a menu, so there is no
+// logical key to give them and inventing one would be worse (okapia_keys.h).
+static const unsigned char KEY_P = UsageP;
+static const unsigned char KEY_R = UsageR;
 
-// A pause that lets the Wi-Fi run. Its driver and supplicant are tasks of
-// Circle's cooperative scheduler, and a menu waiting in CTimer::MsDelay holds
-// them still: a scan asked for from the network page would never come back.
+// A pause that lets the host's own work run: on the Pi, the Wi-Fi's tasks of
+// Circle's cooperative scheduler, which a plain delay would hold still.
 static void FwSleep (unsigned nMs)
 {
-    if (CScheduler::IsActive ())
-    {
-        CScheduler::Get ()->MsSleep (nMs);
-    }
-    else
-    {
-        CTimer::Get ()->MsDelay (nMs);
-    }
+    HostSleep (nMs);
 }
 
 /*
@@ -286,7 +271,7 @@ static void ApplyVolumes (const TChooser *pChooser)
     for (unsigned i = 0; i < n; i++)
     {
         PrefsAddString ("disk", Lines[i]);
-        CLogger::Get ()->Write (FROM, LogNotice, "disk %s", Lines[i]);
+        HostLog (FROM, HostLogNotice, "disk %s", Lines[i]);
     }
 
     // Which driver the Macintosh starts from. Written every time, including the
@@ -294,7 +279,7 @@ static void ApplyVolumes (const TChooser *pChooser)
     // otherwise go on asking for the CD driver after the disc was gone.
     const int nBootDriver = ChooserBootDriver (pChooser);
     PrefsReplaceInt32 ("bootdriver", nBootDriver);
-    CLogger::Get ()->Write (FROM, LogNotice, "bootdriver %d", nBootDriver);
+    HostLog (FROM, HostLogNotice, "bootdriver %d", nBootDriver);
 
     // The same for the CD-ROM drives, and it has to be the same call: a volume
     // moved from one list to the other has to leave the first, and rewriting
@@ -307,7 +292,7 @@ static void ApplyVolumes (const TChooser *pChooser)
     for (unsigned i = 0; i < nCds; i++)
     {
         PrefsAddString ("cdrom", Lines[i]);
-        CLogger::Get ()->Write (FROM, LogNotice, "cdrom %s", Lines[i]);
+        HostLog (FROM, HostLogNotice, "cdrom %s", Lines[i]);
     }
 
     // The same treatment for the emulator: replaced rather than edited, because
@@ -320,7 +305,7 @@ static void ApplyVolumes (const TChooser *pChooser)
     for (unsigned i = 0; i < nEngines; i++)
     {
         PrefsAddString ("engine", Lines[i]);
-        CLogger::Get ()->Write (FROM, LogNotice, "engine %s", Lines[i]);
+        HostLog (FROM, HostLogNotice, "engine %s", Lines[i]);
     }
     SavePrefs ();
 }
@@ -330,19 +315,18 @@ static void ApplyVolumes (const TChooser *pChooser)
 // it touches nothing of the user's data. Each engine keeps its own file
 // (xpram_circle.cpp), and the firmware serves both, so it is told which.
 //
-// f_unlink and not remove(): the newlib glue's remove() deletes the file and
-// then leaves something behind that wedges the next fopen — the ROM never
-// opened and the kernel stopped dead, with no log at all.
+// HostFileRemove and not remove(): on the Pi the newlib glue's remove() deletes
+// the file and then leaves something behind that wedges the next fopen — the
+// ROM never opened and the kernel stopped dead, with no log at all.
 static void ForgetPramFile (const char *pWhy, const char *pFile)
 {
     char Path[40];
-    snprintf (Path, sizeof Path, "SD:/%s", pFile);
-    const FRESULT nResult = f_unlink (Path);
-    CLogger::Get ()->Write (FROM, LogNotice, "%s: %s %s (%d)", pWhy, pFile,
-                            nResult == FR_OK ? "forgotten"
-                                             : (nResult == FR_NO_FILE ? "was already absent"
-                                                                      : "could not be removed"),
-                            (int) nResult);
+    snprintf (Path, sizeof Path, "/%s", pFile);
+    const THostRemove Result = HostFileRemove (Path);
+    HostLog (FROM, HostLogNotice, "%s: %s %s", pWhy, pFile,
+             Result == HostRemoved ? "forgotten"
+                                   : (Result == HostAbsent ? "was already absent"
+                                                           : "could not be removed"));
 }
 
 static void ForgetPram (const char *pWhy, bool b68k, bool bPowerPC)
@@ -430,13 +414,9 @@ static void LoadSettings (TSettings *pSettings)
     pSettings->V.SharedName[0] = '\0';
     StrAppend (pSettings->V.SharedName, SETTINGS_NAME, 0, pName != 0 ? pName : "");
 
-    // What this board can actually do. Circle builds USB audio for a Pi 4 and a
-    // Pi 5 only (lib/sound/Makefile:37), so on a Pi 3 the entry is there and
-    // grey — offering it and then falling silent would be the firmware lying.
-    pSettings->nSoundAvailable = (1u << SoundOff) | (1u << SoundHDMI) | (1u << SoundJack);
-#if RASPPI >= 4
-    pSettings->nSoundAvailable |= 1u << SoundUSB;
-#endif
+    // What this machine can actually do: an output offered and then silent
+    // would be the firmware lying (okapia_host_circle.cpp says which a Pi has).
+    pSettings->nSoundAvailable = HostSoundOutputs ();
 
     pSettings->Opened = pSettings->V;
 }
@@ -467,7 +447,7 @@ static void StoreSettings (const TSettings *pSettings)
                                  : "");
     PrefsReplaceString ("extfsname", pSettings->V.SharedName);
 
-    CLogger::Get ()->Write (FROM, LogNotice,
+    HostLog (FROM, HostLogNotice,
                             "Settings: %u MB, sound %s, language %s, %s, %s, "
                             "jit %s, qdaccel %s",
                             pSettings->V.nMemoryMB,
@@ -500,6 +480,7 @@ static void LoadDateTime (TDateTime *p)
     p->V.bNetTime = pServer != 0 && pServer[0] != '\0';
     p->V.Server[0] = '\0';
     StrAppend (p->V.Server, DATETIME_SERVER, 0, p->V.bNetTime ? pServer : TIME_SERVER);
+    p->bHostClock = HostClockIsHosts ();
     p->Opened = p->V;
 }
 
@@ -514,13 +495,13 @@ static void ApplyDateTime (const TDateTime *p)
 {
     if (p->V.nZone < ClockZoneCount ())
     {
-        ClockSetZone (ClockZoneKey (p->V.nZone), 0);
+        HostClockSetZone (ClockZoneKey (p->V.nZone), 0);
     }
     else
     {
-        ClockSetZone ("", p->V.nFixedMinutes);
+        HostClockSetZone ("", p->V.nFixedMinutes);
     }
-    ClockSetServer (ServerOf (p));
+    HostClockSetServer (ServerOf (p));
 }
 
 // Into the preferences in memory; ApplyVolumes() writes the file.
@@ -535,7 +516,7 @@ static void StoreDateTime (const TDateTime *p)
     }
     PrefsReplaceString ("ntp", ServerOf (p));
     ApplyDateTime (p);
-    CLogger::Get ()->Write (FROM, LogNotice, "Date and time: zone %s, time server %s",
+    HostLog (FROM, HostLogNotice, "Date and time: zone %s, time server %s",
                             p->V.nZone < ClockZoneCount () ? ClockZoneKey (p->V.nZone) : "fixed",
                             p->V.bNetTime ? ServerOf (p) : "none");
 }
@@ -545,24 +526,28 @@ static void StoreDateTime (const TDateTime *p)
 
 static void DateTimeNow (TDateTime *p)
 {
-    p->nLocal = CTimer::Get ()->GetLocalTime ();
-    const char *pDetail;
-    const TClockSource Source = ClockSource (&pDetail);
+    p->nLocal = HostLocalTime ();
+    const char *pDetail = "";
+    const THostClockSource Source = HostClockSource (&pDetail);
     unsigned n = 0;
     p->Source[0] = '\0';
     switch (Source)
     {
-    case ClockFromNetwork:
+    case HostClockNetwork:
         n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromNtp));
         n = StrAppend (p->Source, sizeof p->Source, n, " ");
         n = StrAppend (p->Source, sizeof p->Source, n, pDetail);
         break;
 
-    case ClockFromMac:
+    case HostClockMac:
         n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromMac));
         break;
 
-    case ClockFromVolume:
+    case HostClockHost:
+        n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromHost));
+        break;
+
+    case HostClockVolume:
         n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromVolume));
         n = StrAppend (p->Source, sizeof p->Source, n, " ");
         n = StrAppend (p->Source, sizeof p->Source, n, pDetail);
@@ -573,7 +558,7 @@ static void DateTimeNow (TDateTime *p)
         break;
     }
     n = StrAppend (p->Source, sizeof p->Source, n, " · ");
-    ClockOffsetText (p->Source + n, sizeof p->Source - n, CTimer::Get ()->GetTimeZone ());
+    ClockOffsetText (p->Source + n, sizeof p->Source - n, HostTimeZoneMinutes ());
 }
 
 /*
@@ -590,7 +575,8 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
 
     pInfo->nCount = 0;
     InfoAdd (pInfo, Str (StrInfoVersion), OKAPIA_VERSION);
-    InfoAdd (pInfo, Str (StrInfoMachine), CMachineInfo::Get ()->GetMachineName ());
+    const bool bDesktop = HostKind () == HostDesktop;
+    InfoAdd (pInfo, Str (bDesktop ? StrInfoComputer : StrInfoMachine), HostMachineName ());
 
     n = StrAppendNumber (Line, sizeof Line, 0, pOutput->nWidth);
     n = StrAppend (Line, sizeof Line, n, "x");
@@ -605,7 +591,7 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
     n = StrAppend (Line, sizeof Line, 0, pROM != 0 ? pROM : Str (StrInfoNone));
     if (pROM != 0)
     {
-        FILE *pFile = fopen (pROM, "rb");
+        FILE *pFile = fopen (CardPath (pROM), "rb");
         if (pFile != 0)
         {
             fseek (pFile, 0, SEEK_END);
@@ -653,15 +639,9 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
     // is turned into megabytes here — where the rounding is visible.
     Line[0] = '\0';
     {
-        FATFS *pFS = 0;
-        DWORD nFreeClusters = 0;
-        if (f_getfree ("SD:", &nFreeClusters, &pFS) == FR_OK && pFS != 0)
+        unsigned long nTotalMB = 0, nFreeMB = 0;
+        if (HostCardSpace (&nTotalMB, &nFreeMB))
         {
-            const unsigned long nSector = 512;
-            const unsigned long nTotalMB =
-                (unsigned long) (pFS->n_fatent - 2) * pFS->csize * nSector / (1024 * 1024);
-            const unsigned long nFreeMB =
-                (unsigned long) nFreeClusters * pFS->csize * nSector / (1024 * 1024);
             n = StrAppendNumber (Line, sizeof Line, 0, nTotalMB);
             n = StrAppend (Line, sizeof Line, n, " ");
             n = StrAppend (Line, sizeof Line, n, Str (StrUnitMb));
@@ -675,7 +655,7 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
             StrAppend (Line, sizeof Line, 0, Str (StrInfoNone));
         }
     }
-    InfoAdd (pInfo, Str (StrInfoCard), Line);
+    InfoAdd (pInfo, Str (bDesktop ? StrInfoFolder : StrInfoCard), Line);
 
     // The startup volume as the chooser understands it, which is the first disk
     // line — the order is the setting, there is no other place it is written.
@@ -750,6 +730,8 @@ struct TPageDriver
 };
 
 static const int PageRelayout = -1;
+// The host asked to quit (a desktop's window closed) on a page with no refusal.
+static const int PageQuit = -2;
 
 static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
                     const TPageDriver *pDriver)
@@ -769,6 +751,7 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
     GfxBlit (pOutput, pShadow, Screen.Bounds);
     TRect Ignored;
     ScreenPaintDirty (pShadow, &Screen, &Ignored);
+    HostOutputPresent (0, 0, pOutput->nWidth, pOutput->nHeight);
 
     int nX = 0, nY = 0;
     bool bPointer = false;
@@ -778,7 +761,7 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
     {
         TEvent Event;
         bool bChanged = false;
-        while (FwInputNext (&Event))
+        while (HostInputNext (&Event))
         {
             if (Event.Type == EventMouseMove)
             {
@@ -843,15 +826,26 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
         if (bChanged || (nTick % (500 / SLICE_MS) == 0 && ScreenBlinkCaret (&Screen))
             || bPointer)
         {
-            FwInputPointer (&nX, &nY);
+            HostInputPointer (&nX, &nY);
             ScreenPresent (pShadow, pOutput, &Screen, pDriver->Repaint, bPointer, nX, nY,
                            pTheme->nIconScale);
+            HostOutputPresent (0, 0, pOutput->nWidth, pOutput->nHeight);
         }
         // The Wi-Fi's tasks run only when this thread lets them, and a menu
         // left open must not cost the connection. Frames are dropped meanwhile.
-        BoardNetPoll ();
-        ClockPoll ();
+        HostPoll ();
         FwSleep (10);
+        if (HostQuitRequested () && pDriver->Cancel != 0)
+        {
+            // The window closed under the menu: the page's refusal first, and
+            // the window's loop then answers Shut Down.
+            const int nAnswer = pDriver->Cancel ();
+            nResult = nAnswer != 0 ? nAnswer : PageQuit;
+        }
+        else if (HostQuitRequested ())
+        {
+            nResult = PageQuit;
+        }
     }
     return nResult;
 }
@@ -897,12 +891,7 @@ static unsigned s_nNetTicks;
 
 static unsigned RunningKind (void)
 {
-    switch (BoardNetKind ())
-    {
-    case BoardNetWired: return NetworkCable;
-    case BoardNetWLAN:  return NetworkWiFi;
-    default:            return NetworkOff;
-    }
+    return HostNetRunning ();
 }
 
 static void LoadNetwork (TNetwork *p)
@@ -931,12 +920,11 @@ static void LoadNetwork (TNetwork *p)
         strcpy (p->V.Country, StringsLanguage () == LangFR ? "FR" : "US");
     }
 
-    p->nAvailable = (1u << NetworkOff) | (1u << NetworkCable)
-                  | (WlanAvailable () ? 1u << NetworkWiFi : 0);
+    p->nAvailable = HostNetAvailable ();
     p->nRunning   = RunningKind ();
     // A start that failed is final for this boot: Circle cannot give a device
     // back to try again.
-    p->State = BoardNetTried () && p->nRunning == NetworkOff ? NetStateUnavailable
+    p->State = HostNetTried () && p->nRunning == NetworkOff ? NetStateUnavailable
                                                              : NetStateIdle;
     p->Opened = p->V;
 
@@ -944,7 +932,7 @@ static void LoadNetwork (TNetwork *p)
     // (the tick runs on that page only): a Wi-Fi page that waits for a click
     // on a radio already ticked lists nothing — seen on the Pi 4.
     s_bNetStartPending = false;
-    if (p->V.nKind != NetworkOff && !BoardNetTried ()
+    if (p->V.nKind != NetworkOff && !HostNetTried ()
         && (p->nAvailable & (1u << p->V.nKind)) != 0)
     {
         p->State = p->V.nKind == NetworkWiFi ? NetStateStarting : NetStateIdle;
@@ -977,7 +965,7 @@ static void StoreValue (const char *pName, const char *pValue)
     }
 }
 
-// Into the preferences in memory, which is also what BoardNetStart() reads.
+// Into the preferences in memory, which is also what HostNetStart() reads.
 // Opened follows: it stands for what the preferences hold, so SaveAll() can
 // tell a change made since. Left at the card's values, a cable started from
 // the page and the Wi-Fi chosen again compared equal to the card, nothing was
@@ -990,7 +978,7 @@ static void StoreNetwork (TNetwork *p)
     StoreValue ("wifipassword", p->V.Password);
     StoreValue ("wificountry", p->V.Country);
     // Never the password, in any form.
-    CLogger::Get ()->Write (FROM, LogNotice, "Network: ether \"%s\", Wi-Fi \"%s\", %s, country %s",
+    HostLog (FROM, HostLogNotice, "Network: ether \"%s\", Wi-Fi \"%s\", %s, country %s",
                             ETHER_NAMES[p->V.nKind], p->V.SSID,
                             p->V.Password[0] == '\0' ? "no password" : "a password",
                             p->V.Country);
@@ -1001,7 +989,7 @@ static void StoreNetwork (TNetwork *p)
 // running the page says a restart is due instead.
 static void NetworkStartWanted (TNetwork *p)
 {
-    if (BoardNetTried () || p->V.nKind == NetworkOff
+    if (HostNetTried () || p->V.nKind == NetworkOff
         || (p->nAvailable & (1u << p->V.nKind)) == 0)
     {
         return;
@@ -1016,25 +1004,11 @@ static void NetworkJoinNow (TNetwork *p)
     snprintf (p->Subject, sizeof p->Subject, "%s", p->V.SSID);
     if (p->nRunning == NetworkWiFi)
     {
-        p->State = WlanApply (p->V.SSID, p->V.Password, p->V.Country) ? NetStateJoining
+        p->State = HostWlanApply (p->V.SSID, p->V.Password, p->V.Country) ? NetStateJoining
                                                                       : NetStateRefused;
         return;
     }
     NetworkStartWanted (p);
-}
-
-static TNetworkState StateOfWlan (int nState, unsigned nSeen)
-{
-    switch (nState)
-    {
-    case OKAPIA_WLAN_SEARCHING: return NetStateSearching;
-    case OKAPIA_WLAN_JOINING:   return NetStateJoining;
-    case OKAPIA_WLAN_CONNECTED: return NetStateConnected;
-    case OKAPIA_WLAN_REFUSED:   return NetStateRefused;
-    case OKAPIA_WLAN_LOST:      return NetStateLost;
-    case OKAPIA_WLAN_IDLE:      return nSeen == 0 ? NetStateSearching : NetStateReady;
-    default:                    return NetStateStarting;
-    }
 }
 
 static bool NetworkTick (void)
@@ -1046,7 +1020,7 @@ static bool NetworkTick (void)
     if (s_bNetStartPending)
     {
         s_bNetStartPending = false;
-        const bool bOK = BoardNetStart ();
+        const bool bOK = HostNetStart ();
         p->nRunning = RunningKind ();
         if (!bOK)
         {
@@ -1054,28 +1028,20 @@ static bool NetworkTick (void)
         }
         else if (p->nRunning == NetworkWiFi)
         {
-            WlanScan ();
+            HostWlanScan ();
         }
     }
 
     if (p->nRunning == NetworkWiFi)
     {
-        static okapia_wlan_bss Found[48];
-        static TNetworkSeen    Seen[48];
-        const unsigned nFound = WlanSeen (Found, 48);
-        for (unsigned i = 0; i < nFound; i++)
-        {
-            memcpy (Seen[i].SSID, Found[i].ssid, sizeof Seen[i].SSID);
-            Seen[i].nDbm     = Found[i].dbm;
-            Seen[i].bSecured = Found[i].secured != 0;
-        }
+        static TNetworkSeen Seen[48];
+        const unsigned nFound = HostWlanSeen (Seen, 48);
         p->nSeen = NetworkSortSeen (Seen, nFound);
         memcpy (p->Seen, Seen, p->nSeen * sizeof Seen[0]);
 
         char Subject[NETWORK_SSID];
         int nDbm = 0;
-        const int nState = WlanState (Subject, sizeof Subject, &nDbm);
-        p->State = StateOfWlan (nState, p->nSeen);
+        p->State = HostWlanState (Subject, sizeof Subject, &nDbm, p->nSeen);
         p->nDbm  = nDbm;
         if (Subject[0] != '\0')
         {
@@ -1087,13 +1053,13 @@ static bool NetworkTick (void)
             && (p->State == NetStateReady || p->State == NetStateLost
                 || p->State == NetStateRefused || p->State == NetStateSearching))
         {
-            WlanScan ();
+            HostWlanScan ();
         }
     }
     else if (p->nRunning == NetworkCable && s_nNetTicks % 4 == 0)
     {
         unsigned nMbps = 0;
-        p->State = BoardNetLinkUp (&nMbps) ? NetStateCableUp : NetStateCableDown;
+        p->State = HostNetLinkUp (&nMbps) ? NetStateCableUp : NetStateCableDown;
         p->nMbps = nMbps;
     }
 
@@ -1117,47 +1083,17 @@ static bool RestartWanted (void)
     return SettingsNeedsRestart (&s_Settings) || NetworkNeedsRestart (&s_Network);
 }
 
-// Report directives present in the card's top-level config. The GPU owns
-// conditional filters and include processing, so presence only is reported.
-static bool HasHdmiDirectives (bool *pbAvailable)
-{
-    FILE *pFile = fopen ("/config.txt", "r");
-    *pbAvailable = pFile != nullptr;
-    if (pFile == nullptr)
-        return false;
-
-    static const char *const Keys[] = {
-        "hdmi_mode", "hdmi_group", "hdmi_timings", "hdmi_cvt",
-        "framebuffer_width", "framebuffer_height", "max_framebuffer_width", "max_framebuffer_height"
-    };
-
-    char Line[192];
-    bool bFound = false;
-    while (!bFound && fgets (Line, sizeof Line, pFile) != nullptr)
-    {
-        const char *p = Line + strspn (Line, " \t");
-        const size_t nKey = strcspn (p, " \t:=\r\n");
-        for (const char *pKey : Keys)
-        {
-            if (strlen (pKey) == nKey && strncmp (p, pKey, nKey) == 0)
-            {
-                bFound = true;
-                break;
-            }
-        }
-    }
-    fclose (pFile);
-    return bFound;
-}
-
 static void LoadDisplay (TSurface *pOutput)
 {
     s_Display = {};
     s_Display.Output = {pOutput->nWidth, pOutput->nHeight};
-    const TFwMonitor &Monitor = FwOutputMonitor ();
-    s_Display.Preferred = {Monitor.nPreferredWidth, Monitor.nPreferredHeight};
-    StrAppend (s_Display.Monitor, sizeof s_Display.Monitor, 0, Monitor.Name);
-    s_Display.bHdmiDirectives = HasHdmiDirectives (&s_Display.bConfigAvailable);
+    THostOutputFacts Facts;
+    HostOutputDescribe (&Facts);
+    s_Display.Preferred = {Facts.nPreferredWidth, Facts.nPreferredHeight};
+    StrAppend (s_Display.Monitor, sizeof s_Display.Monitor, 0, Facts.Monitor);
+    s_Display.bConfigAvailable = Facts.bConfigAvailable;
+    s_Display.bHdmiDirectives  = Facts.bHdmiDirectives;
+    s_Display.bWindowed        = HostKind () == HostDesktop;
     s_Display.Start = VideoStartSize (PrefsFindString ("screen"), s_Display.Output);
     VideoPrefsRead (&s_Display.Modes);
     s_Display.nFrameSkip = PrefsFindInt32 ("frameskip");
@@ -1166,56 +1102,20 @@ static void LoadDisplay (TSurface *pOutput)
 /*
  *  The Journal page
  *
- *  The log is read from the card, where the board keeps it (hal_circle.cpp:
- *  512 KB, padded to the sector). Two files, this session's and the previous
- *  one's, read through a second handle: FatFs is built without locking, and the
- *  board writes whole sectors only, so what a read sees is what the card holds.
+ *  The log as the host keeps it: on the Pi, the card's two files, padded to the
+ *  sector (HostLogRead, okapia_host_circle.cpp).
  */
 static TJournal s_Journal;
-static void   (*s_pLogFlush) (void) = 0;
 
-void FirmwareSetLogFlush (void (*pFlush) (void))
+static void JournalChunk (const char *pText, unsigned nLength)
 {
-    s_pLogFlush = pFlush;
+    JournalAppend (&s_Journal, pText, nLength);
 }
 
 static void LoadJournalText (void)
 {
     JournalClear (&s_Journal);
-    if (!s_Journal.bPrevious && s_pLogFlush != 0)
-    {
-        // What the board has logged since it last drained its ring, which on a
-        // page opened a moment after the boot is the lines that matter.
-        s_pLogFlush ();
-    }
-
-    static char Chunk[32 * 1024];       // no stack for it
-    FIL File;
-    if (f_open (&File, s_Journal.bPrevious ? "SD:/okapia-previous.log" : "SD:/okapia.log",
-                FA_READ) != FR_OK)
-    {
-        return;
-    }
-    for (;;)
-    {
-        UINT nRead = 0;
-        if (f_read (&File, Chunk, sizeof Chunk, &nRead) != FR_OK || nRead == 0)
-        {
-            break;
-        }
-        // A chunk of nothing but blanks is the padding past the end of the text.
-        bool bBlank = true;
-        for (UINT i = 0; i < nRead && bBlank; i++)
-        {
-            bBlank = Chunk[i] == ' ';
-        }
-        if (bBlank)
-        {
-            break;
-        }
-        JournalAppend (&s_Journal, Chunk, nRead);
-    }
-    f_close (&File);
+    HostLogRead (s_Journal.bPrevious, JournalChunk);
 }
 
 static void LoadJournal (void)
@@ -1281,6 +1181,7 @@ static void DrawTab (TSurface *pSurface)
     PageChromeSet (RestartWanted (), s_bFocusTabs,
                    s_Chooser.nStartup >= 0 || RestartWanted ());
     PageChromeBootMenu (s_Settings.V.bBootMenu, s_bFocusBootMenu);
+    PageChromeBootMenuHint (HostKind () == HostDesktop ? Str (StrBootMenuHintDesktop) : 0);
     switch (s_Tab)
     {
     case PageTabSystem:      ChooserDraw (pSurface, &s_Chooser);   break;
@@ -1372,7 +1273,7 @@ static int NetworkAdapter (int nIndex)
         break;
 
     case NetworkSearch:
-        if (WlanScan ())
+        if (HostWlanScan ())
         {
             s_Network.State = NetStateSearching;
         }
@@ -1454,18 +1355,13 @@ static const unsigned long SIZE_RUNGS[] = { 20, 40, 80, 160, 320, 640, 1024, 204
 
 static unsigned long CardFreeMB (void)
 {
-    DWORD nFreeClusters = 0;
-    FATFS *pFS = 0;
-    if (f_getfree ("SD:", &nFreeClusters, &pFS) != FR_OK || pFS == 0)
+    unsigned long nTotalMB = 0, nFreeMB = 0;
+    if (!HostCardSpace (&nTotalMB, &nFreeMB))
     {
-        CLogger::Get ()->Write (FROM, LogError, "Cannot read the card's free space");
+        HostLog (FROM, HostLogError, "Cannot read the card's free space");
         return 0;
     }
-    // Clusters to megabytes, in that order: the multiplication overflows a
-    // 32-bit count of bytes on any card worth using.
-    const unsigned long nSectorsPerMB = (1024UL * 1024) / FF_MAX_SS;
-    const unsigned long nSectors = (unsigned long) nFreeClusters * pFS->csize;
-    return nSectorsPerMB == 0 ? 0 : nSectors / nSectorsPerMB;
+    return nFreeMB;
 }
 
 // The file name is ours, not the user's: a Macintosh volume is named in
@@ -1478,45 +1374,12 @@ static bool PickImagePath (char *pOut, size_t nSize)
     for (unsigned i = 1; i <= 99; i++)
     {
         snprintf (pOut, nSize, "/volume%u.image", i);
-        FILINFO Info;
-        char Full[80];
-        snprintf (Full, sizeof Full, "SD:%s", pOut);
-        if (f_stat (Full, &Info) != FR_OK)
+        if (!HostFileExists (pOut))
         {
             return true;
         }
     }
     return false;
-}
-
-// Create the file at its full size. f_lseek past the end of a file opened for
-// writing is what allocates the clusters; f_expand would say so more plainly
-// but FF_USE_EXPAND is 0 in circle-stdlib's ffconf.h, which lives in external/
-// and is not ours to change.
-static bool MakeImageFile (const char *pFullPath, unsigned long nMB)
-{
-    FIL File;
-    if (f_open (&File, pFullPath, FA_CREATE_NEW | FA_WRITE) != FR_OK)
-    {
-        CLogger::Get ()->Write (FROM, LogError, "%s: cannot create", pFullPath);
-        return false;
-    }
-    const FSIZE_t nBytes = (FSIZE_t) nMB * 1024 * 1024;
-    const FRESULT nSeek = f_lseek (&File, nBytes);
-    const bool bWhole = nSeek == FR_OK && f_tell (&File) == nBytes;
-    f_close (&File);
-
-    if (!bWhole)
-    {
-        // A file that could not be given its whole size is not a smaller
-        // volume, it is a volume the Macintosh would run off the end of. It
-        // goes, rather than being left for somebody to find later.
-        CLogger::Get ()->Write (FROM, LogError,
-                                "%s: only %lu MB could be allocated", pFullPath, nMB);
-        f_unlink (pFullPath);
-        return false;
-    }
-    return true;
 }
 
 // The sizes this card can actually offer, into the screen's own model.
@@ -1569,15 +1432,15 @@ static void RunNewVolume (TSurface *pOutput, TSurface *pShadow, const TTheme *pT
     char Path[64];
     if (!PickImagePath (Path, sizeof Path))
     {
-        CLogger::Get ()->Write (FROM, LogError, "No free image name on the card");
+        HostLog (FROM, HostLogError, "No free image name on the card");
         return;
     }
-    char Full[80];
-    snprintf (Full, sizeof Full, "SD:%s", Path);
-
+    // Created at its full size before anything is written into it (see above):
+    // HostFileCreate allocates the whole file or leaves nothing.
     const unsigned long nMB = s_NewVolume.SizeMB[s_NewVolume.nPick];
-    if (!MakeImageFile (Full, nMB))
+    if (!HostFileCreate (Path, nMB))
     {
+        HostLog (FROM, HostLogError, "%s: cannot create %lu MB", Path, nMB);
         return;
     }
     // Formatted through the path the emulator will use, not the FatFs one:
@@ -1587,10 +1450,10 @@ static void RunNewVolume (TSurface *pOutput, TSurface *pShadow, const TTheme *pT
         // Nothing of the user's is in it — it was made a moment ago — and a
         // file that is not a volume would show up in the inventory as nothing
         // at all, which is worse than not showing up.
-        f_unlink (Full);
+        HostFileRemove (Path);
         return;
     }
-    CLogger::Get ()->Write (FROM, LogNotice, "%s: created, %lu MB, \"%s\"",
+    HostLog (FROM, HostLogNotice, "%s: created, %lu MB, \"%s\"",
                             Path, nMB, s_NewVolume.Name);
 
     // The card changed, so what the chooser is showing no longer describes it.
@@ -1722,7 +1585,7 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
     Shadow.pPixels = new unsigned char[(size_t) Shadow.nPitch * Shadow.nHeight];
     if (Shadow.pPixels == 0)
     {
-        CLogger::Get ()->Write (FROM, LogError, "No room for a shadow surface");
+        HostLog (FROM, HostLogError, "No room for a shadow surface");
         return FirmwareBoot;
     }
 
@@ -1773,6 +1636,14 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
 
         switch (nAnswer)
         {
+        case PageQuit:
+            // The host's window closed: what Shut Down does, without asking,
+            // since nothing has started and nothing can be lost.
+            SaveAll ();
+            Result = FirmwareHalt;
+            bDone  = true;
+            break;
+
         case AnswerNewResolution:
             RunNewResolution (pOutput, &Shadow, pTheme);
             break;
@@ -1864,28 +1735,20 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
 {
     // Before the window, once per power-on, and only when `netbench` asks:
     // the network measured with nothing else running.
-    NetBenchRun ();
+    HostMenuPrelude ();
 
-    // Claimed once for the life of the board and lent out, never taken and given
-    // back: this runs again after every restart from Mac OS, and a mailbox
-    // transaction repeated at each handover is one that has to succeed every
-    // time. See okapia_output.h.
-    CBcmFrameBuffer *pOutput = FwOutputClaim ();
-    if (pOutput == 0)
+    // On the Pi, claimed once for the life of the board and lent out, never
+    // taken and given back: this runs again after every restart from Mac OS,
+    // and a mailbox transaction repeated at each handover is one that has to
+    // succeed every time. See okapia_output.h.
+    TSurface Surface;
+    if (!HostOutputClaim (&Surface))
     {
-        CLogger::Get ()->Write (FROM, LogWarning, "No frame buffer; going straight to the Mac");
+        HostLog (FROM, HostLogWarning, "No 32-bit output; going straight to the Mac");
         return FirmwareBoot;
     }
-
-    const unsigned nWidth  = pOutput->GetWidth ();
-    const unsigned nHeight = pOutput->GetHeight ();
-    const unsigned nDepth  = pOutput->GetDepth ();
-
-    if (nDepth != 32)
-    {
-        CLogger::Get ()->Write (FROM, LogWarning, "Expected 32 bpp, got %u; skipping", nDepth);
-        return FirmwareBoot;
-    }
+    const unsigned nWidth  = Surface.nWidth;
+    const unsigned nHeight = Surface.nHeight;
 
     // The language before anything is drawn, since every label goes through it.
     // An unknown code answers the first language rather than failing: a card
@@ -1896,13 +1759,8 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     const unsigned nScale16 = ThemeScaleFor (nWidth, nHeight);
     ThemeMake (nScale16, &Theme);
 
-    TSurface Surface;
-    Surface.pPixels = (unsigned char *) (uintptr) pOutput->GetBuffer ();
-    Surface.nWidth  = nWidth;
-    Surface.nHeight = nHeight;
-    Surface.nPitch  = pOutput->GetPitch ();
-
     Theme.DrawDesktop (&Surface, &Theme);
+    HostOutputPresent (0, 0, nWidth, nHeight);
 
     // The keyboard has been watched since USB came up, not since this function
     // started: a key held from power-on reports once, before any of this, and
@@ -1916,8 +1774,8 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     // puts the device back into cooked mode (usbkeyboard.cpp:200) and the
     // reports then go to CKeyboardBehaviour. Measured — with that call the
     // kernel stopped dead here with no further log at all.
-    const bool bKeyboard = FwInputWatch ();
-    FwInputBounds (nWidth, nHeight);
+    const bool bKeyboard = HostInputWatch ();
+    HostInputBounds (nWidth, nHeight);
 
     // Read before the window rather than when the chooser opens, because
     // whether there is anything to start decides whether the window is the
@@ -1930,7 +1788,7 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     // opened — which is the ordinary boot. Not ChooserSync(): that speaks to
     // components, and none has been laid out at this point.
     ChooserSettleEngines (&s_Chooser);
-    CLogger::Get ()->Write (FROM, LogNotice, "Chooser: %u volume(s), startup %d",
+    HostLog (FROM, HostLogNotice, "Chooser: %u volume(s), startup %d",
                             s_Chooser.nCount, s_Chooser.nStartup);
 
     // Asked for once and for all: the window is skipped entirely, not shortened.
@@ -1939,7 +1797,7 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     // attached, Option is not an answer at all.
     const bool bAlways = PrefsFindBool ("bootmenu");
 
-    CLogger::Get ()->Write (FROM, LogNotice,
+    HostLog (FROM, HostLogNotice,
                             "Output %ux%u, theme scale %u/16, language %s, %s, %s",
                             nWidth, nHeight, nScale16,
                             StringsCode (StringsLanguage ()),
@@ -1964,27 +1822,27 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
         // with a full queue: this one only wants the latch, but the queue is
         // the same one the screens will read from.
         TEvent Event;
-        while (FwInputNext (&Event))
+        while (HostInputNext (&Event))
         {
         }
-        BoardNetPoll ();
+        HostPoll ();
         FwSleep (SLICE_MS);
 
-        if (nStop == WINDOW_MS && (FwInputSeenModifiers () & ModOption))
+        if (nStop == WINDOW_MS && (HostInputSeenModifiers () & ModOption))
         {
             const unsigned nEnd = nWaited + SLICE_MS + GRACE_MS;
             nStop = nEnd < WINDOW_MS ? nEnd : WINDOW_MS;
         }
     }
 
-    const unsigned nSeen = FwInputSeenModifiers ();
+    const unsigned nSeen = HostInputSeenModifiers ();
 
     // Command-Option-P-R, the combination a Macintosh answered by forgetting its
     // parameter RAM. It is watched here rather than passed on, because a real
     // Macintosh does this in its ROM before the emulated ADB is alive at all:
     // letting it through would reach nobody.
     const bool bForgetPram = (nSeen & ModOption) && (nSeen & ModCommand)
-                          && FwInputSeenKey (KEY_P) && FwInputSeenKey (KEY_R);
+                          && HostInputSeenKey (KEY_P) && HostInputSeenKey (KEY_R);
 
     // Option on its own opens the chooser. Every other combination including it
     // belongs to the Macintosh, so anything else held alongside disqualifies it.
@@ -2010,21 +1868,21 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     // hand lands in, and the one where the machine looks broken and is not.
     else if (bWanted || s_Chooser.nStartup < 0)
     {
-        CLogger::Get ()->Write (FROM, LogNotice,
+        HostLog (FROM, HostLogNotice,
                                 bAlways ? "Boot menu asked for: the chooser"
                                         : bOption ? "Option held: the chooser"
                                                   : "Nothing to start: the chooser");
         const TFirmwareResult Chosen = RunScreens (&Surface, &Theme);
-        CLogger::Get ()->Write (FROM, LogNotice, "Display handed back");
+        HostLog (FROM, HostLogNotice, "Display handed back");
         return Chosen;
     }
-    else if (FwInputSeenAnything ())
+    else if (HostInputSeenAnything ())
     {
-        CLogger::Get ()->Write (FROM, LogNotice,
+        HostLog (FROM, HostLogNotice,
                                 "Input during the window, none of ours: modifiers %02X",
                                 nSeen);
     }
 
-    CLogger::Get ()->Write (FROM, LogNotice, "Display handed back");
+    HostLog (FROM, HostLogNotice, "Display handed back");
     return FirmwareBoot;
 }

@@ -139,11 +139,19 @@ changes:
 
 The Makefiles of `src/kernel` and `src/firmware/circle` run the script each time they are read and it writes
 `build/generated/okapia_version.h` only when the version moved, so a build of the same state rebuilds nothing and a new
-one rebuilds `hal_circle.cpp` and `okapia_firmware.cpp`, the two files that include it. `external/` and `reference/` are
+one rebuilds `hal_circle.cpp` and `okapia_menu.cpp`, the two files that include it. `external/` and `reference/` are
 left out of the hash: a submodule's work tree is not this project's change, and `apply-patches.sh --check` covers the
 patches. The version is the first line of the log (`Okapia 261116-5926cec+3fa9 (pi4, jit-arm64), built …`, with the
 image's target and experimental options) and the Information page's first row. The clock still starts from `__DATE__`, which
 is what it is for.
+
+### Desktop
+
+`make -C src/hosts/desktop` builds `build/desktop/okapia` with the host's clang and SDL3 (`brew install sdl3`):
+the boot menu, the 68k engine and the translator, as [Desktop](../topics/desktop.md) describes. The 68k opcode
+tables come from `build/generated/` (`scripts/gen-cpu.sh`). The kernel's `--wrap` hooks become a `-D` renaming on
+the one upstream file that defines each name, plus `src/hosts/desktop/wraps_desktop.cpp`: Apple's linker has no
+`--wrap`.
 
 ### Patches
 

@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "okapia_circle.h"
+#include "okapia_card.h"
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
 #include <circle/devicenameservice.h>
@@ -160,7 +161,7 @@ static unsigned char s_HIDToMac[256] =
 
 bool KeycodesLoad (const char *pPath)
 {
-    FILE *pFile = fopen (pPath, "r");
+    FILE *pFile = fopen (CardPath (pPath), "r");
     if (pFile == 0)
     {
         return false;

@@ -41,7 +41,7 @@ MACEMU   = $(ROOT)/external/macemu/BasiliskII/src
 LIBHFS   = $(ROOT)/external/hfsutils/libhfs
 
 PLATFORM_CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c++14 \
-    -include shims/okapia_circle.h -Ishims -I$(CIRCLE) -I$(CIRCLE)/sheepshaver -I$(MACEMU)/include \
+    -include shims/okapia_circle.h -Ishims -I$(CIRCLE) -I$(ROOT)/src/common -I$(CIRCLE)/sheepshaver -I$(MACEMU)/include \
     -I$(MACEMU)/Unix -I$(MACEMU)/uae_cpu_2021 -I$(LIBHFS) \
     -DDIRECT_ADDRESSING -DFPU_UAE
 PLATFORM_OBJS = p_prefs_circle.o p_hfs_volume_circle.o p_prefs.o p_prefs_items.o \

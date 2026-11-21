@@ -63,6 +63,7 @@ unsigned int   ntohl (unsigned int);
  * compat/. The code path guarded by them is the UDP tunnel, which Okapia never
  * takes — but it is selected at run time, so it still has to compile.
  */
+#ifndef OKAPIA_HOSTED          /* a desktop's libc has them (src/hosts/desktop) */
 struct hostent {
     char  *h_name;
     char **h_aliases;
@@ -71,6 +72,7 @@ struct hostent {
     char **h_addr_list;
 };
 struct hostent *gethostbyname (const char *name);
+#endif
 #ifdef __cplusplus
 }
 #endif

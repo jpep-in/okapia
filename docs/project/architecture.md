@@ -23,6 +23,11 @@
                            Raspberry Pi
 ```
 
+**Two hosts.** The same Okapia also runs on a desktop (macOS, SDL3): what the boot menu needs of the machine goes
+through `src/common/okapia_host.h`, answered on the Pi by `src/firmware/circle/okapia_host_circle.cpp` and on a
+desktop by `src/hosts/desktop/`, where the 68k engine and most of `src/circle/` build unchanged behind a shim of the
+Circle classes. See [Desktop](../topics/desktop.md).
+
 Upstream shares its platform code between the two engines by **129 symbolic links** from
 `SheepShaver/` into `BasiliskII/` (`adb.cpp`, `audio.cpp`, `disk.cpp`, `extfs.cpp`, `prefs.cpp`, `timer.cpp`,
 `xpram.cpp`, `sys_unix.cpp`, `CrossPlatform/`, the whole `SDL/` directory). `src/circle/` takes the place of
@@ -184,7 +189,9 @@ src/circle/          platform layer: 68k engine files and those shared by both e
 src/circle/sheepshaver/  PowerPC-only platform files (main, video, memory layout, seam)
 src/circle/compat/   what newlib lacks: utime, ioctl, resolver stubs
 src/firmware/        the boot menu, pure: no Circle type in it
-src/firmware/circle/ the firmware's Circle side: window, USB bridge, output claim, specimen kernel
+src/firmware/circle/ the firmware's Circle side: host answers, USB bridge, output claim, specimen kernel
+src/common/          what is the same on every host: okapia_host.h, the boot menu's driver, CardPath
+src/hosts/desktop/   the desktop host (SDL3, POSIX), its Circle shim, entry point and test mode
 src/kernel/          the Okapia kernel: Makefile, both CKernel classes, okapia_boot
 assets/              fonts (BDF), icons, strings.tsv — sources of generated tables
 scripts/             build, run, test, card and generator scripts

@@ -1,0 +1,45 @@
+/*
+ * hal_circle.h — the board, as a desktop plays it.
+ *
+ * Shadows src/circle/hal_circle.h (this directory comes first on the include
+ * path): the same names, kept to what the shared platform files and kernel.cpp
+ * call, with plain types. Defined in board_desktop.cpp. Nothing here is a
+ * claim on hardware: the host owns its devices.
+ *
+ * Copyright (C) 2026  Jonathan Pepin
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+// The real header's guard as well, so that a file of src/circle that includes
+// it by its quoted name (found beside it first) gets this one instead: the
+// desktop's okapia_circle.h, force-included, includes this first.
+#ifndef _hal_circle_h
+#define _hal_circle_h
+#define OKAPIA_HAL_CIRCLE_H
+
+#include "okapia_circle.h"
+#include <circle/devicenameservice.h>
+
+class COkapiaBoard
+{
+public:
+    bool Start (const char *pName);
+    void StartConsole (void);
+    bool StartCard (void);
+    bool StartUSB (void);
+    void SerialLog (bool) {}
+};
+
+COkapiaBoard &OkapiaBoard (void);
+
+typedef void TBoardTickHandler (void);
+bool BoardFineTick (unsigned nPeriodUsec, TBoardTickHandler *pHandler);
+void BoardWatchClock (bool bReport);
+void BoardLogFlush (void);
+void BoardSerialLog (bool bOn);
+void BoardSerialReplay (void);
+void BoardChimePlay (void);
+void BoardChimeFinish (void);
+void BoardChimeStop (void);
+void BoardPowerOff (void);
+
+#endif

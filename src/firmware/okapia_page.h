@@ -99,6 +99,9 @@ void PageChromeSet (bool bRestart, bool bFocusTabs, bool bCanStart);
 // ticked, and whether the keyboard starts on it — which is where it was when
 // it was pressed, since pressing it lays the window out again.
 void PageChromeBootMenu (bool bOn, bool bFocus);
+// The grey line under the box, saying how to ask for the menu: Alt on the
+// board's PC keyboard, Option on a desktop Mac. 0 for the board's.
+void PageChromeBootMenuHint (const char *pHint);
 
 // What the last PageChromeSet said about restarting. Saving and restarting
 // needs no startup volume, so a page that greys Start for want of one asks

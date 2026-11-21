@@ -7,7 +7,7 @@
 > (`CardRefineClock`), `src/circle/tick_circle.cpp` (the Mac's `Time` global),
 > `src/circle/hfs_volume_circle.cpp` (`HfsDateIsPlausible`), `src/circle/timer_circle.cpp`,
 > `src/circle/xpram_circle.cpp`, `src/circle/emul_op_hook_circle.cpp`, `src/circle/sheepshaver/cpu_ticks_circle.cpp`,
-> `src/firmware/circle/okapia_firmware.cpp` (`ForgetPram`).
+> `src/common/okapia_menu.cpp` (`ForgetPram`).
 
 ## Using it
 

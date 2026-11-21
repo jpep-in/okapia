@@ -10,7 +10,7 @@
  * Like every page here it knows nothing of the board: it is handed what the
  * board found (the networks in range, whether the link is up) and answers what
  * the user asked for. Starting the Wi-Fi, scanning and joining are the
- * caller's (src/firmware/circle/okapia_firmware.cpp), which is what lets the
+ * caller's (src/common/okapia_menu.cpp), which is what lets the
  * page be driven by synthetic events on a development machine.
  *
  * Copyright (C) 2026  Jonathan Pepin

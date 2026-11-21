@@ -145,11 +145,14 @@ static void DrawMonitor (const TDisplaySettings *pDisplay)
     if (!VideoSizeEqual (pDisplay->Preferred, pDisplay->Output))
     {
         nPreferred = StrAppend (s_Preferred, sizeof s_Preferred, nPreferred, " — ");
-        StrAppend (s_Preferred, sizeof s_Preferred, nPreferred, Str (StrDisplayMismatch));
+        StrAppend (s_Preferred, sizeof s_Preferred, nPreferred,
+                   Str (pDisplay->bWindowed ? StrDisplayMismatchWindow : StrDisplayMismatch));
     }
 
-    const TStringId Left[] = {StrDisplayOutput, StrDisplayMonitor};
-    const TStringId Right[] = {StrDisplayPreferred, StrDisplayHdmi};
+    const TStringId Left[] = {pDisplay->bWindowed ? StrDisplayOutputWindow : StrDisplayOutput,
+                              StrDisplayMonitor};
+    const TStringId Right[] = {pDisplay->bWindowed ? StrDisplayPreferredScreen : StrDisplayPreferred,
+                               StrDisplayHdmi};
     const char *const ValuesLeft[] = {s_Output,
         *pDisplay->Monitor ? pDisplay->Monitor : Str (StrDisplayUnknown)};
     const char *const ValuesRight[] = {
@@ -163,8 +166,13 @@ static void DrawMonitor (const TDisplaySettings *pDisplay)
         const unsigned nLeft = Band.nWidth * 2 / 5;
         const unsigned nRight = nLeft + Theme.M.nGap;
         InfoPair (Left[i], ValuesLeft[i], Rect (Band.nX, Band.nY, nLeft, Band.nHeight));
-        InfoPair (Right[i], ValuesRight[i], Rect (Band.nX + (int) nRight, Band.nY,
-                                                 Band.nWidth - nRight, Band.nHeight));
+        // A window has no HDMI line to speak of: the second right-hand pair is
+        // the board's alone.
+        if (i == 0 || !pDisplay->bWindowed)
+        {
+            InfoPair (Right[i], ValuesRight[i], Rect (Band.nX + (int) nRight, Band.nY,
+                                                     Band.nWidth - nRight, Band.nHeight));
+        }
         if (i == 0)
             LayoutRowGap (&Layout);
     }

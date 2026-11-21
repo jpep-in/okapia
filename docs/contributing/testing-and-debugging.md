@@ -47,6 +47,14 @@ on the host where possible.
 `tests/smoke`, `core-probe`, `link-probe` and `trace-build` are historical probes from the port's first days (a bare
 Circle kernel, a compile probe of the core, the list of undefined symbols).
 
+### Native test runs
+
+The desktop build runs the boot menu and the 68k Macintosh without a window, on a copy of a card folder, with
+scripted keys and clicks and PNG screenshots ([Desktop](../topics/desktop.md#using-it)). It covers everything
+above `okapia_host.h` in seconds, and a `SIGKILL` of the process followed by a second run is the durability
+check (the volumes left in use are repaired). It says nothing of what lies below the interface on the board —
+USB, HDMI, the card, Wi-Fi — which QEMU and the Pi still judge.
+
 ### QEMU scripts
 
 Every script checks the tree is built for QEMU ([Build](build.md)); a Pi kernel under QEMU goes quiet.

@@ -108,7 +108,7 @@ Circle's own sample are supplied by `wlan_circle.cpp`:
 - **A scheduler.** The driver runs `wifireader` and `wifitimer` as Circle tasks (`ether4330.c:2616`), and the
   supplicant is a third. `WlanStart()` (`wlan_circle.cpp:279`) creates the `CScheduler` the first time Wi-Fi is asked
   for; the emulation thread becomes its main task, and the tasks run only when it yields: `WlanYield()` from
-  `BoardNetPoll()`, so from the engine seams and from the boot menu's loop (`okapia_firmware.cpp:697`, `:1234`).
+  `BoardNetPoll()`, so from the engine seams and from the boot menu's loop (`HostPoll()`, `okapia_menu.cpp:828`, `:1818`).
 - **A link layer for the handshake.** Upstream's `l2_packet_circle.cpp` reaches EAPOL frames through
   `CNetSubSystem`'s link layer (`l2_packet_circle.cpp:66-72`), which would take every IP and ARP frame meant for the
   Mac. `wlan_circle.cpp` defines every `l2_packet_*` symbol itself (`:227` on), so the linker never pulls upstream's
@@ -143,7 +143,7 @@ The networks in range, the state of the join and a new network without a restart
   which reads it again through the same `f_open` wrap. **State**: `WPA_COMPLETED` is joined; a configured network
   with `auth_failures` is a refused key.
 - **The menu lets the tasks run**: it waits in `CScheduler::MsSleep()` once a scheduler exists (`FwSleep()`,
-  `okapia_firmware.cpp`), not in `CTimer::MsDelay()`, which held them still.
+  `HostSleep()`, `okapia_host_circle.cpp`), not in `CTimer::MsDelay()`, which held them still.
 
 ### Resources
 

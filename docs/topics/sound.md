@@ -4,7 +4,7 @@
 > volume, switching outputs, and the startup chime read from the ROM. Main files:
 > `src/circle/audio_circle.cpp` (compiled once per engine), `src/circle/hal_circle.h` (the declarations)
 > and `src/circle/board_sound_circle.cpp` (`BoardSoundClaim`, `BoardChime*`), `src/circle/rom_chime.{h,cpp}`,
-> `src/firmware/circle/okapia_firmware.cpp` (the setting).
+> `src/common/okapia_menu.cpp` (the setting).
 
 ## Using it
 

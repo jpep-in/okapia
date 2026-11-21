@@ -225,7 +225,7 @@ bool ClockRecordRead (TClockRecord *pRecord)
 void ClockRecordForget (const char *pWhy)
 {
     s_bRecord = false;
-    // f_unlink and not remove(): see ForgetPramFile() in okapia_firmware.cpp.
+    // f_unlink and not remove(): see HostFileRemove() in okapia_host_circle.cpp.
     if (f_unlink (RECORD_PATH) == FR_OK)
     {
         CLogger::Get ()->Write (FROM, LogNotice, "The clock set on the Macintosh is forgotten: %s",

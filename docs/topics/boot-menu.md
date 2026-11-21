@@ -2,7 +2,7 @@
 
 > The Okapia firmware: a configuration utility in a plausible Apple style that opens before any emulator
 > code runs — the Open Firmware a 68k Macintosh never had. One window with six tabs: System, Settings,
-> Network, Information, Display, Logs. Main files: `src/firmware/` (pure: no Circle type), `src/firmware/circle/okapia_firmware.cpp` (preferences and HFS side), `okapia_input.cpp` (USB
+> Network, Information, Display, Logs. Main files: `src/firmware/` (pure: no Circle type), `src/common/okapia_menu.cpp` (the driver: preferences, card and pages, the same on every host), `src/common/okapia_host.h` (what it asks of the machine), `src/firmware/circle/okapia_host_circle.cpp` (the Pi's answers), `okapia_input.cpp` (USB
 > bridge), `okapia_output.cpp` (frame buffer claim), `assets/strings.tsv`, `assets/fonts/`, `assets/icons/`.
 
 ## Using it
@@ -130,7 +130,7 @@ from 1000 so a page's own answers never meet them); the firmware asks it before 
 `PageChromeSet()` tells the frame, before each layout, whether a restart is owed (Start's words, so its width: a change
 lays the page out again), whether the keyboard starts on the strip, and whether there is anything to start.
 
-The firmware (`RunScreens()`, `okapia_firmware.cpp`) keeps one model per page for as long as the window is open, so
+The firmware (`RunScreens()`, `okapia_menu.cpp`) keeps one model per page for as long as the window is open, so
 turning pages loses nothing, and `SaveAll()` writes settings and network only if they changed, then the volumes and
 `SavePrefs()` once. A page whose model changes on its own — the networks in range — has a `Tick` in its driver, asked
 four times a second.
@@ -176,9 +176,16 @@ recognise. `disk`, `cdrom` and `engine` lines are **replaced**, not edited: the 
 its control can draw outside itself *in any state it may reach* (the focus ring included), because layout runs
 before anyone knows where the focus will land.
 
-**Screens are pure**: handed values, answering values. Everything that knows a preferences file, an HFS
-volume or a frame buffer stays in `src/firmware/circle/`. That is what lets `tests/host` drive them with
+**Screens are pure**: handed values, answering values. That is what lets `tests/host` drive them with
 synthetic events and measure them.
+
+**The driver is the same on every host.** `src/common/okapia_menu.cpp` joins the pages to the preferences and the
+card's volumes (`FirmwareRun()`, `RunScreens()`, `RunPage()`, the `Load*`/`Store*` functions). What it needs of the
+machine goes through `src/common/okapia_host.h`: the log, sleeping and polling, the clock, the output surface and
+its facts, input, the card's space and files, the sound outputs offered, the network page's questions. The Pi's
+answers are `src/firmware/circle/okapia_host_circle.cpp` (FatFs, Circle, the board's network and clock); a
+desktop's are `src/hosts/desktop/`. No POSIX or Circle type crosses the interface, and paths are the card's own,
+rooted at `/`. See [Okapia on a desktop](../notes/research/desktop-host.md#the-okapia-host-interface).
 
 **Only what changed is redrawn**, into the shadow surface first, then the changed rectangle is copied at once —
 drawing straight into the visible buffer made the background flash under each control. Isolated redraw is

@@ -27,6 +27,26 @@
    common to the Pi and the desktop. The desktop host also has a windowless **test mode** that would replace QEMU for
    most checks.
 
+## Where it stands (2026-11-21, evening)
+
+The study was followed by a build the same day; [Desktop](../../topics/desktop.md) is its page.
+
+- **J0, in part.** The boot menu's driver is `src/common/okapia_menu.cpp`, behind `src/common/okapia_host.h`, and
+  the Pi's answers are `src/firmware/circle/okapia_host_circle.cpp`. The Pi was checked unchanged: QEMU to the
+  Finder, the menu opened by `bootmenu`, the host tests. Files have not moved to `src/common/` and
+  `src/hosts/circle/` yet.
+- **J1, done.** The menu runs on macOS from a card folder, windowed or headless, scripted. Its pages say *Computer*,
+  *Card folder*, *Window* and *Option* there (`HostKind ()`).
+- **J2, 68k done.** System 7.1.2 reaches the Finder in the process, through `src/kernel/kernel.cpp` and 21 files of
+  `src/circle/` compiled unchanged against a shim. A killed session is repaired at the next start.
+- **The link question**, answered for one engine: per-file `-D` renaming plus `wraps_desktop.cpp` stands in for
+  `--wrap`. The two-engine question waits for J3.
+- **J4, in part.** `-O3` and the translator are built in on arm64; `jit true` reaches the Finder. Not measured.
+- **Not started**: sound, network, PowerPC (J3), packaging (J5).
+
+The test mode needs no SDL driver after all: headless means no window, and the surface is written out as PNG
+(Pitfalls of the Desktop page).
+
 ## What is kept, what is rewritten, what is a build variant
 
 ### Kept, built for the host
@@ -184,8 +204,9 @@ The work is to name it, complete it and route everything through it. A sketch, n
 "Headless" means no window, not no screen. The Mac's screen exists in memory, and the test mode writes it out as PNG,
 as `render_pages` already does for the menu. The boot is still judged by the screen, as `AGENTS.md` requires, but
 without QEMU, which has no sound, no RTC, and costs a third of the guest's speed
-([Testing](../../contributing/testing-and-debugging.md)). Picture and sound go to SDL3's `offscreen` or `dummy` video
-driver and `disk` audio driver; those names come from SDL's documentation, not from a run.
+([Testing](../../contributing/testing-and-debugging.md)). As built, headless means no window at all: SDL's `offscreen` driver
+wanted OpenGL, and the surface the menu and the compositor draw into is the picture. Sound, once it exists, could
+go to SDL's `disk` audio driver (not tried).
 
 | snow-runner | Okapia test mode | What it rests on |
 |---|---|---|

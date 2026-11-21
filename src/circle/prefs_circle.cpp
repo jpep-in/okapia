@@ -22,6 +22,7 @@
 #include <string>
 
 #include "okapia_circle.h"
+#include "okapia_card.h"
 
 #include "prefs.h"
 #include "video_sizes_circle.h"
@@ -349,7 +350,7 @@ unsigned PrefsCollectUnknown(const char *pPath, char *pBuffer, size_t nSize,
 	if (nSize > 0)
 		pBuffer[0] = '\0';
 
-	FILE *f = fopen(pPath, "r");
+	FILE *f = fopen(CardPath(pPath), "r");
 	if (f == NULL)
 		return 0;
 
@@ -410,7 +411,7 @@ void LoadPrefs(const char *vmdir)
 	(void) vmdir;			// no VM directory: the card is the VM
 
 	bool bLoaded = false;
-	FILE *f = fopen(PREFS_FILE_NAME, "r");
+	FILE *f = fopen(CardPath(PREFS_FILE_NAME), "r");
 	if (f != NULL) {
 		LoadPrefsFromStream(f);
 		fclose(f);
@@ -449,7 +450,7 @@ void SavePrefs(void)
 	unsigned nFound = PrefsCollectUnknown(PREFS_FILE_NAME, s_Unknown,
 	                                      sizeof s_Unknown, &nKept);
 
-	FILE *f = fopen(PREFS_FILE_NAME, "w");
+	FILE *f = fopen(CardPath(PREFS_FILE_NAME), "w");
 	if (f == NULL) {
 		CLogger::Get()->Write(FROM, LogWarning, "Cannot write %s", PREFS_FILE_NAME);
 		return;

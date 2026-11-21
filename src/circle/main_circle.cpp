@@ -19,6 +19,7 @@
 #include "sysdeps.h"
 
 #include "okapia_circle.h"
+#include "okapia_card.h"
 #include "mac_ram_circle.h"
 #include "quickdraw_circle.h"
 #include <stdio.h>
@@ -190,7 +191,7 @@ bool MacMemoryAllocate (uint32 nRAMSize)
 
 bool MacROMLoad (const char *pFileName)
 {
-    FILE *pFile = fopen (pFileName, "rb");
+    FILE *pFile = fopen (CardPath (pFileName), "rb");
     if (pFile == 0)
     {
         CLogger::Get ()->Write (FROM, LogError, "ROM not found: %s", pFileName);

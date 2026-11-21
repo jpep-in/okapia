@@ -39,6 +39,9 @@ struct TDateTime
     TDateTimeValues Opened;
     unsigned nLocal;                    // the time now, local seconds since 1970
     char     Source[96];                // where it came from, said whole by the caller
+    // The machine keeps the time itself (a desktop): the group shows the date
+    // and its source only, the zone and the time server being the host's.
+    bool     bHostClock;
 };
 
 struct TPage;

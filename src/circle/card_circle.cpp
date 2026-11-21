@@ -9,6 +9,7 @@
 
 #include "sysdeps.h"
 #include "okapia_circle.h"
+#include "okapia_card.h"
 #include "card_circle.h"
 #include "clock_circle.h"
 #include "hfs_volume_circle.h"
@@ -282,7 +283,7 @@ bool CardPrepareVolumes (void)
         // on the card starts after it.
         const char *pPath = (*pDisk == '*') ? pDisk + 1 : pDisk;
 
-        FILE *pFile = fopen (pPath, "rb");
+        FILE *pFile = fopen (CardPath (pPath), "rb");
         if (pFile == 0)
         {
             CLogger::Get ()->Write (FROM, LogError, "disk %s: not on the card", pPath);
@@ -334,7 +335,7 @@ bool CardPrepareVolumes (void)
         {
             continue;
         }
-        FILE *pFile = fopen (pCd, "rb");
+        FILE *pFile = fopen (CardPath (pCd), "rb");
         if (pFile == 0)
         {
             CLogger::Get ()->Write (FROM, LogError, "cdrom %s: not on the card", pCd);
@@ -424,7 +425,7 @@ const char *CardBootVolume (void)
 // scripts/run-test.sh uses it.
 bool CardRepairOnly (void)
 {
-    FILE *pMarker = fopen ("/repair-only", "r");
+    FILE *pMarker = fopen (CardPath ("/repair-only"), "r");
     if (pMarker == 0)
     {
         return false;

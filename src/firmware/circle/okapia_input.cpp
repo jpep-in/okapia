@@ -6,6 +6,7 @@
 //
 
 #include "okapia_input.h"
+#include "okapia_keys.h"
 
 #include <circle/devicenameservice.h>
 #include <circle/input/keymap.h>
@@ -72,28 +73,11 @@ static void Post (TEventType Type, unsigned nKey, unsigned nChar, int nX, int nY
     s_nHead = nNext;
 }
 
-// USB usage identifiers stop here. Everything above speaks of OkKeyTab.
+// USB usage identifiers stop here. Everything above speaks of OkKeyTab
+// (KeyOfUsage, src/common/okapia_keys.h, which the desktop shares).
 static unsigned LogicalKey (unsigned char ucUsage)
 {
-    switch (ucUsage)
-    {
-    case 0x2A:  return OkKeyBackspace;
-    case 0x4C:  return OkKeyDelete;
-    case 0x2B:  return OkKeyTab;
-    case 0x2C:  return OkKeySpace;
-    case 0x28:  return OkKeyReturn;
-    case 0x58:  return OkKeyReturn;       // the keypad's Enter is the same promise
-    case 0x29:  return OkKeyEscape;
-    case 0x52:  return OkKeyUp;
-    case 0x51:  return OkKeyDown;
-    case 0x50:  return OkKeyLeft;
-    case 0x4F:  return OkKeyRight;
-    case 0x4A:  return OkKeyHome;
-    case 0x4D:  return OkKeyEnd;
-    case 0x4B:  return OkKeyPageUp;
-    case 0x4E:  return OkKeyPageDown;
-    default:    return OkKeyNone;
-    }
+    return KeyOfUsage (ucUsage);
 }
 
 // Left and right alike: a keyboard's two Option keys mean the same thing, and

@@ -20,6 +20,7 @@
 #include "sysdeps.h"
 #include "okapia_circle.h"
 #include "hfs_volume_circle.h"
+#include "okapia_card.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -129,7 +130,7 @@ static bool InspectHandle (void *fh, const char *pName, bool bQuiet)
 
 static bool InspectPath (const char *pPath, bool bQuiet)
 {
-    void *fh = Sys_open (pPath, true, false);
+    void *fh = Sys_open (CardPath (pPath), true, false);
     if (fh == 0)
     {
         if (!bQuiet)
@@ -174,10 +175,10 @@ bool HfsInspect (const char *pPath)
 // cdrom.cpp:194 — reads it correctly and a stricter reader does not.
 static hfsvol *MountReadOnly (const char *pPath)
 {
-    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDONLY);
+    hfsvol *pVolume = hfs_mount (CardPath (pPath), 0, HFS_MODE_RDONLY);
     if (pVolume == 0)
     {
-        pVolume = hfs_mount (pPath, 1, HFS_MODE_RDONLY);
+        pVolume = hfs_mount (CardPath (pPath), 1, HFS_MODE_RDONLY);
     }
     return pVolume;
 }
@@ -253,7 +254,7 @@ static bool LooksLikeAnImage (const char *pName)
 
 unsigned HfsInventory (THfsVolumeInfo *pList, unsigned nMax)
 {
-    DIR *pDir = opendir ("/");
+    DIR *pDir = opendir (CardPath ("/"));
     if (pDir == 0)
     {
         CLogger::Get ()->Write (FROM, LogWarning, "Cannot read the card's root directory");
@@ -311,7 +312,7 @@ bool HfsFormat (const char *pPath, const char *pName)
 
     // Mode 0: no options. HFS_OPT_2048 is for media whose blocks are 2048 bytes,
     // which a file on a FAT card is not.
-    if (hfs_format (pPath, 0, 0, pName, 0, 0) < 0)
+    if (hfs_format (CardPath (pPath), 0, 0, pName, 0, 0) < 0)
     {
         CLogger::Get ()->Write (FROM, LogError, "%s: cannot format (%s)", pPath,
                                 hfs_error != 0 ? hfs_error : "no reason given");
@@ -322,7 +323,7 @@ bool HfsFormat (const char *pPath, const char *pName)
     // wrote something the next mount cannot read is a volume that will be found
     // broken later, by somebody who has since put files on it — so it is found
     // here instead, while the only thing at stake is an empty file.
-    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDONLY);
+    hfsvol *pVolume = hfs_mount (CardPath (pPath), 0, HFS_MODE_RDONLY);
     if (pVolume == 0)
     {
         CLogger::Get ()->Write (FROM, LogError,
@@ -346,7 +347,7 @@ bool HfsRepair (const char *pPath)
 {
     CLogger::Get ()->Write (FROM, LogNotice, "%s: repairing", pPath);
 
-    hfsvol *pVolume = hfs_mount (pPath, 0, HFS_MODE_RDWR);
+    hfsvol *pVolume = hfs_mount (CardPath (pPath), 0, HFS_MODE_RDWR);
     if (pVolume == 0)
     {
         CLogger::Get ()->Write (FROM, LogError, "%s: cannot mount for repair (%s)",

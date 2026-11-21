@@ -24,7 +24,7 @@ GEN     = ../../build/generated
 # The build's version, YYMMDD-sha with "+" and a hash of the edits when the tree
 # is not clean (scripts/gen-version.sh). Written whenever make reads this file,
 # and only when it moved, so the two files that include it (hal_circle.cpp and
-# okapia_firmware.cpp) are rebuilt then and nothing else is.
+# okapia_menu.cpp) are rebuilt then and nothing else is.
 $(shell ../../scripts/gen-version.sh $(GEN)/okapia_version.h)
 OKAPIA  = ../../src/circle
 CIRCLEH = $(CIRCLEHOME)
@@ -221,8 +221,11 @@ REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 # Circle — the window itself, and the bridge from USB reports to events. Its
 # font and icon sources are generated from assets/, like the key table.
 FIRMWARE      = ../../src/firmware
+# What is the same on every host (okapia_host.h): the boot menu's driver.
+COMMON        = ../../src/common
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
-                $(FIRMWARE)/circle/okapia_firmware.cpp $(FIRMWARE)/circle/okapia_input.cpp \
+                $(COMMON)/okapia_menu.cpp $(FIRMWARE)/circle/okapia_host_circle.cpp \
+                $(FIRMWARE)/circle/okapia_input.cpp \
                 $(FIRMWARE)/circle/okapia_output.cpp
 
 # What must exist exactly once in the image, whichever engine is running.
@@ -374,7 +377,7 @@ EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD
 # CPUGEN ahead of GEN: both hold a cputbl.h when the JIT core is built.
 EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(OKAPIA) -I$(OKAPIA)/compat $(JIT_INCLUDES) \
                -I$(CPUGEN) -I$(GEN) -I$(HFS) \
-               -I$(FIRMWARE) -I$(FIRMWARE)/circle -I$(OKAPIA)/circle \
+               -I$(FIRMWARE) -I$(COMMON) -I$(FIRMWARE)/circle -I$(OKAPIA)/circle \
                -I$(MACEMU)/include -I$(UAE) -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform -I$(MACEMU)/kpx_cpu/include -I$(MACEMU)/kpx_cpu/src
 
@@ -472,7 +475,7 @@ EMU_FLAGS = $(EMU_DEFINES) -fexceptions -Wno-narrowing -Wno-write-strings
 # resolves a name to the first directory that has it. Ahead, and a SheepShaver
 # kernel would compile Basilisk's platform; unconditionally, and the Basilisk
 # kernel compiles SheepShaver's. Both were seen, in that order.
-VPATH = $(FIRMWARE):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(UAE):$(UAE)/fpu:$(UAE)/compiler:$(UAE)/jit_arm64:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(CPUGEN):$(GEN)
+VPATH = $(FIRMWARE):$(COMMON):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(UAE):$(UAE)/fpu:$(UAE)/compiler:$(UAE)/jit_arm64:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(CPUGEN):$(GEN)
 
 # The USB HID -> ADB key table, derived from Basilisk's own keycodes file rather
 # than typed out: SDL2 scancodes are HID usage IDs, so its "sdl cocoa" section
@@ -579,7 +582,7 @@ $(SHARED_OBJ):
 # two builds, which is how the list was drawn in the first place.
 # One fact about the image does reach the shared half on purpose: whether the
 # 68k engine carries the translator, which the boot menu offers or greys
-# (okapia_firmware.cpp) in both engines' windows. Stated here rather than read
+# (okapia_menu.cpp) in both engines' windows. Stated here rather than read
 # from ENGINE_DEFINES, which the shared half only sees by accident.
 SHARED_DEFINES = $(if $(filter 1,$(OKAPIA_JIT_ARM64)),-DOKAPIA_TRANSLATOR=1)
 

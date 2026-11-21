@@ -54,6 +54,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | [Storage](topics/storage.md) | Disk images, data safety, repair, CD-ROM, provisioning |
 | [Shared folder](topics/shared-folder.md) | Exchanging files with the card |
 | [Clock and PRAM](topics/clock-and-pram.md) | Time, and what the Macintosh remembers |
+| [Desktop](topics/desktop.md) | Okapia on macOS: a card folder, the same menu and Macintosh, the test mode |
 | [Network](topics/network.md) | Cable and Wi-Fi: the Mac shares the Pi's MAC address; settings, design, trials left |
 
 ### Contributing

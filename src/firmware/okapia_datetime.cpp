@@ -91,6 +91,10 @@ void DateTimeSync (TDateTime *pDateTime)
     w[s_nNow].Rect.nWidth = nDate;
     w[s_nSource].Rect = Rect (Line.nX + (int) nDate, Line.nY, Line.nWidth - nDate, Line.nHeight);
 
+    if (s_nZone < 0)
+    {
+        return;                         // the host's clock: nothing more to show
+    }
     w[s_nZone].nChoice = pDateTime->V.nZone < s_nZoneItems ? (int) pDateTime->V.nZone : 0;
     WidgetSetState (&w[s_nNetTime], pDateTime->V.bNetTime ? StateChecked : StateNormal);
     // A server nobody will ask needs no name: grey, as the shared folder's
@@ -126,6 +130,13 @@ void DateTimeLayOut (TPage *pPage, TDateTime *pDateTime, unsigned nLabel)
         s_nSource = (int) pPage->nCount;
         PageAdd (pPage, WidgetLabel, Rect (Line.nX + (int) Line.nWidth, Line.nY, 0, Line.nHeight),
                  pDateTime->Source, StateDisabled);
+    }
+    s_nZone = s_nNetTime = s_nServer = -1;
+    if (pDateTime->bHostClock)
+    {
+        PageGroupEnd (pPage, &Group);
+        DateTimeSync (pDateTime);
+        return;
     }
     LayoutRowGap (pLayout);
 

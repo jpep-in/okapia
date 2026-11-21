@@ -16,6 +16,9 @@ struct TDisplaySettings
     TVideoSize Output, Preferred, Start, Selected;
     char Monitor[24];
     bool bConfigAvailable, bHdmiDirectives;
+    // A window on a desktop rather than a board's output: no HDMI to report,
+    // and the output is the window, the preferred size the screen's.
+    bool bWindowed;
     int nFrameSkip;
     bool bModesChanged, bStartChanged, bRefreshChanged;
 };

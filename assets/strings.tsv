@@ -32,6 +32,9 @@ display_hdmi_directives	Mode settings on card	Réglages sur la carte
 display_hdmi_auto	No override on card	Aucun mode forcé
 display_full_screen	Full screen	Plein écran
 display_mismatch	Differs from Pi output	Diffère du Pi
+display_output_window	Window	Fenêtre
+display_preferred_screen	Screen	Écran
+display_mismatch_window	Differs from the window	Diffère de la fenêtre
 display_does_not_fit	Unavailable on this output	Indisponible sur cette sortie
 display_listed	In Monitors	Dans Moniteurs
 display_start	At startup	Au démarrage
@@ -121,6 +124,7 @@ qd_accel	QuickDraw acceleration	Accélération QuickDraw
 only_68k	(68K only)	(68K seulement)
 boot_menu	Show this menu at startup	Afficher ce menu au démarrage
 boot_menu_hint	Press Alt during startup to show this menu	Appuyez sur Alt pendant le démarrage pour afficher ce menu
+boot_menu_hint_desktop	Hold Option at startup to show this menu	Maintenez Option au démarrage pour afficher ce menu
 time_zone	Time zone	Fuseau horaire
 net_time	Time from the network	Heure par le réseau
 zone_fixed	fixed, from the preferences	fixe, d’après les préférences
@@ -168,17 +172,20 @@ unit_hz	Hz	Hz
 unit_mb	MB	Mo
 info_version	Okapia	Okapia
 info_machine	Board	Carte mère
+info_computer	Computer	Ordinateur
 info_display	Display	Écran
 info_rom	ROM	ROM
 info_model	Macintosh model	Modèle de Macintosh
 info_model_auto	from the system installed	d’après le système installé
 info_model_pref	from the preferences	d’après les préférences
 info_card	SD card	Carte SD
+info_folder	Card folder	Dossier carte
 info_startup	Startup volume	Volume de démarrage
 clock_from_ntp	Given by	Donnée par
 clock_from_mac	Set on the Macintosh	Réglée sur le Macintosh
 clock_from_volume	From the last use of	D’après la dernière utilisation de
 clock_from_build	From the date Okapia was built	D’après la date de compilation d’Okapia
+clock_from_host	From this computer	Donnée par cet ordinateur
 day_sunday	Sunday	dimanche
 day_monday	Monday	lundi
 day_tuesday	Tuesday	mardi

@@ -8,6 +8,7 @@
 #include "okapia_firmware.h"
 #include "okapia_input.h"
 #include "okapia_circle.h"
+#include "okapia_card.h"
 #include <circle_glue.h>
 #include <circle/memory.h>
 #include <stdio.h>
@@ -263,9 +264,9 @@ void CKernel::PrepareSharedFolder (void)
     // ExtFSInit gives up silently on a path that is not a directory, so create
     // it rather than leave the Mac without a volume and no reason given.
     struct stat Stat;
-    if (stat (pPath, &Stat) != 0)
+    if (stat (CardPath (pPath), &Stat) != 0)
     {
-        if (mkdir (pPath, 0777) != 0)
+        if (mkdir (CardPath (pPath), 0777) != 0)
         {
             CLogger::Get ()->Write (FROM, LogWarning, "Shared folder %s: cannot create it", pPath);
             return;

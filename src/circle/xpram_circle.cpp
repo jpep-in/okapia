@@ -19,6 +19,7 @@
 
 #include "sysdeps.h"
 #include "okapia_circle.h"
+#include "okapia_card.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -48,7 +49,7 @@ void LoadXPRAM (const char *vmdir)
 {
     (void) vmdir;                       // no VM directory: the card is the VM
 
-    FILE *f = fopen (XPRAM_FILE_NAME, "rb");
+    FILE *f = fopen (CardPath (XPRAM_FILE_NAME), "rb");
     if (f == 0)
     {
         CLogger::Get ()->Write (FROM, LogNotice,
@@ -93,7 +94,7 @@ void LoadXPRAM (const char *vmdir)
 
 void SaveXPRAM (void)
 {
-    FILE *f = fopen (XPRAM_FILE_NAME, "wb");
+    FILE *f = fopen (CardPath (XPRAM_FILE_NAME), "wb");
     if (f == 0)
     {
         CLogger::Get ()->Write (FROM, LogWarning, "Cannot write %s", XPRAM_FILE_NAME);
