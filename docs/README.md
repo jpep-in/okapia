@@ -82,3 +82,4 @@ Dated development notes and research studies, kept for the reasoning behind a re
 | [Emu68](notes/research/emu68.md) | The 68k→AArch64 JIT built for AArch64, and what a JIT shaped like it would ask of Okapia |
 | [AppleTalk and SMB gateways](notes/research/appletalk-smb-gateways.md) | Existing projects bridging classic Macs to modern shares |
 | [QuickDraw accelerators](notes/research/quickdraw-accelerators.md) | QuickDraw versions, how period accelerator cards hooked them, and what that means for `qdaccel` |
+| [Okapia on a desktop](notes/research/desktop-host.md) | A macOS, Linux and Windows variant that opens a card folder: what is kept, the host interface, the test mode |
