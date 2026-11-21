@@ -55,7 +55,7 @@ $(ICON_SRC): ../../../scripts/gen-icons.py $(ICONDIR)/system-icons.c \
 
 STR_SRC = $(GEN)/okapia_strings_data.cpp
 STR_IDS = $(GEN)/okapia_strings_ids.h
-$(STR_SRC) $(STR_IDS): ../../../scripts/gen-strings.py ../../../assets/strings.tsv
+$(STR_SRC) $(STR_IDS) &: ../../../scripts/gen-strings.py ../../../assets/strings.tsv
 	@mkdir -p $(GEN)
 	@../../../scripts/gen-strings.py $(STR_SRC) $(STR_IDS) ../../../assets/strings.tsv
 
@@ -67,11 +67,13 @@ obj:
 # two different layouts of the same struct — which shows up as a jump into the
 # font tables, not as a compile error. docs/contributing/build.md records the same trap for the
 # emulator objects; a private rule reintroduces it unless it carries this.
-obj/%.o: $(FIRMWARE)/%.cpp | obj
+# The firmware's objects also wait for the generated string identifiers, which
+# a fresh tree has no .d file yet to ask for (src/kernel/Makefile, same fix).
+obj/%.o: $(FIRMWARE)/%.cpp | obj $(STR_IDS)
 	@printf '  CPP   firmware/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 
-obj/%.o: $(FIRMWARE)/circle/%.cpp | obj
+obj/%.o: $(FIRMWARE)/circle/%.cpp | obj $(STR_IDS)
 	@printf '  CPP   firmware/circle/%s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) -MMD -MP -c -o $@ $<
 

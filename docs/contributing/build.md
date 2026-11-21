@@ -190,6 +190,11 @@ applied is skipped.
   link then joins objects built against two layouts of one struct and succeeds. It cost a jump into the font tables
   (instruction abort past `_etext`) and a down arrow arriving as Escape. **Every rule here compiles with `-MMD -MP`
   and reads the `.d` files back; a rule without them is a bug.** After adding the flags, `make okapia-clean` once.
+- **`.d` files do not exist on a fresh tree**, so they cannot order a compile after a generated header. A clean
+  checkout failed on `kernel.cpp` with `okapia_strings_ids.h: No such file or directory` (2026-11-21). Every object
+  rule of `src/kernel/Makefile` and `src/firmware/circle/Makefile` now waits for `$(STR_IDS)` as an order-only
+  prerequisite, and `gen-strings.py`'s two outputs are one grouped target (`&:`), so a parallel build runs it once.
+  A new generated header needs the same.
 - **Objects do not depend on the Makefile.** Changing a `-D`, a flag or a `#define` in `external/` rebuilds nothing.
   Objects compiled with Basilisk's `D(bug())` tracing flooded the serial port (20 MB per run) and cost 4.8× guest
   speed. After any flag change: `make okapia-clean`. `strings kernel8.img | grep 'EmulOp %04x'` tells in a second

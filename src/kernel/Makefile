@@ -510,9 +510,13 @@ $(ICON_SRC): ../../scripts/gen-icons.py $(ICONDIR)/system-icons.c \
 
 # The interface's text, typed once in a file anyone can diff. The identifiers
 # come out of the same rows, so a key renamed there stops the build here.
+# One run writes both files (&:), and every object waits for the identifiers
+# (order-only, in the two pattern rules below): on a fresh tree nothing has a
+# .d file yet to say that kernel.cpp includes okapia_strings_ids.h, and the
+# first compile that reached it failed.
 STR_SRC = $(GEN)/okapia_strings_data.cpp
 STR_IDS = $(GEN)/okapia_strings_ids.h
-$(STR_SRC) $(STR_IDS): ../../scripts/gen-strings.py ../../assets/strings.tsv
+$(STR_SRC) $(STR_IDS) &: ../../scripts/gen-strings.py ../../assets/strings.tsv
 	@mkdir -p $(GEN)
 	@../../scripts/gen-strings.py $(STR_SRC) $(STR_IDS) ../../assets/strings.tsv
 
@@ -542,7 +546,7 @@ $(OBJ)/sf_%.o: $(SOFTFLOAT)/%.c | $(OBJ)
 	@$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 endif
 
-$(OBJ)/%.o: %.cpp | $(OBJ)
+$(OBJ)/%.o: %.cpp | $(OBJ) $(STR_IDS)
 	@printf '  CC    %s\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) -MMD -MP -c -o $@ $<
 
@@ -579,7 +583,7 @@ $(SHARED_OBJ):
 # from ENGINE_DEFINES, which the shared half only sees by accident.
 SHARED_DEFINES = $(if $(filter 1,$(OKAPIA_JIT_ARM64)),-DOKAPIA_TRANSLATOR=1)
 
-$(SHARED_OBJ)/%.o: %.cpp | $(SHARED_OBJ)
+$(SHARED_OBJ)/%.o: %.cpp | $(SHARED_OBJ) $(STR_IDS)
 	@printf '  CC    %s (shared)\n' "$(notdir $<)"
 	@$(CPP) $(CPPFLAGS) $(EMU_FLAGS) $(SHARED_DEFINES) -MMD -MP -c -o $@ $<
 
