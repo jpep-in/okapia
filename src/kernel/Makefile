@@ -20,6 +20,12 @@ include ../../external/circle-stdlib/Config.mk
 ENGINE ?= basilisk
 
 GEN     = ../../build/generated
+
+# The build's version, YYMMDD-sha with "+" and a hash of the edits when the tree
+# is not clean (scripts/gen-version.sh). Written whenever make reads this file,
+# and only when it moved, so the two files that include it (hal_circle.cpp and
+# okapia_firmware.cpp) are rebuilt then and nothing else is.
+$(shell ../../scripts/gen-version.sh $(GEN)/okapia_version.h)
 OKAPIA  = ../../src/circle
 CIRCLEH = $(CIRCLEHOME)
 

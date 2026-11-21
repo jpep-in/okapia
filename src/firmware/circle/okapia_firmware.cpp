@@ -6,6 +6,7 @@
 //
 
 #include "okapia_firmware.h"
+#include "okapia_version.h"
 
 #include <circle/bcmframebuffer.h>
 #include <circle/logger.h>
@@ -588,7 +589,7 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
     unsigned n;
 
     pInfo->nCount = 0;
-    InfoAdd (pInfo, Str (StrInfoVersion), __DATE__);
+    InfoAdd (pInfo, Str (StrInfoVersion), OKAPIA_VERSION);
     InfoAdd (pInfo, Str (StrInfoMachine), CMachineInfo::Get ()->GetMachineName ());
 
     n = StrAppendNumber (Line, sizeof Line, 0, pOutput->nWidth);

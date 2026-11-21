@@ -124,6 +124,27 @@ about 195,000 lines), kpx_cpu's execute table (`scripts/gen-ppc-exec.sh`), the k
 MacRoman table (`gen-macroman.py`), the firmware's strings (`gen-strings.py` from `assets/strings.tsv`), fonts
 (`gen-font.py`) and icons (`gen-icons.py`).
 
+### Version
+
+The build is named `YYMMDD-sha`: the date of the commit built and its short hash, from `scripts/gen-version.sh`. It is
+the build's date that was never worth anything — two builds of one commit differ in it, and an object that was not
+recompiled keeps the old one. A tree with changes, tracked or new, adds `+` and four characters of a hash of those
+changes:
+
+| Name | Meaning |
+|---|---|
+| `261116-5926cec` | a clean checkout of that commit |
+| `261116-5926cec+3fa9` | that commit with edits; another edit gives another suffix, a commit removes it |
+| `unknown` | no git, as in a downloaded archive |
+
+The Makefiles of `src/kernel` and `src/firmware/circle` run the script each time they are read and it writes
+`build/generated/okapia_version.h` only when the version moved, so a build of the same state rebuilds nothing and a new
+one rebuilds `hal_circle.cpp` and `okapia_firmware.cpp`, the two files that include it. `external/` and `reference/` are
+left out of the hash: a submodule's work tree is not this project's change, and `apply-patches.sh --check` covers the
+patches. The version is the first line of the log (`Okapia 261116-5926cec+3fa9 (pi4, jit-arm64), built …`, with the
+image's target and experimental options) and the Information page's first row. The clock still starts from `__DATE__`, which
+is what it is for.
+
 ### Patches
 
 Upstream changes live in `patches/<submodule>/` as minimal patches, each explaining itself in its header, each a

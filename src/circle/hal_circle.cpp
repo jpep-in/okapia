@@ -10,6 +10,7 @@
  */
 
 #include "hal_circle.h"
+#include "okapia_version.h"
 
 #include <circle/bcmpropertytags.h>
 #include <circle/logger.h>
@@ -18,6 +19,27 @@
 
 #include <stdio.h>
 #include <string.h>
+
+// What kind of image this is, for the log: the version names the code, and the
+// same code builds a QEMU kernel, a Pi one, and the experimental ones.
+#define OKAPIA_STR2(x) #x
+#define OKAPIA_STR(x)  OKAPIA_STR2(x)
+#ifdef CIRCLE_QEMU
+#define OKAPIA_TARGET "qemu"
+#else
+#define OKAPIA_TARGET "pi" OKAPIA_STR (RASPPI)
+#endif
+#ifdef OKAPIA_TRANSLATOR
+#define OKAPIA_TRANSLATOR_FLAG ", jit-arm64"
+#else
+#define OKAPIA_TRANSLATOR_FLAG ""
+#endif
+#if defined (OKAPIA_NETBENCH) && OKAPIA_NETBENCH
+#define OKAPIA_NETBENCH_FLAG ", netbench"
+#else
+#define OKAPIA_NETBENCH_FLAG ""
+#endif
+#define OKAPIA_BUILD_FLAGS OKAPIA_TARGET OKAPIA_TRANSLATOR_FLAG OKAPIA_NETBENCH_FLAG
 
 #ifndef OKAPIA_BUILD_TIME
 #define OKAPIA_BUILD_TIME 0
@@ -81,7 +103,8 @@ bool COkapiaBoard::Start (const char *pName)
         return false;
     }
 
-    m_Logger.Write (pName, LogNotice, "Okapia, built " __DATE__ " " __TIME__);
+    m_Logger.Write (pName, LogNotice, "Okapia %s (%s), built " __DATE__ " " __TIME__,
+                    OKAPIA_VERSION, OKAPIA_BUILD_FLAGS);
 
     if (!m_Interrupt.Initialize () || !m_Timer.Initialize ())
     {

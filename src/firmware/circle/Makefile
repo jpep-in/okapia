@@ -13,6 +13,9 @@ include ../../../external/circle-stdlib/Config.mk
 FIRMWARE = ../../../src/firmware
 CIRCLE   = ../../../src/circle
 GEN      = ../../../build/generated
+
+# The build's version, as in src/kernel/Makefile: hal_circle.cpp logs it.
+$(shell ../../../scripts/gen-version.sh $(GEN)/okapia_version.h)
 FONTDIR  = ../../../assets/fonts
 BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR12-75.bdf $(FONTDIR)/helvB12-75.bdf $(FONTDIR)/helvR14-75.bdf $(FONTDIR)/helvB14-75.bdf $(FONTDIR)/helvR24-75.bdf $(FONTDIR)/helvB24-75.bdf $(FONTDIR)/helvR14-100.bdf $(FONTDIR)/helvB14-100.bdf $(FONTDIR)/helvR24-100.bdf $(FONTDIR)/helvB24-100.bdf
 
