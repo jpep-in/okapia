@@ -15,7 +15,6 @@ static TWidget s_Widgets[MAX_WIDGETS];
 static TPage   s_Page;
 
 static int s_nMemory   = -1;
-static int s_nRefresh  = -1;
 static int s_nMouse    = -1;
 static int s_nSound    = -1;
 static int s_nLanguage = -1;
@@ -36,16 +35,6 @@ static int s_nName     = -1;
 static const unsigned MEMORY_MB[]  = { 64, 128, 256 };
 static const unsigned MEMORY_COUNT = sizeof MEMORY_MB / sizeof MEMORY_MB[0];
 
-// The rungs of Basilisk's own Window Refresh Rate menu (video_x.cpp), which is
-// what the preference means: 60 Hz is one VBL per frame, 5 Hz is twelve. The
-// rate is written out rather than divided, because 7.5 is not an integer and a
-// menu that says "7 Hz" would be describing something else.
-static const struct { int nSkip; const char *pRate; } REFRESH[] =
-{
-    { 1, "60" }, { 2, "30" }, { 4, "15" }, { 6, "10" }, { 8, "7.5" }, { 12, "5" }
-};
-static const unsigned REFRESH_COUNT = sizeof REFRESH / sizeof REFRESH[0];
-
 // What the pointing device reports per inch. A Macintosh assumes 200 and has no
 // way to learn otherwise, so this is how it is told — and it is worth a place
 // on this page rather than a line in a file on the card: correcting it means
@@ -56,8 +45,6 @@ static const unsigned MOUSE_DPI_COUNT = sizeof MOUSE_DPI / sizeof MOUSE_DPI[0];
 
 static char       s_MemoryText[MEMORY_COUNT][16];
 static TListItem  s_MemoryItems[MEMORY_COUNT];
-static char       s_RefreshText[REFRESH_COUNT + 1][16];
-static TListItem  s_RefreshItems[REFRESH_COUNT + 1];
 static char       s_MouseText[MOUSE_DPI_COUNT][16];
 static TListItem  s_MouseItems[MOUSE_DPI_COUNT];
 static TListItem  s_SoundItems[SoundOutputCount];
@@ -92,24 +79,6 @@ static void BuildMenus (void)
         s_MemoryItems[i].pText  = s_MemoryText[i];
         s_MemoryItems[i].pIcon  = 0;
         s_MemoryItems[i].nState = StateNormal;
-    }
-
-    // Dynamic first, because it is the default and because it is the only entry
-    // that is not a rate: it holds the compositor to a fraction of wall time
-    // instead of to a number of hertz.
-    StrAppend (s_RefreshText[0], sizeof s_RefreshText[0], 0, Str (StrDynamic));
-    s_RefreshItems[0].pText  = s_RefreshText[0];
-    s_RefreshItems[0].pIcon  = 0;
-    s_RefreshItems[0].nState = StateNormal;
-    for (unsigned i = 0; i < REFRESH_COUNT; i++)
-    {
-        unsigned n = StrAppend (s_RefreshText[i + 1], sizeof s_RefreshText[i + 1], 0,
-                                REFRESH[i].pRate);
-        n = StrAppend (s_RefreshText[i + 1], sizeof s_RefreshText[i + 1], n, " ");
-        StrAppend (s_RefreshText[i + 1], sizeof s_RefreshText[i + 1], n, Str (StrUnitHz));
-        s_RefreshItems[i + 1].pText  = s_RefreshText[i + 1];
-        s_RefreshItems[i + 1].pIcon  = 0;
-        s_RefreshItems[i + 1].nState = StateNormal;
     }
 
     // The unit is in the value rather than the label, so the row stays short in
@@ -163,18 +132,6 @@ unsigned SettingsMemoryOffered (unsigned nMB)
     return MEMORY_MB[MemoryIndex (nMB)];
 }
 
-static int RefreshIndex (int nSkip)
-{
-    for (unsigned i = 0; i < REFRESH_COUNT; i++)
-    {
-        if (REFRESH[i].nSkip == nSkip)
-        {
-            return (int) i + 1;
-        }
-    }
-    return 0;                           // anything else reads as Dynamic
-}
-
 bool SettingsNeedsRestart (const TSettings *pSettings)
 {
     // Only the memory. Everything else on this screen is read when the
@@ -211,7 +168,6 @@ void SettingsSync (TSettings *pSettings)
     }
 
     s_Widgets[s_nMemory].nChoice   = MemoryIndex (pSettings->V.nMemoryMB);
-    s_Widgets[s_nRefresh].nChoice  = RefreshIndex (pSettings->V.nFrameSkip);
     s_Widgets[s_nMouse].nChoice    = MouseDpiIndex (pSettings->V.nMouseDpi);
     s_Widgets[s_nSound].nChoice    = (int) pSettings->V.nSound;
     s_Widgets[s_nLanguage].nChoice = (int) pSettings->V.nLanguage;
@@ -326,9 +282,9 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
     // The Okapia things, two to a row: five menus on five rows left no room for
     // the groups under them at 640x480. Each column measures its own labels.
     static const TStringId Left[]  = { StrMemory, StrMouseDpi, StrLanguage };
-    static const TStringId Right[] = { StrScreenRefresh, StrSound };
+    static const TStringId Right[] = { StrSound };
     const unsigned nLeft  = Widest (pTheme, Left, 3, " *");
-    const unsigned nRight = Widest (pTheme, Right, 2, 0);
+    const unsigned nRight = Widest (pTheme, Right, 1, 0);
 
     // One label carries the mark, so one buffer holds it. It has to outlive
     // this function: a component keeps the pointer it was given.
@@ -346,8 +302,7 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
         case 0:
             Popup (&s_Page, Labelled (&s_Page, A, nLeft, Marked), &s_nMemory,
                    s_MemoryItems, MEMORY_COUNT);
-            Popup (&s_Page, Labelled (&s_Page, B, nRight, Str (StrScreenRefresh)), &s_nRefresh,
-                   s_RefreshItems, REFRESH_COUNT + 1);
+            Speedups (&s_Page, B);
             break;
 
         case 1:
@@ -360,7 +315,6 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
         default:
             Popup (&s_Page, Labelled (&s_Page, A, nLeft, Str (StrLanguage)), &s_nLanguage,
                    s_LanguageItems, LanguageCount);
-            Speedups (&s_Page, B);
             break;
         }
         LayoutRowGap (&Layout);
@@ -457,11 +411,6 @@ TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex)
         {
             pSettings->V.nMouseDpi = MOUSE_DPI[n];
         }
-    }
-    else if (nIndex == s_nRefresh)
-    {
-        const int n = s_Widgets[s_nRefresh].nChoice;
-        pSettings->V.nFrameSkip = n <= 0 ? 0 : REFRESH[n - 1].nSkip;
     }
     else if (nIndex == s_nSound)
     {

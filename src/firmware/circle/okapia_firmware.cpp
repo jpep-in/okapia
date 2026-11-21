@@ -37,7 +37,9 @@
 #include "okapia_chooser.h"
 #include "okapia_confirm.h"
 #include "okapia_datetime.h"
+#include "okapia_display.h"
 #include "okapia_info.h"
+#include "okapia_journal.h"
 #include "okapia_network.h"
 #include "okapia_newvolume.h"
 #include "okapia_page.h"
@@ -381,7 +383,6 @@ static void LoadSettings (TSettings *pSettings)
     // which is the interface lying about what the button will do.
     const int32 nRAM = PrefsFindInt32 ("ramsize");
     pSettings->V.nMemoryMB  = SettingsMemoryOffered ((unsigned) (nRAM / (1024 * 1024)));
-    pSettings->V.nFrameSkip = PrefsFindInt32 ("frameskip");
     pSettings->V.nMouseDpi  = PrefsFindInt32 ("mousedpi");
 
     // Silence is what an unreadable value means, and nosound wins wherever the
@@ -445,7 +446,6 @@ static void LoadSettings (TSettings *pSettings)
 static void StoreSettings (const TSettings *pSettings)
 {
     PrefsReplaceInt32 ("ramsize", (int32) pSettings->V.nMemoryMB * 1024 * 1024);
-    PrefsReplaceInt32 ("frameskip", pSettings->V.nFrameSkip);
     PrefsReplaceInt32 ("mousedpi", pSettings->V.nMouseDpi);
 
     PrefsReplaceString ("soundoutput", SOUND_NAMES[pSettings->V.nSound]);
@@ -468,9 +468,9 @@ static void StoreSettings (const TSettings *pSettings)
     PrefsReplaceString ("extfsname", pSettings->V.SharedName);
 
     CLogger::Get ()->Write (FROM, LogNotice,
-                            "Settings: %u MB, frameskip %d, sound %s, language %s, %s, %s, "
+                            "Settings: %u MB, sound %s, language %s, %s, %s, "
                             "jit %s, qdaccel %s",
-                            pSettings->V.nMemoryMB, (int) pSettings->V.nFrameSkip,
+                            pSettings->V.nMemoryMB,
                             SOUND_NAMES[pSettings->V.nSound],
                             StringsCode ((TLanguage) pSettings->V.nLanguage),
                             pSettings->V.bShared ? pSettings->V.SharedPath
@@ -735,7 +735,7 @@ struct TPageDriver
     // be laid out again — the language does that, its labels not being the same
     // width twice.
     int      (*Operate) (int nIndex);
-    void     (*Changed) (void);         // the selection moved; may be 0
+    void     (*Changed) (TScreen *);    // selection or text changed; may be 0
     void     (*Relayout) (TSurface *);  // may be 0 when nothing can move
     // What Escape means on this page, or 0 when it means nothing. A dialogue
     // with two answers has a refusal and the key for it is Escape, exactly as
@@ -790,7 +790,7 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
                 bChanged = true;
                 if (pDriver->Changed != 0)
                 {
-                    pDriver->Changed ();
+                    pDriver->Changed (&Screen);
                 }
             }
             else if (Reply.Result == ScreenCancelled && pDriver->Cancel != 0)
@@ -871,6 +871,7 @@ TFirmwareEngine FirmwareWantedEngine (void)
                                                            : FirmwareEngine68k;
 }
 static TSettings  s_Settings;
+static TDisplaySettings s_Display;
 static TNetwork   s_Network;
 static TInfo      s_Info;
 // Where the keyboard was when the footer's tick box was pressed: pressing it
@@ -1116,6 +1117,165 @@ static bool RestartWanted (void)
     return SettingsNeedsRestart (&s_Settings) || NetworkNeedsRestart (&s_Network);
 }
 
+// Report directives present in the card's top-level config. The GPU owns
+// conditional filters and include processing, so presence only is reported.
+static bool HasHdmiDirectives (bool *pbAvailable)
+{
+    FILE *pFile = fopen ("/config.txt", "r");
+    *pbAvailable = pFile != nullptr;
+    if (pFile == nullptr)
+        return false;
+
+    static const char *const Keys[] = {
+        "hdmi_mode", "hdmi_group", "hdmi_timings", "hdmi_cvt",
+        "framebuffer_width", "framebuffer_height", "max_framebuffer_width", "max_framebuffer_height"
+    };
+
+    char Line[192];
+    bool bFound = false;
+    while (!bFound && fgets (Line, sizeof Line, pFile) != nullptr)
+    {
+        const char *p = Line + strspn (Line, " \t");
+        const size_t nKey = strcspn (p, " \t:=\r\n");
+        for (const char *pKey : Keys)
+        {
+            if (strlen (pKey) == nKey && strncmp (p, pKey, nKey) == 0)
+            {
+                bFound = true;
+                break;
+            }
+        }
+    }
+    fclose (pFile);
+    return bFound;
+}
+
+static void LoadDisplay (TSurface *pOutput)
+{
+    s_Display = {};
+    s_Display.Output = {pOutput->nWidth, pOutput->nHeight};
+    const TFwMonitor &Monitor = FwOutputMonitor ();
+    s_Display.Preferred = {Monitor.nPreferredWidth, Monitor.nPreferredHeight};
+    StrAppend (s_Display.Monitor, sizeof s_Display.Monitor, 0, Monitor.Name);
+    s_Display.bHdmiDirectives = HasHdmiDirectives (&s_Display.bConfigAvailable);
+    s_Display.Start = VideoStartSize (PrefsFindString ("screen"), s_Display.Output);
+    VideoPrefsRead (&s_Display.Modes);
+    s_Display.nFrameSkip = PrefsFindInt32 ("frameskip");
+}
+
+/*
+ *  The Journal page
+ *
+ *  The log is read from the card, where the board keeps it (hal_circle.cpp:
+ *  512 KB, padded to the sector). Two files, this session's and the previous
+ *  one's, read through a second handle: FatFs is built without locking, and the
+ *  board writes whole sectors only, so what a read sees is what the card holds.
+ */
+static TJournal s_Journal;
+static void   (*s_pLogFlush) (void) = 0;
+
+void FirmwareSetLogFlush (void (*pFlush) (void))
+{
+    s_pLogFlush = pFlush;
+}
+
+static void LoadJournalText (void)
+{
+    JournalClear (&s_Journal);
+    if (!s_Journal.bPrevious && s_pLogFlush != 0)
+    {
+        // What the board has logged since it last drained its ring, which on a
+        // page opened a moment after the boot is the lines that matter.
+        s_pLogFlush ();
+    }
+
+    static char Chunk[32 * 1024];       // no stack for it
+    FIL File;
+    if (f_open (&File, s_Journal.bPrevious ? "SD:/okapia-previous.log" : "SD:/okapia.log",
+                FA_READ) != FR_OK)
+    {
+        return;
+    }
+    for (;;)
+    {
+        UINT nRead = 0;
+        if (f_read (&File, Chunk, sizeof Chunk, &nRead) != FR_OK || nRead == 0)
+        {
+            break;
+        }
+        // A chunk of nothing but blanks is the padding past the end of the text.
+        bool bBlank = true;
+        for (UINT i = 0; i < nRead && bBlank; i++)
+        {
+            bBlank = Chunk[i] == ' ';
+        }
+        if (bBlank)
+        {
+            break;
+        }
+        JournalAppend (&s_Journal, Chunk, nRead);
+    }
+    f_close (&File);
+}
+
+static void LoadJournal (void)
+{
+    s_Journal = {};
+    s_Journal.bSerial   = PrefsFindBool ("serial");
+    s_Journal.bCounters = PrefsFindBool ("perfreport");
+}
+
+static int JournalAdapter (int nIndex)
+{
+    const int nChrome = PageChromeAnswer (nIndex);
+    if (nChrome != PageAnswerNone)
+    {
+        return nChrome;
+    }
+    if (JournalOperate (&s_Journal, nIndex) == JournalReload)
+    {
+        LoadJournalText ();
+        return PageRelayout;
+    }
+    return 0;
+}
+
+static const int AnswerNewResolution = 2001;
+
+static int DisplayAdapter (int nIndex)
+{
+    const int nChrome = PageChromeAnswer (nIndex);
+    if (nChrome != PageAnswerNone)
+        return nChrome;
+    return DisplayOperate (&s_Display, nIndex, s_nCell) ? AnswerNewResolution : PageAnswerNone;
+}
+
+static void NewResolutionChanged (TScreen *pScreen)
+{
+    NewResolutionSync (&s_Display, pScreen);
+}
+
+static int NewResolutionAdapter (int nIndex)
+{
+    return NewResolutionOperate (&s_Display, nIndex);
+}
+
+static int NewResolutionCancelled (void)
+{
+    return NewResolutionCancel;
+}
+
+static void RunNewResolution (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme)
+{
+    NewResolutionDraw (pShadow, &s_Display);
+    static const TPageDriver Driver =
+    {
+        NewResolutionRepaint, NewResolutionWidgets, NewResolutionAdapter,
+        NewResolutionChanged, 0, NewResolutionCancelled
+    };
+    RunPage (pOutput, pShadow, pTheme, &Driver);
+}
+
 static void DrawTab (TSurface *pSurface)
 {
     PageChromeSet (RestartWanted (), s_bFocusTabs,
@@ -1128,6 +1288,8 @@ static void DrawTab (TSurface *pSurface)
         DateTimeNow (&s_Settings.Clock);
         SettingsDraw (pSurface, &s_Settings);
         break;
+    case PageTabDisplay:     DisplayDraw (pSurface, &s_Display);   break;
+    case PageTabJournal:     JournalDraw (pSurface, &s_Journal);   break;
     case PageTabNetwork:     NetworkDraw (pSurface, &s_Network);   break;
     default:
         // Gathered as the page is turned to: the startup volume it names is
@@ -1155,7 +1317,7 @@ static int ChooserAdapter (int nIndex)
     return (int) ChooserOperate (&s_Chooser, nIndex, s_nCell);
 }
 
-static void ChooserChanged (void)
+static void ChooserChanged (TScreen *)
 {
     ChooserSync (&s_Chooser);
 }
@@ -1528,7 +1690,21 @@ static void SaveAll (void)
     {
         StoreDateTime (&s_Settings.Clock);
     }
-    ApplyVolumes (&s_Chooser);          // and SavePrefs(), once, for all three
+    if (s_Display.bModesChanged)
+        VideoPrefsWrite (s_Display.Modes);
+    if (s_Display.bRefreshChanged)
+        PrefsReplaceInt32 ("frameskip", s_Display.nFrameSkip);
+    if (s_Display.bStartChanged)
+    {
+        char Screen[32];
+        snprintf (Screen, sizeof Screen, "win/%u/%u", s_Display.Start.nWidth, s_Display.Start.nHeight);
+        PrefsReplaceString ("screen", Screen);
+    }
+    if (s_Journal.bSerialChanged)
+        PrefsReplaceBool ("serial", s_Journal.bSerial);
+    if (s_Journal.bCountersChanged)
+        PrefsReplaceBool ("perfreport", s_Journal.bCounters);
+    ApplyVolumes (&s_Chooser);          // and SavePrefs(), once
 }
 
 static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
@@ -1551,6 +1727,8 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
     }
 
     LoadSettings (&s_Settings);
+    LoadDisplay (pOutput);
+    LoadJournal ();
     LoadNetwork (&s_Network);
     LoadDateTime (&s_Settings.Clock);
     s_pOutputForInfo = pOutput;
@@ -1564,7 +1742,9 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
           SettingsTick },
         { NetworkRepaint,  NetworkWidgets,  NetworkAdapter,  0,              RelayoutTab, 0,
           NetworkTick },
-        { InfoRepaint,     InfoWidgets,     InfoAdapter,     0,              RelayoutTab, 0, 0 }
+        { InfoRepaint,     InfoWidgets,     InfoAdapter,     0,              RelayoutTab, 0, 0 },
+        { DisplayRepaint,  DisplayWidgets,  DisplayAdapter,  0,              RelayoutTab, 0, 0 },
+        { JournalRepaint,  JournalWidgets,  JournalAdapter,  0,              RelayoutTab, 0, 0 }
     };
 
     TFirmwareResult Result = FirmwareBoot;
@@ -1582,11 +1762,21 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
             // go on turning pages.
             s_Tab = (TPageTab) (nAnswer - PageAnswerTab);
             s_bFocusTabs = true;
+            if (s_Tab == PageTabJournal)
+            {
+                // Read when the page is turned to, so it is as new as the
+                // moment it is looked at; not at every layout.
+                LoadJournalText ();
+            }
             continue;
         }
 
         switch (nAnswer)
         {
+        case AnswerNewResolution:
+            RunNewResolution (pOutput, &Shadow, pTheme);
+            break;
+
         case AnswerClockHelp:
             Tell (pOutput, &Shadow, pTheme, StrClockGroup, StrClockHelp);
             break;

@@ -211,7 +211,7 @@ void VideoScreenEnumerate (const TVideoScreenSize *pSizes, unsigned nSizes,
                             nModes, (unsigned) (nMaxBufferBytes / 1024), Names);
 }
 
-unsigned VideoScreenSizes (const u32 *pStandardIds, const u32 *pExtraIds,
+unsigned VideoScreenSizes (const u32 *pStandardIds, const u32 *pExtraIds, u32 nFirstCustomId,
                            TVideoScreenSize *pOut,
                            unsigned *pWantW, unsigned *pWantH)
 {
@@ -225,21 +225,25 @@ unsigned VideoScreenSizes (const u32 *pStandardIds, const u32 *pExtraIds,
         nDisplayW = nDisplayH = 0;
     }
 
-    *pWantW = 640;
-    *pWantH = 480;
-    unsigned nPrefW = 0, nPrefH = 0;
-    const char *pValue = PrefsFindString ("screen");
-    int w, h;
-    if (pValue != 0 && sscanf (pValue, "%*[^/]/%d/%d", &w, &h) == 2 && w >= 0 && h >= 0)
-    {
-        nPrefW = w > 0 ? (unsigned) w : VideoScreenOutputWidth ();
-        nPrefH = h > 0 ? (unsigned) h : VideoScreenOutputHeight ();
-        *pWantW = nPrefW;
-        *pWantH = nPrefH;
-    }
+    const char *pScreen = PrefsFindString ("screen");
+    const TVideoSize Output = {VideoScreenOutputWidth (), VideoScreenOutputHeight ()};
+    const TVideoSize Start = VideoStartSize (pScreen, Output);
+    *pWantW = Start.nWidth;
+    *pWantH = Start.nHeight;
 
-    return VideoScreenSizeList (pStandardIds, pExtraIds, nDisplayW, nDisplayH,
-                                nPrefW, nPrefH, pOut);
+    TVideoScreenConfig Config;
+    VideoPrefsRead (&Config);
+    const unsigned nCount = VideoScreenSizeList (pStandardIds, pExtraIds, nDisplayW, nDisplayH,
+                                                Start.nWidth, Start.nHeight, pOut,
+                                                &Config, nFirstCustomId);
+    unsigned nEnabled = 0;
+    for (unsigned i = 0; i < nCount; i++)
+    {
+        const TVideoSize Size = {pOut[i].nWidth, pOut[i].nHeight};
+        if (!VideoModeHidden (Config, Size))
+            pOut[nEnabled++] = pOut[i];
+    }
+    return nEnabled;
 }
 
 /*

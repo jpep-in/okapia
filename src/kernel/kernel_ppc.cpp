@@ -12,6 +12,7 @@
 //
 #include "kernel_ppc.h"
 #include "okapia_input.h"
+#include "okapia_circle.h"
 #include "okapia_firmware.h"
 #include "card_circle.h"
 
@@ -107,8 +108,11 @@ TOkapiaExit CKernelPPC::Run (bool bSwitched)
     // the card's answer to "which emulator", and this image carries one — so a
     // startup volume asking for the other one is handed over to it.
     // Skipped on the pass that follows a hand-over: see CKernel::Run.
+    FirmwareSetLogFlush (BoardLogFlush);
     const TFirmwareResult Result = bSwitched ? FirmwareBoot
                                              : FirmwareRun (FirmwareEnginePowerPC);
+    // The Journal page may have changed it.
+    BoardSerialLog (SerialLogWanted ());
     switch (Result)
     {
     case FirmwareHalt:

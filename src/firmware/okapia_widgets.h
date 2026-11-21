@@ -108,6 +108,7 @@ struct TWidget
     // A list's contents.
     const TListItem    *pItems;
     unsigned            nItems;
+    unsigned            nListRowHeight; // zero uses the theme default
     unsigned            nTop;           // first row shown
     int                 nChoice;        // item picked, or -1
     const TListColumn  *pColumns;       // 0 for a plain list

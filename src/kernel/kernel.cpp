@@ -7,6 +7,7 @@
 #include "kernel.h"
 #include "okapia_firmware.h"
 #include "okapia_input.h"
+#include "okapia_circle.h"
 #include <circle_glue.h>
 #include <circle/memory.h>
 #include <stdio.h>
@@ -173,6 +174,10 @@ void CKernel::LoadPreferences (void)
                     PrefsFindBool ("fpu") ? "yes" : "no",
                     PrefsFindBool ("nosound") ? "off" : "on",
                     (int) PrefsFindInt32 ("frameskip"));
+
+    // As soon as the card has said: what came before (the banner, the card)
+    // went out on the port, and a failure before this point is heard.
+    BoardSerialLog (SerialLogWanted ());
 }
 
 /*
@@ -471,9 +476,12 @@ TOkapiaExit CKernel::Run (bool bSwitched)
         // window is the one that answered, and the firmware is shared, so it
         // still holds that answer. Cleared straight away, so a restart from
         // Mac OS opens the window as it always did.
+        FirmwareSetLogFlush (BoardLogFlush);
         const TFirmwareResult Result = bSwitched ? FirmwareBoot
                                                  : FirmwareRun (FirmwareEngine68k);
         bSwitched = false;
+        // The Journal page may have changed it.
+        BoardSerialLog (SerialLogWanted ());
 
         switch (Result)
         {

@@ -1,8 +1,8 @@
 # Boot menu
 
 > The Okapia firmware: a configuration utility in a plausible Apple style that opens before any emulator
-> code runs — the Open Firmware a 68k Macintosh never had. One window with four tabs: System, Settings,
-> Network, Information. Main files: `src/firmware/` (pure: no Circle type), `src/firmware/circle/okapia_firmware.cpp` (preferences and HFS side), `okapia_input.cpp` (USB
+> code runs — the Open Firmware a 68k Macintosh never had. One window with six tabs: System, Settings,
+> Network, Information, Display, Logs. Main files: `src/firmware/` (pure: no Circle type), `src/firmware/circle/okapia_firmware.cpp` (preferences and HFS side), `okapia_input.cpp` (USB
 > bridge), `okapia_output.cpp` (frame buffer claim), `assets/strings.tsv`, `assets/fonts/`, `assets/icons/`.
 
 ## Using it
@@ -13,9 +13,9 @@ configuration is missing or no volume on the card is bootable. Any other combina
 the Macintosh — except **Command-Option-P-R**, which forgets the parameter RAM, as a real Macintosh did in
 its ROM before ADB was alive.
 
-**One window, four tabs**, with the tab control Mac OS 8's Appearance Manager introduced: **System** (the
-volumes), **Settings**, **Network** and **Information**. The footer is the window's and the same on every page: forget
-the PRAM, shut down, **Show this menu at startup** (`bootmenu`, beside Start because it is about starting), and **Start**, which reads **Save and restart** with a note beside it when a change made on any page needs Okapia to
+**One window, six tabs**, with the tab control Mac OS 8's Appearance Manager introduced: **System** (the
+volumes), **Settings**, **Network**, **Information**, **Display** and **Logs**. The footer is the window's and the same on every page: forget
+the PRAM, shut down, **Show this menu at startup** (`bootmenu`, beside Start because it is about starting; unticked, a grey line under it says *Press Alt during startup to show this menu*, so the way back is never lost), and **Start**, which reads **Save and restart** with a note beside it when a change made on any page needs Okapia to
 restart. What the pages change is written to the card when the Macintosh starts or the board shuts down — as a
 control panel keeps what was set in it; there is no Cancel.
 
@@ -58,8 +58,18 @@ the Macintosh's, and Okapia keeps what it sets. Details:
 [Clock and PRAM](clock-and-pram.md#using-it).
 
 **Information**: ROM and Macintosh model chosen (and whether the model came from the System or the
-preferences), card, startup volume, build date, board, the display mode the firmware actually granted, and
+preferences), card, startup volume, build version (`YYMMDD-sha`, [Build](../contributing/build.md#version)), board, the display mode the firmware actually granted, and
 the components and licences Okapia is made of.
+
+**Logs**: the end of `okapia.log`, the log on the card, in a list that opens on the newest line and scrolls; **Previous
+session**, a tick box under the list, shows `okapia-previous.log` instead. Above the list, a group *Serial telemetry* with two tick boxes: **Serial output**
+(`serial`) sends the log's lines to the serial port as well as to the card, and **Performance counters** (`perfreport`)
+prints the periodic counters ([Testing](../contributing/testing-and-debugging.md#logs)). Both are off on a board: the
+port is polled and each character stops the Macintosh for 87 µs. The card has every line whatever they say, so the counters
+alone, with the serial shut, cost the log some space and the Macintosh nothing. Under QEMU the port is on whatever they say
+(`SerialLogWanted()`, `PerfReportWanted()`): a test arrangement the page does not mention. The page keeps the last 64 KB and 1024 lines of the file, the page
+is read when it is turned to (after the board drained its ring onto the card), and a long log is shown by its end.
+Neither box needs a restart: both are read at every start of the Macintosh.
 
 **Shut down** and **Forget the parameter RAM** go through a confirmation alert. The shut down alert also offers
 **Restart**, between Cancel and Shut down (`TConfirm::pOther`): Okapia starts again and the menu comes back, with what
@@ -101,6 +111,15 @@ The network passes the first three and not the last: a Macintosh starts without 
 alone — a Wi-Fi password is the setting most likely to be wrong, it is found wrong only on the board, and correcting
 it otherwise means taking the card out. Until an extension lets the Mac choose its network itself, nothing in the
 guest can.
+
+The Logs page passes all four: reading the log meant taking the card out and editing it on another computer, and
+a board that will not start is the one whose log is wanted. Its two switches are there because the serial port is
+the one cost the log has, and a Pi with no cable attached was paying it at every boot. It earns no place for the log's
+*content*: the page shows it and changes none of it.
+
+The Display page controls which modes the guest drivers expose and what they open at the next Macintosh start.
+The page also compares the output frame buffer and EDID and reports HDMI directives found on the card. See
+[Display](display.md#using-it).
 
 ### The window and its pages
 
@@ -233,6 +252,8 @@ levels — note, caution, stop — because they are a promise about consequences
       folded back into it; "Show this menu at startup" moved to the footer, beside Start; the tabs behind a lighter grey
       (`ColorPale`, `#EEEEEE`) (2026-11-12)
 - [x] JIT and QuickDraw acceleration tick boxes beside the language, "(68K only)" (2026-11-15)
+- [x] Logs page: the log on the card in a list, the previous session, serial output and counters (2026-11-18)
+- [ ] Logs page tried under QEMU and on the Pi 4; the serial gate measured on hardware
 - [ ] Tabs and the Network page tried on the Pi 4 and under QEMU
 - [ ] **Open the menu whenever the Macintosh cannot start**, with the reason on screen, instead of halting. Today
       the menu opens by itself only for a missing configuration or no bootable volume; any other failure of

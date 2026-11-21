@@ -6,6 +6,7 @@
  */
 
 #include "video_sizes_circle.h"
+#include <stdio.h>
 
 const unsigned VideoScreenStandard[VIDEO_SCREEN_STANDARD][2] =
 {
@@ -37,10 +38,11 @@ static bool Listed (const TVideoScreenSize *pList, unsigned nCount,
     return false;
 }
 
-unsigned VideoScreenSizeList (const u32 *pStandardIds, const u32 *pExtraIds,
+unsigned VideoScreenSizeList (const uint32_t *pStandardIds, const uint32_t *pExtraIds,
                               unsigned nDisplayW, unsigned nDisplayH,
                               unsigned nWantW, unsigned nWantH,
-                              TVideoScreenSize *pOut)
+                              TVideoScreenSize *pOut,
+                              const TVideoScreenConfig *pConfig, uint32_t nFirstCustomId)
 {
     unsigned nCount = 0;
     for (unsigned i = 0; i < VIDEO_SCREEN_STANDARD; i++)
@@ -69,5 +71,96 @@ unsigned VideoScreenSizeList (const u32 *pStandardIds, const u32 *pExtraIds,
         pOut[nCount].nId     = pExtraIds[nExtras++];
         nCount++;
     }
+    if (pConfig != nullptr)
+    {
+        unsigned nLegacy = nCount;
+        for (unsigned i = 0; i < VIDEO_SCREEN_CUSTOM; i++)
+        {
+            const TVideoSize Size = pConfig->Custom[i];
+            if (!VideoCustomSizeValid (Size))
+                continue;
+            unsigned nAt = 0;
+            while (nAt < nCount && !VideoSizeEqual (Size, {pOut[nAt].nWidth, pOut[nAt].nHeight}))
+                nAt++;
+            if (nAt < VIDEO_SCREEN_STANDARD)
+                continue;
+            if (nAt < nCount)
+            {
+                if (nAt >= nLegacy)
+                    continue;
+                for (unsigned j = nAt + 1; j < nCount; j++)
+                    pOut[j - 1] = pOut[j];
+                nCount--;
+                nLegacy--;
+            }
+            pOut[nCount++] = {Size.nWidth, Size.nHeight, nFirstCustomId + i};
+        }
+    }
     return nCount;
+}
+
+bool VideoSizeEqual (TVideoSize A, TVideoSize B)
+{
+    return A.nWidth == B.nWidth && A.nHeight == B.nHeight;
+}
+
+bool VideoCustomSizeValid (TVideoSize Size)
+{
+    // Whole bytes at every packed depth, and within Circle's output limits.
+    return Size.nWidth >= 320 && Size.nWidth <= 4096 && Size.nWidth % 8 == 0
+        && Size.nHeight >= 200 && Size.nHeight <= 2160;
+}
+
+bool VideoScreenFits (TVideoSize Size, TVideoSize Output)
+{
+    return Size.nWidth != 0 && Size.nHeight != 0
+        && Size.nWidth <= Output.nWidth && Size.nHeight <= Output.nHeight
+        && (uint64_t) Size.nWidth * Size.nHeight <= VIDEO_SCREEN_BUFFER;
+}
+
+bool VideoModeHidden (const TVideoScreenConfig &Config, TVideoSize Size)
+{
+    for (const TVideoSize &Hidden : Config.Hidden)
+        if (VideoSizeEqual (Hidden, Size))
+            return true;
+    return false;
+}
+
+bool VideoModeSetHidden (TVideoScreenConfig *pConfig, TVideoSize Size, bool bHidden)
+{
+    if (Size.nWidth == 0 || Size.nHeight == 0 || VideoSizeEqual (Size, {640, 480}))
+        return false;
+
+    TVideoSize *pFree = nullptr;
+    for (TVideoSize &Hidden : pConfig->Hidden)
+    {
+        if (VideoSizeEqual (Hidden, Size))
+        {
+            if (!bHidden)
+                Hidden = {};
+            return true;
+        }
+        if (pFree == nullptr && Hidden.nWidth == 0)
+            pFree = &Hidden;
+    }
+    if (!bHidden)
+        return true;
+    if (pFree == nullptr)
+        return false;
+    *pFree = Size;
+    return true;
+}
+
+unsigned VideoScreenBufferBytes (TVideoSize Output)
+{
+    const uint64_t nBytes = (uint64_t) Output.nWidth * Output.nHeight * 4;
+    return nBytes > VIDEO_SCREEN_BUFFER ? VIDEO_SCREEN_BUFFER : (unsigned) nBytes;
+}
+
+TVideoSize VideoStartSize (const char *pScreen, TVideoSize Output)
+{
+    int w, h;
+    if (pScreen != nullptr && sscanf (pScreen, "%*[^/]/%d/%d", &w, &h) == 2 && w >= 0 && h >= 0)
+        return {w == 0 ? Output.nWidth : (unsigned) w, h == 0 ? Output.nHeight : (unsigned) h};
+    return {640, 480};
 }

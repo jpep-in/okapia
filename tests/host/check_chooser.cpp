@@ -640,7 +640,7 @@ int main (void)
         Expect (nSeen == 3, "PRAM and shut down, each its own");
         Expect (nTabs >= 0 && pW[nTabs].nItems == PageTabCount
                 && pW[nTabs].nChoice == PageTabSystem,
-                "the strip names four pages, this one in front");
+                "the strip lists each page, this one in front");
 
         // Turning a page is a click on its tab, and the answer names it.
         Open ();
@@ -668,7 +668,7 @@ int main (void)
         Open ();
         const TScreenReply R = Send (Key (OkKeyTab, ModControl | ModShift));
         Expect (R.Result == ScreenActivated && R.nIndex == nTabs
-                && pW[nTabs].nChoice == PageTabInformation,
+                && pW[nTabs].nChoice == PageTabCount - 1,
                 "Control-Shift-Tab goes back, round to the last page");
     }
 

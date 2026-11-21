@@ -30,7 +30,7 @@ FIRMWARE_OBJS = $(addprefix obj/,$(notdir $(FIRMWARE_SRCS:.cpp=.o)))
 # uses: that is the whole point of the specimen, which has to prove the firmware
 # runs with no emulator behind it and not merely a copy of the firmware.
 OBJS = obj/specimen_main.o obj/specimen_kernel.o obj/okapia_input.o obj/hal_circle.o \
-       $(FIRMWARE_OBJS) \
+       $(FIRMWARE_OBJS) obj/video_sizes_circle.o \
        obj/okapia_font_data.o obj/okapia_icons_data.o obj/okapia_strings_data.o
 
 include $(CIRCLEHOME)/Rules.mk

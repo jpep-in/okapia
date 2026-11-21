@@ -20,6 +20,7 @@ void WidgetClear (TWidget *pWidget)
     pWidget->nGroup    = 0;
     pWidget->pItems    = 0;
     pWidget->nItems    = 0;
+    pWidget->nListRowHeight = 0;
     pWidget->nTop      = 0;
     pWidget->nChoice   = -1;
     pWidget->pEdit     = 0;
@@ -114,7 +115,9 @@ static TRect ListInner (const TWidget *pWidget)
 // folder icon, and a menu carries words.
 static unsigned RowHeight (const TWidget *pWidget, const TTheme *pTheme)
 {
-    return pWidget->Type == WidgetMenu ? pTheme->M.nMenuRow : pTheme->M.nRowHeight;
+    if (pWidget->Type == WidgetMenu)
+        return pTheme->M.nMenuRow;
+    return pWidget->nListRowHeight != 0 ? pWidget->nListRowHeight : pTheme->M.nRowHeight;
 }
 
 // A column is as wide as its heading or its mark, whichever is the broader, with

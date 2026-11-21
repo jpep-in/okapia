@@ -8,9 +8,14 @@
 
 ## Using it
 
-- **The output mode** is the monitor's preferred mode, which the Pi firmware reads from its EDID. The log names
-  the monitor and warns when the mode differs: `Display 2560x1440, 32 bpp … Monitor PHL PHL 246B1, preferred mode
-  2560x1440`.
+- **The output frame buffer** comes from the Pi firmware, which normally chooses the display mode from the
+  monitor's EDID. `okapia_output.cpp` logs the frame buffer size and the EDID's preferred size. If they differ,
+  check the HDMI signal in the monitor's input information and look for active `hdmi_group`, `hdmi_mode`,
+  `hdmi_cvt`, `hdmi_timings` or `framebuffer_width` / `framebuffer_height` overrides on the card.
+- **For a 1920×1200 monitor on a Pi 4**, try the automatic mode with the overrides commented out. If the Pi
+  still chooses the wrong HDMI timing, `hdmi_group=2` and `hdmi_mode=68` select the DMT 1920×1200 mode at
+  60 Hz with reduced blanking. Keep `disable_overscan=1` and verify the timing on the monitor.
+  [Raspberry Pi HDMI mode table](https://www.raspberrypi.com/documentation/computers/legacy_config_txt.html#hdmi_mode)
 - **A monitor the firmware drives at the wrong mode** can be told in `config.txt`. Seen on a Philips 246B1 whose
   EDID prefers 2560×1440 and which the firmware drove at CEA 1080p: `hdmi_group=2`, `hdmi_mode=87`,
   `hdmi_cvt=2560 1440 60 3 0 0 1`, `max_framebuffer_width=2560`, `max_framebuffer_height=1440`. Keep
@@ -19,11 +24,20 @@
   engines offer the same sizes, those that fit the output unscaled: 512×384, 640×480, 800×600, 1024×768,
   1152×870, 1280×720, 1280×960, 1280×1024, 1600×900, 1600×1200, 1920×1080, 1920×1200, 2560×1440, plus the
   display's own size and the `screen` preference's when not listed. All six depths up to what 16 MB holds.
+- **Display in the boot menu** shows the output frame buffer, the monitor's preferred EDID mode, and whether the
+  card's top-level `config.txt` contains HDMI mode directives. Its **Monitors** column controls which sizes the
+  Mac is offered. Its **Startup** column sets the initial size for the next Macintosh start. Sizes which exceed
+  the output stay listed in the boot menu so their visibility preference can still be edited. 640×480 remains
+  available for recovery when it fits.
+- **Custom Mac sizes** are added with width and height on the Display page. Width is a multiple of eight so packed
+  indexed modes have whole pixels and bytes at the end of each row. The **New resolution…** row opens a dialog to enter and validate the size. The page limits new entries to six, and shows
+  the compositor's integer scale beside each available size. The HDMI diagnostics are read-only.
 - **Starting resolution**: `screen win/<width>/<height>` (upstream's spelling; `0` = the display's). On System 7.1,
   whose Monitors panel shows no resolution list, this is the way to pick one.
 - **Scaling**: the Mac's screen is scaled by the largest integer that fits and centred — 1280×720 fills a 2560×1440
   monitor at ×2. An integer factor keeps the picture sharp; a slow pointer then moves in steps of that factor.
-- **Refresh**: `frameskip 0` (dynamic, the default) holds the compositor to about an eighth of wall time.
+  A 1920×1200 output fills at ×1 with a 1920×1200 Mac screen, or at ×2 with `screen win/960/600` for larger text.
+- **Refresh** is in the Mac display group. `frameskip 0` (dynamic, the default) holds the compositor to about an eighth of wall time.
 
 ## How it works
 
@@ -40,10 +54,10 @@ nothing else. **A display fix goes in the shared file unless it is about one cor
 ### The output
 
 `FwOutputClaim()` claims a `CBcmFrameBuffer (0, 0, 32)` once for the life of the board; the firmware draws the boot
-menu on it and the compositor borrows it. It is never renegotiated: a mode change in Monitors touches only the
-Mac's buffer and the compositor's plan — no HDMI renegotiation, no flicker. Circle never reads the EDID; the Pi
-firmware does, and Okapia asks it for the block (`PROPTAG_GET_EDID_BLOCK`) only to log the maker, name and
-preferred timing.
+menu on it and the compositor borrows it. A mode change in Monitors updates the Mac's buffer and the
+compositor's plan. Circle queries the Pi firmware for the default frame buffer size
+(`PROPTAG_GET_DISPLAY_DIMENSIONS` in `bcmframebuffer.cpp`). Okapia queries EDID separately
+(`PROPTAG_GET_EDID_BLOCK`) to log the maker, name and preferred dimensions.
 
 **Pixel order** is asked of the firmware (property tag `0x00040006`): QEMU gives red in the low byte, a real Pi blue.
 The palette masks, the expansion map's shifts and the direct-mode converters follow it — a fix written for QEMU drew
@@ -57,6 +71,13 @@ Basilisk numbers `0x80…0x8C` then `0x8D`, `0x8E`; SheepShaver keeps upstream's
 numbers the rest past `APPLE_CUSTOM` (`patches/macemu/0011`). **A fixed size keeps its identifier whatever monitor
 is plugged in**, because Mac OS 7.5 and later store the Monitors choice by identifier in the Preferences folder, not
 in PRAM.
+
+Custom slots are added after the built-in list. Each slot has a reserved ID in each driver, so hiding a size,
+changing the startup choice, or moving the card to a different monitor cannot reassign an ID belonging to a custom
+slot. When a custom size matches a legacy extra it takes that size's place in the list under its own ID. The
+visibility filter works by dimensions and is shared by both drivers (`video_shared_circle.cpp`). At the first
+Macintosh start Basilisk reserves space for the active output up to the existing 16 MB ceiling per buffer, so a
+size enabled on a subsequent guest restart fits the same allocations.
 
 `VideoScreenEnumerate()` keeps a size only if it fits the output unscaled, and a depth only if its frame fits the
 16 MB buffer (2560×1440 in millions of colours takes 14.1 MB). Basilisk allocates that buffer on the heap;
@@ -425,8 +446,9 @@ For QEMU durability use
 - **QEMU accepts modes a Pi refuses** (`raspi3b` takes 8 bpp with a palette that a Pi 5 refuses) and has no EDID;
   its "monitor" is `-global bcm2835-fb.xres=/yres=`. It validates the mailbox path, not the negotiation.
 - **Pi 5**: the resolution cannot be set by the application nor by `config.txt`. Print what the firmware returned.
-- **Sizes that fill the display at ×2 or ×3** were once offered and came out as 912×492 or 853×480 — nobody's
-  resolution, and 912×492 crashed a Pi through an unaligned write. Only standard sizes and the display's own.
+- **Sizes that fill the display at ×2 or ×3** were once added automatically, including 912×492 and 853×480.
+  One crashed a Pi through an unaligned write. The custom editor checks width alignment and the compositor's
+  output writes remain alignment-safe.
 - **A resolution Mac OS stores by identifier survives a zap of the PRAM**: with an identifier that later meant
   another size, System 7.6 crashed at every boot. Identifiers are now fixed per size.
 

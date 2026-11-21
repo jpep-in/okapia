@@ -19,11 +19,13 @@
 #include "okapia_confirm.h"
 #include "okapia_datetime.h"
 #include "okapia_info.h"
+#include "okapia_journal.h"
 #include "okapia_network.h"
 #include "okapia_newvolume.h"
 #include "okapia_page.h"
 #include "okapia_screen.h"
 #include "okapia_settings.h"
+#include "okapia_display.h"
 #include "okapia_strings.h"
 #include "okapia_clock.h"
 #include "okapia_icons.h"
@@ -199,6 +201,27 @@ static void Geometry (unsigned nScale)
         }
         Expect (nNote >= 0 && GfxTextWidth (T.pBodyFont, pW[nNote].pText) <= pW[nNote].Rect.nWidth,
                 "settings, restart owed: the note is read whole beside the tick box");
+        // The way back to the menu, said under the tick box while it is
+        // unticked: whole, and clear of the restart note's words (the note's
+        // rectangle runs to the box, so it is its text that is measured).
+        int nHint = -1;
+        for (unsigned i = 0; i < n; i++)
+        {
+            if (pW[i].Type == WidgetLabel && pW[i].pText == Str (StrBootMenuHint)) nHint = (int) i;
+        }
+        Expect (nHint >= 0 && GfxTextWidth (T.pBodyFont, pW[nHint].pText) <= pW[nHint].Rect.nWidth,
+                "the hint under the tick box is read whole");
+        if (nHint >= 0 && nNote >= 0)
+        {
+            const TRect &H = pW[nHint].Rect;
+            const TRect &N = pW[nNote].Rect;
+            const int nNoteEnd = N.nX + (int) GfxTextWidth (T.pBodyFont, pW[nNote].pText);
+            const bool bApart = nNoteEnd <= H.nX || N.nY + (int) N.nHeight <= H.nY
+                                || H.nY + (int) H.nHeight <= N.nY;
+            if (!bApart)
+                printf ("    hint at %d, note ends at %d\n", H.nX, nNoteEnd);
+            Expect (bApart, "the hint clears the restart note's words");
+        }
     }
     PageChromeSet (false, false, true);
 
@@ -270,6 +293,36 @@ static void Geometry (unsigned nScale)
         }
     }
     Expect (nLogos == 1 && nUnder == 0, "information: the logo touches no text");
+
+    // The Journal, at its fullest: a log longer than the list holds.
+    {
+        static TJournal Journal;
+        JournalClear (&Journal);
+        for (unsigned i = 0; i < 40; i++)
+        {
+            char Line[96];
+            snprintf (Line, sizeof Line, "Sep 15 02:36:%02u.%02u okapia-video: line %u of the sample\n",
+                      i % 60, i, i);
+            JournalAppend (&Journal, Line, (unsigned) strlen (Line));
+        }
+        {
+            JournalDraw (&s_Surface, &Journal);
+            n = JournalWidgets (&pW);
+            CheckOverlap (&T, pW, n, "journal: nothing overlaps");
+            CheckFrame (&T, JournalDialog (), pW, n, "journal: nothing overflows");
+            Expect (!JournalOverflowed (), "journal: the page fits under its tabs");
+            unsigned nFlat = 0;
+            int nList = -1;
+            for (unsigned i = 0; i < n; i++)
+            {
+                if (pW[i].Rect.nHeight == 0) nFlat++;
+                if (pW[i].Type == WidgetList) nList = (int) i;
+            }
+            Expect (nFlat == 0, "journal: every row has its room");
+            Expect (nList >= 0 && WidgetListVisible (&pW[nList], &T) >= 3,
+                    "journal: the list shows at least three lines");
+        }
+    }
 
     TConfirm Confirm;
     ConfirmSample (&Confirm);
@@ -449,11 +502,61 @@ int main (void)
         }
         Expect (nBox >= 0 && PageChromeAnswer (nBox) == PageAnswerBootMenu,
                 "the boot menu tick box is the footer's, and answers as such");
-        Expect (nStart >= 0 && pC[nBox].Rect.nX + (int) pC[nBox].Rect.nWidth <= pC[nStart].Rect.nX
-                && pC[nBox].Rect.nY >= pC[nStart].Rect.nY
+        Expect (nStart >= 0 && pC[nBox].Rect.nX + (int) pC[nBox].Rect.nWidth <= pC[nStart].Rect.nX,
+                "to the left of Start");
+        // Unticked, the way back to the menu is said under the box, in grey,
+        // inside the footer: it ends where the box ends and touches no button.
+        for (unsigned nRestart = 0; nRestart < 1; nRestart++)
+        {
+            PageChromeSet (nRestart != 0, false, true);
+            PageChromeBootMenu (false, false);
+            SettingsDraw (&s_Surface, &s_Settings);
+            const unsigned nNow = SettingsWidgets (&pC);
+            int nHint = -1, nCheck = -1;
+            for (unsigned i = 0; i < nNow; i++)
+            {
+                if (pC[i].Type == WidgetLabel && pC[i].pText == Str (StrBootMenuHint)) nHint = (int) i;
+                if (pC[i].Type == WidgetCheckbox && pC[i].pText == Str (StrBootMenu)) nCheck = (int) i;
+            }
+            Expect (nHint >= 0 && nCheck >= 0 && (pC[nHint].nState & StateDisabled) != 0,
+                    "unticked, a grey line says how to get the menu back");
+            if (nHint < 0 || nCheck < 0) continue;
+            const TRect &H = pC[nHint].Rect;
+            const TRect &B = pC[nCheck].Rect;
+            Expect (H.nY >= B.nY + (int) B.nHeight && H.nX + (int) H.nWidth == B.nX + (int) B.nWidth
+                    && H.nWidth > 0,
+                    "it sits under the box, ends where the box ends, and has the room it needs");
+            unsigned nTouch = 0;
+            for (unsigned i = 0; i < nNow; i++)
+            {
+                if ((int) i == nHint) continue;
+                const bool bRestartNote = pC[i].Type == WidgetLabel
+                                          && pC[i].pText == Str (StrRestartRequired);
+                if (pC[i].Type != WidgetButton && pC[i].Type != WidgetIconButton
+                    && pC[i].Type != WidgetCheckbox && !bRestartNote)
+                    continue;
+                const TRect &R = pC[i].Rect;
+                if (H.nX < R.nX + (int) R.nWidth && R.nX < H.nX + (int) H.nWidth
+                    && H.nY < R.nY + (int) R.nHeight && R.nY < H.nY + (int) H.nHeight)
+                {
+                    printf ("    hint (%d,%d %ux%u) touches %s (%d,%d %ux%u)\n", H.nX, H.nY, H.nWidth,
+                            H.nHeight, pC[i].pText ? pC[i].pText : "(button)", R.nX, R.nY, R.nWidth,
+                            R.nHeight);
+                    nTouch++;
+                }
+            }
+            Expect (nTouch == 0, nRestart ? "and clears the restart note"
+                                          : "and clears the buttons");
+        }
+        PageChromeSet (false, false, true);
+        PageChromeBootMenu (true, false);
+        SettingsDraw (&s_Surface, &s_Settings);
+        SettingsWidgets (&pC);
+        Expect (nBox >= 0 && pC[nBox].Rect.nY >= pC[nStart].Rect.nY
                 && pC[nBox].Rect.nY + (int) pC[nBox].Rect.nHeight
                    <= pC[nStart].Rect.nY + (int) pC[nStart].Rect.nHeight,
-                "on Start's line, to its left");
+                "ticked, it is back on Start's line and the grey line is gone");
+        Expect (Find (WidgetLabel, Str (StrBootMenuHint)) < 0, "ticked, nothing is said");
         PageChromeBootMenu (true, true);
         SettingsDraw (&s_Surface, &s_Settings);
         SettingsWidgets (&pC);
@@ -491,23 +594,11 @@ int main (void)
     SettingsDraw (&s_Surface, &s_Settings);
     Expect (Find (WidgetButton, Str (StrStart)) >= 0, "and the button takes its word back");
 
-    // The refresh rate is a frame count in the file and a rate on the screen.
-    // Dynamic is zero, and it is the first entry because it is the default.
-    Choose (Popup (1), 0);
-    SettingsOperate (&s_Settings, Popup (1));
-    Expect (s_Settings.V.nFrameSkip == 0, "Dynamic is zero");
-    Choose (Popup (1), 1);
-    SettingsOperate (&s_Settings, Popup (1));
-    Expect (s_Settings.V.nFrameSkip == 1, "60 Hz is one VBL per frame");
-    Choose (Popup (1), 6);
-    SettingsOperate (&s_Settings, Popup (1));
-    Expect (s_Settings.V.nFrameSkip == 12, "5 Hz is twelve");
-
     // Off is first, so a value that cannot be read leaves the machine silent —
     // a device claimed and not working is what froze the guest once already.
     Expect (SoundOff == 0, "sound off is the first value");
-    Choose (Popup (3), SoundHDMI);
-    SettingsOperate (&s_Settings, Popup (3));
+    Choose (Popup (2), SoundHDMI);
+    SettingsOperate (&s_Settings, Popup (2));
     Expect (s_Settings.V.nSound == SoundHDMI, "the HDMI output can be chosen");
 
     // A board without USB audio shows the entry and greys it. An option that
@@ -517,7 +608,7 @@ int main (void)
     {
         TWidget *pW = 0;
         SettingsWidgets (&pW);
-        const TWidget &Menu = pW[Popup (3)];
+        const TWidget &Menu = pW[Popup (2)];
         Expect ((Menu.pItems[SoundUSB].nState & StateDisabled) != 0,
                 "without USB, the entry is there and disabled");
         Expect ((Menu.pItems[SoundJack].nState & StateDisabled) == 0,
@@ -587,8 +678,8 @@ int main (void)
     {
         const TLanguage Was = StringsLanguage ();
         const unsigned nOther = (Was + 1) % LanguageCount;
-        Choose (Popup (4), (int) nOther);
-        Expect (SettingsOperate (&s_Settings, Popup (4)) == SettingsRelayout,
+        Choose (Popup (3), (int) nOther);
+        Expect (SettingsOperate (&s_Settings, Popup (3)) == SettingsRelayout,
                 "changing the language asks for a new layout");
         Expect (StringsLanguage () == (TLanguage) nOther, "and the language has already changed");
         StringsSetLanguage (Was);
@@ -896,6 +987,93 @@ int main (void)
         Expect ((pW[nList].nState & StateDisabled) != 0, "and the list with it");
     }
 
+    printf ("\ndisplay modes\n");
+    {
+        TDisplaySettings Display = {};
+        Display.Output = {1920, 1200};
+        Display.Preferred = {1920, 1200};
+        Display.Start = {640, 480};
+        DisplayDraw (&s_Surface, &Display);
+        TWidget *pW;
+        const unsigned n = DisplayWidgets (&pW);
+        int nList = -1, nRefresh = -1;
+        for (unsigned i = 0; i < n; i++)
+        {
+            if (pW[i].Type == WidgetList)
+                nList = (int) i;
+            if (pW[i].Type == WidgetPopup)
+                nRefresh = (int) i;
+        }
+
+        Expect (nList >= 0 && nRefresh >= 0, "the mode list and refresh menu are on the display page");
+        if (nList >= 0 && nRefresh >= 0)
+        {
+            TWidget DefaultRows = pW[nList];
+            DefaultRows.nListRowHeight = 0;
+            Expect (WidgetListVisible (&pW[nList], &s_Theme) > WidgetListVisible (&DefaultRows, &s_Theme),
+                    "compact resolution rows show more entries");
+            const int nFirstY = pW[nList].Rect.nY + 1 + s_Theme.M.nLineHeight + s_Theme.M.nStroke;
+            Expect (WidgetListItemAt (&pW[nList], &s_Theme, pW[nList].Rect.nX + 2,
+                                     nFirstY + (int) pW[nList].nListRowHeight) == (int) pW[nList].nTop + 1,
+                    "clicks follow the compact row height");
+            const int Picks[] = {0, 1, 6};
+            const int Skips[] = {0, 1, 12};
+            for (unsigned i = 0; i < 3; i++)
+            {
+                pW[nRefresh].nChoice = Picks[i];
+                DisplayOperate (&Display, nRefresh, 0);
+                Expect (Display.bRefreshChanged && Display.nFrameSkip == Skips[i],
+                        "the display popup stores the refresh period in VBLs");
+            }
+            pW[nList].nChoice = 0;
+            Expect (pW[nList].pItems[0].bAction && DisplayOperate (&Display, nList, 0),
+                    "the first row opens the new resolution dialog");
+
+            NewResolutionDraw (&s_Surface, &Display);
+            TWidget *pNew;
+            const unsigned nNew = NewResolutionWidgets (&pNew);
+            int nField = 0, nCreate = -1, nCancel = -1;
+            for (unsigned i = 0; i < nNew; i++)
+            {
+                if (pNew[i].Type == WidgetField)
+                    StrAppend (pNew[i].pEdit, pNew[i].nEditSize, 0, nField++ == 0 ? "960" : "600");
+                if (pNew[i].Type == WidgetButton && pNew[i].pText == Str (StrCreate))
+                    nCreate = (int) i;
+                if (pNew[i].Type == WidgetButton && pNew[i].pText == Str (StrCancel))
+                    nCancel = (int) i;
+            }
+            Expect (nCreate >= 0 && nCancel >= 0 && nField == 2, "the dialog offers two fields and both actions");
+            Expect (NewResolutionOperate (&Display, nCancel) == NewResolutionCancel
+                    && Display.Modes.Custom[0].nWidth == 0, "cancel preserves the existing mode list");
+            NewResolutionSync (&Display);
+            Expect (NewResolutionOperate (&Display, nCreate) == NewResolutionCreate,
+                    "create accepts a valid resolution");
+            DisplayDraw (&s_Surface, &Display);
+            const unsigned nCustom = (unsigned) pW[nList].nChoice;
+            Expect (Display.bModesChanged && VideoSizeEqual (Display.Modes.Custom[0], {960, 600})
+                    && (pW[nList].pItems[nCustom].nCell[0] & StateChecked) != 0,
+                    "adding 960x600 checks it in Monitors");
+            DisplayOperate (&Display, nList, 2);
+            Expect (Display.bStartChanged && VideoSizeEqual (Display.Start, {960, 600}),
+                    "the new resolution can start the Mac");
+            DisplayOperate (&Display, nList, 1);
+            Expect (VideoModeHidden (Display.Modes, {960, 600})
+                    && (pW[nList].pItems[nCustom].nCell[1] & StateDisabled) != 0,
+                    "hiding it disables its startup choice");
+            Expect ((pW[nList].pItems[2].nCell[0] & (StateChecked | StateDisabled))
+                    == (StateChecked | StateDisabled), "VGA remains available for recovery");
+
+            NewResolutionDraw (&s_Surface, &Display);
+            nField = 0;
+            for (unsigned i = 0; i < nNew; i++)
+                if (pNew[i].Type == WidgetField)
+                    StrAppend (pNew[i].pEdit, pNew[i].nEditSize, 0, nField++ == 0 ? "960" : "600");
+            NewResolutionSync (&Display);
+            Expect (NewResolutionOperate (&Display, nCreate) == NewResolutionNothing
+                    && Display.Modes.Custom[1].nWidth == 0, "a duplicate consumes no custom slot");
+        }
+    }
+
     printf ("\ninformation\n");
     {
         TInfo Info;
@@ -938,6 +1116,97 @@ int main (void)
         InfoAdd (&Long, "label", Big);
         Expect (Long.nCount == 1 && strlen (Long.Lines[0].Value) == INFO_VALUE - 1,
                 "a value too long is cut, not refused");
+    }
+
+    printf ("\njournal\n");
+    {
+        static TJournal Journal;
+        JournalClear (&Journal);
+        Journal.bPrevious = false;
+        // Padding past the end of the text, a colour sequence split between two
+        // pieces, a carriage return and a control character: what a real log
+        // file hands over.
+        const char Part1[] = "first line\r\n\x1b[1mpanic: mid-";
+        const char Part2[] = "\x1b[0m\n\ttabbed\nlast line\n      ";
+        JournalAppend (&Journal, Part1, (unsigned) sizeof Part1 - 1);
+        JournalAppend (&Journal, Part2, (unsigned) sizeof Part2 - 1);
+        JournalDraw (&s_Surface, &Journal);
+        TWidget *pW = 0;
+        unsigned n = JournalWidgets (&pW);
+        int nList = -1, nSerial = -1, nCounters = -1, nPrevious = -1;
+        for (unsigned i = 0; i < n; i++)
+        {
+            if (pW[i].Type == WidgetList) nList = (int) i;
+            if (pW[i].Type == WidgetCheckbox)
+            {
+                if (pW[i].pText == Str (StrJournalSerial)) nSerial = (int) i;
+                if (pW[i].pText == Str (StrJournalCounters)) nCounters = (int) i;
+                if (pW[i].pText == Str (StrJournalPrevious)) nPrevious = (int) i;
+            }
+        }
+        Expect (nList >= 0 && nSerial >= 0 && nCounters >= 0 && nPrevious >= 0,
+                "the page has its list and its three boxes");
+        Expect (JournalLines () == 4 && pW[nList].nItems == 4,
+                "four lines: the padding, the carriage return and the colours are gone");
+        Expect (strcmp (pW[nList].pItems[1].pText, "panic: mid-") == 0,
+                "a colour sequence split between two reads leaves no trace");
+        Expect (strcmp (pW[nList].pItems[2].pText, " tabbed") == 0, "a control character is a blank");
+        Expect (pW[nList].nChoice == 3, "the list opens on the newest line");
+
+        // The switches act on the model, and the page says so.
+        Expect (JournalOperate (&Journal, nSerial) == JournalNothing
+                && Journal.bSerial && Journal.bSerialChanged && !Journal.bCountersChanged,
+                "Serial output ticks and says it changed");
+        Expect ((pW[nSerial].nState & StateChecked) != 0, "and shows it");
+        JournalOperate (&Journal, nCounters);
+        Expect (Journal.bCounters && Journal.bCountersChanged
+                && (pW[nCounters].nState & StateChecked) != 0, "so do the counters");
+        JournalOperate (&Journal, nSerial);
+        Expect (!Journal.bSerial && (pW[nSerial].nState & StateChecked) == 0,
+                "and a second press unticks it");
+        Expect (JournalOperate (&Journal, nPrevious) == JournalReload && Journal.bPrevious
+                && (pW[nPrevious].nState & StateChecked) != 0,
+                "Previous session asks for the other file's text");
+
+        // No text: one grey line that says so, and nothing to scroll.
+        JournalClear (&Journal);
+        JournalDraw (&s_Surface, &Journal);
+        n = JournalWidgets (&pW);
+        for (unsigned i = 0; i < n; i++)
+            if (pW[i].Type == WidgetList) nList = (int) i;
+        Expect (pW[nList].nItems == 1 && (pW[nList].pItems[0].nState & StateDisabled) != 0
+                && JournalLines () == 0, "an empty log says there is none");
+
+        // Past the room: the newest lines are kept, whole.
+        JournalClear (&Journal);
+        for (unsigned i = 0; i < 3000; i++)
+        {
+            char Line[48];
+            snprintf (Line, sizeof Line, "line %04u of a long session\n", i);
+            JournalAppend (&Journal, Line, (unsigned) strlen (Line));
+        }
+        JournalDraw (&s_Surface, &Journal);
+        n = JournalWidgets (&pW);
+        for (unsigned i = 0; i < n; i++)
+            if (pW[i].Type == WidgetList) nList = (int) i;
+        Expect (pW[nList].nItems == JOURNAL_LINES
+                && strcmp (pW[nList].pItems[pW[nList].nItems - 1].pText,
+                           "line 2999 of a long session") == 0,
+                "a long log shows its end");
+        Expect (pW[nList].pItems[0].pText[0] == 'l'
+                && strncmp (pW[nList].pItems[0].pText, "line ", 5) == 0,
+                "and begins on a whole line");
+        // Drawn again, as a relayout does: the same lines, nothing lost twice.
+        const unsigned nFirst = JournalLines ();
+        const char *pFirst = pW[nList].pItems[0].pText;
+        char Saved[40];
+        snprintf (Saved, sizeof Saved, "%s", pFirst);
+        JournalDraw (&s_Surface, &Journal);
+        n = JournalWidgets (&pW);
+        for (unsigned i = 0; i < n; i++)
+            if (pW[i].Type == WidgetList) nList = (int) i;
+        Expect (JournalLines () == nFirst && strcmp (pW[nList].pItems[0].pText, Saved) == 0,
+                "a second layout finds the same lines");
     }
 
     free (s_pPixels);

@@ -86,7 +86,11 @@ static const u32 STANDARD_IDS[VIDEO_SCREEN_STANDARD] =
 static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { APPLE_CUSTOM, OKAPIA_EXTRA };
 
 // The driver lists identifiers up to APPLE_ID_MAX and no further.
-static_assert ((unsigned) OKAPIA_EXTRA <= (unsigned) APPLE_ID_MAX, "an identifier the driver would not list");
+static const u32 FIRST_CUSTOM_ID = OKAPIA_EXTRA + 1;
+static_assert (FIRST_CUSTOM_ID + VIDEO_SCREEN_CUSTOM - 1 <= (unsigned) APPLE_ID_MAX,
+               "an identifier the driver would not list");
+static_assert (VIDEO_SCREEN_SIZES_MAX * VIDEO_SCREEN_DEPTHS + 1 <= VIDEO_MODES_MAX,
+               "screen modes and their sentinel must fit in VModes");
 
 static bool     s_bReady;
 static uint32   s_nGuestBase;       // the Mac address of the frame buffer
@@ -196,7 +200,7 @@ bool VideoInit (void)
 
     TVideoScreenSize Sizes[VIDEO_SCREEN_SIZES_MAX];
     unsigned nWantW, nWantH;
-    const unsigned nSizes = VideoScreenSizes (STANDARD_IDS, EXTRA_IDS, Sizes,
+    const unsigned nSizes = VideoScreenSizes (STANDARD_IDS, EXTRA_IDS, FIRST_CUSTOM_ID, Sizes,
                                               &nWantW, &nWantH);
 
     s_nModes = 0;
@@ -239,7 +243,7 @@ bool VideoInit (void)
     {
         CLogger::Get ()->Write (FROM, LogWarning,
                                 "screen asks for %ux%u, which this display cannot "
-                                "offer; starting in 640x480", nWantW, nWantH);
+                                "offer; using a fallback mode", nWantW, nWantH);
     }
 
     if (!SwitchTo (nDefault))

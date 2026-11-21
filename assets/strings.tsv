@@ -19,6 +19,39 @@ tab_system	System	Système
 tab_settings	Settings	Réglages
 tab_network	Network	Réseau
 tab_information	Information	Informations
+tab_display	Display	Écran
+tab_journal	Logs	Journal
+display_monitor_group	Monitor resolution	Résolution du moniteur
+display_mac_group	Mac display	Écran du Mac
+display_output	Pi output	Sortie du Pi
+display_monitor	Model	Modèle
+display_preferred	Preferred (EDID)	Préférée (EDID)
+display_hdmi	HDMI	HDMI
+display_unknown	Unavailable	Indisponible
+display_hdmi_directives	Mode settings on card	Réglages sur la carte
+display_hdmi_auto	No override on card	Aucun mode forcé
+display_full_screen	Full screen	Plein écran
+display_mismatch	Differs from Pi output	Diffère du Pi
+display_does_not_fit	Unavailable on this output	Indisponible sur cette sortie
+display_listed	In Monitors	Dans Moniteurs
+display_start	At startup	Au démarrage
+display_width	Width	Largeur
+display_height	Height	Hauteur
+display_add	+ New resolution…	+ Nouvelle résolution…
+display_new_title	New resolution	Nouvelle résolution
+display_size_hint	Enter the Mac resolution in pixels.	Indiquez la résolution du Mac en pixels.
+display_ready	Will appear in the Monitors control panel.	Sera proposé dans le Tableau de Bord Moniteur
+display_mode_hint	Applies at the next Mac start.	Au prochain démarrage du Mac.
+display_bad_size	Use a width divisible by 8 and a size that fits the output.	Largeur multiple de 8 et mode adapté à la sortie.
+display_duplicate	This resolution is already listed.	Cette résolution figure déjà dans la liste.
+display_full	All six custom slots are in use.	Les six emplacements personnalisés sont utilisés.
+display_hidden_full	Unhide another resolution before hiding this one.	Réactivez une résolution avant de masquer celle-ci.
+journal_previous	Previous session	Session précédente
+journal_group	Serial telemetry	Télémétrie série
+journal_serial	Serial output	Sortie série
+journal_counters	Performance counters	Compteurs de performance
+journal_hint	Each line on the serial port stops the Mac for a moment; the card keeps the log either way.	Chaque ligne sur le port série arrête un instant le Mac ; la carte garde le journal dans tous les cas.
+journal_empty	No log on the card yet.	Pas encore de journal sur la carte.
 net_connection	Connection	Connexion
 net_off	None	Aucune
 net_cable	Ethernet cable	Câble Ethernet
@@ -87,6 +120,7 @@ jit	JIT	JIT
 qd_accel	QuickDraw acceleration	Accélération QuickDraw
 only_68k	(68K only)	(68K seulement)
 boot_menu	Show this menu at startup	Afficher ce menu au démarrage
+boot_menu_hint	Press Alt during startup to show this menu	Appuyez sur Alt pendant le démarrage pour afficher ce menu
 time_zone	Time zone	Fuseau horaire
 net_time	Time from the network	Heure par le réseau
 zone_fixed	fixed, from the preferences	fixe, d’après les préférences

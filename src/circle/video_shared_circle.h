@@ -77,7 +77,7 @@ u32      VideoScreenShadowBytes (void);
 // display's own width or height. The identifiers are the engine's
 // (video_sizes_circle.h). *pWantW and *pWantH receive the size to start in,
 // 640x480 when the preference says nothing.
-unsigned VideoScreenSizes (const u32 *pStandardIds, const u32 *pExtraIds,
+unsigned VideoScreenSizes (const u32 *pStandardIds, const u32 *pExtraIds, u32 nFirstCustomId,
                            TVideoScreenSize *pOut,
                            unsigned *pWantW, unsigned *pWantH);
 

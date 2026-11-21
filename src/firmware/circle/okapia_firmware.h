@@ -34,6 +34,11 @@ enum TFirmwareEngine
 // FirmwareBoot. The screen belongs to the Mac a moment later either way.
 TFirmwareResult FirmwareRun (TFirmwareEngine Built);
 
+// The function that drains the board's log ring onto the card, which the
+// Journal page calls before it reads the file so that it shows the lines logged
+// since the last drain. Optional: the specimen has no board and passes none.
+void FirmwareSetLogFlush (void (*pFlush) (void));
+
 // Which emulator the startup volume asks for, once FirmwareRun has been. Equal
 // to what was handed in unless the card says otherwise, and then it is the
 // kernel's business — it is the only thing that can go and fetch another image.

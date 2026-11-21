@@ -36,4 +36,12 @@ CBcmFrameBuffer *FwOutputClaim (void);
 // successful FwOutputClaim().
 bool FwOutputRedLow (void);
 
+struct TFwMonitor
+{
+    unsigned nPreferredWidth, nPreferredHeight;
+    char Name[24];
+};
+
+const TFwMonitor &FwOutputMonitor (void);
+
 #endif

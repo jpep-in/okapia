@@ -56,12 +56,10 @@ struct TPageGroup
 };
 
 /*
- *  One window, four pages
+ *  One window, tabbed pages
  *
  *  The firmware's window has tabs, the control Mac OS 8's Appearance Manager
- *  brought: the startup disk, the settings, the network and what Okapia found
- *  are four pages of one window, and the strip says which is in
- *  front. What the machine does — start, shut down, forget its PRAM — is the
+ *  brought. The strip says which page is in front. What the machine does — start, shut down, forget its PRAM — is the
  *  same on every page and sits in the same footer, so it never moves under the
  *  hand when the page turns.
  */
@@ -71,6 +69,8 @@ enum TPageTab
     PageTabSettings,
     PageTabNetwork,
     PageTabInformation,
+    PageTabDisplay,
+    PageTabJournal,
     PageTabCount
 };
 

@@ -17,6 +17,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <initializer_list>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -27,6 +28,8 @@
 #include "mac_ram_circle.h"
 #include "compositor_circle.h"
 #include "video_sizes_circle.h"
+#include "sysdeps.h"
+#include "prefs.h"
 #include "rom_chime.h"
 
 // prefs_circle.cpp. Declared here rather than in a header of its own: it has
@@ -287,7 +290,7 @@ static void CheckSizes (void)
             "the own size of a display not in the list comes after, under the first free identifier");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1000, 700, L);
-    Expect (n == VIDEO_SCREEN_SIZES_MAX && L[n - 2].nId == 0x200
+    Expect (n == VIDEO_SCREEN_LEGACY_MAX && L[n - 2].nId == 0x200
             && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x201,
             "then the one the preferences ask for, under the second");
 
@@ -300,6 +303,50 @@ static void CheckSizes (void)
 
     n = VideoScreenSizeList (Ids, Extra, 1920, 1080, 0, 0, L);
     Expect (n == VIDEO_SCREEN_STANDARD, "with no preference, nothing more");
+
+    TVideoScreenConfig Config = {};
+    Config.Custom[2] = {960, 600};
+    Config.Custom[4] = {1000, 700};
+    const u32 First = 0x300;
+    for (const TVideoSize Output : {TVideoSize {1920, 1200}, TVideoSize {960, 600}})
+    {
+        n = VideoScreenSizeList (Ids, Extra, Output.nWidth, Output.nHeight, 960, 600, L,
+                                 &Config, First);
+        Expect (L[n - 2].nWidth == 960 && L[n - 2].nId == First + 2
+                && L[n - 1].nWidth == 1000 && L[n - 1].nId == First + 4,
+                "custom slots keep their IDs over a display change and a duplicate starting mode");
+    }
+    Expect (!VideoModeSetHidden (&Config, {640, 480}, true)
+            && VideoModeSetHidden (&Config, {960, 600}, true)
+            && VideoModeHidden (Config, {960, 600})
+            && VideoModeSetHidden (&Config, {960, 600}, false)
+            && !VideoModeHidden (Config, {960, 600}),
+            "hide and restore a mode by its dimensions while keeping VGA");
+    Expect (VideoCustomSizeValid ({960, 600}) && !VideoCustomSizeValid ({961, 600})
+            && !VideoScreenFits ({1920, 1200}, {1280, 720})
+            && VideoScreenBufferBytes ({3840, 2160}) == VIDEO_SCREEN_BUFFER,
+            "custom dimensions fit the output and preserve the framebuffer limit");
+
+    VideoModeSetHidden (&Config, {1280, 720}, true);
+    VideoPrefsWrite (Config);
+    FILE *pStream = tmpfile ();
+    Expect (pStream != nullptr, "open a temporary preference stream");
+    if (pStream != nullptr)
+    {
+        SavePrefsToStream (pStream);
+        rewind (pStream);
+        VideoPrefsWrite (TVideoScreenConfig {});
+        LoadPrefsFromStream (pStream);
+        fclose (pStream);
+    }
+    TVideoScreenConfig Restored;
+    VideoPrefsRead (&Restored);
+    Expect (Restored.Custom[0].nWidth == 0 && VideoSizeEqual (Restored.Custom[2], {960, 600})
+            && VideoSizeEqual (Restored.Custom[4], {1000, 700})
+            && VideoModeHidden (Restored, {1280, 720}),
+            "preference round trip preserves explicit custom slots and hidden sizes");
+    VideoPrefsWrite (TVideoScreenConfig {});
+
 }
 
 /*

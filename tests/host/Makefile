@@ -22,12 +22,12 @@ FONT_SRC = $(GEN)/okapia_font_data.cpp
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
 STR_SRC  = $(GEN)/okapia_strings_data.cpp
 STR_IDS  = $(GEN)/okapia_strings_ids.h
-LIBSRCS  = $(wildcard $(FIRMWARE)/*.cpp) $(FONT_SRC) $(ICON_SRC) $(STR_SRC)
+LIBSRCS  = $(wildcard $(FIRMWARE)/*.cpp) $(ROOT)/src/circle/video_sizes_circle.cpp $(FONT_SRC) $(ICON_SRC) $(STR_SRC)
 LIBOBJS  = $(notdir $(LIBSRCS:.cpp=.o))
 
 CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -I$(FIRMWARE) -I$(GEN) -std=c++14
 
-VPATH = $(FIRMWARE):$(GEN):.
+VPATH = $(FIRMWARE):$(ROOT)/src/circle:$(GEN):.
 
 # Two files of the platform layer build here too, and they are the two where a
 # mistake costs data rather than pixels: prefs_circle.cpp, which can silently

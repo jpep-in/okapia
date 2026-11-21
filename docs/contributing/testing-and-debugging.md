@@ -103,12 +103,18 @@ echo "screendump /tmp/x.ppm" | nc -U /tmp/okapia-monitor.sock
 ### Logs
 
 - **Serial** first, always: the kernel initialises the serial port and logger before anything else, because a failure
-  before the log exists is indistinguishable from a hang.
+  before the log exists is indistinguishable from a hang. On a board it is shut once the preferences are read
+  (`serial false`, the default; `BoardSerialLog`, `hal_circle.cpp`): the logger's target is dropped and the lines
+  keep reaching its ring and the card. A panic or the halt path opens it again and replays the ring
+  (`BoardSerialReplay`), so a stopped board is still heard on the cable. Under QEMU it never shuts.
 - **On the card**: `okapia.log`, a 512 KB file preallocated and written in whole sectors, wrapping with a marker line
   when full; the previous session is kept as `okapia-previous.log`. Flushed from the engines' seams every few seconds
   and before halt or reboot, never from an interrupt. On a Pi, read the card on another computer.
+- **The boot menu's Logs page** shows the end of `okapia.log` (or the previous session's) without taking the card
+  out, and holds the *Serial output* and *Performance counters* boxes.
 - **`perfreport true`** prints engine, video, input, sound and clock counters every five seconds (always on under QEMU).
-  A polled PL011 character costs about 87 µs, which is why it is off on hardware.
+  A polled PL011 character costs about 87 µs, which is why it is off on hardware, and why, on the wire, it wants
+  `serial true` as well: with the serial shut the lines go to the card and the Logs at no cost to the Macintosh.
 - **Signals to look for**: `Boot volume:`, `Macintosh idle: it has finished starting (N ms)`, `Clock: … from …`,
   `Sound device … claimed`, `Chime: …`, `VBL spacing` histogram, `Display … Monitor …`.
 

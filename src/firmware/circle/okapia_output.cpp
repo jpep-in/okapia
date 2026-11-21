@@ -9,6 +9,7 @@
 
 #include <circle/bcmpropertytags.h>
 #include <circle/logger.h>
+#include <stdio.h>
 
 #define FROM "okapia-output"
 
@@ -18,14 +19,14 @@
 static CBcmFrameBuffer *s_pOutput;
 static bool             s_bTried;
 static bool             s_bRedLow;
+static TFwMonitor       s_Monitor;
 
 /*
  *  What the monitor says about itself
  *
- *  Circle never reads the EDID: the firmware does, and chooses the mode from it
- *  unless config.txt names one. Logged because the two can disagree — a mode
- *  forced in config.txt wins over the monitor, and the only symptom is a
- *  Macintosh drawn in a corner of a screen that could have held far more.
+ *  The EDID describes the monitor's preferred timing. Circle reports the
+ *  dimensions of the frame buffer granted by the Pi firmware. The monitor's
+ *  input information can confirm the HDMI signal timing when they differ.
  */
 static void LogMonitor (void)
 {
@@ -75,6 +76,9 @@ static void LogMonitor (void)
         }
     }
 
+    s_Monitor.nPreferredWidth = nWidth;
+    s_Monitor.nPreferredHeight = nHeight;
+    snprintf (s_Monitor.Name, sizeof s_Monitor.Name, "%s%s%s", Maker, *Name ? " " : "", Name);
     CLogger::Get ()->Write (FROM, LogNotice, "Monitor %s %s, preferred mode %ux%u",
                             Maker, Name, nWidth, nHeight);
 
@@ -82,8 +86,8 @@ static void LogMonitor (void)
         && (nWidth != s_pOutput->GetWidth () || nHeight != s_pOutput->GetHeight ()))
     {
         CLogger::Get ()->Write (FROM, LogWarning,
-                                "The display runs at %ux%u, not the monitor's %ux%u: "
-                                "an hdmi_mode in config.txt overrides the monitor",
+                                "Output frame buffer %ux%u differs from EDID preferred %ux%u. "
+                                "Check the monitor's input mode and config.txt HDMI or framebuffer settings.",
                                 s_pOutput->GetWidth (), s_pOutput->GetHeight (),
                                 nWidth, nHeight);
     }
@@ -114,7 +118,7 @@ CBcmFrameBuffer *FwOutputClaim (void)
     s_bRedLow = Tags.GetTag (PROPTAG_GET_PIXEL_ORDER, &Order, sizeof Order)
              && Order.nValue == 1;
 
-    CLogger::Get ()->Write (FROM, LogNotice, "Display %ux%u, %u bpp, pitch %u, %s",
+    CLogger::Get ()->Write (FROM, LogNotice, "Output frame buffer %ux%u, %u bpp, pitch %u, %s",
                             s_pOutput->GetWidth (), s_pOutput->GetHeight (),
                             s_pOutput->GetDepth (), s_pOutput->GetPitch (),
                             s_bRedLow ? "red in the low byte" : "blue in the low byte");
@@ -125,4 +129,9 @@ CBcmFrameBuffer *FwOutputClaim (void)
 bool FwOutputRedLow (void)
 {
     return s_bRedLow;
+}
+
+const TFwMonitor &FwOutputMonitor (void)
+{
+    return s_Monitor;
 }

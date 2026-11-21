@@ -28,7 +28,6 @@ void DateTimeSample (TDateTime *p);
 void SettingsSample (TSettings *p)
 {
     p->V.nMemoryMB = 256;
-    p->V.nFrameSkip = 0;
     p->V.nSound = SoundJack;
     p->V.nLanguage = (unsigned) StringsLanguage ();
     p->V.bShared = true;

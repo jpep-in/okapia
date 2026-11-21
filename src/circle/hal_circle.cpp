@@ -64,6 +64,31 @@ static unsigned ArmClockMHz (void)
 // The log on the card, further down with BoardLogFlush().
 static void LogStart (void);
 
+// Open until a preference says otherwise; see COkapiaBoard::SerialLog().
+static bool s_bSerialOpen = true;
+
+// Opens the port again and replays the ring, whole: it holds what the card has
+// not drained yet, which is the last seconds before whatever stopped the board.
+// Circle calls it through the panic handler, after it has written the panic
+// line and before it halts: with the serial shut that line only reached the
+// ring, and a board that has just stopped is the one that most needs somebody
+// on the cable to hear why. The halt path of okapia_boot.cpp calls it too.
+void BoardSerialReplay (void)
+{
+    if (s_bSerialOpen)
+    {
+        return;                         // it went out as it was written
+    }
+    static char s_Ring[0x4000];         // the logger's ring is 16 KB; no stack for it
+    OkapiaBoard ().SerialLog (true);
+    const int nBytes = CLogger::Get ()->Read (s_Ring, sizeof s_Ring, false);
+    CDevice *pSerial = CLogger::Get ()->GetTarget ();
+    if (nBytes > 0 && pSerial != 0)
+    {
+        pSerial->Write (s_Ring, (size_t) nBytes);
+    }
+}
+
 COkapiaBoard::COkapiaBoard (void)
 :   m_bStarted (false), m_bConsole (false), m_bUSB (false), m_bCard (false),
     m_Timer (&m_Interrupt),
@@ -85,6 +110,29 @@ COkapiaBoard::~COkapiaBoard (void)
     // the reason.
 }
 
+void COkapiaBoard::SerialLog (bool bOn)
+{
+    if (!m_bStarted || bOn == s_bSerialOpen)
+    {
+        return;
+    }
+    if (!bOn)
+    {
+        // Said first, while the cable can still hear it, and into the card's
+        // log for good: a journal that goes quiet on its own is a journal
+        // that has to say why.
+        m_Logger.Write ("okapia-board", LogNotice,
+                        "Serial log off (preference serial): the lines go to the card only");
+    }
+    s_bSerialOpen = bOn;
+    m_Logger.SetNewTarget (bOn ? &m_Serial : 0);
+}
+
+void BoardSerialLog (bool bOn)
+{
+    OkapiaBoard ().SerialLog (bOn);
+}
+
 bool COkapiaBoard::Start (const char *pName)
 {
     if (m_bStarted)
@@ -102,6 +150,7 @@ bool COkapiaBoard::Start (const char *pName)
     {
         return false;
     }
+    m_Logger.RegisterPanicHandler (BoardSerialReplay);
 
     m_Logger.Write (pName, LogNotice, "Okapia %s (%s), built " __DATE__ " " __TIME__,
                     OKAPIA_VERSION, OKAPIA_BUILD_FLAGS);

@@ -45,6 +45,7 @@ int main (void)
 
         case OkapiaHalt:
         default:
+            BoardSerialReplay ();       // whatever stopped the board, on the cable too
             BoardPowerOff ();
             halt ();
             return EXIT_HALT;

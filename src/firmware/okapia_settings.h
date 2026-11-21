@@ -8,10 +8,6 @@
  * unblock a machine that will not start. Everything else stays in the file,
  * where it has always been editable, and the README documents it.
  *
- * So the resolution is absent (the display's, not ours — and a manual override
- * would work on a Pi 3 and be a no-op on a Pi 5, which is the worst kind of
- * setting), and the date and time are shown but not set (okapia_datetime.h).
- *
  * Like the chooser, this knows nothing about a preferences file. It is handed
  * values and answers values; the caller reads and writes. That is what lets the
  * whole screen be driven by synthetic events on a development machine.
@@ -50,7 +46,6 @@ static const unsigned SETTINGS_PATH = 64;
 struct TSettingsValues
 {
     unsigned nMemoryMB;
-    int      nFrameSkip;                // 0 is Dynamic; otherwise VBLs per frame
     int      nMouseDpi;                 // what the pointing device reports per inch
     unsigned nSound;                    // TSoundOutput
     unsigned nLanguage;                 // TLanguage

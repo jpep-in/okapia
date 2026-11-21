@@ -24,6 +24,7 @@
 #include "okapia_circle.h"
 
 #include "prefs.h"
+#include "video_sizes_circle.h"
 
 #define FROM "okapia-prefs"
 
@@ -106,10 +107,62 @@ prefs_desc platform_prefs_items[] = {
 	// nothing, and says nothing about it. That cost one whole measurement.
 	{"mousedpi", TYPE_INT32, false, "what the pointing device reports per inch"},
 	{"perfreport", TYPE_BOOLEAN, false, "print engine, video, input and clock counters every 5 s"},
+	{"serial", TYPE_BOOLEAN, false, "send the log's lines to the serial port as well as to the card"},
 	{"qdaccel", TYPE_STRING, false, "68k QuickDraw acceleration: off, sync, parallel or probe"},
 	{"qdaccelmin", TYPE_INT32, false, "with the translator, bytes of pixels below which a transfer stays in the guest"},
+	{"macmode", TYPE_STRING, true, "custom Macintosh mode: slot WIDTHxHEIGHT"},
+	{"machidemode", TYPE_STRING, true, "hide a Macintosh resolution: WIDTHxHEIGHT"},
 	{NULL, TYPE_END, false, NULL}	// End of list
 };
+
+void VideoPrefsRead (TVideoScreenConfig *pConfig)
+{
+	*pConfig = {};
+	for (int i = 0; const char *p = PrefsFindString("macmode", i); i++) {
+		unsigned slot;
+		TVideoSize Size;
+		char tail;
+		if (sscanf(p, "%u %ux%u %c", &slot, &Size.nWidth, &Size.nHeight, &tail) != 3
+		    || slot >= VIDEO_SCREEN_CUSTOM || !VideoCustomSizeValid(Size)
+		    || pConfig->Custom[slot].nWidth != 0)
+			continue;
+		bool bDuplicate = false;
+		for (const TVideoSize &Other : pConfig->Custom)
+			bDuplicate |= VideoSizeEqual(Other, Size);
+		if (!bDuplicate)
+			pConfig->Custom[slot] = Size;
+	}
+	for (int i = 0; const char *p = PrefsFindString("machidemode", i); i++) {
+		TVideoSize Size;
+		char tail;
+		if (sscanf(p, "%ux%u %c", &Size.nWidth, &Size.nHeight, &tail) == 2
+		    && Size.nWidth <= 4096 && Size.nHeight <= 2160)
+			VideoModeSetHidden(pConfig, Size, true);
+	}
+}
+
+void VideoPrefsWrite (const TVideoScreenConfig &Config)
+{
+	while (PrefsFindString("macmode", 0) != nullptr)
+		PrefsRemoveItem("macmode", 0);
+	while (PrefsFindString("machidemode", 0) != nullptr)
+		PrefsRemoveItem("machidemode", 0);
+
+	char Value[32];
+	for (unsigned i = 0; i < VIDEO_SCREEN_CUSTOM; i++) {
+		const TVideoSize Size = Config.Custom[i];
+		if (Size.nWidth == 0)
+			continue;
+		snprintf(Value, sizeof Value, "%u %ux%u", i, Size.nWidth, Size.nHeight);
+		PrefsAddString("macmode", Value);
+	}
+	for (const TVideoSize &Size : Config.Hidden) {
+		if (Size.nWidth == 0)
+			continue;
+		snprintf(Value, sizeof Value, "%ux%u", Size.nWidth, Size.nHeight);
+		PrefsAddString("machidemode", Value);
+	}
+}
 
 bool PerfReportWanted(void)
 {
@@ -121,6 +174,16 @@ bool PerfReportWanted(void)
 	return true;
 #else
 	return PrefsFindBool("perfreport");
+#endif
+}
+
+bool SerialLogWanted(void)
+{
+#ifdef CIRCLE_QEMU
+	// As PerfReportWanted() above: nothing to save, and the scripts read it.
+	return true;
+#else
+	return PrefsFindBool("serial");
 #endif
 }
 
@@ -243,6 +306,12 @@ void AddPlatformPrefsDefaults(void)
 	// while it goes out. A benchmark that wants the counters turns it on and
 	// knows what it costs. PerfReportWanted() above.
 	PrefsReplaceBool("perfreport", false);
+
+	// False, for the same reason and at a larger scale: every line of the log
+	// goes through the same polled port, about 0.7 s of a boot. The log on the
+	// card has them all whatever this says, and the boot menu's Journal page
+	// reads it. SerialLogWanted() above.
+	PrefsReplaceBool("serial", false);
 }
 
 /*
@@ -485,10 +554,16 @@ void SavePrefs(void)
 		"# hfsrepair true\n"
 		"# hfsinventory true\n"
 		"#\n"
-		"# Print the emulator's counters on the serial port every 5 seconds:\n"
-		"# opcode rate, screen refresh cost, mouse, processor clock and\n"
-		"# temperature. Useful for a benchmark, and not free: the Macintosh\n"
-		"# stops while each line goes out, about 1%% of its time.\n"
+		"# Send the log's lines to the serial port as well as to the card (the\n"
+		"# card always has them, and the boot menu's Journal page shows them).\n"
+		"# The port is polled: every line stops the Macintosh while it goes out.\n"
+		"# serial true\n"
+		"#\n"
+		"# Print the emulator's counters every 5 seconds: opcode rate, screen\n"
+		"# refresh cost, mouse, processor clock and temperature. They go to the\n"
+		"# log, and to the serial port only when serial is on, which is when\n"
+		"# they are not free: the Macintosh stops while each line goes out,\n"
+		"# about 1%% of its time.\n"
 		"# perfreport true\n"
 		"#\n"
 		"# Keywords below that Circle has nothing to do (scsi*, jit*, etherconfig,\n"

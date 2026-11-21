@@ -101,7 +101,7 @@ static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { 0x8D, 0x8E };
 // The largest guest frame offered, and therefore the size of the buffer and of
 // the shadow, both taken once. 16 MB holds 2560x1440 in millions of colours; a
 // 4K display gets its own size in thousands. See VideoScreenEnumerate.
-static const uint32 MAX_BUFFER = 16 * 1024 * 1024;
+static const u32 FIRST_CUSTOM_ID = 0x90;
 
 static void AddMode (void *pContext, const TVideoScreenSize *pSize,
                      unsigned nBits, unsigned nBytesPerRow)
@@ -173,28 +173,21 @@ bool VideoInit (bool classic)
 
     TVideoScreenSize Sizes[VIDEO_SCREEN_SIZES_MAX];
     unsigned nWantW, nWantH;
-    const unsigned nSizes = VideoScreenSizes (STANDARD_IDS, EXTRA_IDS, Sizes,
+    const unsigned nSizes = VideoScreenSizes (STANDARD_IDS, EXTRA_IDS, FIRST_CUSTOM_ID, Sizes,
                                               &nWantW, &nWantH);
 
     vector<video_mode> modes;
-    VideoScreenEnumerate (Sizes, nSizes, MAX_BUFFER, AddMode, &modes);
+    VideoScreenEnumerate (Sizes, nSizes, VIDEO_SCREEN_BUFFER, AddMode, &modes);
     if (modes.empty ())
     {
         CLogger::Get ()->Write (FROM, LogError, "No Mac mode fits this output");
         return false;
     }
 
-    // One buffer, sized for the largest mode, so switching never allocates.
-    // The shadow is the same size, for the same reason.
-    s_nMacBufferSize = 0;
-    for (unsigned i = 0; i < modes.size (); i++)
-    {
-        const uint32 nSize = modes[i].bytes_per_row * modes[i].y;
-        if (nSize > s_nMacBufferSize)
-        {
-            s_nMacBufferSize = nSize;
-        }
-    }
+    // Reserve for modes which can fit this output, including ones enabled on
+    // a later Mac restart. Both allocations live for the lifetime of Okapia.
+    s_nMacBufferSize = VideoScreenBufferBytes ({VideoScreenOutputWidth (),
+                                               VideoScreenOutputHeight ()});
     if (!VideoScreenShadow (s_nMacBufferSize))
     {
         return false;
@@ -215,24 +208,29 @@ bool VideoInit (bool classic)
     // 256 colours at the size the preferences ask for, or 640x480 — the mode
     // every Macintosh of this era starts in. A size the display cannot show
     // falls back rather than failing.
-    uint32 nDefaultId = 0x81;
-    for (unsigned i = 0; i < modes.size (); i++)
+    const video_mode *pDefault = &modes.front ();
+    bool bRequested = false;
+    for (const video_mode &Mode : modes)
     {
-        if (   modes[i].x == nWantW && modes[i].y == nWantH
-            && modes[i].depth == VDEPTH_8BIT)
+        if (Mode.depth != VDEPTH_8BIT)
+            continue;
+        if (Mode.x == nWantW && Mode.y == nWantH)
         {
-            nDefaultId = modes[i].resolution_id;
+            pDefault = &Mode;
+            bRequested = true;
             break;
         }
+        if (Mode.resolution_id == 0x81)
+            pDefault = &Mode;
     }
-    if (nDefaultId == 0x81 && (nWantW != 640 || nWantH != 480))
+    if (!bRequested)
     {
         CLogger::Get ()->Write (FROM, LogWarning,
                                 "screen asks for %ux%u, which this display cannot "
-                                "offer; starting in 640x480", nWantW, nWantH);
+                                "offer; using a fallback mode", nWantW, nWantH);
     }
 
-    s_pMonitor = new Circle_monitor_desc (modes, VDEPTH_8BIT, nDefaultId);
+    s_pMonitor = new Circle_monitor_desc (modes, pDefault->depth, pDefault->resolution_id);
     VideoMonitors.push_back (s_pMonitor);
     s_pMonitor->switch_to_current_mode ();
     return true;

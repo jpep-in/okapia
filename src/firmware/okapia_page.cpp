@@ -207,7 +207,8 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
     // a window naming its page twice reads as two windows.
     static const TStringId Names[PageTabCount] =
     {
-        StrTabSystem, StrTabSettings, StrTabNetwork, StrTabInformation
+        StrTabSystem, StrTabSettings, StrTabNetwork, StrTabInformation, StrTabDisplay,
+        StrTabJournal
     };
     for (unsigned i = 0; i < PageTabCount; i++)
     {
@@ -238,6 +239,10 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
                               (bStartFocus ? StateDefault | StateFocused : StateDefault)
                               | (s_bCanStart ? StateNormal : StateDisabled));
 
+    // Where the grey line under the tick box goes, set below with the box.
+    TRect Hint = Rect (0, 0, 0, 0);
+    int nCheckTop = 0;
+
     // Beside Start, because it is about starting: whether this window comes
     // back next time. A habit of the person and not a setting of the
     // Macintosh, so it is the window's and on every page.
@@ -246,8 +251,18 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
         const unsigned nWide = pTheme->M.nCheckSize + pTheme->M.nGap
                              + GfxTextWidth (pTheme->pBodyFont, pLabel);
         TRect Box = RowLast (&pPage->Foot, nWide, StateFocused);
-        Box = Rect (Box.nX, Box.nY + ((int) pTheme->M.nButtonHeight - (int) pTheme->M.nCheckSize) / 2,
-                    Box.nWidth, pTheme->M.nCheckSize);
+        // Unticked, the footer has a second line for the way back to the menu,
+        // and the tick box moves up to make room for it: the footer's height is
+        // the buttons' with the room their rings need, and the two lines fit
+        // in it, so the pages above lose nothing.
+        const unsigned nRingReach = ThemeReach (pTheme, StateDefault | StateFocused);
+        const int nFootTop = Box.nY - (int) nRingReach;
+        const int nOneLine = Box.nY + ((int) pTheme->M.nButtonHeight - (int) pTheme->M.nCheckSize) / 2;
+        const int nStacked = nFootTop + (int) ThemeReach (pTheme, StateFocused);
+        nCheckTop = s_bBootMenu ? nOneLine : nStacked;
+        Hint = Rect (Box.nX + (int) Box.nWidth, nCheckTop + (int) pTheme->M.nCheckSize,
+                     0, pTheme->M.nLineHeight);
+        Box = Rect (Box.nX, nCheckTop, Box.nWidth, pTheme->M.nCheckSize);
         pPage->nBootMenu = (int) pPage->nCount;
         PageAdd (pPage, WidgetCheckbox, Box, pLabel,
                  (s_bBootMenu ? StateChecked : StateNormal)
@@ -256,6 +271,23 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
     if (s_bRestart)
     {
         pPage->nNote = PageNote (pPage, Str (StrRestartRequired), StateNormal);
+        if (!s_bBootMenu)
+        {
+            // On the tick box's line, and not on the buttons': the grey line
+            // under the box runs left under the note, and the two must not
+            // share one.
+            TRect &Note = pPage->pWidgets[pPage->nNote].Rect;
+            Note.nY = nCheckTop + (int) pTheme->M.nCheckSize - (int) pTheme->M.nLineHeight;
+        }
+    }
+    if (!s_bBootMenu)
+    {
+        // Under the tick box, ending where it ends, so that it reads as its
+        // own note; it runs to the left, over the free part of the footer.
+        const char *pText = Str (StrBootMenuHint);
+        const unsigned nText = GfxTextWidth (pTheme->pBodyFont, pText);
+        Hint = Rect (Hint.nX - (int) nText, Hint.nY, nText, Hint.nHeight);
+        PageAdd (pPage, WidgetLabel, Hint, pText, StateDisabled);
     }
 
     s_pChrome = pPage;

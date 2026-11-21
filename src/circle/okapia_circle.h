@@ -36,4 +36,10 @@
 // always on under QEMU, whose serial port costs nothing. prefs_circle.cpp.
 bool PerfReportWanted (void);
 
+// Whether the log's lines go out on the serial port. The same polled port, the
+// same 87 us a character, paid at every start by every line; the log on the
+// card has them all either way. Off on a board unless `serial` asks, always on
+// under QEMU, whose scripts read the port. prefs_circle.cpp.
+bool SerialLogWanted (void);
+
 #endif

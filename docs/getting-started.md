@@ -89,7 +89,9 @@ firmware for its preferred mode instead.
 
 If something goes wrong, mount the card on another computer and read `okapia.log` (or
 `okapia-previous.log` after a restart): the kernel logs what the firmware granted, what it chose and why.
-Set `perfreport true` for counters every five seconds.
+The boot menu's **Logs** tab shows the same log without taking the card out. Tick *Performance counters* there
+(or set `perfreport true`) for counters every five seconds, and *Serial output* (`serial true`) to have the lines on the
+serial port too: it is off by default on a board.
 
 ## Under QEMU, without a board
 

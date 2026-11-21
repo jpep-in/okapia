@@ -49,6 +49,8 @@ the other way round. The same file serves both Macintosh; its name does not chan
 | Keyword | Default | Meaning |
 |---|---|---|
 | `screen` | — | upstream's spelling, `win/<width>/<height>` (or `dga/…`): the resolution to start in. `0` means the display's own width or height. The size is also added to the Monitors list if missing |
+| `macmode` | — | repeatable `<slot> <width>x<height>`, such as `0 960x600`. Slots 0–5 have persistent driver IDs. Keep a slot assigned to the same size because Mac OS saves its choice by ID |
+| `machidemode` | — | repeatable `<width>x<height>`, such as `1280x720`. Removes that size from Monitors on both engines. The 640×480 recovery mode is kept when it fits |
 | `frameskip` | `0` | `0` = dynamic (default), `1` = every VBL, `2` = 30 Hz, `4` = 15 Hz, `6` = 10 Hz. The Mac draws its own cursor, so a low rate reads as a laggy mouse — see [Display](topics/display.md) |
 | `qdaccel` | `off` | Experimental 68k QuickDraw. `sync` accelerates boolean copies and fills at every depth, and some shapes and conversions at 8 bits; `parallel` also uses core 2 for large transfers with a multicore Pi 4 build; `probe` logs eligibility and executes the original guest code; `verify` lets the guest draw, draws each `BitBlt` and `RgnBlt` again natively and logs any difference. See [QuickDraw](topics/display.md#68k-quickdraw). The boot menu's *QuickDraw acceleration* box writes `sync` or `off`, and only when it is changed. |
 | `qdaccelmin` | `4096` | With `jit true` only: a rectangular or region transfer whose clipped area holds fewer bytes of pixels than this stays in the guest (4096 is 4096 pixels at 8 bits, 1024 at 32); 1 and 2 bits always do, where the translator already runs QuickDraw as ARM64 code. Tested in 68k by the trampoline, so a refused transfer never leaves translated code. See [QuickDraw](topics/display.md#68k-quickdraw). |
@@ -91,7 +93,8 @@ the other way round. The same file serves both Macintosh; its name does not chan
 | `bootmenu` | `false` | always open the boot menu, without holding Option |
 | `language` | `en` | the boot menu's language, a two-letter code (`en`, `fr`); an unknown code falls back to the first language |
 | `idlewait` | `true` | let the Mac's idle patch replace `SynchIdleTime`; its first call is logged as `Macintosh idle`, the boot-finished signal the test scripts wait for |
-| `perfreport` | `false` | print engine, video, input, sound and clock counters every five seconds (always on under QEMU) |
+| `serial` | `false` | send the log's lines to the serial port as well as to the card. The port is polled: about 87 µs a character, around 0.7 s of a boot, whether or not a cable is attached. The card has every line either way and the boot menu's *Logs* page reads it. A panic or a halt opens the port again and replays what the card has not drained yet. Always on under QEMU, whose scripts read the port. The first lines (banner, card) go out before the preference is read. The boot menu's *Serial output* box |
+| `perfreport` | `false` | print engine, video, input, sound and clock counters every five seconds (always on under QEMU). With `serial` off they go to the log on the card and cost the Macintosh nothing on the wire. The boot menu's *Performance counters* box |
 
 ## Network
 

@@ -79,6 +79,13 @@ public:
     // writes is behind this, so a false here is the end of the road.
     bool StartCard (void);
 
+    // Whether the log's lines go out on the serial port as well as into the
+    // log on the card. The port is polled, so every character stops the
+    // Macintosh for 87 us; shut, the lines still reach the logger's ring and so
+    // the card, and a panic opens it again and replays the ring. Open at power
+    // on, so a failure before the preferences exist is still heard.
+    void SerialLog (bool bOn);
+
 private:
     // Each of the four is idempotent: a second call answers what the first
     // answered and touches nothing. That is what lets one board serve two
@@ -184,6 +191,15 @@ void BoardWatchClock (bool bReport);
  *  halts or reboots — never from an interrupt: it blocks on the card.
  */
 void BoardLogFlush (void);
+
+// COkapiaBoard::SerialLog for a caller that has no board in hand. Under QEMU,
+// whose serial port costs nothing and whose log the scripts read, it never
+// shuts: see SerialLogWanted() in okapia_circle.h.
+void BoardSerialLog (bool bOn);
+
+// Opens the port if it is shut and replays the logger's ring on it, so a board
+// that is about to stop is heard. A no-op while the port is open.
+void BoardSerialReplay (void);
 
 /*
  *  The sound device, claimed once for the life of the board
