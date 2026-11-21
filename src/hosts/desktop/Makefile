@@ -7,7 +7,7 @@
 #   make -C src/hosts/desktop run        open the window on qemu/sd-contents
 #
 # The boot menu and the code that is the same on every host (src/firmware,
-# src/common, the portable files of src/circle, src/kernel's CKernel), the 68k
+# src/common with the shared *_okapia platform files, src/kernel's CKernel), the 68k
 # engine as the kernel builds it (Basilisk II's core, uae_cpu_2021, the 80-bit
 # softfloat FPU), libhfs; compiled by the host's compiler behind a shim of the
 # Circle classes they use (shims/), with SDL3 below. -MMD -MP on every rule, as
@@ -18,7 +18,9 @@
 ROOT     = ../../..
 FIRMWARE = $(ROOT)/src/firmware
 COMMON   = $(ROOT)/src/common
-CIRCLE   = $(ROOT)/src/circle
+# The shared platform files (src/common); the name says what they were.
+CIRCLE   = $(ROOT)/src/common
+CHOST    = $(ROOT)/src/hosts/circle
 MACEMU   = $(ROOT)/external/macemu/BasiliskII/src
 UAE      = $(MACEMU)/uae_cpu_2021
 SOFTFLOAT = $(UAE)/fpu/softfloat
@@ -52,7 +54,7 @@ ENGINE_DEFINES = -DDIRECT_ADDRESSING -DFPU_SOFTFLOAT -DM68K_NO_FAULT_PC \
 CXXFLAGS = $(OPTIMIZE) -g -std=c++17 -Wall -Wextra -Wno-unused-parameter \
            -DOKAPIA_HOSTED $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_NETBENCH=0 \
            -include shims/okapia_circle.h -Ishims \
-           -I. -I$(CIRCLE) -I$(COMMON) -I$(FIRMWARE) -I$(FIRMWARE)/circle -I$(KERNEL) \
+           -I. -I$(CIRCLE) -I$(COMMON) -I$(FIRMWARE) -I$(CHOST)/firmware -I$(KERNEL) \
            -I$(GEN) -I$(CPUGEN) -I$(LIBHFS) \
            -I$(MACEMU)/include -I$(UAE) -I$(MACEMU)/Unix -I$(MACEMU)/CrossPlatform \
            $(SDL_CFLAGS)
@@ -81,34 +83,41 @@ STR_IDS  = $(GEN)/okapia_strings_ids.h
 
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp)
 COMMON_SRCS   = $(COMMON)/okapia_menu.cpp
-# src/circle's files that build here unchanged. Left out: the board's own
+# src/common's platform files, all of which build here. Left out: the Circle host's
+# own (src/hosts/circle:
 # (hal, board_sound, board_net, wlan, clock, net_clock, net_bench, execmem,
-# mac_ram, quickdraw_worker: board_desktop.cpp plays them), the sound and the
-# network for now (audio_circle, ether_circle: upstream's dummies stand in),
-# the JIT glue and the trace files.
-PLATFORM_SRCS = $(addprefix $(CIRCLE)/,card_circle.cpp compositor_circle.cpp \
-                cpu_ticks_circle.cpp emul_op_hook_circle.cpp extfs_sync_circle.cpp \
-                hfs_volume_circle.cpp input_circle.cpp main_circle.cpp \
-                mac_encoding_circle.cpp net_config_circle.cpp prefs_circle.cpp \
-                quickdraw_blit.cpp quickdraw_circle.cpp rom_chime.cpp tick_circle.cpp \
-                timer_circle.cpp user_strings_circle.cpp video_circle.cpp \
-                video_shared_circle.cpp video_sizes_circle.cpp xpram_circle.cpp)
+# mac_ram, quickdraw_worker: board_desktop.cpp plays them; board_sound's device
+# and chime: sound_desktop.cpp; board_net: board_net_desktop.cpp), the JIT glue
+# and the trace files.
+PLATFORM_SRCS = $(addprefix $(CIRCLE)/,audio_okapia.cpp card_okapia.cpp ether_okapia.cpp compositor_okapia.cpp \
+                cpu_ticks_okapia.cpp emul_op_hook_okapia.cpp extfs_sync_okapia.cpp \
+                hfs_volume_okapia.cpp input_okapia.cpp main_okapia.cpp \
+                mac_encoding_okapia.cpp net_config_okapia.cpp prefs_okapia.cpp \
+                quickdraw_blit.cpp quickdraw_okapia.cpp rom_chime.cpp tick_okapia.cpp \
+                timer_okapia.cpp user_strings_okapia.cpp video_okapia.cpp \
+                video_shared_okapia.cpp video_sizes_okapia.cpp xpram_okapia.cpp)
 KERNEL_SRCS   = $(KERNEL)/kernel.cpp $(KERNEL)/okapia_main.cpp
 # The core, as src/kernel/Makefile lists it for the 68k engine.
 CORE_SRCS     = $(filter-out $(MACEMU)/bincue.cpp,$(wildcard $(MACEMU)/*.cpp))
 CPU_SRCS      = $(UAE)/basilisk_glue.cpp $(UAE)/memory.cpp $(UAE)/newcpu.cpp \
                 $(UAE)/readcpu.cpp $(UAE)/fpu/fpu_softfloat.cpp
 GEN_CPU_SRCS  = $(CPUGEN)/cpudefs.cpp $(CPUGEN)/cpustbl.cpp $(CPUGEN)/cpufunctbl.cpp
-DUMMY_SRCS    = $(filter-out $(MACEMU)/dummy/prefs_dummy.cpp \
+DUMMY_SRCS    = $(filter-out $(MACEMU)/dummy/audio_dummy.cpp \
+                             $(MACEMU)/dummy/ether_dummy.cpp \
+                             $(MACEMU)/dummy/prefs_dummy.cpp \
                              $(MACEMU)/dummy/user_strings_dummy.cpp \
                              $(MACEMU)/dummy/xpram_dummy.cpp,\
                              $(wildcard $(MACEMU)/dummy/*.cpp))
 REUSED_SRCS   = $(MACEMU)/Unix/sys_unix.cpp $(MACEMU)/Unix/extfs_unix.cpp \
                 $(MACEMU)/CrossPlatform/video_blit.cpp
 # Sparse bundles declined, as on the card: the plain-image factory takes over.
-COMPAT_SRCS   = $(CIRCLE)/compat/disk_stubs.cpp
-DESKTOP_SRCS  = okapia_host_desktop.cpp main_desktop.cpp board_desktop.cpp wraps_desktop.cpp
+COMPAT_SRCS   = $(CHOST)/compat/disk_stubs.cpp
+DESKTOP_SRCS  = okapia_host_desktop.cpp main_desktop.cpp board_desktop.cpp wraps_desktop.cpp \
+                sound_desktop.cpp board_net_desktop.cpp
 HFS_SRCS      = $(filter-out $(LIBHFS)/memcmp.c,$(wildcard $(LIBHFS)/*.c))
+# The network: upstream's slirp (NAT in user space, no privileges), under
+# ether_okapia.cpp as on the board, by way of board_net_desktop.cpp.
+SLIRP_SRCS    = $(wildcard $(MACEMU)/slirp/*.c)
 SF_SRCS       = $(SOFTFLOAT)/softfloat.c $(SOFTFLOAT)/softfloat_fpsp.c $(SOFTFLOAT)/softfloat_decimal.c
 KEYCODES_H    = $(GEN)/keycodes_default.h
 MACROMAN_H    = $(GEN)/macroman_table.h
@@ -128,16 +137,112 @@ OBJS = $(addprefix $(OBJ)/fw_,$(notdir $(FIRMWARE_SRCS:.cpp=.o))) \
        $(addprefix $(OBJ)/re_,$(notdir $(REUSED_SRCS:.cpp=.o))) \
        $(addprefix $(OBJ)/p_,$(notdir $(COMPAT_SRCS:.cpp=.o))) \
        $(addprefix $(OBJ)/sf_,$(notdir $(SF_SRCS:.c=.o))) \
+       $(addprefix $(OBJ)/sl_,$(notdir $(SLIRP_SRCS:.c=.o))) \
        $(addprefix $(OBJ)/d_,$(DESKTOP_SRCS:.cpp=.o)) \
        $(addprefix $(OBJ)/hfs_,$(notdir $(HFS_SRCS:.c=.o))) \
        $(OBJ)/gen_okapia_font_data.o $(OBJ)/gen_okapia_icons_data.o \
        $(OBJ)/gen_okapia_strings_data.o
 
+# The PowerPC engine, as the kernel builds it for ENGINE=sheepshaver: SheepShaver's
+# core, kpx_cpu interpreted, src/common/sheepshaver and the shared platform files
+# compiled again with its config.h, kernel_ppc.cpp. Both cores define InitAll,
+# PatchROM, Execute68k…: on the board every symbol the PowerPC object defines is
+# renamed ppc__ (src/kernel/Makefile). Here ld -r keeps OkapiaRunPowerPC global
+# and turns every other definition into a local one, which a Mach-O partial
+# link does by itself (-exported_symbol): the same seam, one function wide.
+SS        = $(ROOT)/external/macemu/SheepShaver/src
+KPX       = $(SS)/kpx_cpu
+PPCOBJ    = $(OBJ)/ppc
+# C++14: kpx_cpu uses std::unary_function, gone from libc++ in C++17.
+PPCFLAGS  = $(OPTIMIZE) -g -std=gnu++14 -w \
+            -DOKAPIA_HOSTED -DHAVE_CONFIG_H -DSHEEPSHAVER -DPPC_CHECK_TICKS=50000 \
+            -D_GNU_SOURCE -DOKAPIA_NETBENCH=0 -DOKAPIA_BUILD_TIME=$(shell date +%s) \
+            -include shims/okapia_circle.h -Ishims \
+            -I. -I$(CIRCLE)/sheepshaver -I$(CIRCLE) -I$(COMMON) -I$(FIRMWARE) \
+            -I$(CHOST)/firmware -I$(KERNEL) -I$(GEN) -I$(CPUGEN) -I$(LIBHFS) \
+            -I$(SS)/include -I$(SS)/Unix -I$(SS)/CrossPlatform \
+            -I$(KPX)/include -I$(KPX)/src $(SDL_CFLAGS)
+PPC_CORE  = $(filter-out $(SS)/bincue.cpp,$(wildcard $(SS)/*.cpp))
+PPC_CPU   = $(KPX)/src/mathlib/ieeefp.cpp $(KPX)/src/mathlib/mathlib.cpp \
+            $(KPX)/src/cpu/ppc/ppc-cpu.cpp $(KPX)/src/cpu/ppc/ppc-decode.cpp \
+            $(KPX)/src/cpu/ppc/ppc-execute.cpp $(KPX)/src/cpu/ppc/ppc-translate.cpp \
+            $(KPX)/src/utils/utils-cpuinfo.cpp $(KPX)/sheepshaver_glue.cpp \
+            $(SS)/CrossPlatform/vm_alloc.cpp
+PPC_DUMMY = $(filter-out $(SS)/dummy/audio_dummy.cpp $(SS)/dummy/ether_dummy.cpp \
+                         $(SS)/dummy/prefs_dummy.cpp $(SS)/dummy/user_strings_dummy.cpp \
+                         $(SS)/dummy/xpram_dummy.cpp,$(wildcard $(SS)/dummy/*.cpp))
+PPC_PLAT  = $(addprefix $(CIRCLE)/,compositor_okapia.cpp video_shared_okapia.cpp \
+            video_sizes_okapia.cpp prefs_okapia.cpp xpram_okapia.cpp timer_okapia.cpp \
+            tick_okapia.cpp input_okapia.cpp audio_okapia.cpp user_strings_okapia.cpp \
+            extfs_sync_okapia.cpp hfs_volume_okapia.cpp card_okapia.cpp \
+            mac_encoding_okapia.cpp ether_okapia.cpp) \
+            $(SS)/CrossPlatform/video_blit.cpp
+# Named ps_ apart: main, video and cpu_ticks exist under both names, and the
+# 68k engine's would win a shared pattern.
+PPC_SHEEP = $(wildcard $(CIRCLE)/sheepshaver/*.cpp)
+PPC_REUSED = $(SS)/Unix/extfs_unix.cpp $(SS)/Unix/sys_unix.cpp
+PPC_OBJS  = $(addprefix $(PPCOBJ)/up_,$(notdir $(PPC_CORE:.cpp=.o))) \
+            $(addprefix $(PPCOBJ)/cpu_,$(notdir $(PPC_CPU:.cpp=.o))) \
+            $(addprefix $(PPCOBJ)/dm_,$(notdir $(PPC_DUMMY:.cpp=.o))) \
+            $(addprefix $(PPCOBJ)/p_,$(notdir $(PPC_PLAT:.cpp=.o))) \
+            $(addprefix $(PPCOBJ)/ps_,$(notdir $(PPC_SHEEP:.cpp=.o))) \
+            $(addprefix $(PPCOBJ)/re_,$(notdir $(PPC_REUSED:.cpp=.o))) \
+            $(PPCOBJ)/k_kernel_ppc.o $(PPCOBJ)/k_okapia_main_ppc.o $(PPCOBJ)/d_wraps_desktop.o
+
 all: $(OUT)/okapia
 
-$(OUT)/okapia: $(OBJS)
+$(OUT)/okapia: $(OBJS) $(OBJ)/engine-ppc.o
 	@printf '  LD    %s\n' "$(notdir $@)"
 	@$(CXX) -o $@ $^ $(SDL_LIBS)
+
+$(OBJ)/engine-ppc.o: $(PPC_OBJS)
+	@printf '  LD -r  engine-ppc.o (OkapiaRunPowerPC alone global)\n'
+	@ld -r -exported_symbol _OkapiaRunPowerPC -o $@ $^
+
+$(PPCOBJ):
+	@mkdir -p $(PPCOBJ)
+
+$(PPCOBJ)/up_extfs.o: PPCDEFS = -DPrefsFindString=OkapiaCardPrefsString
+$(PPCOBJ)/re_extfs_unix.o: PPCDEFS = -Dextfs_write=OkapiaRealExtfsWrite \
+    -Dhost_encoding_to_macroman=OkapiaUnixHostToMac -Dmacroman_to_host_encoding=OkapiaUnixMacToHost
+$(PPCOBJ)/re_sys_unix.o: PPCDEFS = -DSys_open=OkapiaUnixSysOpen
+# vm_alloc.cpp's macOS branch (a CrashReporter fix for 10.4) wants the Mach
+# headers its configure would have pulled in.
+$(PPCOBJ)/cpu_vm_alloc.o: PPCDEFS = -include mach/mach.h -include sys/utsname.h
+$(PPCOBJ)/up_ether.o: PPCDEFS = -DInitStreamModule=OkapiaRealInitStreamModule \
+    -DTerminateStreamModule=OkapiaRealTerminateStreamModule -Dether_open=OkapiaRealEtherOpen
+
+define ppccompile
+	@printf '  CXX   ppc/%s\n' "$(notdir $<)"
+	@$(CXX) $(PPCFLAGS) $(PPCDEFS) -MMD -MP -c -o $@ $<
+endef
+$(PPCOBJ)/up_%.o: $(SS)/%.cpp | $(PPCOBJ) $(STR_IDS) $(KEYCODES_H) $(MACROMAN_H)
+	$(ppccompile)
+$(PPCOBJ)/cpu_%.o: $(KPX)/src/mathlib/%.cpp | $(PPCOBJ)
+	$(ppccompile)
+$(PPCOBJ)/cpu_%.o: $(KPX)/src/cpu/ppc/%.cpp | $(PPCOBJ)
+	$(ppccompile)
+$(PPCOBJ)/cpu_%.o: $(KPX)/src/utils/%.cpp | $(PPCOBJ)
+	$(ppccompile)
+$(PPCOBJ)/cpu_%.o: $(KPX)/%.cpp | $(PPCOBJ)
+	$(ppccompile)
+$(PPCOBJ)/cpu_%.o: $(SS)/CrossPlatform/%.cpp | $(PPCOBJ)
+	$(ppccompile)
+$(PPCOBJ)/dm_%.o: $(SS)/dummy/%.cpp | $(PPCOBJ)
+	$(ppccompile)
+$(PPCOBJ)/p_%.o: $(CIRCLE)/%.cpp | $(PPCOBJ) $(STR_IDS) $(KEYCODES_H) $(MACROMAN_H)
+	$(ppccompile)
+$(PPCOBJ)/ps_%.o: $(CIRCLE)/sheepshaver/%.cpp | $(PPCOBJ) $(STR_IDS)
+	$(ppccompile)
+$(PPCOBJ)/p_%.o: $(SS)/CrossPlatform/%.cpp | $(PPCOBJ)
+	$(ppccompile)
+$(PPCOBJ)/re_%.o: $(SS)/Unix/%.cpp | $(PPCOBJ) $(MACROMAN_H)
+	$(ppccompile)
+$(PPCOBJ)/k_%.o: $(KERNEL)/%.cpp | $(PPCOBJ) $(STR_IDS)
+	$(ppccompile)
+$(PPCOBJ)/d_%.o: %.cpp | $(PPCOBJ) $(STR_IDS)
+	$(ppccompile)
+-include $(wildcard $(PPCOBJ)/*.d)
 
 $(OBJ):
 	@mkdir -p $(OBJ)
@@ -169,7 +274,7 @@ $(OBJ)/co_%.o: $(COMMON)/%.cpp | $(OBJ) $(STR_IDS)
 	$(compile)
 $(OBJ)/p_%.o: $(CIRCLE)/%.cpp | $(OBJ) $(STR_IDS) $(KEYCODES_H) $(MACROMAN_H)
 	$(compile)
-$(OBJ)/p_%.o: $(CIRCLE)/compat/%.cpp | $(OBJ) $(STR_IDS) $(KEYCODES_H) $(MACROMAN_H)
+$(OBJ)/p_%.o: $(CHOST)/compat/%.cpp | $(OBJ) $(STR_IDS) $(KEYCODES_H) $(MACROMAN_H)
 	$(compile)
 # The hooks the Pi puts in with --wrap, which Apple's linker does not have
 # (docs/notes/research/desktop-host.md): the definition is renamed in the one
@@ -206,6 +311,9 @@ $(OBJ)/re_%.o: $(MACEMU)/CrossPlatform/%.cpp | $(OBJ)
 	$(upcompile)
 $(OBJ)/k_%.o: $(KERNEL)/%.cpp | $(OBJ) $(STR_IDS)
 	$(compile)
+$(OBJ)/sl_%.o: $(MACEMU)/slirp/%.c | $(OBJ)
+	@printf '  CC    slirp/%s\n' "$(notdir $<)"
+	@$(CC) -O2 -w -Ishims/slirp -I$(MACEMU)/slirp -MMD -MP -c -o $@ $<
 $(OBJ)/sf_%.o: $(SOFTFLOAT)/%.c | $(OBJ)
 	@printf '  CC    softfloat/%s\n' "$(notdir $<)"
 	@$(CC) -O2 -w -MMD -MP -c -o $@ $<

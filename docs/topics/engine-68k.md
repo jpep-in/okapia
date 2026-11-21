@@ -1,9 +1,9 @@
 # 68k engine
 
 > Basilisk II on Circle: the CPU and FPU cores, the ROM and the model it announces, the core's build, and
-> what it costs. Main files: `src/kernel/kernel.cpp`, `src/circle/main_circle.cpp`,
-> `src/circle/cpu_ticks_circle.cpp`, `src/circle/emul_op_hook_circle.cpp`, `src/circle/config.h`,
-> `src/circle/compat/`, `src/circle/fpu_selftest.h`, `patches/macemu/0003`, `0005`–`0010`, `0013`–`0015`,
+> what it costs. Main files: `src/kernel/kernel.cpp`, `src/common/main_okapia.cpp`,
+> `src/common/cpu_ticks_okapia.cpp`, `src/common/emul_op_hook_okapia.cpp`, `src/common/config.h`,
+> `src/hosts/circle/compat/`, `src/common/fpu_selftest.h`, `patches/macemu/0003`, `0005`–`0010`, `0013`–`0015`,
 > `scripts/gen-cpu.sh`, `scripts/check-rom.py`.
 
 ## Using it
@@ -124,7 +124,7 @@ Previous (`0013`, `uae_cpu_2021/fpu/softfloat/`, provenance in its `README`):
 
 `OKAPIA_FPU=ieee` builds the binary128 core of `patches/macemu/0008` instead, to compare against; the
 `macemu-jit` route (`OKAPIA_JIT=1`) has only that one. Under `OKAPIA_TRACE`, `kernel.cpp` runs
-`src/circle/fpu_selftest.h` before the Macintosh starts: sixteen answers computed independently, then the
+`src/common/fpu_selftest.h` before the Macintosh starts: sixteen answers computed independently, then the
 digest of 60,000 operations over every mode and precision, compared with the constant `tests/host/check_fpu`
 pins on the development machine, and the fast paths against softfloat over 600,000 operations. On the host,
 `tests/host/check_fpu_core` runs `fpu_softfloat.cpp` itself on a million random instructions and pins the hash
@@ -180,7 +180,7 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   everything, an `#include <arpa/inet.h>` there broke the include order of 39 core files.
 - An Okapia **`sysdeps.h`** like every upstream platform's; `-std=gnu++17`, not `c++17` (which defines
   `__STRICT_ANSI__` and hides `strdup` in newlib).
-- `src/circle/compat/`: `utime` (through `f_utime`), `<sys/ioctl.h>` and resolver stubs for `ether.cpp`'s UDP
+- `src/hosts/circle/compat/`: `utime` (through `f_utime`), `<sys/ioctl.h>` and resolver stubs for `ether.cpp`'s UDP
   tunnel, a path Okapia never takes but which is chosen at run time and must compile. Stubs log their call.
 - `okapia_circle.h` defines `ASSERT_STATIC` then includes Circle: `circle/types.h` expects it from Circle's
   `assert.h`, and newlib's wins the include search. `circle/new.h` conflicts with `<new>`; allocate raw blocks

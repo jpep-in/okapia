@@ -30,8 +30,8 @@ tests/*/obj/
 tests/link-probe/undefined.txt
 
 # Firmware specimen build output
-src/firmware/circle/obj/
-src/firmware/circle/kernel8.*
+src/hosts/circle/firmware/obj/
+src/hosts/circle/firmware/kernel8.*
 tests/host/render_specimen
 tests/host/check_geometry
 tests/host/check_screen

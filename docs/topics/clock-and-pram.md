@@ -2,11 +2,11 @@
 
 > Where the Macintosh's time comes from — the network, the Macintosh's own Date & Time, the card, the build — how
 > it reaches the Macintosh, and how its parameter RAM survives a pulled plug. Main files:
-> `src/circle/clock_circle.cpp` (the board's clock and its sources), `src/circle/net_clock.cpp` (SNTP in raw frames),
-> `src/firmware/okapia_clock.cpp` (zones, summer time, the date in words), `src/circle/card_circle.cpp`
-> (`CardRefineClock`), `src/circle/tick_circle.cpp` (the Mac's `Time` global),
-> `src/circle/hfs_volume_circle.cpp` (`HfsDateIsPlausible`), `src/circle/timer_circle.cpp`,
-> `src/circle/xpram_circle.cpp`, `src/circle/emul_op_hook_circle.cpp`, `src/circle/sheepshaver/cpu_ticks_circle.cpp`,
+> `src/hosts/circle/clock_circle.cpp` (the board's clock and its sources), `src/hosts/circle/net_clock.cpp` (SNTP in raw frames),
+> `src/firmware/okapia_clock.cpp` (zones, summer time, the date in words), `src/common/card_okapia.cpp`
+> (`CardRefineClock`), `src/common/tick_okapia.cpp` (the Mac's `Time` global),
+> `src/common/hfs_volume_okapia.cpp` (`HfsDateIsPlausible`), `src/common/timer_okapia.cpp`,
+> `src/common/xpram_okapia.cpp`, `src/common/emul_op_hook_okapia.cpp`, `src/common/sheepshaver/cpu_ticks_okapia.cpp`,
 > `src/common/okapia_menu.cpp` (`ForgetPram`).
 
 ## Using it
@@ -49,7 +49,7 @@ One clock for the board, Circle's, kept in **local** time (`CTimer::m_nTime`), a
 - **Startup**: `ClockInitialize()` in `CKernel::Initialize()` sets the zone **then** the time (`SetTime` stores local
   seconds, so setting the zone after would move the log's time and not the Mac's). A zone the timer refuses puts
   it back to UTC. `CardRefineClock()` then raises the time, on whichever engine starts.
-- **Readers**: the Mac through `TimerDateTime()` (`timer_circle.cpp`) and its `Time` global (below), FatFs through
+- **Readers**: the Mac through `TimerDateTime()` (`timer_okapia.cpp`) and its `Time` global (below), FatFs through
   `get_fattime()` (`ffsystem.cpp`). All read Circle's clock, so the menu bar and the dates on the card cannot
   diverge. Without a set clock, `get_fattime()` returned zero and every file the Mac created was dated
   `1980-00-00`, not even a valid date.
@@ -63,7 +63,7 @@ so every upstream port writes it from the host's clock once a second (`Unix/main
 `Unix/main_unix.cpp:1577`, `WriteMacInt32(0x20c, TimerDateTime())`). **Okapia did not** until 2026-11-12, and
 nothing else in either emulator writes it (a search of both trees finds only those host ports); SheepShaver reads no
 RTC through Basilisk's path at all. How each System behaved without it was not looked at before the fix.
-`OneSecond()` in `tick_circle.cpp` now writes it, through
+`OneSecond()` in `tick_okapia.cpp` now writes it, through
 `ClockMacSecond()` — at IRQ level, a 32-bit aligned store and nothing else.
 
 The same look says when the Macintosh wrote it itself. Date & Time sets this global (and the RTC, whose write
@@ -142,7 +142,7 @@ Verified with `OKAPIA_BUILD_TIME=1735689600` (1 January 2025): the clock started
 
 ### Parameter RAM
 
-`xpram_circle.cpp` replaces `xpram_dummy.cpp`, which named its file relatively (it landed at the root by accident).
+`xpram_okapia.cpp` replaces `xpram_dummy.cpp`, which named its file relatively (it landed at the root by accident).
 
 - **One file per engine**: `/BasiliskII_XPRAM` (256 bytes) and `/SheepShaver_XPRAM` (8,192 bytes), whose fields are at
   different offsets. It reads one byte more than it wants, so a *longer* file is refused rather than accepted as a
@@ -154,8 +154,8 @@ Verified with `OKAPIA_BUILD_TIME=1735689600` (1 January 2025): the clock started
   is on the card and writes only on a change. It is **never called from the tick**, which runs at IRQ level where
   blocking on the SD card is not allowed:
   - 68k: from the event itself. `M68K_EMUL_OP_CLKNOMEM` is the one opcode through which XPRAM changes, and the
-    `--wrap` on `EmulOp` in `emul_op_hook_circle.cpp` listens for it.
-  - PowerPC: from the periodic seam `powerpc_check_ticks()` (`sheepshaver/cpu_ticks_circle.cpp`).
+    `--wrap` on `EmulOp` in `emul_op_hook_okapia.cpp` listens for it.
+  - PowerPC: from the periodic seam `powerpc_check_ticks()` (`sheepshaver/cpu_ticks_okapia.cpp`).
 - **Zap**: `main.cpp:106` rebuilds the PRAM as soon as the `NuMc` signature is missing, so removing the file *is* the
   zap, and it touches no user data. The firmware uses `f_unlink`, not `remove()`: newlib's `remove()` left something
   behind that wedged the next `fopen` — the ROM never opened and the kernel stopped with no log.
@@ -229,7 +229,7 @@ Verified with `OKAPIA_BUILD_TIME=1735689600` (1 January 2025): the clock started
   `VideoInterrupt()` (the only periodic call in the 68k thread at the time) came first, then moved to the
   `CLKNOMEM` event on 2026-09-04.
 - **2026-09-08** — PowerPC seam; separate PRAM files for the two engines.
-- **2026-09-15** — The clock floor moved to `card_circle.cpp` and runs on both engines; the 2040 guard refuses the
+- **2026-09-15** — The clock floor moved to `card_okapia.cpp` and runs on both engines; the 2040 guard refuses the
   saturated date; the PRAM zap chooses its engine.
 - **2026-11-12** — `clock_circle.cpp`: the network, the clock set on the Macintosh and summer time. `ApplyTimeZone()`
   became `ClockInitialize()`. The Mac's `Time` global, never written until then, is written once a second, and the

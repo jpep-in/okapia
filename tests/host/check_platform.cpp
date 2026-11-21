@@ -23,16 +23,16 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "hfs_volume_circle.h"
+#include "hfs_volume_okapia.h"
 #include "mac_layout.h"
-#include "mac_ram_circle.h"
-#include "compositor_circle.h"
-#include "video_sizes_circle.h"
+#include "mac_ram_okapia.h"
+#include "compositor_okapia.h"
+#include "video_sizes_okapia.h"
 #include "sysdeps.h"
 #include "prefs.h"
 #include "rom_chime.h"
 
-// prefs_circle.cpp. Declared here rather than in a header of its own: it has
+// prefs_okapia.cpp. Declared here rather than in a header of its own: it has
 // exactly one caller in the kernel, SavePrefs(), a few lines below it.
 extern unsigned PrefsCollectUnknown (const char *pPath, char *pBuffer, size_t nSize,
                                      unsigned *pnKept);
@@ -41,7 +41,7 @@ extern unsigned PrefsCollectUnknown (const char *pPath, char *pBuffer, size_t nS
 // what is under test.
 void SysAddSerialPrefs (void) {}
 
-// hfs_volume_circle.cpp reaches the card through these. Nothing below mounts a
+// hfs_volume_okapia.cpp reaches the card through these. Nothing below mounts a
 // volume — the flavour rule is asked about a version, not about an image — so
 // they only have to exist.
 size_t Sys_read (void *fh, void *buffer, long long offset, size_t length)
@@ -215,7 +215,7 @@ static void CheckLayout (void)
     Expect (L.nHostBytes == 256u * 1024 * 1024 + OKAPIA_ROM_AREA_SIZE
                             + OKAPIA_SIG_STACK_SIZE + OKAPIA_SHEEP_SIZE + OKAPIA_FRAME_SIZE,
             "that is 277.6 MB for 256 MB of Mac RAM");
-    // And the overhead mac_ram_circle.h claims for both engines must cover this
+    // And the overhead mac_ram_okapia.h claims for both engines must cover this
     // layout, or the second engine asks for a block again.
     Expect (L.nHostBytes - L.nRAMSize <= OKAPIA_MAC_BLOCK_OVERHEAD,
             "the shared overhead covers the hungriest layout");

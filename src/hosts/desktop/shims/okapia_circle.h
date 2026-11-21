@@ -1,8 +1,8 @@
 /*
  * okapia_circle.h — the desktop's stand-in for the Circle bridge.
  *
- * The platform files shared with the Pi (prefs_circle.cpp, hfs_volume_circle.cpp,
- * xpram_circle.cpp…) include src/circle/okapia_circle.h for Circle's logger and
+ * The platform files shared with the Pi (prefs_okapia.cpp, hfs_volume_okapia.cpp,
+ * xpram_okapia.cpp…) include src/hosts/circle/okapia_circle.h for Circle's logger and
  * types. This header is force-included ahead of it, and its include guard then
  * makes the real one a no-op: the log goes to HostLog(), the types to <stdint.h>.
  * The same trick as tests/host/shims/, with a log that speaks.

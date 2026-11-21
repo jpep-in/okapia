@@ -22,30 +22,32 @@ FONT_SRC = $(GEN)/okapia_font_data.cpp
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
 STR_SRC  = $(GEN)/okapia_strings_data.cpp
 STR_IDS  = $(GEN)/okapia_strings_ids.h
-LIBSRCS  = $(wildcard $(FIRMWARE)/*.cpp) $(ROOT)/src/circle/video_sizes_circle.cpp $(FONT_SRC) $(ICON_SRC) $(STR_SRC)
+LIBSRCS  = $(wildcard $(FIRMWARE)/*.cpp) $(ROOT)/src/common/video_sizes_okapia.cpp $(FONT_SRC) $(ICON_SRC) $(STR_SRC)
 LIBOBJS  = $(notdir $(LIBSRCS:.cpp=.o))
 
 CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -I$(FIRMWARE) -I$(GEN) -std=c++14
 
-VPATH = $(FIRMWARE):$(ROOT)/src/circle:$(GEN):.
+VPATH = $(FIRMWARE):$(ROOT)/src/common:$(GEN):.
 
 # Two files of the platform layer build here too, and they are the two where a
-# mistake costs data rather than pixels: prefs_circle.cpp, which can silently
-# drop somebody's settings, and hfs_volume_circle.cpp, which reads volumes we
+# mistake costs data rather than pixels: prefs_okapia.cpp, which can silently
+# drop somebody's settings, and hfs_volume_okapia.cpp, which reads volumes we
 # must never damage. Neither touches Circle for anything but the log, so
 # shims/okapia_circle.h — force-included ahead of the real one, whose include
 # guard then swallows it — is the whole cost. They come with upstream's prefs
 # tables, so the checks run against the real keyword lists and not a copy.
-CIRCLE   = $(ROOT)/src/circle
+# The shared platform files; the Circle host's, for the network clock.
+CIRCLE   = $(ROOT)/src/common
+CHOST    = $(ROOT)/src/hosts/circle
 MACEMU   = $(ROOT)/external/macemu/BasiliskII/src
 LIBHFS   = $(ROOT)/external/hfsutils/libhfs
 
 PLATFORM_CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -std=c++14 \
-    -include shims/okapia_circle.h -Ishims -I$(CIRCLE) -I$(ROOT)/src/common -I$(CIRCLE)/sheepshaver -I$(MACEMU)/include \
+    -include shims/okapia_circle.h -Ishims -I$(CIRCLE) -I$(CIRCLE)/sheepshaver -I$(MACEMU)/include \
     -I$(MACEMU)/Unix -I$(MACEMU)/uae_cpu_2021 -I$(LIBHFS) \
-    -DDIRECT_ADDRESSING -DFPU_UAE
-PLATFORM_OBJS = p_prefs_circle.o p_hfs_volume_circle.o p_prefs.o p_prefs_items.o \
-                p_compositor_circle.o p_video_sizes_circle.o p_rom_chime.o \
+    -DDIRECT_ADDRESSING -DFPU_UAE -idirafter $(CHOST)
+PLATFORM_OBJS = p_prefs_okapia.o p_hfs_volume_okapia.o p_prefs.o p_prefs_items.o \
+                p_compositor_okapia.o p_video_sizes_okapia.o p_rom_chime.o \
                 p_mac_layout.o
 HFS_SRCS      = $(wildcard $(LIBHFS)/*.c)
 HFS_OBJS      = $(addprefix hfs_,$(notdir $(HFS_SRCS:.c=.o)))
@@ -109,7 +111,7 @@ check_pages: $(LIBOBJS) check_pages.o pages_sample.o
 	$(CXX) -o $@ $^
 
 # The platform objects carry a p_ prefix and libhfs an hfs_ one: without them
-# prefs.cpp from upstream and prefs_circle.cpp from here would both want to be
+# prefs.cpp from upstream and prefs_okapia.cpp from here would both want to be
 # prefs.o, and the second would quietly win.
 p_%.o: $(CIRCLE)/%.cpp
 	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
@@ -118,6 +120,9 @@ p_%.o: $(CIRCLE)/%.cpp
 # and touches neither Circle nor macemu, which is exactly why it is checked here
 # rather than discovered on a card.
 p_%.o: $(CIRCLE)/sheepshaver/%.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
+
+p_%.o: $(CHOST)/%.cpp
 	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
 
 p_%.o: $(MACEMU)/%.cpp
@@ -155,21 +160,21 @@ $(MACROMAN_H): $(ROOT)/scripts/gen-macroman.py
 	@mkdir -p $(GEN)
 	$(ROOT)/scripts/gen-macroman.py $@
 
-p_mac_encoding_circle.o: $(MACROMAN_H) $(CIRCLE)/mac_encoding_circle.cpp
-	$(CXX) $(PLATFORM_CXXFLAGS) -I$(GEN) -MMD -MP -c -o $@ $(CIRCLE)/mac_encoding_circle.cpp
+p_mac_encoding_okapia.o: $(MACROMAN_H) $(CIRCLE)/mac_encoding_okapia.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -I$(GEN) -MMD -MP -c -o $@ $(CIRCLE)/mac_encoding_okapia.cpp
 
 check_encoding.o: check_encoding.cpp
 	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
 
-check_encoding: check_encoding.o p_mac_encoding_circle.o
+check_encoding: check_encoding.o p_mac_encoding_okapia.o
 	$(CXX) -o $@ $^
 
 # The network preferences and the supplicant's configuration. Pure on
-# purpose (net_config_circle.h): no shim, no upstream table.
+# purpose (net_config_okapia.h): no shim, no upstream table.
 check_net.o: check_net.cpp
 	$(CXX) $(PLATFORM_CXXFLAGS) -MMD -MP -c -o $@ $<
 
-check_net: check_net.o p_net_config_circle.o p_net_clock.o
+check_net: check_net.o p_net_config_okapia.o p_net_clock.o
 	$(CXX) -o $@ $^
 
 # Time zones, summer time and the date in words: the firmware's own code, so
@@ -189,12 +194,12 @@ make_large_volume: make_large_volume.o $(HFS_OBJS)
 # asymmetry of one pixel is invisible on a screenshot and obvious at three. The
 # behaviour joins them: what the focus does under a sequence of keys is decidable
 # on a machine with no keyboard, so there is no reason to go and look.
-check_quickdraw: check_quickdraw.cpp ../../src/circle/quickdraw_blit.cpp ../../src/circle/quickdraw_blit.h
-	$(CXX) $(CXXFLAGS) -I../../src/circle -o $@ $(filter %.cpp,$^)
+check_quickdraw: check_quickdraw.cpp ../../src/common/quickdraw_blit.cpp ../../src/common/quickdraw_blit.h
+	$(CXX) $(CXXFLAGS) -I../../src/common -o $@ $(filter %.cpp,$^)
 
 # The 68881: the 68K softfloat under fpu_softfloat.cpp, as the kernel compiles
 # it, with the known answers and the digest the board is compared against
-# (src/circle/fpu_selftest.h). It is plain C and needs no shim.
+# (src/common/fpu_selftest.h). It is plain C and needs no shim.
 SOFTFLOAT      = $(MACEMU)/uae_cpu_2021/fpu/softfloat
 SOFTFLOAT_OBJS = sf_softfloat.o sf_softfloat_fpsp.o sf_softfloat_decimal.o
 

@@ -3,7 +3,7 @@
 // desktop: Circle's timer, heap and devices (shims/circle/), the Board* and
 // Clock* functions, the firmware's output and input bridges, the Mac RAM block.
 //
-// Everything here exists so that src/circle's portable files and
+// Everything here exists so that src/common's platform files and
 // src/kernel/kernel.cpp build unchanged (docs/notes/research/desktop-host.md:
 // "about a third of src/circle/ builds unchanged behind a desktop shim"). What
 // the Pi does with hardware, the host does with threads and its own clock.
@@ -14,8 +14,8 @@
 
 #include "okapia_circle.h"
 #include "hal_circle.h"
-#include "clock_circle.h"
-#include "mac_ram_circle.h"
+#include "clock_okapia.h"
+#include "mac_ram_okapia.h"
 #include "quickdraw_worker.h"
 #include "okapia_input.h"
 #include "okapia_output.h"
@@ -128,7 +128,7 @@ CMemorySystem *CMemorySystem::Get (void)
 }
 
 // The Mac's addresses are host addresses minus MEMBaseDiff, the base of its RAM
-// (DIRECT_ADDRESSING, main_circle.cpp), so every block the Macintosh is shown —
+// (DIRECT_ADDRESSING, main_okapia.cpp), so every block the Macintosh is shown —
 // its frame buffer first — must lie above that base and within 4 GB of it. On
 // the board Circle's heap does that by itself, the RAM block being claimed
 // first. Here the block is reserved with room after it, and the heap is served
@@ -261,9 +261,6 @@ void BoardWatchClock (bool)      {}
 void BoardLogFlush (void)        {}   // every line is in the file already
 void BoardSerialLog (bool)       {}
 void BoardSerialReplay (void)    {}
-void BoardChimePlay (void)       {}   // with the sound, later
-void BoardChimeFinish (void)     {}
-void BoardChimeStop (void)       {}
 void BoardPowerOff (void)        {}
 
 /*
@@ -404,9 +401,6 @@ void DesktopMacMouse (unsigned nButtons, int nDX, int nDY)
  *  The sound and the network, until they come (audio_dummy.cpp and
  *  ether_dummy.cpp keep the Macintosh's side quiet; these are the seams' calls)
  */
-void AudioPump (void)                       {}
-void AudioReport (unsigned)                 {}
-void EtherPoll (void)                       {}
 
 // kernel.cpp hands the board's log flush to the menu; every line is in the
 // file already here.

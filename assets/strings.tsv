@@ -58,6 +58,7 @@ journal_empty	No log on the card yet.	Pas encore de journal sur la carte.
 net_connection	Connection	Connexion
 net_off	None	Aucune
 net_cable	Ethernet cable	Câble Ethernet
+net_shared	Shared with this computer (NAT)	Partagé avec cet ordinateur (NAT)
 net_wifi	Wi-Fi	Wi-Fi
 net_name	Network	Réseau
 net_password	Password	Mot de passe
@@ -76,6 +77,7 @@ net_st_connected	Connected to	Connecté à
 net_st_refused	The password was refused by	Mot de passe refusé par
 net_st_lost	Not connected to	Non connecté à
 net_st_cable_up	Cable connected	Câble branché
+net_st_shared_up	The Macintosh gets 10.0.2.15 behind this computer	Le Macintosh aura 10.0.2.15 derrière cet ordinateur
 net_st_cable_down	Cable unplugged	Câble débranché
 net_st_restart	Okapia will restart to change the connection.	Okapia redémarrera pour changer de connexion.
 net_st_bad_password	A password is 8 to 63 characters, without accents.	Un mot de passe fait de 8 à 63 caractères, sans accents.

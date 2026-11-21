@@ -17,7 +17,7 @@
 #include "sysdeps.h"
 #include "cpu_emulation.h"
 
-// mac_encoding_circle.cpp reaches them through --wrap; here they are named.
+// mac_encoding_okapia.cpp reaches them through --wrap; here they are named.
 extern "C" const char *__wrap__Z25host_encoding_to_macromanPKc (const char *);
 extern "C" const char *__wrap__Z25macroman_to_host_encodingPKc (const char *);
 

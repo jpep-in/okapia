@@ -2,8 +2,8 @@
 
 > The Macintosh's sound on the jack, HDMI or USB: the board-owned device, the pull from the Mac's mixer,
 > volume, switching outputs, and the startup chime read from the ROM. Main files:
-> `src/circle/audio_circle.cpp` (compiled once per engine), `src/circle/hal_circle.h` (the declarations)
-> and `src/circle/board_sound_circle.cpp` (`BoardSoundClaim`, `BoardChime*`), `src/circle/rom_chime.{h,cpp}`,
+> `src/common/audio_okapia.cpp` (compiled once per engine), `src/hosts/circle/hal_circle.h` (the declarations)
+> and `src/hosts/circle/board_sound_circle.cpp` (`BoardSoundClaim`, `BoardChime*`), `src/common/rom_chime.{h,cpp}`,
 > `src/common/okapia_menu.cpp` (the setting).
 
 ## Using it
@@ -34,7 +34,7 @@ Circle's sound devices cannot be given back while they play. `Cancel()` only ask
 buffer, and deleting the device before it has trips `CHDMISoundBaseDevice`'s destructor assertion
 (`hdmisoundbasedevice.cpp:166`) or frees a PWM device its interrupt still calls into. A Circle assertion halts, and
 `AudioExit()` runs inside `ExitAll()` **before** `DiskExit()`: every restart with sound on could freeze the board
-with the disk image still open. And `audio_circle.cpp` is compiled once per engine, so a device per engine would be
+with the disk image still open. And `audio_okapia.cpp` is compiled once per engine, so a device per engine would be
 two claims on one socket.
 
 So `BoardSoundClaim (pWhere, nQueueMsecs)` (`board_sound_circle.cpp`) creates the device once — 44.1 kHz, 16-bit signed

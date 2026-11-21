@@ -30,7 +30,7 @@ static const unsigned CHOOSER_MAX = 8;
 // Which processor a volume's System is built for, and so which emulator can
 // start it. A value the firmware is handed, never a reading it makes: nothing
 // here knows what a resource map is, and everything that does stays in
-// src/circle (hfs_volume_circle.h).
+// src/common (hfs_volume_okapia.h).
 enum TChooserCPU
 {
     CPUUnknown,         // no readable version, so no idea

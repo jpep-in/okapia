@@ -14,7 +14,7 @@
 #include "okapia_keys.h"
 #include "okapia_version.h"
 
-#include "net_config_circle.h"
+#include "net_config_okapia.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -26,7 +26,7 @@
 #include "sysdeps.h"
 #include "prefs.h"
 
-#include "hfs_volume_circle.h"
+#include "hfs_volume_okapia.h"
 
 #include "okapia_chooser.h"
 #include "okapia_confirm.h"
@@ -313,7 +313,7 @@ static void ApplyVolumes (const TChooser *pChooser)
 // The parameter RAM, forgotten. main.cpp:106 rebuilds it from scratch as soon
 // as the "NuMc" signature is missing, so removing the file *is* the zap — and
 // it touches nothing of the user's data. Each engine keeps its own file
-// (xpram_circle.cpp), and the firmware serves both, so it is told which.
+// (xpram_okapia.cpp), and the firmware serves both, so it is told which.
 //
 // HostFileRemove and not remove(): on the Pi the newlib glue's remove() deletes
 // the file and then leaves something behind that wedges the next fopen — the
@@ -370,7 +370,7 @@ static void LoadSettings (TSettings *pSettings)
     pSettings->V.nMouseDpi  = PrefsFindInt32 ("mousedpi");
 
     // Silence is what an unreadable value means, and nosound wins wherever the
-    // two disagree — audio_circle.cpp reads them the same way. A device claimed
+    // two disagree — audio_okapia.cpp reads them the same way. A device claimed
     // and not working is what froze the guest once already, and cost a card.
     const char *pSound = PrefsFindString ("soundoutput");
     pSettings->V.nSound = SoundOff;
@@ -390,7 +390,7 @@ static void LoadSettings (TSettings *pSettings)
     pSettings->V.bBootMenu = PrefsFindBool ("bootmenu");
 
     // Both read at every start of the Macintosh (basilisk_glue.cpp for jit,
-    // quickdraw_circle.cpp for qdaccel), so neither owes the board a restart.
+    // quickdraw_okapia.cpp for qdaccel), so neither owes the board a restart.
     // Anything but "off" reads as ticked: the file may hold parallel, probe or
     // verify, which StoreSettings() leaves alone unless the box is changed.
     pSettings->V.bJit = PrefsFindBool ("jit");
@@ -922,6 +922,7 @@ static void LoadNetwork (TNetwork *p)
 
     p->nAvailable = HostNetAvailable ();
     p->nRunning   = RunningKind ();
+    p->bShared    = HostKind () == HostDesktop;
     // A start that failed is final for this boot: Circle cannot give a device
     // back to try again.
     p->State = HostNetTried () && p->nRunning == NetworkOff ? NetStateUnavailable

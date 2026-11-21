@@ -2,7 +2,7 @@
 
 > The Okapia firmware: a configuration utility in a plausible Apple style that opens before any emulator
 > code runs — the Open Firmware a 68k Macintosh never had. One window with six tabs: System, Settings,
-> Network, Information, Display, Logs. Main files: `src/firmware/` (pure: no Circle type), `src/common/okapia_menu.cpp` (the driver: preferences, card and pages, the same on every host), `src/common/okapia_host.h` (what it asks of the machine), `src/firmware/circle/okapia_host_circle.cpp` (the Pi's answers), `okapia_input.cpp` (USB
+> Network, Information, Display, Logs. Main files: `src/firmware/` (pure: no Circle type), `src/common/okapia_menu.cpp` (the driver: preferences, card and pages, the same on every host), `src/common/okapia_host.h` (what it asks of the machine), `src/hosts/circle/firmware/okapia_host_circle.cpp` (the Pi's answers), `okapia_input.cpp` (USB
 > bridge), `okapia_output.cpp` (frame buffer claim), `assets/strings.tsv`, `assets/fonts/`, `assets/icons/`.
 
 ## Using it
@@ -101,7 +101,7 @@ which is why the page shows it and does not set it: Date & Time sets it, and Oka
 
 The two speed-ups pass all four: each is an experimental mode that can hang a Macintosh at startup, and turning it
 back off is exactly what must not need another computer. Both are read at every start of the Macintosh
-(`basilisk_glue.cpp` for `jit`, `quickdraw_circle.cpp` for `qdaccel`), so neither asks for a restart. QuickDraw's box
+(`basilisk_glue.cpp` for `jit`, `quickdraw_okapia.cpp` for `qdaccel`), so neither asks for a restart. QuickDraw's box
 is ticked for any value but `off` and writes `sync` or `off` only when it is changed, so a card set to `parallel`,
 `probe` or `verify` keeps it. The JIT box is grey, still showing the file's value, in an image built without the
 translator: the shared half learns that from `-DOKAPIA_TRANSLATOR`, which `src/kernel/Makefile` sets from
@@ -183,7 +183,7 @@ synthetic events and measure them.
 card's volumes (`FirmwareRun()`, `RunScreens()`, `RunPage()`, the `Load*`/`Store*` functions). What it needs of the
 machine goes through `src/common/okapia_host.h`: the log, sleeping and polling, the clock, the output surface and
 its facts, input, the card's space and files, the sound outputs offered, the network page's questions. The Pi's
-answers are `src/firmware/circle/okapia_host_circle.cpp` (FatFs, Circle, the board's network and clock); a
+answers are `src/hosts/circle/firmware/okapia_host_circle.cpp` (FatFs, Circle, the board's network and clock); a
 desktop's are `src/hosts/desktop/`. No POSIX or Circle type crosses the interface, and paths are the card's own,
 rooted at `/`. See [Okapia on a desktop](../notes/research/desktop-host.md#the-okapia-host-interface).
 
@@ -265,12 +265,12 @@ levels — note, caution, stop — because they are a promise about consequences
 - [ ] **Open the menu whenever the Macintosh cannot start**, with the reason on screen, instead of halting. Today
       the menu opens by itself only for a missing configuration or no bootable volume; any other failure of
       `CKernel::StartMacintosh()` — no `rom` line, ROM file missing, wrong size or unreadable, ROM refused by
-      `CheckROM()` (`MacROMLoad`, `src/circle/main_circle.cpp:190` and its SheepShaver twin), Mac RAM not
+      `CheckROM()` (`MacROMLoad`, `src/common/main_okapia.cpp:190` and its SheepShaver twin), Mac RAM not
       allocated — logs to the serial port only and ends in `OkapiaHalt` (`src/kernel/kernel.cpp:485`): a frozen
       screen on a board with no UART attached. Both engines, and every restart, not only power-on
 - [ ] **Repair dialog** — today `HfsRepair` scavenges silently. Three states, not two: repair without asking,
       ask, never repair — through a second boolean `hfsrepairask`, without changing the type of `hfsrepair`
-      (`prefs_circle.cpp`: the parser reads by declared type, an integer would read `0` on every existing card).
+      (`prefs_okapia.cpp`: the parser reads by declared type, an integer would read `0` on every existing card).
       The dialog must time out and repair on expiry, or `run-test.sh` stops on it. Strings and a specimen
       exist; the screen is not wired
 - [ ] System folder icons at non-integer scales (vector or larger sources)

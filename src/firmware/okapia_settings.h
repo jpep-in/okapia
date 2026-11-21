@@ -22,7 +22,7 @@
 #include "okapia_datetime.h"
 
 // Where the Mac's sound comes out. Four states and not a boolean, because
-// audio_circle.cpp hard-codes the jack — which a Pi 5 does not have, and which
+// audio_okapia.cpp hard-codes the jack — which a Pi 5 does not have, and which
 // is the wrong socket on a television. Off is first so that a card whose value
 // is missing or unreadable stays silent: a device claimed and not working is
 // what froze the guest once already (docs/topics/sound.md).

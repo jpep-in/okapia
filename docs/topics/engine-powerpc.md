@@ -1,9 +1,9 @@
 # PowerPC engine
 
 > SheepShaver on Circle: what it emulates, how its memory is placed on a Pi, its interpreter, its ROMs, and
-> how it lives beside the 68k engine. Main files: `src/kernel/kernel_ppc.cpp`, `src/circle/sheepshaver/`
-> (`main_circle.cpp`, `mac_layout.{h,cpp}`, `platform_bits_circle.cpp`, `video_circle.cpp`,
-> `cpu_ticks_circle.cpp`, `config.h`), `patches/macemu/0001`, `0002`, `0004`, `0011`,
+> how it lives beside the 68k engine. Main files: `src/kernel/kernel_ppc.cpp`, `src/common/sheepshaver/`
+> (`main_okapia.cpp`, `mac_layout.{h,cpp}`, `platform_bits_okapia.cpp`, `video_okapia.cpp`,
+> `cpu_ticks_okapia.cpp`, `config.h`), `patches/macemu/0001`, `0002`, `0004`, `0011`,
 > `scripts/gen-ppc-exec.sh`, `scripts/check-engine.sh`.
 
 ## Using it
@@ -36,13 +36,13 @@ handler, `main_unix.cpp:21-79`) is compiled out.
 ### Code shared with the 68k engine
 
 In `SheepShaver/src/Unix/`, everything that is a symbolic link into `BasiliskII/src/Unix/` is platform code
-shared by both engines. Okapia's matching files serve both unchanged: `prefs_circle.cpp`, `xpram_circle.cpp`,
-`timer_circle.cpp`, `audio_circle.cpp`, `input_circle.cpp`, `extfs_sync_circle.cpp`, `hfs_volume_circle.cpp`,
+shared by both engines. Okapia's matching files serve both unchanged: `prefs_okapia.cpp`, `xpram_okapia.cpp`,
+`timer_okapia.cpp`, `audio_okapia.cpp`, `input_okapia.cpp`, `extfs_sync_okapia.cpp`, `hfs_volume_okapia.cpp`,
 the compositor and the firmware. What is SheepShaver's own is `main`, `video`, `user_strings`, `sysdeps`, the
 interrupt flag values (`INTFLAG_*` differ, and SheepShaver needs `TriggerInterrupt()`), and the emul-op hook.
 
 The core compiled for the board **without a single change** (23 core files plus the interpreter): only a
-`src/circle/sheepshaver/config.h` was needed, close to Basilisk's — adding `EMULATED_PPC`, `HAVE_FENV_H`,
+`src/common/sheepshaver/config.h` was needed, close to Basilisk's — adding `EMULATED_PPC`, `HAVE_FENV_H`,
 `NATMEM_OFFSET`, removing `VERSION_MAJOR`/`VERSION_MINOR` (SheepShaver's `version.h` declares them as `const
 int`). `scripts/check-engine.sh sheepshaver` re-runs that sweep.
 
@@ -94,7 +94,7 @@ compile the glue, which otherwise stops on `#error "you don't have the capabilit
 
 kpx_cpu never returns while the Mac runs, and upstream always had a thread beside it. `patches/macemu/0004`
 adds `powerpc_check_ticks()`, called every `ppc_check_ticks_quantum` instructions (starting at
-`PPC_CHECK_TICKS = 50000`); `sheepshaver/cpu_ticks_circle.cpp` recalibrates the quantum to 1 kHz (~950/s
+`PPC_CHECK_TICKS = 50000`); `sheepshaver/cpu_ticks_okapia.cpp` recalibrates the quantum to 1 kHz (~950/s
 measured), drains input, polls the PRAM every 64 visits (SheepShaver's ROM has no parameter-RAM opcode to hook),
 and every five seconds watches the clock, reports and flushes the log.
 
@@ -114,7 +114,7 @@ the pointer position reached the cursor device and never moved on screen.
 ### Parameter RAM
 
 `/SheepShaver_XPRAM`, 8,192 bytes, separate from Basilisk's 256-byte file: fields sit at different offsets, and
-one file would let each Macintosh silently boot with the other's settings. `xpram_circle.cpp` reads one byte more
+one file would let each Macintosh silently boot with the other's settings. `xpram_okapia.cpp` reads one byte more
 than it wants so a *longer* file is refused rather than accepted as a short read.
 
 ### Mouse

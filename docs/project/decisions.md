@@ -73,7 +73,7 @@
   `malloc` and a `free` per floating-point instruction.
 - **Evidence**: sixteen answers computed independently in decimal and a digest of 60,000 operations over every
   mode and precision, the same on an Apple M4 with Clang and on AArch64 with GCC (`tests/host/check_fpu`,
-  `src/circle/fpu_selftest.h`); clean under UBSan and ASan.
+  `src/common/fpu_selftest.h`); clean under UBSan and ASan.
 - **Verdict instrument**: those checks, never a boot — System 7.1 reaches the Finder in four FPU instructions.
 - **Kept**: `OKAPIA_FPU=ieee` builds the binary128 core (`patches/macemu/0008`) for comparison.
 

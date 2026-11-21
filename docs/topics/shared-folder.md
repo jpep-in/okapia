@@ -2,7 +2,7 @@
 
 > A folder on the FAT card that appears on the Macintosh's desktop as a volume: the easiest way to get software
 > in and files out, from any computer that can read an SD card. Main files: upstream `extfs.cpp` and
-> `Unix/extfs_unix.cpp` (reused unchanged), `src/circle/extfs_sync_circle.cpp`, `src/circle/mac_encoding_circle.cpp`,
+> `Unix/extfs_unix.cpp` (reused unchanged), `src/common/extfs_sync_okapia.cpp`, `src/common/mac_encoding_okapia.cpp`,
 > `scripts/gen-macroman.py`, `src/kernel/kernel.cpp` (`PrepareSharedFolder`).
 
 ## Using it
@@ -27,7 +27,7 @@
 `extfs_unix.cpp` compiles unchanged against newlib: `extfs.cpp` uses only `stat`, `access`, `opendir`/`readdir`,
 `open`/`read`/`write`/`lseek`, `mkdir`, `remove`, `rmdir`, `rename` and `utime`, all present in circle-stdlib except
 the last, which Okapia supplies through FatFs's `f_utime` (`FF_USE_CHMOD` is 1 in Circle's `ffconf.h`, see
-`src/circle/compat/`).
+`src/hosts/circle/compat/`).
 
 Resource forks and Finder info need no extended attributes (`Unix/extfs_unix.cpp:79-83`):
 
@@ -49,7 +49,7 @@ rewrites in its own table.
 FatFs keeps the tail of a write in the file object and only records the new size in the directory entry at `f_sync`
 or `f_close`. A disk image never opens that window (the Mac writes whole 512-byte sectors, passed straight through),
 but the shared folder writes any length. Without a flush, a pulled plug leaves a directory entry saying zero bytes for
-a file whose clusters are already on the card — a loss that looks like a success. `extfs_sync_circle.cpp` wraps
+a file whose clusters are already on the card — a loss that looks like a success. `extfs_sync_okapia.cpp` wraps
 `extfs_write` (`--wrap=_Z11extfs_writeiPvm`, on each engine's partial link) and calls `fsync` after every write;
 a failed `fsync` is logged. A pulled plug during a copy then costs the file being copied and nothing else.
 
@@ -57,7 +57,7 @@ a failed `fsync` is logged. A pulled plug during a copy then costs the file bein
 
 FatFs gives long names as UTF-8; a Macintosh names its files in MacRoman. Upstream's `extfs_unix.cpp` returns the
 pointer it was given — right between two UTF-8 systems, wrong here: "Résumé.txt" reached a French System 7.1 as
-mojibake. `mac_encoding_circle.cpp` replaces both conversion functions through `--wrap`:
+mojibake. `mac_encoding_okapia.cpp` replaces both conversion functions through `--wrap`:
 
 - The 128-entry table is **generated** by `scripts/gen-macroman.py` from Python's `mac_roman` codec (Apple's
   `ROMAN.TXT`). One mistyped code point is one accented letter, in one language, wrong for years.

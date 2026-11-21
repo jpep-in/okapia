@@ -196,12 +196,12 @@ What was added, all of it ours and none of it in `external/`:
 - `external/macemu-jit`, pinned in `bootstrap.sh`; `patches/macemu-jit/` carries our patches 0007 (guard) and 0008
   (binary128 FPU) as they apply, unchanged. **0009 and 0010 (the interpreter's per-instruction savings) are not carried
   yet**: `0009` fails on `newcpu.cpp:1507`, and the JIT core rewrote that code.
-- `src/circle/jit_circle.cpp`: the eight symbols of [Route A sized](#route-a-sized-on-circle) — a bump arena of 48 MB for
+- `src/hosts/circle/jit_circle.cpp`: the eight symbols of [Route A sized](#route-a-sized-on-circle) — a bump arena of 48 MB for
   everything `vm_acquire` hands out, made executable once by `ExecMemMakeExecutable()`; the tick and the seam driven
   from the dispatcher by the clock; `usleep()` for the STOP path, where the core now sleeps; `jitlazyflush` forced
-  off and `jitfpu` off. Stand-in `sys/mman.h` and `SDL2/SDL.h` in `src/circle/jit-compat/`.
-- `ConsumeInterruptFlags()` and the guest's cache-flush request in `main_circle.cpp`; `TickFromEngine()` in
-  `tick_circle.cpp`.
+  off and `jitfpu` off. Stand-in `sys/mman.h` and `SDL2/SDL.h` in `src/hosts/circle/jit-compat/`.
+- `ConsumeInterruptFlags()` and the guest's cache-flush request in `main_okapia.cpp`; `TickFromEngine()` in
+  `tick_okapia.cpp`.
 
 **Proved, under QEMU's `raspi3b`, System 7.1, our own ROM patches and our binary128 FPU:**
 
@@ -503,7 +503,7 @@ ours): an arena aligned to 64 KB; read `TTBR0_EL1`; L2 index `addr >> 29`, L3 in
 reconfirmed in the ARM ARM). **Circle need not be patched.** Putting the buffer in `.text` would write megabytes of
 zeros into `kernel8.img`.
 
-**Proved under QEMU on 2026-11-13** by `ExecMemSelfTest()` (`src/circle/execmem_circle.cpp`, built with
+**Proved under QEMU on 2026-11-13** by `ExecMemSelfTest()` (`src/hosts/circle/execmem_circle.cpp`, built with
 `EXECMEM_SELFTEST` in `OKAPIA_TRACE=1`, called from `kernel.cpp` right after the Mac RAM is claimed):
 
 ```

@@ -8,7 +8,7 @@
 # — so it is answered here, and kept answered.
 #
 # The sweep found no portability problem whatsoever on 2026-09-05: all 29 files
-# compile unchanged. Two things had to be said in src/circle/sheepshaver/config.h
+# compile unchanged. Two things had to be said in src/common/sheepshaver/config.h
 # and nothing else. If that ever stops being true, this says which file.
 #
 # Copyright (C) 2026  Jonathan Pepin
@@ -52,7 +52,7 @@ FLAGS=(
     -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L -DRASPPI=3 -DSTDLIB_SUPPORT=3
     -U__unix__ -U__linux__ -O2 -std=c++17 -fexceptions -w
     # This engine's config.h first, so it is found instead of Basilisk's.
-    -I"${REPO_ROOT}/src/circle/sheepshaver"
+    -I"${REPO_ROOT}/src/common/sheepshaver"
     -I"${SS}/include" -I"${SS}/Unix" -I"${SS}/CrossPlatform"
     -I"${SS}/kpx_cpu/include" -I"${SS}/kpx_cpu/src"
     -I"${STDLIB}/include" -I"${STDLIB}/libs/circle/addon"
@@ -81,13 +81,13 @@ FLAGS+=(-I"${REPO_ROOT}/build/generated")
 # And our own half, which is the part that will actually be wrong. It needs the
 # platform's include paths on top of the engine's.
 OURS=(
-    "${REPO_ROOT}/src/circle/sheepshaver/mac_layout.cpp"
-    "${REPO_ROOT}/src/circle/sheepshaver/main_circle.cpp"
-    "${REPO_ROOT}/src/circle/sheepshaver/video_circle.cpp"
+    "${REPO_ROOT}/src/common/sheepshaver/mac_layout.cpp"
+    "${REPO_ROOT}/src/common/sheepshaver/main_okapia.cpp"
+    "${REPO_ROOT}/src/common/sheepshaver/video_okapia.cpp"
 )
 OUR_FLAGS=(
-    -I"${REPO_ROOT}/src/circle" -I"${REPO_ROOT}/src/circle/compat"
-    -I"${REPO_ROOT}/src/firmware/circle"
+    -I"${REPO_ROOT}/src/common" -I"${REPO_ROOT}/src/hosts/circle" -I"${REPO_ROOT}/src/hosts/circle/compat"
+    -I"${REPO_ROOT}/src/hosts/circle/firmware"
     -isystem "${STDLIB}/libs/circle/include"
     -isystem "${STDLIB}/libs/circle/addon"
     -DAARCH=64 -DRASPPI=3 -D__circle__=510000 -DSTDLIB_SUPPORT=3

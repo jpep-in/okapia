@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "net_config_circle.h"
+#include "net_config_okapia.h"
 #include "net_clock.h"
 
 static unsigned s_nFailures;

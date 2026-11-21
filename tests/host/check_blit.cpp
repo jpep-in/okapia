@@ -36,7 +36,7 @@ static void Expect (bool bOK, const char *pWhat)
 /*
  *  The palette, filled the way both drivers fill it
  *
- *  video_circle.cpp:306 and sheepshaver/video_circle.cpp:404 write all 256
+ *  video_okapia.cpp:306 and sheepshaver/video_okapia.cpp:404 write all 256
  *  entries, repeating the colours when the mode has fewer, because the
  *  converters read ExpandMap[c >> 6] without masking. Reproducing that here is
  *  not a convenience: it is the convention under test.

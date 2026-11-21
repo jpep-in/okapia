@@ -137,7 +137,7 @@ changes:
 | `261116-5926cec+3fa9` | that commit with edits; another edit gives another suffix, a commit removes it |
 | `unknown` | no git, as in a downloaded archive |
 
-The Makefiles of `src/kernel` and `src/firmware/circle` run the script each time they are read and it writes
+The Makefiles of `src/kernel` and `src/hosts/circle/firmware` run the script each time they are read and it writes
 `build/generated/okapia_version.h` only when the version moved, so a build of the same state rebuilds nothing and a new
 one rebuilds `hal_circle.cpp` and `okapia_menu.cpp`, the two files that include it. `external/` and `reference/` are
 left out of the hash: a submodule's work tree is not this project's change, and `apply-patches.sh --check` covers the
@@ -200,7 +200,7 @@ applied is skipped.
   and reads the `.d` files back; a rule without them is a bug.** After adding the flags, `make okapia-clean` once.
 - **`.d` files do not exist on a fresh tree**, so they cannot order a compile after a generated header. A clean
   checkout failed on `kernel.cpp` with `okapia_strings_ids.h: No such file or directory` (2026-11-21). Every object
-  rule of `src/kernel/Makefile` and `src/firmware/circle/Makefile` now waits for `$(STR_IDS)` as an order-only
+  rule of `src/kernel/Makefile` and `src/hosts/circle/firmware/Makefile` now waits for `$(STR_IDS)` as an order-only
   prerequisite, and `gen-strings.py`'s two outputs are one grouped target (`&:`), so a parallel build runs it once.
   A new generated header needs the same.
 - **Objects do not depend on the Makefile.** Changing a `-D`, a flag or a `#define` in `external/` rebuilds nothing.

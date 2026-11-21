@@ -2,9 +2,9 @@
 
 > Putting the Macintosh on the local network, by cable or Wi-Fi. The Mac shares the Pi's MAC address and is a node
 > of its own: MacTCP or Open Transport, AppleTalk, a native SMB client such as Mamba, period browsers. Main files:
-> `src/circle/ether_circle.cpp` (the Mac's driver, per engine), `src/circle/board_net_circle.cpp` (the interface,
-> once for the board), `src/circle/wlan_circle.cpp` (Wi-Fi and its WPA supplicant),
-> `src/circle/net_config_circle.cpp` (the preferences, pure), `src/circle/wlan_hostap.c` (what the boot menu asks the
+> `src/common/ether_okapia.cpp` (the Mac's driver, per engine), `src/hosts/circle/board_net_circle.cpp` (the interface,
+> once for the board), `src/hosts/circle/wlan_circle.cpp` (Wi-Fi and its WPA supplicant),
+> `src/common/net_config_okapia.cpp` (the preferences, pure), `src/hosts/circle/wlan_hostap.c` (what the boot menu asks the
 > supplicant), `src/firmware/okapia_network.cpp` (the boot menu's Network page).
 
 ## Using it
@@ -59,7 +59,7 @@ out before the Mac's ring.
 ### The board's half, claimed once
 
 `board_net_circle.cpp` is in `SHARED_SRCS`: the device, the receive ring and, for Wi-Fi, the scheduler exist once for
-the life of the board, and both engines' `ether_circle.cpp` call into that one copy
+the life of the board, and both engines' `ether_okapia.cpp` call into that one copy
 ([Architecture](../project/architecture.md#resources-taken-once-for-the-life-of-the-board)).
 
 - **`BoardNetStart()`** (`board_net_circle.cpp:195`) reads the preferences on the first start of either Macintosh —
@@ -82,11 +82,11 @@ the life of the board, and both engines' `ether_circle.cpp` call into that one c
 
 ### The Mac's half, per engine
 
-`ether_circle.cpp` replaces `dummy/ether_dummy.cpp` in both engines. It is adapted from upstream's
+`ether_okapia.cpp` replaces `dummy/ether_dummy.cpp` in both engines. It is adapted from upstream's
 `Unix/ether_unix.cpp`, with the reception thread replaced by polling.
 
-- **`EtherPoll()`** (`ether_circle.cpp:413`) runs in each engine's 1 kHz seam, after `InputDrain()`
-  (`cpu_ticks_circle.cpp:141`, `sheepshaver/cpu_ticks_circle.cpp:134`). It polls the board and, when a frame waits,
+- **`EtherPoll()`** (`ether_okapia.cpp:413`) runs in each engine's 1 kHz seam, after `InputDrain()`
+  (`cpu_ticks_okapia.cpp:141`, `sheepshaver/cpu_ticks_okapia.cpp:134`). It polls the board and, when a frame waits,
   raises `INTFLAG_ETHER`; the Mac's interrupt empties the ring straight into a Mac-side packet
   (`EtherInterrupt()`, `:211`; `EtherIRQ()` on the PowerPC side, `:380`).
 - **No interrupt before the System asks for frames.** Basilisk's `EthernetPacket` allocates its buffer with
@@ -95,7 +95,7 @@ the life of the board, and both engines' `ether_circle.cpp` call into that one c
 - **68k**: upstream's dispatch to protocol handlers, in a fixed table of 16 rather than a `std::map`; 802.3 frames go
   to the handler for type 0 (AppleTalk Phase 2).
 - **PowerPC**: upstream's glue (`EtherInit`, `AO_*`, `EtherIRQ`). `ether_reset()` stays in
-  `sheepshaver/platform_bits_circle.cpp`, where it is the PowerPC Macintosh's restart signal
+  `sheepshaver/platform_bits_okapia.cpp`, where it is the PowerPC Macintosh's restart signal
   ([Startup and shutdown](startup-and-shutdown.md#restart-from-mac-os)).
 - **Every frame sent carries the interface's address as its source**, set again at send time.
 - **No UDP tunnel**: `ether_start_udp_thread()` refuses, so `udptunnel true` means no network.
@@ -121,7 +121,7 @@ Circle's own sample are supplied by `wlan_circle.cpp`:
   `src/kernel/Makefile:271`): one name opens a file object read from memory (`wlan_circle.cpp:81`), every other file
   goes to FatFs.
 
-The configuration (`NetWpaConfigBuild()`, `net_config_circle.cpp`) gives the SSID in hex and the **key**, derived
+The configuration (`NetWpaConfigBuild()`, `net_config_okapia.cpp`) gives the SSID in hex and the **key**, derived
 from the passphrase with hostap's own `pbkdf2_sha1()`, never the passphrase: the supplicant's line reader cuts at a
 `#` that an earlier `"` fooled (`hostap/src/utils/config.c:66-84`). With no SSID it is the country alone
 (`NetWpaConfigNoNetwork()`): the supplicant runs, joins nothing and answers scans, which is how the boot menu lists
@@ -134,7 +134,7 @@ The networks in range, the state of the join and a new network without a restart
 `wlan_hostap.c` is C, compiled with `Makefile.circle`'s switches copied into `WLAN_HOSTAP_FLAGS`
 (`src/kernel/Makefile`), and exposes no hostap type (`wlan_hostap.h`):
 
-- **The interface pointer** is kept static in Circle's `main_circle.c`, so `wpa_supplicant_add_iface()` is wrapped on
+- **The interface pointer** is kept static in Circle's `main_okapia.c`, so `wpa_supplicant_add_iface()` is wrapped on
   the final link and the wrap keeps what it returns.
 - **Scan**: a `MANUAL_SCAN_REQ`, which the supplicant honours with no network enabled. The page asks again every ten
   seconds while nothing is joined. **Results**: the BSS table, signal in dBm, the privacy bit for the lock; the page
@@ -171,7 +171,7 @@ DHCP. Internet Sharing works too, but only switched on **after** the link is up 
 
 ## Status
 
-- [x] `ether_circle.cpp` with the Pi's MAC address shared, both engines (2026-11-10)
+- [x] `ether_okapia.cpp` with the Pi's MAC address shared, both engines (2026-11-10)
 - [x] `ether eth|wlan` decides; `nonet` ignored, with a line in the log (2026-11-10)
 - [x] Wired: Pi 4 GENET, USB Ethernet adapters; sending verified under QEMU — System 7.6 EtherTalk probes and NBP
       lookups on the wire, padded to 60 bytes (2026-11-10)
@@ -236,7 +236,7 @@ DHCP. Internet Sharing works too, but only switched on **after** the link is up 
 
 - **Stock QEMU's `usb-net` never hands Circle a frame.** Circle's `doc/qemu.txt` says networking needs a patched QEMU;
   measured with QEMU 11.1: 40,000 polls, 20 frames sent from the host, none received. Sending works. The receive path
-  is proved instead by `NET_SELFTEST` in the trace build (`ether_circle.cpp`, [Testing](../contributing/testing-and-debugging.md#qemu-network)).
+  is proved instead by `NET_SELFTEST` in the trace build (`ether_okapia.cpp`, [Testing](../contributing/testing-and-debugging.md#qemu-network)).
 - **No Wi-Fi in the QEMU build**: with `NO_SDHOST` on a Pi 3 target the Wi-Fi's controller is the card's, and starting
   the chip would take the card away from the Mac. `WlanStart()` refuses at compile time.
 - **The Wi-Fi tasks run only when the emulation thread yields.** A loop that waits without calling `BoardNetPoll()`
@@ -249,7 +249,7 @@ DHCP. Internet Sharing works too, but only switched on **after** the link is up 
 - **`wlan_hostap.c` must be compiled with the library's switches.** Read with others — or from C++ — every field of
   `struct wpa_supplicant` after the first conditional one is read from the wrong place. A change to
   `Makefile.circle`'s `DEFINE` owes the same change to `WLAN_HOSTAP_FLAGS`.
-- **`src/circle` has a `config.h` of its own**, and a quoted include is looked for beside the including file first:
+- **`src/common` has a `config.h` of its own**, and a quoted include is looked for beside the including file first:
   `wlan_hostap.c` names hostap's headers by their directory (`"wpa_supplicant/config.h"`).
 - **The supplicant must run for the whole session**, not only to join: routers renew the group key, typically every
   hour.
@@ -260,7 +260,7 @@ DHCP. Internet Sharing works too, but only switched on **after** the link is up 
   `ReceiveFrame()` no longer submits a blocking bulk-IN with the cable out, which used to stall the caller — our
   1 kHz seam. The link state is now only what the last `UpdatePHY()` read, hence the call at start and every two
   seconds.
-- **Hidden Wi-Fi networks need Circle 51.1 or later**: `scan_ssid=1` (`net_config_circle.cpp`) was always written,
+- **Hidden Wi-Fi networks need Circle 51.1 or later**: `scan_ssid=1` (`net_config_okapia.cpp`) was always written,
   but Circle's supplicant driver made no directed scan before hostap `966cab4a`.
 - **Circle's supplicant reads its configuration through FatFs, not stdio** (`config_file.c:336`, `utils/config.h`): a
   `--wrap=fopen` linked, and the supplicant logged `Failed to open config file …, error: 11` on the board. The QEMU

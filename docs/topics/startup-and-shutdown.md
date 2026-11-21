@@ -2,8 +2,8 @@
 
 > Power-on to Mac OS, switching between the two Macintosh, restarting, and shutting down without losing
 > data. Main files: `src/kernel/okapia_boot.cpp`, `src/kernel/kernel.cpp`, `src/kernel/kernel_ppc.cpp`,
-> `src/circle/hal_circle.cpp`, `src/circle/board_sound_circle.cpp`, `src/circle/main_circle.cpp`,
-> `src/circle/sheepshaver/main_circle.cpp`, `src/circle/sheepshaver/platform_bits_circle.cpp`.
+> `src/hosts/circle/hal_circle.cpp`, `src/hosts/circle/board_sound_circle.cpp`, `src/common/main_okapia.cpp`,
+> `src/common/sheepshaver/main_okapia.cpp`, `src/common/sheepshaver/platform_bits_okapia.cpp`.
 
 ## Using it
 
@@ -31,7 +31,7 @@ power-on:
 
 `CKernel::Run()` then loops: the firmware window (`FirmwareRun`), then either a hand-over to the other
 engine or `StartMacintosh()` → `InitAll()` → `Start680x0()`. Whichever engine starts, the card is prepared the same
-way before `InitAll()` — inventory, clock floor, repair, boot volume — by `card_circle.cpp`
+way before `InitAll()` — inventory, clock floor, repair, boot volume — by `card_okapia.cpp`
 ([Storage](storage.md#repairing-the-volume-ourselves-libhfs)): the hand-over happens before the 68k kernel prepares
 anything, so the PowerPC kernel does it itself.
 
@@ -46,7 +46,7 @@ because the shared firmware has just answered.
 ### Restart from Mac OS
 
 **68k.** Restart re-enters the ROM's reset path, where Basilisk's `M68K_EMUL_OP_RESET` sits
-(`rom_patches.cpp:1069`, `emul_op.cpp:87`); `emul_op_hook_circle.cpp` hears it. The interpreter unwinds,
+(`rom_patches.cpp:1069`, `emul_op.cpp:87`); `emul_op_hook_okapia.cpp` hears it. The interpreter unwinds,
 `ExitAll()` closes the drivers (the disk image included), `Exit680x0()` pairs `Init680x0()`, the input
 devices return to the firmware, the chime replays, and the loop opens the firmware window again.
 `MacRestartArm()` clears `quit_program`, which stays set after the interpreter leaves
@@ -89,7 +89,7 @@ semihosting — which needs `-semihosting` on the QEMU command line, or the kern
 
 The `idlewait` preference (upstream's default, and ours) makes `patch_idle_time()` replace `SynchIdleTime`
 in the System being booted, so the first call to `idle_wait()` is the guest announcing it has run out of
-work. `main_circle.cpp` logs it once (`Macintosh idle: it has finished starting (N ms)`); `screenshot.sh` and
+work. `main_okapia.cpp` logs it once (`Macintosh idle: it has finished starting (N ms)`); `screenshot.sh` and
 `run-test.sh` wait for it. `HasIdleTime()` (`patches/macemu/0005`) says whether the patch went in at all — a
 System with no `SynchIdleTime` never idles. **SheepShaver has no such patch**: judge the PowerPC boot by the
 screen.

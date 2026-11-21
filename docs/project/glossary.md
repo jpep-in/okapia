@@ -10,7 +10,7 @@
 | **`bootmenu`** | Preference that opens the boot menu at every start without holding Option. |
 | **Circle** | The C++ bare-metal environment for Raspberry Pi that Okapia runs on. |
 | **circle-stdlib** | newlib + libstdc++ built for Circle; carries Circle as a submodule. |
-| **Compositor** | `compositor_circle.cpp`: converts the Mac's frame buffer to the output, scales by an integer, centres, and redraws only changed tiles. |
+| **Compositor** | `compositor_okapia.cpp`: converts the Mac's frame buffer to the output, scales by an integer, centres, and redraws only changed tiles. |
 | **DBDMA** | Descriptor-Based DMA, the Power Macintosh's DMA command lists; the 9500-family boot chime is stored with one. |
 | **Device memory** | Pages Circle maps with `ATTRINDX_DEVICE` (the GPU frame buffer among them): every access must be naturally aligned, so vectorised copies fault. |
 | **Dirty volume** | An HFS volume whose MDB `drAtrb` bit 8 is clear — "in use" — as any interrupted session leaves it. Mac OS refuses to boot from it. |

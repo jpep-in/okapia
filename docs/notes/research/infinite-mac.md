@@ -22,8 +22,8 @@ conventions. The emulators are GPL on both sides (the Infinite Mac site is Apach
 
 | Layer | Infinite Mac | Okapia at the time | Outcome |
 |---|---|---|---|
-| Video | `JS/video_js.cpp`, **one file for both engines** | two `video_circle.cpp` | unified differently (below) |
-| Sound | `JS/audio_js.cpp`, pull model | `audio_circle.cpp`, pull model | converged; their close grace period taken |
+| Video | `JS/video_js.cpp`, **one file for both engines** | two `video_okapia.cpp` | unified differently (below) |
+| Sound | `JS/audio_js.cpp`, pull model | `audio_okapia.cpp`, pull model | converged; their close grace period taken |
 | Disk | `JS/disk_js.cpp` through `disk_generic` | `sys_unix.cpp` reused as is | removable media patch taken |
 | Input | drained in the emulation thread | pushed from core 0 | fixed |
 | PRAM | compared once a second and only printed | written the moment it changes | **Okapia ahead** |
@@ -65,7 +65,7 @@ conventions. The emulators are GPL on both sides (the Infinite Mac site is Apach
 8. **One video driver for two Macintosh — but not their way.** `video_js.cpp:23-86` is a `#ifdef SHEEPSHAVER` stub that
    fakes Basilisk's `monitor_desc` so one file compiles for both. That works for a simple driver; ours has dirty
    regions, mode changes driven by the Mac's driver and a `VModes` table owned by `video.cpp`, and the stub would have
-   had to pretend about all of it. Okapia separates **the rules from the translation**: `video_shared_circle.cpp` states
+   had to pretend about all of it. Okapia separates **the rules from the translation**: `video_shared_okapia.cpp` states
    once which modes fit, which converter a depth needs, the palette, the refresh and the reports; each engine's file
    keeps its contract. 579 + 538 lines, half duplicated, became 266 + 370 plus the shared file, with identical composite
    figures afterwards (1,123 µs and 7% of wall on the 68k, 1,210 µs and 7.2% on the PowerPC, 59–60 Hz).

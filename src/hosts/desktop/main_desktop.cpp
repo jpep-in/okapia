@@ -26,6 +26,7 @@
 //   --datetime "YYYY-MM-DD HH:MM:SS"   the clock, fixed
 //   --seconds N             end the run after N seconds (exit code 0)
 //   --quiet                 only warnings and errors on the terminal
+//   --sound-file FILE       the sound written there, raw 44.1 kHz 16-bit stereo
 //
 // Exit codes, as snow-runner's where they mean the same: 0 the run ended as
 // asked, 1 an error, 3 the menu answered Shut Down.
@@ -44,6 +45,7 @@
 #include "prefs.h"
 
 #include <SDL3/SDL.h>
+#include <circle/startup.h>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -367,7 +369,8 @@ static void RememberFolder (const char *pPath)
 // long as this process runs, and a second one is turned away.
 static bool LockFolder (const char *pPath)
 {
-    const int nFD = open (pPath, O_RDONLY);
+    // Closed on exec: reboot() starts the process again and it locks anew.
+    const int nFD = open (pPath, O_RDONLY | O_CLOEXEC);
     if (nFD < 0 || flock (nFD, LOCK_EX | LOCK_NB) != 0)
     {
         fprintf (stderr, "okapia: %s is in use by another Okapia\n", pPath);
@@ -392,12 +395,15 @@ static bool CopyFolder (const char *pFrom, const char *pTo)
 static volatile bool s_bEngineDone;
 static int           s_nExitCode;
 
+// okapia_boot.cpp's loop, as the board runs it: the 68k engine first, and
+// whichever one the startup volume asks for after, by a call.
 static int SDLCALL EngineThread (void *)
 {
-    bool bSwitched = false;
+    bool bPowerPC = false, bSwitched = false;
     for (;;)
     {
-        const TOkapiaExit Exit = OkapiaRun68k (bSwitched ? 1 : 0);
+        const TOkapiaExit Exit = bPowerPC ? OkapiaRunPowerPC (bSwitched ? 1 : 0)
+                                          : OkapiaRun68k (bSwitched ? 1 : 0);
         bSwitched = false;
         if (Exit == OkapiaHalt)
         {
@@ -405,20 +411,52 @@ static int SDLCALL EngineThread (void *)
             s_nExitCode = 3;
             break;
         }
-        if (Exit == OkapiaSwitchToPowerPC)
+        if (Exit == OkapiaSwitchToPowerPC || Exit == OkapiaSwitchTo68k)
         {
-            // Milestone J3: the PowerPC engine is not in the desktop build yet.
-            HostLog (FROM, HostLogWarning, "The startup volume asks for the PowerPC engine, "
-                                           "not in this build yet: back to the menu");
-            DesktopHoldModifiers (ModOption);
+            bPowerPC  = Exit == OkapiaSwitchToPowerPC;
+            bSwitched = true;
+            HostLog (FROM, HostLogNotice, "Handing over to the %s engine", bPowerPC ? "PowerPC" : "68k");
             continue;
         }
-        // OkapiaReboot: what a board does by starting again, the process does
-        // by going round; the CKernel is kept, as across a restart from Mac OS.
+        // OkapiaReboot: on the board a reset, which starts again at the 68k
+        // engine; here the process goes round, its engines kept.
         HostLog (FROM, HostLogNotice, "Restart");
+        bPowerPC = false;
     }
     s_bEngineDone = true;
     return 0;
+}
+
+// The board's halt() and reboot() (shims/circle/startup.h), which the PowerPC
+// engine reaches from QuitEmulator(): it cannot be entered twice in place, so
+// on the board a Restart from Mac OS resets the board. A process starts itself
+// again, on the same card folder, with no copy and no script.
+static char **s_ppArgv;
+
+void halt (void)
+{
+    HostLog (FROM, HostLogNotice, "Halt");
+    DesktopLogClose ();
+    _exit (3);
+}
+
+void reboot (void)
+{
+    HostLog (FROM, HostLogNotice, "Reboot: starting again on %s", DesktopRoot ());
+    DesktopLogClose ();
+    char Exe[PATH_MAX];
+    uint32_t nExe = sizeof Exe;
+#ifdef __APPLE__
+    if (_NSGetExecutablePath (Exe, &nExe) != 0)
+#endif
+    {
+        snprintf (Exe, sizeof Exe, "%s", s_ppArgv[0]);
+    }
+    const bool bHeadless = SDL_GetHintBoolean ("OKAPIA_HEADLESS", false);
+    char *Args[] = { Exe, (char *) (bHeadless ? "--headless" : "--quiet"),
+                     (char *) DesktopRoot (), 0 };
+    execv (Exe, Args);
+    _exit (1);
 }
 
 // Closing the window is not pulling the plug (docs/topics/storage.md): while
@@ -455,12 +493,13 @@ static void Usage (void)
              "usage: okapia [--headless] [--size WxH] [--work-dir DIR] [--option]\n"
              "              [--keys MS,SEQ]... [--click X,Y,MS]... [--screenshot FILE]\n"
              "              [--screenshot-at MS]... [--datetime \"YYYY-MM-DD HH:MM:SS\"]\n"
-             "              [--seconds N] [--quiet] [folder]\n");
+             "              [--seconds N] [--quiet] [--sound-file FILE] [folder]\n");
 }
 
 int main (int argc, char **argv)
 {
-    const char *pFolder = 0, *pWorkDir = 0;
+    s_ppArgv = argv;
+    const char *pFolder = 0, *pWorkDir = 0, *pSoundFile = 0;
     bool bHeadless = false, bOption = false, bQuiet = false;
     unsigned nWidth = 0, nHeight = 0;
 
@@ -473,6 +512,7 @@ int main (int argc, char **argv)
         else if (strcmp (a, "--quiet") == 0)          bQuiet = true;
         else if (strcmp (a, "--size") == 0 && v)      { sscanf (v, "%ux%u", &nWidth, &nHeight); i++; }
         else if (strcmp (a, "--work-dir") == 0 && v)  { pWorkDir = v; i++; }
+        else if (strcmp (a, "--sound-file") == 0 && v){ pSoundFile = v; i++; }
         else if (strcmp (a, "--screenshot") == 0 && v){ snprintf (s_Screenshot, sizeof s_Screenshot, "%s", v); i++; }
         else if (strcmp (a, "--screenshot-at") == 0 && v)
         {
@@ -514,10 +554,17 @@ int main (int argc, char **argv)
 
     if (bHeadless)
     {
+        SDL_SetHint ("OKAPIA_HEADLESS", "1");
         SDL_SetHint (SDL_HINT_VIDEO_DRIVER, "dummy");
-        SDL_SetHint (SDL_HINT_AUDIO_DRIVER, "dummy");
+        SDL_SetHint (SDL_HINT_AUDIO_DRIVER, pSoundFile != 0 ? "disk" : "dummy");
         // No GPU behind the offscreen driver: the software renderer draws.
         SDL_SetHint (SDL_HINT_RENDER_DRIVER, "software");
+    }
+    if (pSoundFile != 0)
+    {
+        // SDL's disk driver: what the Macintosh plays, into a file a test reads.
+        SDL_SetHint (SDL_HINT_AUDIO_DRIVER, "disk");
+        SDL_SetHint (SDL_HINT_AUDIO_DISK_OUTPUT_FILE, pSoundFile);
     }
     if (!SDL_Init (SDL_INIT_VIDEO | SDL_INIT_EVENTS))
     {

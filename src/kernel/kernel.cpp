@@ -21,31 +21,31 @@
 #include "prefs.h"
 #include "xpram.h"
 #include "spcflags.h"
-#include "hfs_volume_circle.h"
-#include "card_circle.h"
-#include "clock_circle.h"
+#include "hfs_volume_okapia.h"
+#include "card_okapia.h"
+#include "clock_okapia.h"
 #include "quickdraw_worker.h"
 
 #define FROM "okapia"
 
-// From src/circle/main_circle.cpp
+// From src/common/main_okapia.cpp
 extern bool MacMemoryAllocate (uint32 nRAMSize);
 extern bool MacROMLoad (const char *pFileName);
 extern bool QuitRequested (void);
 
-// emul_op_hook_circle.cpp — the Macintosh going round again.
+// emul_op_hook_okapia.cpp — the Macintosh going round again.
 extern void MacRestartArm (void);
 extern bool MacRestarted (void);
 
-// input_circle.cpp — let go of the devices so the next InputInit() takes them.
+// input_okapia.cpp — let go of the devices so the next InputInit() takes them.
 extern void InputRelease (void);
 
-// From src/circle/tick_circle.cpp
+// From src/common/tick_okapia.cpp
 extern void TickInit (void);
 extern void TickStart (void);
 extern void TickStop (void);
 
-// From src/circle/input_circle.cpp
+// From src/common/input_okapia.cpp
 extern void InputInit (void);
 
 #ifdef EXECMEM_SELFTEST
@@ -64,7 +64,7 @@ extern "C" int fpu_selftest_extended (uint32 *first);
 #endif
 
 // Everything that used to be a constant here now comes from the preferences
-// file on the card (see src/circle/prefs_circle.cpp and README.md). What is
+// file on the card (see src/common/prefs_okapia.cpp and README.md). What is
 // left is the floor below which a Mac cannot start at all, so that a typo in
 // "ramsize" produces a message instead of a failed allocation.
 static const uint32 MIN_MAC_RAM = 4 * 1024 * 1024;
@@ -156,7 +156,7 @@ bool CKernel::Initialize (void)
  *  Preferences
  *
  *  Nothing is decided here any more: PrefsInit() applies the defaults from
- *  src/circle/prefs_circle.cpp and then lets the card's BasiliskII_Prefs
+ *  src/common/prefs_okapia.cpp and then lets the card's BasiliskII_Prefs
  *  override them, in upstream's own format with upstream's own parser.
  */
 
@@ -338,7 +338,7 @@ bool CKernel::StartMacintosh (void)
     // Before InitAll: rom_patches.cpp reads modelid while patching the ROM.
     ApplyModelId ();
 
-    // Before InitAll, after the repair: see card_circle.h.
+    // Before InitAll, after the repair: see card_okapia.h.
     if (CardRepairOnly ())
     {
         return false;
@@ -447,7 +447,7 @@ TOkapiaExit CKernel::Run (bool bSwitched)
 {
     // The Macintosh may go round more than once. A restart from Mac OS is a
     // reset of the 68000, and Basilisk's own opcode sits on that path
-    // (emul_op_hook_circle.cpp), so the emulator can be unwound and set up
+    // (emul_op_hook_okapia.cpp), so the emulator can be unwound and set up
     // again — which puts the firmware's window in front of every restart,
     // exactly where it is on a cold boot. That is the whole point: without it
     // the menu is reachable once per power-on and never again.

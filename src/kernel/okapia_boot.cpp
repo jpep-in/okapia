@@ -10,7 +10,7 @@
 
 #include "okapia_boot.h"
 #include "hal_circle.h"
-#include "clock_circle.h"
+#include "clock_okapia.h"
 
 #define FROM "okapia-boot"
 

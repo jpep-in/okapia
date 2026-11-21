@@ -79,11 +79,11 @@ STATE_PATHS=(
     src/kernel/engine-68k.o
     src/kernel/engine-ppc.o
     src/kernel/engine-ppc-renamed.o
-    src/firmware/circle/obj
-    src/firmware/circle/kernel8.img
-    src/firmware/circle/kernel8.elf
-    src/firmware/circle/kernel8.lst
-    src/firmware/circle/kernel8.map
+    src/hosts/circle/firmware/obj
+    src/hosts/circle/firmware/kernel8.img
+    src/hosts/circle/firmware/kernel8.elf
+    src/hosts/circle/firmware/kernel8.lst
+    src/hosts/circle/firmware/kernel8.map
 )
 
 # These two exist in git — each carries a .gitignore — so the directory has to

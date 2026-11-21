@@ -3,7 +3,7 @@
 //
 // Everything above this line is the same on a Raspberry Pi and on a desktop:
 // the boot menu, the card's volumes, the preferences. Everything below it is
-// one host's: Circle on the bare board (src/firmware/circle/okapia_host_circle.cpp),
+// one host's: Circle on the bare board (src/hosts/circle/firmware/okapia_host_circle.cpp),
 // SDL and POSIX on a desktop (src/hosts/desktop/). The functions are those the
 // boot menu needs today; the emulator's own (time, sound, picture) join them as
 // they are moved over. See docs/notes/research/desktop-host.md.

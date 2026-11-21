@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026  Jonathan Pepin
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The other end of Okapia's network bench (src/circle/net_bench_circle.cpp).
+"""The other end of Okapia's network bench (src/hosts/circle/net_bench_circle.cpp).
 
     usage: netbench.py [--seconds N] [--rate MBITS] [--port 9000]
 

@@ -2,9 +2,9 @@
 
 > From the Macintosh's frame buffer to the HDMI output: the output mode, the resolutions offered, the
 > compositor that converts, scales and redraws only what changed. Main files:
-> `src/circle/video_shared_circle.{h,cpp}` (rules shared by both engines), `src/circle/video_sizes_circle.{h,cpp}`,
-> `src/circle/compositor_circle.{h,cpp}`, `src/circle/video_circle.cpp` (68k), `src/circle/sheepshaver/video_circle.cpp`
-> (PowerPC), `src/firmware/circle/okapia_output.cpp`, `patches/macemu/0003`, `0011`.
+> `src/common/video_shared_okapia.{h,cpp}` (rules shared by both engines), `src/common/video_sizes_okapia.{h,cpp}`,
+> `src/common/compositor_okapia.{h,cpp}`, `src/common/video_okapia.cpp` (68k), `src/common/sheepshaver/video_okapia.cpp`
+> (PowerPC), `src/hosts/circle/firmware/okapia_output.cpp`, `patches/macemu/0003`, `0011`.
 
 ## Using it
 
@@ -47,8 +47,8 @@ The engines present the display differently — Basilisk hands the platform a `m
 list; SheepShaver runs the Mac's own native driver and wants a `VModes[]` table and a frame buffer at a Mac address
 — but everything between those contracts and the compositor is the same question asked twice. It *was* written
 twice, and the copies drifted: only one repeated the palette across 256 entries, and the other drew 4 and 16
-colours as coloured noise. `video_shared_circle.cpp` states each rule once — which modes fit, which converter a
-depth needs, the palette, the refresh rate, the reports — and each `video_circle.cpp` is its engine's contract and
+colours as coloured noise. `video_shared_okapia.cpp` states each rule once — which modes fit, which converter a
+depth needs, the palette, the refresh rate, the reports — and each `video_okapia.cpp` is its engine's contract and
 nothing else. **A display fix goes in the shared file unless it is about one core's vocabulary.**
 
 ### The output
@@ -65,7 +65,7 @@ the wrong colours on the Pi until then.
 
 ### The mode list
 
-`VideoScreenSizeList()` (`video_sizes_circle.cpp`, pure, host-tested) builds the list: the thirteen standard sizes,
+`VideoScreenSizeList()` (`video_sizes_okapia.cpp`, pure, host-tested) builds the list: the thirteen standard sizes,
 then the display's size and the preference's, each only if not listed. Each engine supplies its identifiers:
 Basilisk numbers `0x80…0x8C` then `0x8D`, `0x8E`; SheepShaver keeps upstream's Apple names where they exist and
 numbers the rest past `APPLE_CUSTOM` (`patches/macemu/0011`). **A fixed size keeps its identifier whatever monitor
@@ -75,7 +75,7 @@ in PRAM.
 Custom slots are added after the built-in list. Each slot has a reserved ID in each driver, so hiding a size,
 changing the startup choice, or moving the card to a different monitor cannot reassign an ID belonging to a custom
 slot. When a custom size matches a legacy extra it takes that size's place in the list under its own ID. The
-visibility filter works by dimensions and is shared by both drivers (`video_shared_circle.cpp`). At the first
+visibility filter works by dimensions and is shared by both drivers (`video_shared_okapia.cpp`). At the first
 Macintosh start Basilisk reserves space for the active output up to the existing 16 MB ceiling per buffer, so a
 size enabled on a subsequent guest restart fits the same allocations.
 
@@ -116,7 +116,7 @@ output test in `tests/host/check_platform.cpp` covers odd origins and pitches th
 
 `frameskip` follows upstream's Window Refresh Rate menu: 1 = 60 Hz, 2 = 30, 4 = 15, 6 = 10 (upstream's default),
 8 = 7.5, 12 = 5, and **0 = Dynamic**. Dynamic re-measures every second and composites one VBL in
-`composite_time × 8 / 16,667 + 1`, capped at 12 (`Retune()`, `video_shared_circle.cpp:410`). The Mac draws its own
+`composite_time × 8 / 16,667 + 1`, capped at 12 (`Retune()`, `video_shared_okapia.cpp:410`). The Mac draws its own
 cursor into its own buffer, so the pointer can never move more often than the compositor runs: a 10 Hz screen reads
 as a laggy mouse. Report the composite rate, not the VBL rate — calling 55 VBL/s "fps" once hid a 9 Hz screen.
 
@@ -131,7 +131,7 @@ inverted or not, with or without a foreground and a background colour.
 Shapes, text and conversions between depths are covered at 8 bits only, and
 partly. The default is `off`. This experiment uses the
 `uae_cpu_2021` core, interpreter or translator, and ROM `F1ACAD13`. At first guest idle,
-`quickdraw_circle.cpp` installs a system-heap trampoline for the private
+`quickdraw_okapia.cpp` installs a system-heap trampoline for the private
 `BitBlt` Toolbox trap (`$AB00`) if it still points to the ROM original.
 The vector is written into the Toolbox trap table (`$E00`) itself: see the
 Process Manager pitfall below.

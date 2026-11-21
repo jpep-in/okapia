@@ -138,8 +138,8 @@ The session's code was committed with other work in progress; the commit message
 
 | File | Change |
 |---|---|
-| `src/circle/compositor_circle.{cpp,h}` | `WatchFor[16][16]`, 12-frame countdown |
-| `src/circle/tick_circle.cpp` | `CUserTimer` with fallback, no pay-back, `VBL spacing` histogram |
-| `src/circle/cpu_ticks_circle.cpp` | quantum recalibrated to 1 kHz, opcode accounting |
-| `src/circle/input_circle.cpp` | drain counters; the mouse branch back to its original state |
-| `src/circle/prefs_circle.cpp` | unchanged net — `mousespeed` added then removed with the absolute mouse |
+| `src/common/compositor_okapia.{cpp,h}` | `WatchFor[16][16]`, 12-frame countdown |
+| `src/common/tick_okapia.cpp` | `CUserTimer` with fallback, no pay-back, `VBL spacing` histogram |
+| `src/common/cpu_ticks_okapia.cpp` | quantum recalibrated to 1 kHz, opcode accounting |
+| `src/common/input_okapia.cpp` | drain counters; the mouse branch back to its original state |
+| `src/common/prefs_okapia.cpp` | unchanged net — `mousespeed` added then removed with the absolute mouse |

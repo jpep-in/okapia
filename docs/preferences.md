@@ -15,7 +15,7 @@ the other way round. The same file serves both Macintosh; its name does not chan
 - Written with commented examples on the first boot if absent. The boot menu edits it; the file remains the
   source of truth.
 - A keyword must be declared in a table to be read *and* written: `common_prefs_items` upstream, or
-  `platform_prefs_items[]` in `src/circle/prefs_circle.cpp`. A value set only with `PrefsReplace*` works at
+  `platform_prefs_items[]` in `src/common/prefs_okapia.cpp`. A value set only with `PrefsReplace*` works at
   runtime and silently vanishes from the file — it cost one whole measurement.
 
 ## Machine and memory

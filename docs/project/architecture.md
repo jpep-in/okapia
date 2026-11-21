@@ -10,27 +10,27 @@
   uae_cpu_2021 · ROM patches · ADB · disk    kpx_cpu · nanokernel ROM · the same
   SCSI · video · audio · ether · timer       ADB, disk, audio, extfs (symlinked)
                  │                                     │
-   src/circle/ (68k platform layer)       src/circle/ + src/circle/sheepshaver/
+   src/common/*_okapia (platform layer)   src/common/ + src/common/sheepshaver/
    main · video · input · audio · tick    (the PowerPC platform layer)
                  │                                     │
                  └──────────────┬──────────────────────┘
                                 ▼
-     shared half: hal_circle (the board) · board_sound · mac_ram · rom_chime
-                  okapia_boot (main) · src/firmware (boot menu)
+     shared half: src/hosts/circle (the board: hal, board_sound, board_net…) · rom_chime
+                  okapia_boot (main) · src/firmware + src/common/okapia_menu (boot menu)
                                 ▼
-                 circle-stdlib (newlib + libstdc++) → Circle
+                 circle-stdlib (newlib + libstdc++) → Circle      (or src/hosts/desktop → SDL3)
                                 ▼
-                           Raspberry Pi
+                           Raspberry Pi                            (or a desktop)
 ```
 
 **Two hosts.** The same Okapia also runs on a desktop (macOS, SDL3): what the boot menu needs of the machine goes
-through `src/common/okapia_host.h`, answered on the Pi by `src/firmware/circle/okapia_host_circle.cpp` and on a
-desktop by `src/hosts/desktop/`, where the 68k engine and most of `src/circle/` build unchanged behind a shim of the
+through `src/common/okapia_host.h`, answered on the Pi by `src/hosts/circle/firmware/okapia_host_circle.cpp` and on a
+desktop by `src/hosts/desktop/`, where both engines and all of `src/common/` build unchanged behind a shim of the
 Circle classes. See [Desktop](../topics/desktop.md).
 
 Upstream shares its platform code between the two engines by **129 symbolic links** from
 `SheepShaver/` into `BasiliskII/` (`adb.cpp`, `audio.cpp`, `disk.cpp`, `extfs.cpp`, `prefs.cpp`, `timer.cpp`,
-`xpram.cpp`, `sys_unix.cpp`, `CrossPlatform/`, the whole `SDL/` directory). `src/circle/` takes the place of
+`xpram.cpp`, `sys_unix.cpp`, `CrossPlatform/`, the whole `SDL/` directory). `src/common/` takes the place of
 `src/SDL/`, so most of it serves both engines by construction. The line between them falls on four points
 only: `main`, `video`, `user_strings`, `sysdeps`.
 
@@ -75,7 +75,7 @@ Two rules pull in opposite directions across that line:
 - **A symbol the PowerPC half references cannot be defined in the shared half.** The rename renames the
   reference with the definition; a definition in `obj-shared` keeps its bare name and the link fails.
   `ppc_check_ticks_quantum` is declared in a patched `ppc-cpu.hpp` and defined in
-  `sheepshaver/cpu_ticks_circle.cpp`, both in the PowerPC half.
+  `sheepshaver/cpu_ticks_okapia.cpp`, both in the PowerPC half.
 
 ### Resources taken once for the life of the board
 
@@ -115,7 +115,7 @@ constructor runs before the serial port and fails silently.
 
 ## Memory
 
-- **One block**, claimed at `ramsize + OKAPIA_MAC_BLOCK_OVERHEAD` (24 MB, `mac_ram_circle.h:29`) — sized
+- **One block**, claimed at `ramsize + OKAPIA_MAC_BLOCK_OVERHEAD` (24 MB, `mac_ram_okapia.h:29`) — sized
   for whichever engine needs more, so the second engine reuses it.
 - **Claimed first.** Circle serves blocks larger than its largest bucket by walking forward through free
   space, so a quarter-gigabyte request made after USB or network stacks have allocated fails on a 1 GB board
@@ -136,7 +136,7 @@ constructor runs before the serial port and fails silently.
 Time Manager, cursor blink and application delays all rest on it.
 
 - **The tick** is a hardware timer interrupt on core 0 that only sets flags. On Pi 3 and 4 it is a
-  `CUserTimer` with a microsecond deadline, re-armed on an absolute schedule (`tick_circle.cpp`, through
+  `CUserTimer` with a microsecond deadline, re-armed on an absolute schedule (`tick_okapia.cpp`, through
   `BoardFineTick`). Circle's periodic handler fires at `HZ = 100` (`timer.h:30`), and 16,625 µs does not
   divide 10,000: a tick derived from it comes out 20, 10, 20 ms — right on average, and one frame in three
   half as long, which the Mac redraws its pointer on. The accumulator stays as the fallback for
@@ -146,8 +146,8 @@ Time Manager, cursor blink and application delays all rest on it.
 - **Anything that blocks belongs to the engine's own seam, never to the tick.** The tick runs at IRQ level,
   where waiting on the SD card is forbidden. The seams run between two guest instructions on the emulation
   thread:
-  - 68k: `cpu_do_check_ticks()` (`cpu_ticks_circle.cpp`), fired when `emulated_ticks` wraps;
-  - PowerPC: `powerpc_check_ticks()` (`sheepshaver/cpu_ticks_circle.cpp`), a seam kpx_cpu did not have,
+  - 68k: `cpu_do_check_ticks()` (`cpu_ticks_okapia.cpp`), fired when `emulated_ticks` wraps;
+  - PowerPC: `powerpc_check_ticks()` (`sheepshaver/cpu_ticks_okapia.cpp`), a seam kpx_cpu did not have,
     added by `patches/macemu/0004` because upstream always had a spare thread.
 - **Both seams are paced by the clock, not by an instruction count.** The quantum is measured against the
   clock every 64 visits and corrected to hold 1 kHz (measured 999/s on the 68k, ~950/s on the PowerPC).
@@ -185,13 +185,14 @@ runs in the engine seams. The [bottleneck study](../notes/research/bottlenecks.m
 external/            submodules, pinned: circle-stdlib (Circle in libs/circle), macemu, hfsutils
 patches/             macemu/*.patch and circle-stdlib/*.patch, applied by scripts/apply-patches.sh
 reference/           study clones, fetched on demand, ignored by git
-src/circle/          platform layer: 68k engine files and those shared by both engines
-src/circle/sheepshaver/  PowerPC-only platform files (main, video, memory layout, seam)
-src/circle/compat/   what newlib lacks: utime, ioctl, resolver stubs
-src/firmware/        the boot menu, pure: no Circle type in it
-src/firmware/circle/ the firmware's Circle side: host answers, USB bridge, output claim, specimen kernel
-src/common/          what is the same on every host: okapia_host.h, the boot menu's driver, CardPath
+src/common/          what is the same on every host: the platform layer (*_okapia: 68k engine files and those
+                     shared by both engines), okapia_host.h, the boot menu's driver, CardPath, config.h
+src/common/sheepshaver/  PowerPC-only platform files (main, video, memory layout, seam)
+src/hosts/circle/    the Circle host: the board (hal, sound, network, Wi-Fi, clock), JIT memory, trace hooks
+src/hosts/circle/compat/   what newlib lacks: utime, ioctl, resolver stubs
+src/hosts/circle/firmware/ the firmware's Circle side: host answers, USB bridge, output claim, specimen kernel
 src/hosts/desktop/   the desktop host (SDL3, POSIX), its Circle shim, entry point and test mode
+src/firmware/        the boot menu, pure: no Circle type in it
 src/kernel/          the Okapia kernel: Makefile, both CKernel classes, okapia_boot
 assets/              fonts (BDF), icons, strings.tsv — sources of generated tables
 scripts/             build, run, test, card and generator scripts

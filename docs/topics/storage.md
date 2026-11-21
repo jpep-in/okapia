@@ -2,8 +2,8 @@
 
 > Disk and CD images on the SD card, what an interrupted session does to them, how Okapia repairs a volume,
 > the inventory of the card, and provisioning. Data safety outranks every other constraint in this project.
-> Main files: `src/circle/hfs_volume_circle.{h,cpp}`, `src/circle/card_circle.cpp` (`CardPrepareVolumes`),
-> `src/circle/trace_disk_circle.cpp`, `external/hfsutils` (libhfs), `patches/circle-stdlib/0002`,
+> Main files: `src/common/hfs_volume_okapia.{h,cpp}`, `src/common/card_okapia.cpp` (`CardPrepareVolumes`),
+> `src/hosts/circle/trace_disk_circle.cpp`, `external/hfsutils` (libhfs), `patches/circle-stdlib/0002`,
 > `scripts/run-test.sh`, `scripts/check-large-volume.sh`, `scripts/make-sd-image.sh`.
 
 ## Using it
@@ -64,7 +64,7 @@ desktop and Mac OS writes to it (`drAtrb` `0000` → `0003`).
 read-write runs `v_scavenge()` when `HFS_ATRB_UMOUNTED` is clear (`volume.c:440`), and unmounting sets the bit back
 (`volume.c:140`). Its system calls are isolated in `os.h`; `os.c` works unchanged on newlib. 14 objects, 48 KB.
 
-`CardPrepareVolumes()` (`card_circle.cpp`), before **either** engine starts — `CKernel::StartMacintosh()` and
+`CardPrepareVolumes()` (`card_okapia.cpp`), before **either** engine starts — `CKernel::StartMacintosh()` and
 `CKernelPPC::Run()` both call it once the firmware has chosen the engine, after `CardInventory()` and
 `CardRefineClock()`:
 
@@ -141,7 +141,7 @@ Verified on System 7.1 and 7.6: flag `0100` and `fsck_hfs` clean after repair.
 - [x] Inventory, System version, bootable fallback (2026-08-29)
 - [x] CD images, partition 1, Toast block size; a disc as startup volume (2026-09-09)
 - [x] New empty volume from the boot menu (2026-09-09)
-- [x] Repair, inventory and boot volume on the PowerPC path: `card_circle.cpp`, called by both kernels; verified under
+- [x] Repair, inventory and boot volume on the PowerPC path: `card_okapia.cpp`, called by both kernels; verified under
       QEMU on a 7.6 volume marked in use and started on SheepShaver (2026-09-15)
 - [x] Images read past 2 GiB, up to FAT32's 4 GiB − 1: `patches/circle-stdlib/0002`, `check-large-volume.sh`
       (2026-09-15)
@@ -216,7 +216,7 @@ On a Pi 3 (Ethernet over USB) downloads will be slow.
   format check rather than a power-cut guard.
 - **2026-08-29** — Preferences from the card, inventory, `modelid` from the System.
 - **2026-09-09** — Volumes as hard disk, read-only or CD-ROM from the boot menu; new volume.
-- **2026-09-15** — Card preparation moved to `card_circle.cpp` for both engines; volumes past 2 GiB.
+- **2026-09-15** — Card preparation moved to `card_okapia.cpp` for both engines; volumes past 2 GiB.
 
 ## References
 

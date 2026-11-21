@@ -21,6 +21,7 @@
 #include "okapia_keys.h"
 #include "okapia_settings.h"
 #include "okapia_desktop.h"
+#include "board_net_okapia.h"
 
 #include <SDL3/SDL.h>
 
@@ -266,7 +267,7 @@ bool DesktopSavePNG (const char *pPath)
  *  is up, events become TEvents in a queue under a lock. While the Macintosh
  *  has the keyboard (InputInit() registered for it, board_desktop.cpp), they
  *  become what the Pi's USB keyboard and mouse send: a HID report of modifiers
- *  and six keys, and relative motion. input_circle.cpp then does the rest
+ *  and six keys, and relative motion. input_okapia.cpp then does the rest
  *  exactly as on the board, the same table and the same acceleration.
  */
 enum { QUEUE = 64 };
@@ -957,13 +958,15 @@ unsigned HostSoundOutputs (void)
 }
 
 /*
- *  The network: the host owns it. Until the engine and slirp arrive, off.
+ *  The network: the host's, shared with the Macintosh by slirp's NAT
+ *  (board_net_desktop.cpp, under the Pi's ether_okapia.cpp). The page's wired
+ *  kind is that one (`ether eth`); there is no Wi-Fi to join.
  */
-unsigned HostNetAvailable (void)            { return 1u << NetworkOff; }
-unsigned HostNetRunning (void)              { return NetworkOff; }
-bool HostNetTried (void)                    { return false; }
-bool HostNetStart (void)                    { return false; }
-bool HostNetLinkUp (unsigned *pMbps)        { *pMbps = 0; return false; }
+unsigned HostNetAvailable (void)            { return (1u << NetworkOff) | (1u << NetworkCable); }
+unsigned HostNetRunning (void)              { return BoardNetKind () == BoardNetWired ? NetworkCable : NetworkOff; }
+bool HostNetTried (void)                    { return BoardNetTried (); }
+bool HostNetStart (void)                    { return BoardNetStart (); }
+bool HostNetLinkUp (unsigned *pMbps)        { return BoardNetLinkUp (pMbps); }
 bool HostWlanScan (void)                    { return false; }
 unsigned HostWlanSeen (TNetworkSeen *, unsigned) { return 0; }
 TNetworkState HostWlanState (char *pSubject, unsigned nSize, int *pDbm, unsigned)

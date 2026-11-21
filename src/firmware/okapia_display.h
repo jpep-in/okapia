@@ -7,7 +7,7 @@
 #ifndef _OKAPIA_DISPLAY_H
 #define _OKAPIA_DISPLAY_H
 
-#include "../circle/video_sizes_circle.h"
+#include "../common/video_sizes_okapia.h"
 #include "okapia_widgets.h"
 
 struct TDisplaySettings

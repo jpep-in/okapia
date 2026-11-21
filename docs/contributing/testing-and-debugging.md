@@ -2,7 +2,7 @@
 
 > How to check a change: host tests, QEMU scripts, the durability test, logs on the card, traces and GDB. Main
 > files: `tests/host/`, `scripts/run-live.sh`, `run-test.sh`, `screenshot.sh`, `specimen.sh`, `run-cd.sh`,
-> `check-large-volume.sh`, `run-qemu.sh`, `src/circle/trace_*.cpp`.
+> `check-large-volume.sh`, `run-qemu.sh`, `src/hosts/circle/trace_*.cpp`.
 
 ## Using it
 
@@ -41,7 +41,7 @@ measurements are part of the build.
 | `check_fpu` | the 68K softfloat under `fpu_softfloat.cpp`: sixteen answers computed independently (FPCR precision, directed rounding to integers, ties, overflow, exponents a double cannot hold), the fast paths against softfloat over six million operations, and the digest of 60,000 operations that the traced kernel must reproduce on the board. `./check_fpu digest` prints it, to pin a deliberate change |
 
 The firmware's screens are pure (handed values, answering values; everything knowing about files or frame buffers
-stays in `src/firmware/circle/`), which is what makes them measurable here. A fixed reproducible bug comes with a test,
+stays in `src/hosts/circle/firmware/`), which is what makes them measurable here. A fixed reproducible bug comes with a test,
 on the host where possible.
 
 `tests/smoke`, `core-probe`, `link-probe` and `trace-build` are historical probes from the port's first days (a bare
@@ -75,7 +75,7 @@ Every script checks the tree is built for QEMU ([Build](build.md)); a Pi kernel 
   (Tab/Shift-Tab focus, Space operates, Return the default button, Left/Right turn the page). It links the real
   `hal_circle.cpp`, which is the point — it proves the firmware runs on a board and not on a copy of itself — and
   the price is that **`hal_circle.cpp` may name no emulator header**: no `prefs.h`, no `sysdeps.h`, nothing from
-  `src/firmware/circle/` it does not compile. Anything on the board that needs a Macintosh behind it goes in
+  `src/hosts/circle/firmware/` it does not compile. Anything on the board that needs a Macintosh behind it goes in
   `board_sound_circle.cpp`, which only the Macintosh kernel links. Adding it to `hal_circle.cpp` does not break
   `make -C src/kernel`; it breaks this script, and nothing else says so.
 - **`run-cd.sh`** — its own card, `qemu/sd-cd.img`, with the install disc, the PowerMac ROM and no volume; the target is
@@ -139,7 +139,7 @@ echo "screendump /tmp/x.ppm" | nc -U /tmp/okapia-monitor.sock
 | `trace_fpu_circle.cpp` | `fpuop_arithmetic`, `fpuop_bcc`, `fpuop_dbcc`, `fpuop_scc` | FPU instructions executed; every 10 s with FPU use, the share of wall time inside the core, the six operations that took most of it (calls, ns each), source formats and conditionals. Timed with the generic timer (28 cycles a tick on a Pi 4, unbiased over many calls); run one Speedometer FPU test at a time |
 
 Plus `DIRECT_ADDRESSING_GUARD` (stray guest addresses, `patches/macemu/0007`), `FPU_SELFTEST` (the known answers
-and the digest of `src/circle/fpu_selftest.h`, which must match `tests/host/check_fpu`'s), `SOUND_SELFTEST` and
+and the digest of `src/common/fpu_selftest.h`, which must match `tests/host/check_fpu`'s), `SOUND_SELFTEST` and
 `NET_SELFTEST` ([QEMU network](#qemu-network)).
 Only calls crossing a translation unit are wrapped, and the wraps must be on the engine's partial link
 ([Build](build.md)).

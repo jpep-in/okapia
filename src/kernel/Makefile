@@ -26,12 +26,16 @@ GEN     = ../../build/generated
 # and only when it moved, so the two files that include it (hal_circle.cpp and
 # okapia_menu.cpp) are rebuilt then and nothing else is.
 $(shell ../../scripts/gen-version.sh $(GEN)/okapia_version.h)
-OKAPIA  = ../../src/circle
+# The platform layer that is the same on every host (src/common, the *_okapia
+# files), and the Circle host's own (src/hosts/circle: the board, its devices,
+# the firmware's Circle side). See docs/topics/desktop.md for the other host.
+COMMON  = ../../src/common
+OKAPIA  = ../../src/hosts/circle
 CIRCLEH = $(CIRCLEHOME)
 
 ifeq ($(ENGINE),basilisk)
   MACEMU         = ../../external/macemu/BasiliskII/src
-  ENGINE_CONFIG  = $(OKAPIA)
+  ENGINE_CONFIG  = $(COMMON)
   # The FPU. softfloat (the default) is the 68881 itself: its 80-bit extended
   # format, rounded at every operation in FPCR's mode and precision, its
   # exception flags, and the 68040 FPSP's algorithms for the transcendentals,
@@ -117,7 +121,7 @@ else ifeq ($(ENGINE),sheepshaver)
   MACEMU         = ../../external/macemu/SheepShaver/src
   # Its own config.h, ahead of Basilisk's on the include path: upstream includes
   # the file by that plain name from both trees.
-  ENGINE_CONFIG  = $(OKAPIA)/sheepshaver
+  ENGINE_CONFIG  = $(COMMON)/sheepshaver
   # Direct addressing comes from NATMEM_OFFSET in that config.h, and there is no
   # UAE FPU on this side — the PowerPC brings its own. HAVE_CONFIG_H is
   # autoconf's own convention, and vm_alloc.cpp is the one file that reads the
@@ -126,10 +130,10 @@ else ifeq ($(ENGINE),sheepshaver)
   # powerpc_check_ticks() (patches/macemu/0004). It is the only moment this
   # engine has in which it may touch the card, so it is not optional here.
   # 50000 is the figure the WebAssembly port settled on for the same
-  # interpreter; sheepshaver/cpu_ticks_circle.cpp logs the rate it actually
+  # interpreter; sheepshaver/cpu_ticks_okapia.cpp logs the rate it actually
   # produces on this board, which is what should decide it.
   ENGINE_DEFINES = -DHAVE_CONFIG_H -DSHEEPSHAVER -DPPC_CHECK_TICKS=50000
-  ENGINE_VPATH   = $(OKAPIA)/sheepshaver:
+  ENGINE_VPATH   = $(COMMON)/sheepshaver:
   UAE            = $(MACEMU)/uae_cpu_2021
   CPUGEN         = $(GEN)
 else
@@ -176,7 +180,7 @@ CPU_SRCS    = $(KPX)/src/mathlib/ieeefp.cpp $(KPX)/src/mathlib/mathlib.cpp \
 GEN_SRCS    =
 endif
 # audio_dummy.cpp, ether_dummy.cpp, prefs_dummy.cpp and user_strings_dummy.cpp
-# are replaced by src/circle/*_circle.cpp; the others stay. prefs_dummy looks for its file
+# are replaced by src/common/*_okapia.cpp; the others stay. prefs_dummy looks for its file
 # relative to a current directory the kernel never sets, so it never found one
 # on the card, user_strings_dummy's platform table is empty — which is what
 # names the shared volume — and xpram_dummy names its file relatively, so where
@@ -194,25 +198,26 @@ COMPAT_SRCS = $(wildcard $(OKAPIA)/compat/*.cpp)
 TRACE_SRCS  = $(OKAPIA)/trace_disk_circle.cpp $(OKAPIA)/exception_trace.cpp \
               $(OKAPIA)/trace_traps_circle.cpp $(OKAPIA)/trace_fpu_circle.cpp
 ifeq ($(ENGINE),basilisk)
-PLATFORM_SRCS = $(filter-out $(TRACE_SRCS) $(SHARED_SRCS),$(wildcard $(OKAPIA)/*.cpp))
+PLATFORM_SRCS = $(filter-out $(SHARED_SRCS),$(wildcard $(COMMON)/*_okapia.cpp)) \
+                $(OKAPIA)/jit_circle.cpp $(OKAPIA)/jit_arm64_circle.cpp
 ifeq ($(OKAPIA_TRACE),1)
 PLATFORM_SRCS += $(TRACE_SRCS)
 endif
 else
 # Only what this engine actually has. The shared platform files are the ones
 # whose upstream header is a symbolic link between the two trees — prefs, xpram,
-# timer, adb — and the rest is under sheepshaver/. Globbing src/circle would
+# timer, adb — and the rest is under sheepshaver/. Globbing src/common would
 # drag in the other engine's video and main.
-PLATFORM_SRCS = $(OKAPIA)/compositor_circle.cpp $(OKAPIA)/video_shared_circle.cpp \
-                $(OKAPIA)/video_sizes_circle.cpp \
-                $(OKAPIA)/prefs_circle.cpp $(OKAPIA)/xpram_circle.cpp \
-                $(OKAPIA)/timer_circle.cpp $(OKAPIA)/tick_circle.cpp \
-                $(OKAPIA)/input_circle.cpp $(OKAPIA)/audio_circle.cpp \
-                $(OKAPIA)/user_strings_circle.cpp $(OKAPIA)/extfs_sync_circle.cpp \
-                $(OKAPIA)/hfs_volume_circle.cpp $(OKAPIA)/card_circle.cpp \
-                $(OKAPIA)/mac_encoding_circle.cpp $(OKAPIA)/ether_circle.cpp \
+PLATFORM_SRCS = $(COMMON)/compositor_okapia.cpp $(COMMON)/video_shared_okapia.cpp \
+                $(COMMON)/video_sizes_okapia.cpp \
+                $(COMMON)/prefs_okapia.cpp $(COMMON)/xpram_okapia.cpp \
+                $(COMMON)/timer_okapia.cpp $(COMMON)/tick_okapia.cpp \
+                $(COMMON)/input_okapia.cpp $(COMMON)/audio_okapia.cpp \
+                $(COMMON)/user_strings_okapia.cpp $(COMMON)/extfs_sync_okapia.cpp \
+                $(COMMON)/hfs_volume_okapia.cpp $(COMMON)/card_okapia.cpp \
+                $(COMMON)/mac_encoding_okapia.cpp $(COMMON)/ether_okapia.cpp \
                 $(MACEMU)/CrossPlatform/video_blit.cpp \
-                $(wildcard $(OKAPIA)/sheepshaver/*.cpp)
+                $(wildcard $(COMMON)/sheepshaver/*.cpp)
 endif
 # Upstream Unix files reused unchanged.
 REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
@@ -221,12 +226,10 @@ REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 # Circle — the window itself, and the bridge from USB reports to events. Its
 # font and icon sources are generated from assets/, like the key table.
 FIRMWARE      = ../../src/firmware
-# What is the same on every host (okapia_host.h): the boot menu's driver.
-COMMON        = ../../src/common
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
-                $(COMMON)/okapia_menu.cpp $(FIRMWARE)/circle/okapia_host_circle.cpp \
-                $(FIRMWARE)/circle/okapia_input.cpp \
-                $(FIRMWARE)/circle/okapia_output.cpp
+                $(COMMON)/okapia_menu.cpp $(OKAPIA)/firmware/okapia_host_circle.cpp \
+                $(OKAPIA)/firmware/okapia_input.cpp \
+                $(OKAPIA)/firmware/okapia_output.cpp
 
 # What must exist exactly once in the image, whichever engine is running.
 #
@@ -245,21 +248,21 @@ FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
 # shared for the same reason as the rest — one sound device for both engines —
 # but they are not in hal_circle.cpp, because the theme specimen kernel links
 # that file and has neither the emulator's preferences nor the firmware's
-# frame buffer claim (src/firmware/circle/Makefile).
+# frame buffer claim (src/hosts/circle/firmware/Makefile).
 #
 # board_net_circle.cpp is the network interface, for the same reason: one
 # device for both engines, and for Wi-Fi one scheduler and one supplicant
-# (wlan_circle.cpp). net_config_circle.cpp is the pure part of it.
+# (wlan_circle.cpp). net_config_okapia.cpp is the pure part of it.
 #
 # clock_circle.cpp is the board's clock, one for both engines, and
 # net_clock.cpp the pure half of its question to the network.
 SHARED_SRCS = $(OKAPIA)/hal_circle.cpp $(OKAPIA)/board_sound_circle.cpp \
               $(OKAPIA)/board_net_circle.cpp $(OKAPIA)/wlan_circle.cpp \
-              $(OKAPIA)/net_config_circle.cpp \
+              $(COMMON)/net_config_okapia.cpp \
               $(OKAPIA)/clock_circle.cpp $(OKAPIA)/net_clock.cpp \
               $(OKAPIA)/net_bench_circle.cpp $(OKAPIA)/execmem_circle.cpp \
-              $(OKAPIA)/quickdraw_worker.cpp $(OKAPIA)/quickdraw_blit.cpp \
-              $(OKAPIA)/mac_ram_circle.cpp $(OKAPIA)/rom_chime.cpp \
+              $(OKAPIA)/quickdraw_worker.cpp $(COMMON)/quickdraw_blit.cpp \
+              $(OKAPIA)/mac_ram_circle.cpp $(COMMON)/rom_chime.cpp \
               okapia_boot.cpp $(FIRMWARE_SRCS)
 SHARED_OBJ  = obj-shared
 SHARED_OBJS = $(addprefix $(SHARED_OBJ)/,$(notdir $(SHARED_SRCS:.cpp=.o))) \
@@ -365,7 +368,7 @@ include $(CIRCLEHOME)/Rules.mk
 # dates into a volume makes its MDB inconsistent; the build time is a
 # plausible floor until phase 10 provides a real source.
 OKAPIA_BUILD_TIME := $(shell date +%s)
-# The network bench (src/circle/net_bench_circle.cpp), a tool for measuring and
+# The network bench (src/hosts/circle/net_bench_circle.cpp), a tool for measuring and
 # not a feature: compiled in only with OKAPIA_NETBENCH=1, so that a `netbench`
 # line left on a card costs a normal kernel nothing. Like OKAPIA_TRACE, toggling
 # it needs okapia-clean.
@@ -375,9 +378,9 @@ EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD
 # The engine's own config.h comes first, which is the whole reason it lives in
 # a directory of its own.
 # CPUGEN ahead of GEN: both hold a cputbl.h when the JIT core is built.
-EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(OKAPIA) -I$(OKAPIA)/compat $(JIT_INCLUDES) \
+EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(COMMON) -I$(OKAPIA) -I$(OKAPIA)/compat $(JIT_INCLUDES) \
                -I$(CPUGEN) -I$(GEN) -I$(HFS) \
-               -I$(FIRMWARE) -I$(COMMON) -I$(FIRMWARE)/circle -I$(OKAPIA)/circle \
+               -I$(FIRMWARE) -I$(OKAPIA)/firmware \
                -I$(MACEMU)/include -I$(UAE) -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform -I$(MACEMU)/kpx_cpu/include -I$(MACEMU)/kpx_cpu/src
 
@@ -404,14 +407,14 @@ LIBS := $(CIRCLEHOME)/lib/sound/libsound.a \
 # a file written on the card (wlan_circle.cpp); every other file goes through
 # untouched.
 # wpa_supplicant_add_iface: the supplicant's interface is kept static in
-# Circle's main_circle.c, so wlan_hostap.c takes the pointer as it is made.
+# Circle's main_okapia.c, so wlan_hostap.c takes the pointer as it is made.
 FINAL_WRAPS = --wrap=f_open --wrap=f_gets --wrap=f_close --wrap=wpa_supplicant_add_iface
 
 # Two upstream hooks that are part of the product, not diagnostics, so they are
 # always on. Mangled names: extfs_write(int, void*, size_t) for the shared
-# folder's flush policy (extfs_sync_circle.cpp), and EmulOp(uint16,
+# folder's flush policy (extfs_sync_okapia.cpp), and EmulOp(uint16,
 # M68kRegisters*) to hear the Mac write its PRAM and restart itself
-# (emul_op_hook_circle.cpp).
+# (emul_op_hook_okapia.cpp).
 # They go on each engine's **partial** link, not on the final one, and that is
 # not a detail: `ld -r` resolves every reference inside the set it is given, so
 # by the time the final link runs there is nothing left to redirect. The docs
@@ -423,10 +426,10 @@ FINAL_WRAPS = --wrap=f_open --wrap=f_gets --wrap=f_close --wrap=wpa_supplicant_a
 # The three Open Transport entry points of SheepShaver's DLPI module say in
 # the log what Open Transport did with the driver; they exist on the PowerPC
 # side only, and a wrap of a symbol an engine lacks does nothing
-# (ether_circle.cpp).
+# (ether_okapia.cpp).
 # The two file-name converters are replaced outright rather than patched into
 # external/: extfs_unix.cpp's are identity functions, right on a UTF-8 desktop
-# and wrong between a FAT card and a Macintosh (mac_encoding_circle.cpp).
+# and wrong between a FAT card and a Macintosh (mac_encoding_okapia.cpp).
 ENGINE_WRAPS = --wrap=_Z11extfs_writeiPvm --wrap=_Z6EmulOptP13M68kRegisters \
                --wrap=_Z25host_encoding_to_macromanPKc \
                --wrap=_Z25macroman_to_host_encodingPKc \
@@ -446,17 +449,17 @@ ENGINE_WRAPS += --wrap=_Z8Sys_readPvS_lm --wrap=_Z9Sys_writePvS_lm --wrap=_Z9Exc
 ENGINE_DEFINES += -DDIRECT_ADDRESSING_GUARD=1
 # The FPU checked before the Macintosh starts, as far as it is decidable
 # without a guest: for the softfloat core, the known answers and the digest
-# tests/host/check_fpu pins (src/circle/fpu_selftest.h); for the binary128 core,
+# tests/host/check_fpu pins (src/common/fpu_selftest.h); for the binary128 core,
 # the extended round trip that fails when the register is too narrow
 # (patches/macemu/0008).
 ENGINE_DEFINES += -DFPU_SELFTEST=1
 # One system beep at the first idle, on a card whose preferences turn sound on:
 # the Sound Manager waits for its sound to finish, so a pull that never happens
-# is a "returned" line that never comes (audio_circle.cpp).
+# is a "returned" line that never comes (audio_okapia.cpp).
 ENGINE_DEFINES += -DSOUND_SELFTEST=1
 # An AARP request put in the network's receive ring once EtherTalk has its
 # address, and the Mac's answer watched for: the receive path proved under a
-# QEMU whose USB network never delivers a frame (ether_circle.cpp).
+# QEMU whose USB network never delivers a frame (ether_okapia.cpp).
 ENGINE_DEFINES += -DNET_SELFTEST=1
 # One page of heap made executable and run, then re-emitted and run again: the
 # prerequisite of a JIT, proved under QEMU (execmem_circle.cpp).
@@ -470,12 +473,14 @@ endif
 EMU_FLAGS = $(EMU_DEFINES) -fexceptions -Wno-narrowing -Wno-write-strings
 
 # The engine's own directory goes on the path only for that engine, and ahead
-# of the shared one. Both halves matter: sheepshaver/main_circle.cpp has the
+# of the shared one. Both halves matter: sheepshaver/main_okapia.cpp has the
 # same name as the other engine's on purpose — it is the same role — and VPATH
 # resolves a name to the first directory that has it. Ahead, and a SheepShaver
 # kernel would compile Basilisk's platform; unconditionally, and the Basilisk
 # kernel compiles SheepShaver's. Both were seen, in that order.
-VPATH = $(FIRMWARE):$(COMMON):$(FIRMWARE)/circle:$(ENGINE_VPATH)$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(UAE):$(UAE)/fpu:$(UAE)/compiler:$(UAE)/jit_arm64:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(CPUGEN):$(GEN)
+# The engine's own directory first: main, video and cpu_ticks exist under the
+# same names in src/common and src/common/sheepshaver.
+VPATH = $(FIRMWARE):$(ENGINE_VPATH)$(COMMON):$(OKAPIA)/firmware:$(OKAPIA):$(OKAPIA)/compat:$(MACEMU)/Unix:$(MACEMU):$(UAE):$(UAE)/fpu:$(UAE)/compiler:$(UAE)/jit_arm64:$(MACEMU)/CrossPlatform:$(MACEMU)/dummy:$(MACEMU)/kpx_cpu:$(MACEMU)/kpx_cpu/src/mathlib:$(MACEMU)/kpx_cpu/src/cpu/ppc:$(MACEMU)/kpx_cpu/src/utils:$(CPUGEN):$(GEN)
 
 # The USB HID -> ADB key table, derived from Basilisk's own keycodes file rather
 # than typed out: SDL2 scancodes are HID usage IDs, so its "sdl cocoa" section
@@ -485,7 +490,7 @@ $(KEYCODES_H): $(MACEMU)/Unix/keycodes ../../scripts/gen-keycodes.py
 	@mkdir -p $(GEN)
 	@../../scripts/gen-keycodes.py $< $@
 
-$(OBJ)/input_circle.o: $(KEYCODES_H)
+$(OBJ)/input_okapia.o: $(KEYCODES_H)
 
 # MacRoman, derived from Python's own mac_roman codec — which carries Apple's
 # ROMAN.TXT — rather than transcribed. See gen-macroman.py.
@@ -494,7 +499,7 @@ $(MACROMAN_H): ../../scripts/gen-macroman.py
 	@mkdir -p $(GEN)
 	@../../scripts/gen-macroman.py $@
 
-$(OBJ)/mac_encoding_circle.o: $(MACROMAN_H)
+$(OBJ)/mac_encoding_okapia.o: $(MACROMAN_H)
 
 # The faces and the system-folder icons, converted at build time from assets/.
 # Explicit rules rather than the pattern above: a pattern cannot match a file
