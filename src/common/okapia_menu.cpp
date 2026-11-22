@@ -43,6 +43,14 @@
 #include "okapia_strings.h"
 #include "okapia_theme.h"
 #include "okapia_clock.h"
+#include "okapia_rom.h"
+#include "okapia_welcome.h"
+
+#include <dirent.h>
+#include <errno.h>
+#include <unistd.h>
+#include <strings.h>
+#include <sys/stat.h>
 
 #define FROM "firmware"
 
@@ -358,7 +366,8 @@ static const char TIME_SERVER[] = "pool.ntp.org";
 
 // The names TSoundOutput carries in the file, in its own order. One table, read
 // by both directions: two would drift.
-static const char *const SOUND_NAMES[SoundOutputCount] = { "off", "hdmi", "jack", "usb" };
+// "builtin" is a desktop's: a board reading it plays on its jack (audio_okapia.cpp).
+static const char *const SOUND_NAMES[SoundOutputCount] = { "off", "hdmi", "jack", "usb", "builtin" };
 
 static void LoadSettings (TSettings *pSettings)
 {
@@ -417,6 +426,15 @@ static void LoadSettings (TSettings *pSettings)
     // What this machine can actually do: an output offered and then silent
     // would be the firmware lying (okapia_host_circle.cpp says which a Pi has).
     pSettings->nSoundAvailable = HostSoundOutputs ();
+    if (HostKind () == HostDesktop)
+    {
+        // A desktop has one output; a card's HDMI or jack plays there too.
+        pSettings->nSoundOffered = pSettings->nSoundAvailable;
+        if (pSettings->V.nSound != SoundOff)
+        {
+            pSettings->V.nSound = SoundBuiltIn;
+        }
+    }
 
     pSettings->Opened = pSettings->V;
 }
@@ -640,7 +658,21 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
     Line[0] = '\0';
     {
         unsigned long nTotalMB = 0, nFreeMB = 0;
-        if (HostCardSpace (&nTotalMB, &nFreeMB))
+        const char *pWhere = HostCardLocation ();
+        if (pWhere != 0)
+        {
+            // A desktop's workspace: where it is, which is what one forgets,
+            // and the room left on its disk.
+            n = StrAppend (Line, sizeof Line, 0, pWhere);
+            if (HostCardSpace (&nTotalMB, &nFreeMB))
+            {
+                n = StrAppend (Line, sizeof Line, n, " · ");
+                n = StrAppendNumber (Line, sizeof Line, n, nFreeMB);
+                n = StrAppend (Line, sizeof Line, n, " ");
+                StrAppend (Line, sizeof Line, n, Str (StrMbFree));
+            }
+        }
+        else if (HostCardSpace (&nTotalMB, &nFreeMB))
         {
             n = StrAppendNumber (Line, sizeof Line, 0, nTotalMB);
             n = StrAppend (Line, sizeof Line, n, " ");
@@ -690,7 +722,8 @@ static void GatherInfo (TInfo *pInfo, const TChooser *pChooser, const TSurface *
     InfoCredit (pInfo, "SheepShaver", "GPLv2+ · Christian Bauer et al., kanjitalk755");
     InfoCredit (pInfo, "Circle",      "GPLv3+ · Rene Stange");
     InfoCredit (pInfo, "libhfs",      "GPLv2+ · Robert Leslie");
-    InfoCredit (pInfo, "Helvetica",   "X11 · Adobe Systems, Digital Equipment");
+    InfoCredit (pInfo, "TeX Gyre Heros", "GUST Font License · GUST e-foundry");
+    InfoCredit (pInfo, "stb_truetype", "Public domain · Sean Barrett");
 }
 
 /*
@@ -801,6 +834,7 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
                     ScreenInit (&Screen, pTheme, pWidgets, nCount);
                     Screen.Background = ColorWhite;
                     Screen.Bounds     = Rect (0, 0, pOutput->nWidth, pOutput->nHeight);
+                    HostInputBounds (pOutput->nWidth, pOutput->nHeight);
                     // Where the hand was, not where the layout would start it:
                     // a tabbed page declares Start, and the language popup
                     // that caused this is three rows away from it.
@@ -817,17 +851,44 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
             }
         }
 
+        // A desktop window resized with the mouse: the page laid out again at
+        // its new size, as a change of language does it.
+        if (pDriver->Relayout != 0 && HostOutputResized (pOutput))
+        {
+            pShadow->nWidth  = pOutput->nWidth;
+            pShadow->nHeight = pOutput->nHeight;
+            const int nFocus = Screen.nFocus;
+            GfxCursorForget ();
+            pDriver->Relayout (pShadow);
+            nCount = pDriver->Widgets (&pWidgets);
+            ScreenInit (&Screen, pTheme, pWidgets, nCount);
+            Screen.Background = ColorWhite;
+            Screen.Bounds     = Rect (0, 0, pOutput->nWidth, pOutput->nHeight);
+            ScreenFocus (&Screen, nFocus);
+            HostInputBounds (pOutput->nWidth, pOutput->nHeight);
+            Screen.bDirtyAll = true;
+            bChanged = true;
+        }
+
         if (pDriver->Tick != 0 && nTick % 25 == 0 && pDriver->Tick ())
         {
             Screen.bDirtyAll = true;
             bChanged = true;
         }
 
-        if (bChanged || (nTick % (500 / SLICE_MS) == 0 && ScreenBlinkCaret (&Screen))
-            || bPointer)
+        // The pointer: the system's on a desktop, told only its shape, and a
+        // move then redraws nothing; drawn into the output on a board.
+        bool bDrawPointer = bPointer;
+        if (bPointer)
         {
             HostInputPointer (&nX, &nY);
-            ScreenPresent (pShadow, pOutput, &Screen, pDriver->Repaint, bPointer, nX, nY,
+            bDrawPointer = !HostPointer (ScreenCursorAt (&Screen, nX, nY) == CursorBeam);
+        }
+        if (bChanged || (nTick % (500 / SLICE_MS) == 0 && ScreenBlinkCaret (&Screen))
+            || bDrawPointer)
+        {
+            HostInputPointer (&nX, &nY);
+            ScreenPresent (pShadow, pOutput, &Screen, pDriver->Repaint, bDrawPointer, nX, nY,
                            pTheme->nIconScale);
             HostOutputPresent (0, 0, pOutput->nWidth, pOutput->nHeight);
         }
@@ -922,7 +983,6 @@ static void LoadNetwork (TNetwork *p)
 
     p->nAvailable = HostNetAvailable ();
     p->nRunning   = RunningKind ();
-    p->bShared    = HostKind () == HostDesktop;
     // A start that failed is final for this boot: Circle cannot give a device
     // back to try again.
     p->State = HostNetTried () && p->nRunning == NetworkOff ? NetStateUnavailable
@@ -1094,7 +1154,20 @@ static void LoadDisplay (TSurface *pOutput)
     StrAppend (s_Display.Monitor, sizeof s_Display.Monitor, 0, Facts.Monitor);
     s_Display.bConfigAvailable = Facts.bConfigAvailable;
     s_Display.bHdmiDirectives  = Facts.bHdmiDirectives;
+    s_Display.nDensity         = Facts.nDensity;
     s_Display.bWindowed        = HostKind () == HostDesktop;
+    THostWindow Window;
+    if (HostWindowDescribe (&Window))
+    {
+        s_Display.bWindowSizes = true;
+        s_Display.nWindowMode  = (unsigned) Window.Mode;
+        s_Display.Window = {Window.nWidth, Window.nHeight};
+        // A desktop's menu draws in device pixels, its Macintosh in points:
+        // the sizes offered to the Macintosh are the window's, in points.
+        s_Display.Output = s_Display.Window;
+        s_Display.Fill   = {Window.nFillWidth, Window.nFillHeight};
+        s_Display.Screen = {Window.nScreenWidth, Window.nScreenHeight};
+    }
     s_Display.Start = VideoStartSize (PrefsFindString ("screen"), s_Display.Output);
     VideoPrefsRead (&s_Display.Modes);
     s_Display.nFrameSkip = PrefsFindInt32 ("frameskip");
@@ -1142,13 +1215,21 @@ static int JournalAdapter (int nIndex)
 }
 
 static const int AnswerNewResolution = 2001;
+static const int AnswerWindowSize    = 2002;
+static const int AnswerWindowOther   = 2003;
 
 static int DisplayAdapter (int nIndex)
 {
     const int nChrome = PageChromeAnswer (nIndex);
     if (nChrome != PageAnswerNone)
         return nChrome;
-    return DisplayOperate (&s_Display, nIndex, s_nCell) ? AnswerNewResolution : PageAnswerNone;
+    switch (DisplayOperate (&s_Display, nIndex, s_nCell))
+    {
+    case DisplayNewResolution:  return AnswerNewResolution;
+    case DisplayWindowChosen:   return AnswerWindowSize;
+    case DisplayWindowOther:    return AnswerWindowOther;
+    default:                    return PageAnswerNone;
+    }
 }
 
 static void NewResolutionChanged (TScreen *pScreen)
@@ -1166,15 +1247,16 @@ static int NewResolutionCancelled (void)
     return NewResolutionCancel;
 }
 
-static void RunNewResolution (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme)
+static bool RunNewResolution (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
+                              bool bWindow = false)
 {
-    NewResolutionDraw (pShadow, &s_Display);
+    NewResolutionDraw (pShadow, &s_Display, bWindow);
     static const TPageDriver Driver =
     {
         NewResolutionRepaint, NewResolutionWidgets, NewResolutionAdapter,
         NewResolutionChanged, 0, NewResolutionCancelled
     };
-    RunPage (pOutput, pShadow, pTheme, &Driver);
+    return RunPage (pOutput, pShadow, pTheme, &Driver) == (int) NewResolutionCreate;
 }
 
 static void DrawTab (TSurface *pSurface)
@@ -1235,7 +1317,18 @@ static int SettingsAdapter (int nIndex)
     {
         return nChrome;
     }
-    switch (SettingsOperate (&s_Settings, nIndex))
+    const bool bRestartWas = RestartWanted ();
+    const TSettingsAction Action = SettingsOperate (&s_Settings, nIndex);
+    if (s_Settings.bNetworkOffered)
+    {
+        // A desktop's network, chosen here: the wired kind is the host's.
+        s_Network.V.nKind = s_Settings.nNetwork != 0 ? NetworkCable : NetworkOff;
+        if (RestartWanted () != bRestartWas)
+        {
+            return PageRelayout;        // Start says Restart, or no longer
+        }
+    }
+    switch (Action)
     {
     case SettingsRelayout:
         return PageRelayout;
@@ -1571,6 +1664,9 @@ static void SaveAll (void)
     ApplyVolumes (&s_Chooser);          // and SavePrefs(), once
 }
 
+// The page the host started again for (HostMenuReopen), or -1.
+static int s_nReopenTab = -1;
+
 static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
 {
     // The card was read before the window opened, because whether there is
@@ -1596,8 +1692,17 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
     LoadNetwork (&s_Network);
     LoadDateTime (&s_Settings.Clock);
     s_pOutputForInfo = pOutput;
-    s_Tab = PageTabSystem;
+    s_Tab = s_nReopenTab >= 0 && s_nReopenTab < (int) PageTabCount ? (TPageTab) s_nReopenTab
+                                                                       : PageTabSystem;
     s_bFocusTabs = false;
+    // The way back to the welcome page, where there is more than one card.
+    PageChromeWorkspace (HostHasWelcome ());
+    // A desktop's network is one choice, the host's shared or none: it is on
+    // the Settings page, and the Network page, the board's, is left out.
+    const bool bDesktop = HostKind () == HostDesktop;
+    PageChromeHideTab (PageTabNetwork, bDesktop);
+    s_Settings.bNetworkOffered = bDesktop;
+    s_Settings.nNetwork = s_Network.V.nKind != NetworkOff ? 1 : 0;
 
     static const TPageDriver Drivers[PageTabCount] =
     {
@@ -1606,8 +1711,8 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
           SettingsTick },
         { NetworkRepaint,  NetworkWidgets,  NetworkAdapter,  0,              RelayoutTab, 0,
           NetworkTick },
-        { InfoRepaint,     InfoWidgets,     InfoAdapter,     0,              RelayoutTab, 0, 0 },
         { DisplayRepaint,  DisplayWidgets,  DisplayAdapter,  0,              RelayoutTab, 0, 0 },
+        { InfoRepaint,     InfoWidgets,     InfoAdapter,     0,              RelayoutTab, 0, 0 },
         { JournalRepaint,  JournalWidgets,  JournalAdapter,  0,              RelayoutTab, 0, 0 }
     };
 
@@ -1649,13 +1754,40 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
             RunNewResolution (pOutput, &Shadow, pTheme);
             break;
 
+        case AnswerWindowOther:
+            if (!RunNewResolution (pOutput, &Shadow, pTheme, true))
+            {
+                break;
+            }
+            // fall through: the size entered, applied as a listed one is
+            [[fallthrough]];
+
+        case AnswerWindowSize:
+            // The output is the window's for the life of the process: what the
+            // pages set is kept, and the host starts again at this page, at the
+            // new size (a desktop's only; HostWindowApply).
+            SaveAll ();
+            HostLog (FROM, HostLogNotice, "Window: mode %u, %ux%u", s_Display.nWantedMode,
+                     s_Display.Wanted.nWidth, s_Display.Wanted.nHeight);
+            HostWindowApply ((THostWindowMode) s_Display.nWantedMode, s_Display.Wanted.nWidth,
+                             s_Display.Wanted.nHeight, (int) PageTabDisplay);
+            break;
+
         case AnswerClockHelp:
-            Tell (pOutput, &Shadow, pTheme, StrClockGroup, StrClockHelp);
+            Tell (pOutput, &Shadow, pTheme, StrClockGroup,
+                  HostClockIsHosts () ? StrClockHelpDesktop : StrClockHelp);
             break;
 
         case PageAnswerBootMenu:
             s_Settings.V.bBootMenu = !s_Settings.V.bBootMenu;
             s_bFocusBootMenu = true;
+            break;
+
+        case PageAnswerWorkspace:
+            // Another workspace, or this one with more in it: what was set here
+            // is kept first, as Shut Down keeps it.
+            SaveAll ();
+            HostOpenWelcome ();
             break;
 
         case PageAnswerStart:
@@ -1732,6 +1864,903 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
     return Result;
 }
 
+/*
+ *  The welcome page, on a desktop before any workspace
+ *
+ *  Runs before either engine, so before the preferences are read: what it
+ *  changes in them it writes to the file itself, one line at a time, and the
+ *  boot menu that follows reads the file as it always does.
+ */
+static const unsigned PATH_MAX_OKAPIA = 1024;
+static TWelcome  s_Welcome;
+static TSurface *s_pWelcomeOutput;
+static TSurface *s_pWelcomeShadow;
+static unsigned  s_nWelcomeMaxHeight;   // a resizable window's: the tallest the page may be
+
+// The welcome page at the output's size. In a window the person resizes it is
+// first laid out on the tallest output the host holds, to learn how much height
+// it needs, and the output takes that (never less than the window); then it is
+// laid out for real. The host keeps its title and its buttons in place and
+// scrolls the steps between them, as the installer did.
+static void WelcomeLayout (void)
+{
+    TSurface *pOut = s_pWelcomeOutput, *pShadow = s_pWelcomeShadow;
+    if (s_Welcome.bFill)
+    {
+        pShadow->nWidth  = pOut->nWidth;
+        pShadow->nHeight = s_nWelcomeMaxHeight;
+        WelcomeDraw (pShadow, &s_Welcome);
+        HostOutputExtend (pOut, s_nWelcomeMaxHeight - WelcomeSpare ());
+        pShadow->nHeight = pOut->nHeight;
+    }
+    WelcomeDraw (pShadow, &s_Welcome);
+    if (s_Welcome.bFill)
+    {
+        unsigned nTop = 0, nBottom = 0, nRight = 0;
+        WelcomeBands (&nTop, &nBottom, &nRight);
+        HostOutputBands (nTop, nBottom, nRight);
+    }
+}
+
+// The SD card sheet over it: on exactly the window, at the top, so the sheet
+// centred on the output is in the middle of what is seen.
+static void WelcomeCardsLayout (void);
+static const TTheme *s_pWelcomeTheme;
+
+// A string with one "{}" in it, the value put there.
+static void Fill1 (char *pOut, unsigned nSize, TStringId Id, const char *pValue)
+{
+    const char *pText = Str (Id);
+    const char *pHole = strstr (pText, "{}");
+    if (pHole == 0)
+    {
+        snprintf (pOut, nSize, "%s", pText);
+        return;
+    }
+    snprintf (pOut, nSize, "%.*s%s%s", (int) (pHole - pText), pText, pValue, pHole + 2);
+}
+
+// "7.1 GB", "456 MB", the decimal point the language's own.
+static void Bytes (char *pOut, unsigned nSize, unsigned long long nBytes)
+{
+    const unsigned long long nMB = nBytes / (1024ull * 1024);
+    if (nMB >= 1024)
+    {
+        const unsigned long long nTenths = nMB * 10 / 1024;
+        snprintf (pOut, nSize, "%llu%s%llu %s", nTenths / 10, Str (StrDecimalPoint), nTenths % 10,
+                  Str (StrUnitGb));
+    }
+    else
+    {
+        snprintf (pOut, nSize, "%llu %s", nMB, Str (StrUnitMb));
+    }
+}
+
+// What the workspace's volume is, for a Pi: what is wrong with it first, the
+// summary when nothing is (the installer's card step, card_problem).
+static void WelcomeVolumeNote (char *pOut, unsigned nSize, bool bBoard)
+{
+    pOut[0] = '\0';
+    TCardVolume V;
+    if (!HostVolumeOf (CardPath ("/"), &V))
+    {
+        return;
+    }
+    TCardDiagnosis D;
+    CardDiagnose (CardPath ("/"), &V, &D);
+    char Value[64];
+    if (bBoard && V.bRemovable)
+    {
+        char Kb[16];
+        snprintf (Kb, sizeof Kb, "%u", V.nCluster / 1024);
+        if (V.Fs == CardFsFat12 || V.Fs == CardFsFat16)
+        {
+            Fill1 (pOut, nSize, StrWelcomeCNotFat32, V.Fs == CardFsFat12 ? "FAT12" : "FAT16");
+            return;
+        }
+        if (V.Fs == CardFsOther)
+        {
+            Fill1 (pOut, nSize, StrWelcomeCNotFat, V.FsName);
+            return;
+        }
+        if (D.bSmallClusters)
+        {
+            Fill1 (pOut, nSize, StrWelcomeCSmallClusters, Kb);
+            return;
+        }
+        if (D.bUncleanShutdown)
+        {
+            snprintf (pOut, nSize, "%s", Str (StrWelcomeCUnclean));
+            return;
+        }
+    }
+    // The summary: what the volume is, its room, and Okapia on it.
+    const TStringId What = V.bRemovable ? StrWelcomeCCard : bBoard ? StrWelcomeCStandIn : StrWelcomeCFolder;
+    unsigned n = (unsigned) snprintf (pOut, nSize, "%s", Str (What));
+    if (bBoard && V.bRemovable && V.Fs == CardFsFat32)
+    {
+        char Kb[16], Clusters[48];
+        snprintf (Kb, sizeof Kb, "%u", V.nCluster / 1024);
+        Fill1 (Clusters, sizeof Clusters, StrWelcomeCClusters, Kb);
+        n += (unsigned) snprintf (pOut + n, n < nSize ? nSize - n : 0, " · FAT32, %s", Clusters);
+    }
+    Bytes (Value, sizeof Value, V.nFree);
+    char Free[64];
+    Fill1 (Free, sizeof Free, StrWelcomeCFree, Value);
+    n += (unsigned) snprintf (pOut + n, n < nSize ? nSize - n : 0, " · %s", Free);
+    if (bBoard)
+    {
+        char Okapia[96];
+        if (D.bKernel && D.Missing[0] == '\0')
+            Fill1 (Okapia, sizeof Okapia, StrWelcomeCOkapia, D.Version[0] != '\0' ? D.Version : "?");
+        else if (D.bKernel)
+            Fill1 (Okapia, sizeof Okapia, StrWelcomeCBootMissing, D.Missing);
+        else
+            snprintf (Okapia, sizeof Okapia, "%s", Str (StrWelcomeCNoOkapia));
+        snprintf (pOut + n, n < nSize ? nSize - n : 0, " · %s", Okapia);
+    }
+}
+
+/*
+ *  The SD cards inserted: a sheet over the welcome page
+ */
+static TWelcomeCards s_Cards;
+static TCardVolume   s_CardVolumes[WELCOME_CARDS];
+
+// The cards as they are now; true when the list changed.
+static bool CardsRead (void)
+{
+    TCardVolume Now[WELCOME_CARDS];
+    const unsigned nNow = HostCards (Now, WELCOME_CARDS);
+    bool bChanged = nNow != s_Cards.nCount;
+    for (unsigned i = 0; i < nNow && !bChanged; i++)
+    {
+        bChanged = strcmp (Now[i].Mount, s_CardVolumes[i].Mount) != 0 || Now[i].nFree != s_CardVolumes[i].nFree;
+    }
+    if (!bChanged)
+    {
+        return false;
+    }
+    s_Cards.nCount = nNow;
+    for (unsigned i = 0; i < nNow; i++)
+    {
+        s_CardVolumes[i] = Now[i];
+        char Size[32];
+        Bytes (Size, sizeof Size, Now[i].nTotal);
+        const char *pFs = Now[i].Fs == CardFsFat32 ? "FAT32" : Now[i].Fs == CardFsFat16 ? "FAT16"
+                        : Now[i].Fs == CardFsFat12 ? "FAT12" : Now[i].FsName;
+        snprintf (s_Cards.Line[i], sizeof s_Cards.Line[i], "%s — %s, %s", Now[i].Name, pFs, Size);
+    }
+    return true;
+}
+
+static int s_nCardChosen = -1;
+
+static int CardsAdapter (int nIndex)
+{
+    int nChosen = -1;
+    switch (WelcomeCardsOperate (&s_Cards, nIndex, &nChosen))
+    {
+    case WelcomeCardsUse:
+        s_nCardChosen = nChosen;
+        return (int) WelcomeCardsUse;
+    case WelcomeCardsCancel:
+        return (int) WelcomeCardsCancel;
+    default:
+        return 0;
+    }
+}
+
+static int CardsCancelled (void)
+{
+    return (int) WelcomeCardsCancel;
+}
+
+static bool CardsTick (void)
+{
+    if (!CardsRead ())
+    {
+        return false;
+    }
+    WelcomeCardsSync (&s_Cards);
+    return true;
+}
+
+static void WelcomeCardsLayout (void)
+{
+    if (s_Welcome.bFill)
+    {
+        HostOutputExtend (s_pWelcomeOutput, 0);
+        s_pWelcomeShadow->nWidth  = s_pWelcomeOutput->nWidth;
+        s_pWelcomeShadow->nHeight = s_pWelcomeOutput->nHeight;
+    }
+    WelcomeCardsDraw (s_pWelcomeShadow, &s_Cards);
+}
+
+static void CardsRelayout (TSurface *)
+{
+    WelcomeCardsLayout ();
+}
+
+// The card chosen, its mount on the host; false when cancelled.
+static bool RunCards (char *pMount, unsigned nSize)
+{
+    memset (&s_Cards, 0, sizeof s_Cards);
+    s_Cards.nCount = ~0u;               // so the first read counts as a change
+    CardsRead ();
+    WelcomeCardsLayout ();
+    static const TPageDriver Driver =
+    {
+        WelcomeCardsRepaint, WelcomeCardsWidgets, CardsAdapter, 0, CardsRelayout, CardsCancelled, CardsTick
+    };
+    s_nCardChosen = -1;
+    const int nAnswer = RunPage (s_pWelcomeOutput, s_pWelcomeShadow, s_pWelcomeTheme, &Driver);
+    WelcomeLayout ();
+    if (nAnswer != (int) WelcomeCardsUse || s_nCardChosen < 0 || s_nCardChosen >= (int) s_Cards.nCount)
+    {
+        return false;
+    }
+    snprintf (pMount, nSize, "%s", s_CardVolumes[s_nCardChosen].Mount);
+    return true;
+}
+
+// Set "<name> <value>", in place of every line of that name, or added to them
+// when bAdd (disk, cdrom: an item that may come more than once, and this value
+// is then added only once). Written beside and renamed over, so an abrupt stop
+// leaves the old file or the new one, never half of one.
+static bool PrefsFileSet (const char *pName, const char *pValue, bool bAdd)
+{
+    static char Old[64 * 1024];
+    size_t nOld = 0;
+    FILE *pIn = fopen (CardPath ("/BasiliskII_Prefs"), "r");
+    if (pIn != 0)
+    {
+        nOld = fread (Old, 1, sizeof Old - 1, pIn);
+        fclose (pIn);
+    }
+    Old[nOld] = '\0';
+
+    char Temp[] = "/BasiliskII_Prefs.new";
+    FILE *pOut = fopen (CardPath (Temp), "w");
+    if (pOut == 0)
+    {
+        return false;
+    }
+    const size_t nName = strlen (pName);
+    bool bThere = false;
+    for (char *pLine = Old; *pLine != '\0'; )
+    {
+        char *pEnd = strchr (pLine, '\n');
+        const size_t nLine = pEnd != 0 ? (size_t) (pEnd - pLine) : strlen (pLine);
+        const bool bSame = nLine > nName && strncmp (pLine, pName, nName) == 0 && pLine[nName] == ' ';
+        if (bSame && bAdd && nLine == nName + 1 + strlen (pValue)
+            && strncmp (pLine + nName + 1, pValue, nLine - nName - 1) == 0)
+        {
+            bThere = true;
+        }
+        if (!bSame || bAdd)
+        {
+            fwrite (pLine, 1, nLine, pOut);
+            fputc ('\n', pOut);
+        }
+        pLine += nLine + (pEnd != 0 ? 1 : 0);
+    }
+    if (!bThere)
+    {
+        fprintf (pOut, "%s %s\n", pName, pValue);
+    }
+    const bool bWritten = fflush (pOut) == 0 && fsync (fileno (pOut)) == 0;
+    fclose (pOut);
+    char Final[PATH_MAX_OKAPIA];
+    snprintf (Final, sizeof Final, "%s", CardPath ("/BasiliskII_Prefs"));
+    const bool bRenamed = bWritten && rename (CardPath (Temp), Final) == 0;
+    HostTidy ("/BasiliskII_Prefs.new");
+    HostTidy ("/BasiliskII_Prefs");
+    return bRenamed;
+}
+
+static bool PrefsFileGet (const char *pName, char *pOut, unsigned nSize);
+
+// What the workspace holds, read again after every change.
+static void WelcomeGather (void)
+{
+    TWelcome &W = s_Welcome;
+    W.nSystems = 0;
+    const char *pWhere = HostCardLocation ();
+    // The end of the path is what tells one workspace from another, so a long
+    // one loses its beginning, not its name.
+    const char *pShown = pWhere != 0 ? pWhere : "";
+    const size_t nShown = strlen (pShown);
+    if (nShown > 64)
+    {
+        pShown += nShown - 63;
+        while ((*pShown & 0xC0) == 0x80)
+        {
+            pShown++;                   // not in the middle of a character
+        }
+        snprintf (W.Workspace, sizeof W.Workspace, "…%s", pShown);
+    }
+    else
+    {
+        snprintf (W.Workspace, sizeof W.Workspace, "%s", pShown);
+    }
+    W.WorkspaceNote[0] = '\0';
+    if (W.Workspace[0] != '\0')
+    {
+        WelcomeVolumeNote (W.WorkspaceNote, sizeof W.WorkspaceNote, W.nTarget != WelcomeForDesktop);
+    }
+    if (W.Workspace[0] == '\0')
+    {
+        // No workspace yet, and still which ROMs to look for.
+        for (unsigned e = 0; e < WelcomeRomCount; e++)
+        {
+            memset (&W.Rom[e], 0, sizeof W.Rom[e]);
+            snprintf (W.Rom[e].Line, sizeof W.Rom[e].Line, "%s", Str (StrWelcomeRomNone));
+            snprintf (W.Rom[e].Note, sizeof W.Rom[e].Note, "%s",
+                      Str (e == WelcomeRom68k ? StrWelcomeRomNone68k : StrWelcomeRomNonePpc));
+        }
+        W.bNothingStarts = false;
+        return;
+    }
+
+    // The ROMs: for each engine, the one the preferences name, else the first
+    // usable one of its family, as the installer chose (card_rom).
+    char Named[WelcomeRomCount][64];
+    PrefsFileGet ("rom", Named[WelcomeRom68k], sizeof Named[0]);
+    PrefsFileGet ("romppc", Named[WelcomeRomPowerPC], sizeof Named[0]);
+    TRomFacts Chosen[WelcomeRomCount];
+    char ChosenCard[WelcomeRomCount][64] = { "", "" };
+    DIR *pDir = opendir (CardPath ("/"));
+    if (pDir != 0)
+    {
+        struct dirent *pEntry;
+        while ((pEntry = readdir (pDir)) != 0)
+        {
+            if (pEntry->d_name[0] == '.')
+            {
+                continue;
+            }
+            char Card[64];
+            if (snprintf (Card, sizeof Card, "/%s", pEntry->d_name) >= (int) sizeof Card)
+            {
+                continue;
+            }
+            struct stat Info;
+            if (stat (CardPath (Card), &Info) != 0 || !S_ISREG (Info.st_mode)
+                || !RomLooksLikeOne (pEntry->d_name, (unsigned long) Info.st_size))
+            {
+                continue;
+            }
+            TRomFacts Facts;
+            if (!RomIdentify (CardPath (Card), &Facts) || Facts.Verdict != RomUsable)
+            {
+                continue;
+            }
+            const unsigned e = Facts.Kind == Rom68k ? WelcomeRom68k : WelcomeRomPowerPC;
+            const bool bNamed = strcmp (Named[e], Card) == 0;
+            if (ChosenCard[e][0] == '\0' || (bNamed && strcmp (Named[e], ChosenCard[e]) != 0))
+            {
+                Chosen[e] = Facts;
+                snprintf (ChosenCard[e], sizeof ChosenCard[e], "%s", Card);
+            }
+        }
+        closedir (pDir);
+    }
+    for (unsigned e = 0; e < WelcomeRomCount; e++)
+    {
+        TWelcomeRom &R = W.Rom[e];
+        memset (&R, 0, sizeof R);
+        if (ChosenCard[e][0] == '\0')
+        {
+            snprintf (R.Line, sizeof R.Line, "%s", Str (StrWelcomeRomNone));
+            snprintf (R.Note, sizeof R.Note, "%s",
+                      Str (e == WelcomeRom68k ? StrWelcomeRomNone68k : StrWelcomeRomNonePpc));
+            continue;
+        }
+        R.bThere = true;
+        snprintf (R.CardPath, sizeof R.CardPath, "%s", ChosenCard[e]);
+        snprintf (R.Line, sizeof R.Line, "%s · %s", Chosen[e].Identity, ChosenCard[e] + 1);
+        snprintf (R.Note, sizeof R.Note, "%s",
+                  Str (e == WelcomeRom68k ? (Chosen[e].bRecommended ? StrWelcomeRomStarts68k
+                                                                     : StrWelcomeRomNotQuadra)
+                       : Chosen[e].nFirstSystem >= 810 ? StrWelcomeRomStartsNew
+                                                       : StrWelcomeRomStartsOld));
+        R.bChime = HostChimeKnown (ChosenCard[e]);
+    }
+
+    // The disks, each with what the ROMs at hand make of it.
+    const TRomFacts *p68k = W.Rom[WelcomeRom68k].bThere ? &Chosen[WelcomeRom68k] : 0;
+    const TRomFacts *pPpc = W.Rom[WelcomeRomPowerPC].bThere ? &Chosen[WelcomeRomPowerPC] : 0;
+    W.bNothingStarts = false;
+    bool bAnyStarts = false;
+    static THfsVolumeInfo Found[CHOOSER_MAX];
+    const unsigned nFound = HfsInventory (Found, CHOOSER_MAX);
+    for (unsigned i = 0; i < nFound; i++)
+    {
+        THfsSystemVersion Version;
+        memset (&Version, 0, sizeof Version);
+        const bool bBlessed = Found[i].Blessed != 0;
+        const bool bVersion = bBlessed && HfsSystemVersion (Found[i].Path, &Version);
+        const unsigned nCode = bVersion ? Version.nMajor * 100 + Version.nMinor * 10 + Version.nBugfix : 0;
+        TDiskFlavour Flavour = FlavourUnreadable;
+        if (bVersion)
+        {
+            switch (HfsFlavourOf (&Version))
+            {
+            case HfsFlavour68k:       Flavour = Flavour68k;       break;
+            case HfsFlavourPowerPC:   Flavour = FlavourPowerPC;   break;
+            case HfsFlavourUniversal: Flavour = FlavourUniversal; break;
+            default:                  break;
+            }
+        }
+        const TDiskJudgement J = DiskJudge (true, bBlessed, nCode, Flavour, p68k, pPpc);
+        bAnyStarts = bAnyStarts || DiskJudgementStarts (J);
+        if (W.nSystems < WELCOME_LINES)
+        {
+            static const TStringId Verdicts[] =
+            {
+                StrWelcomeVData, StrWelcomeVNoSystem, StrWelcomeVUnreadable, StrWelcomeVTooNew,
+                StrWelcomeVStarts68k, StrWelcomeVStartsPpc, StrWelcomeVStartsBoth,
+                StrWelcomeVNeeds68k, StrWelcomeVNeedsPpc, StrWelcomeVNeedsAny, StrWelcomeVPpcFloor
+            };
+            char System[48] = "";
+            if (bVersion)
+            {
+                const TStringId Fl = Flavour == FlavourPowerPC ? StrWelcomeFlPpc
+                                   : Flavour == FlavourUniversal ? StrWelcomeFlUniversal : StrWelcomeFl68k;
+                char Number[16];
+                snprintf (Number, sizeof Number, Version.nBugfix != 0 ? "%u.%u.%u" : "%u.%u",
+                          Version.nMajor, Version.nMinor, Version.nBugfix);
+                snprintf (System, sizeof System, " — %s %s, %s", nCode >= 760 ? "Mac OS" : "System",
+                          Number, Str (Fl));
+            }
+            snprintf (W.System[W.nSystems], WELCOME_LINE, "%s%s · %s", Found[i].Name, System,
+                      Str (Verdicts[J.Verdict]));
+        }
+        W.nSystems++;
+    }
+    W.bNothingStarts = nFound != 0 && !bAnyStarts;
+}
+
+// One line of the preferences file, its value after the name: what the
+// welcome page reads before any engine has read the file.
+static bool PrefsFileGet (const char *pName, char *pOut, unsigned nSize)
+{
+    pOut[0] = '\0';
+    FILE *pIn = fopen (CardPath ("/BasiliskII_Prefs"), "r");
+    if (pIn == 0)
+    {
+        return false;
+    }
+    char Line[512];
+    const size_t nName = strlen (pName);
+    bool bFound = false;
+    while (!bFound && fgets (Line, sizeof Line, pIn) != 0)
+    {
+        if (strncmp (Line, pName, nName) == 0 && Line[nName] == ' ')
+        {
+            snprintf (pOut, nSize, "%s", Line + nName + 1);
+            pOut[strcspn (pOut, "\r\n")] = '\0';
+            bFound = true;
+        }
+    }
+    fclose (pIn);
+    return bFound;
+}
+
+static void WelcomeStatus (TStringId What, const char *pName)
+{
+    snprintf (s_Welcome.Status, sizeof s_Welcome.Status, "%s %s", Str (What), pName);
+}
+
+// The status line on the screen now, before a copy that may take a while.
+static void WelcomeShowNow (void)
+{
+    WelcomeSync (&s_Welcome);
+    WelcomeRepaint (s_pWelcomeShadow);
+    const TRect Whole = Rect (0, 0, s_pWelcomeOutput->nWidth, s_pWelcomeOutput->nHeight);
+    GfxBlit (s_pWelcomeOutput, s_pWelcomeShadow, Whole);
+    HostOutputPresent (0, 0, s_pWelcomeOutput->nWidth, s_pWelcomeOutput->nHeight);
+}
+
+// A folder with nothing in it but what Finder leaves (.DS_Store).
+static bool FolderEmpty (const char *pPath)
+{
+    DIR *pDir = opendir (pPath);
+    if (pDir == 0)
+    {
+        return false;
+    }
+    bool bEmpty = true;
+    while (const struct dirent *p = readdir (pDir))
+    {
+        if (strcmp (p->d_name, ".") != 0 && strcmp (p->d_name, "..") != 0 && strcmp (p->d_name, ".DS_Store") != 0)
+        {
+            bEmpty = false;
+            break;
+        }
+    }
+    closedir (pDir);
+    return bEmpty;
+}
+
+static const char *BaseName (const char *pPath)
+{
+    const char *pSlash = strrchr (pPath, '/');
+    return pSlash != 0 ? pSlash + 1 : pPath;
+}
+
+static bool IsCdImage (const char *pName)
+{
+    const char *pDot = strrchr (pName, '.');
+    return pDot != 0 && (strcasecmp (pDot, ".iso") == 0 || strcasecmp (pDot, ".toast") == 0
+                         || strcasecmp (pDot, ".cdr") == 0);
+}
+
+// Copied in, then named in the preferences: a ROM by the engine it is for, a
+// disk as a disk, a CD image as a CD.
+static void WelcomeAdd (bool bRom)
+{
+    char Host[PATH_MAX_OKAPIA];
+    if (!HostPick (bRom ? HostPickRom : HostPickDisk,
+                   Str (bRom ? StrWelcomePickRom : StrWelcomePickSystem), Host, sizeof Host))
+    {
+        return;
+    }
+    const char *pName = BaseName (Host);
+    if (bRom)
+    {
+        TRomFacts Facts;
+        if (!RomIdentify (Host, &Facts) || Facts.Verdict != RomUsable)
+        {
+            const TStringId Why = Facts.Verdict == RomNot32BitClean    ? StrWelcomeRomBad32bit
+                                : Facts.Verdict == RomChecksumMismatch ? StrWelcomeRomBadChecksum
+                                : Facts.Verdict == RomUnknownNanokernel ? StrWelcomeRomBadNanokernel
+                                                                       : StrWelcomeRomBadUnknown;
+            snprintf (s_Welcome.Status, sizeof s_Welcome.Status, "%s %s (%s)",
+                      Str (StrWelcomeNotAdded), pName, Str (Why));
+            return;
+        }
+    }
+    WelcomeStatus (StrWelcomeCopying, pName);
+    WelcomeShowNow ();
+
+    char Card[64];
+    if (!HostCopyToCard (Host, Card, sizeof Card))
+    {
+        WelcomeStatus (StrWelcomeNotAdded, pName);
+        return;
+    }
+    HostTidy (Card);
+    bool bNamed = true;
+    if (bRom)
+    {
+        TRomFacts Facts;
+        RomIdentify (CardPath (Card), &Facts);
+        bNamed = PrefsFileSet (Facts.Kind == Rom68k ? "rom" : "romppc", Card, false);
+    }
+    else
+    {
+        bNamed = PrefsFileSet (IsCdImage (Card) ? "cdrom" : "disk", Card, true);
+    }
+    WelcomeStatus (bNamed ? StrWelcomeAdded : StrWelcomeNotAdded, Card + 1);
+    HostLog (FROM, bNamed ? HostLogNotice : HostLogWarning, "Welcome: %s %s",
+             bNamed ? "added" : "could not name", Card);
+}
+
+/*
+ *  The release a card is prepared with (HostRelease, HostPrepare*)
+ */
+static THostReleaseState s_ReleaseSeen = (THostReleaseState) -1;
+static bool              s_bPreparing;
+static THostPrepareState s_PrepareSeen;
+static bool              s_bStatusIsOurs;   // the status line says the release's state, not an action's
+
+// The For menu: this computer, then the release's boards, "Raspberry Pi 4"
+// until a manifest is read. The board chosen stays chosen as the list grows.
+static void WelcomeTargets (const THostRelease &R)
+{
+    TWelcome &W = s_Welcome;
+    char Was[16];
+    snprintf (Was, sizeof Was, "%s", W.nTarget < W.nTargets ? W.TargetId[W.nTarget] : "");
+    W.nTargets = 0;
+    snprintf (W.TargetName[0], sizeof W.TargetName[0], "%s", Str (StrWelcomeTargetDesktop));
+    W.TargetId[0][0] = '\0';
+    W.nTargets = 1;
+    if (R.State == HostReleaseReady && R.nBoards != 0)
+    {
+        for (unsigned i = 0; i < R.nBoards && W.nTargets < WELCOME_TARGETS; i++, W.nTargets++)
+        {
+            snprintf (W.TargetName[W.nTargets], sizeof W.TargetName[0], "%s", R.BoardName[i]);
+            snprintf (W.TargetId[W.nTargets], sizeof W.TargetId[0], "%s", R.BoardId[i]);
+        }
+    }
+    else
+    {
+        snprintf (W.TargetName[1], sizeof W.TargetName[0], "%s", Str (StrWelcomeTargetRpi4));
+        snprintf (W.TargetId[1], sizeof W.TargetId[0], "pi4");
+        W.nTargets = 2;
+    }
+    if (Was[0] != '\0')
+    {
+        W.nTarget = WelcomeForFirstBoard;
+        for (unsigned t = 1; t < W.nTargets; t++)
+            if (strcmp (W.TargetId[t], Was) == 0)
+                W.nTarget = t;
+    }
+    else if (W.nTarget >= W.nTargets)
+    {
+        W.nTarget = WelcomeForDesktop;
+    }
+}
+
+// The Prepare button, and the status line while nothing else speaks there.
+static void WelcomeReleaseState (void)
+{
+    TWelcome &W = s_Welcome;
+    THostRelease R;
+    HostRelease (&R);
+    const bool bBoard = W.nTarget != WelcomeForDesktop && W.nTarget < W.nTargets;
+    W.bPrepareEnabled = false;
+    W.bUpdate = false;
+    char Line[sizeof W.Status] = "";
+    if (bBoard && W.Workspace[0] != '\0')
+    {
+        THostCardPlan Plan;
+        HostCardPlan (W.TargetId[W.nTarget], &Plan);
+        W.bUpdate = Plan.bKnown && Plan.Installed[0] != '\0' && !Plan.bUpToDate;
+        W.bPrepareEnabled = R.State == HostReleaseReady && Plan.bKnown && !Plan.bUpToDate && !s_bPreparing;
+        if (R.State == HostReleaseReady && Plan.bRefused)
+            Fill1 (Line, sizeof Line, StrWelcomeRelRefused, R.Version);
+        else if (R.State == HostReleaseReady && Plan.bKnown)
+            Fill1 (Line, sizeof Line, Plan.bUpToDate ? StrWelcomeRelUptodate
+                                      : W.bUpdate ? StrWelcomeRelUpdate : StrWelcomeRelReady, R.Version);
+    }
+    if (bBoard && Line[0] == '\0')
+    {
+        switch (R.State)
+        {
+        case HostReleaseLooking: snprintf (Line, sizeof Line, "%s", Str (StrWelcomeRelLooking)); break;
+        case HostReleaseNone:    snprintf (Line, sizeof Line, "%s", Str (StrWelcomeRelNone));    break;
+        case HostReleaseFailed:  Fill1 (Line, sizeof Line, StrWelcomeRelFailed, R.Why);         break;
+        default:                 break;
+        }
+    }
+    if (Line[0] != '\0' && !s_bPreparing && (W.Status[0] == '\0' || s_bStatusIsOurs))
+    {
+        snprintf (W.Status, sizeof W.Status, "%s", Line);
+        s_bStatusIsOurs = true;
+    }
+}
+
+// Four times a second: the release as it arrives, the card as it is written.
+static bool WelcomeTick (void)
+{
+    bool bChanged = false;
+    THostRelease R;
+    HostRelease (&R);
+    if (R.State != s_ReleaseSeen)
+    {
+        s_ReleaseSeen = R.State;
+        WelcomeTargets (R);
+        bChanged = true;
+    }
+    if (s_bPreparing)
+    {
+        THostPrepare P;
+        HostPrepareStatus (&P);
+        char Name[160];
+        if (P.State == HostPrepareFetching || P.State == HostPrepareWriting)
+        {
+            snprintf (Name, sizeof Name, "%s… %u %%", P.Name, P.nPercent);
+            Fill1 (s_Welcome.Status, sizeof s_Welcome.Status,
+                   P.State == HostPrepareFetching ? StrWelcomePrepFetching : StrWelcomePrepWriting, Name);
+            bChanged = true;
+        }
+        else if (P.State == HostPrepareDone || P.State == HostPrepareFailed)
+        {
+            s_bPreparing = false;
+            if (P.State == HostPrepareDone)
+                snprintf (s_Welcome.Status, sizeof s_Welcome.Status, "%s", Str (StrWelcomePrepDone));
+            else
+                Fill1 (s_Welcome.Status, sizeof s_Welcome.Status, StrWelcomePrepFailed, P.Why);
+            s_bStatusIsOurs = false;
+            WelcomeGather ();           // the card's note: Okapia on it now
+            bChanged = true;
+        }
+    }
+    if (bChanged)
+    {
+        WelcomeReleaseState ();
+        WelcomeSync (&s_Welcome);
+    }
+    return bChanged;
+}
+
+// A card in a reader is for a board: the "For" menu follows it, as the
+// installer's did; a folder leaves the choice as it was.
+static void WelcomeTargetFromVolume (void)
+{
+    TCardVolume V;
+    if (s_Welcome.Workspace[0] != '\0' && HostVolumeOf (CardPath ("/"), &V) && V.bRemovable)
+    {
+        s_Welcome.nTarget = WelcomeForFirstBoard;
+    }
+}
+
+static void WelcomeUse (const char *pHost)
+{
+    if (HostWorkspaceSet (pHost))
+    {
+        s_Welcome.Status[0] = '\0';
+        snprintf (s_Welcome.Workspace, sizeof s_Welcome.Workspace, "%s", pHost);
+        WelcomeTargetFromVolume ();
+        HostLog (FROM, HostLogNotice, "Welcome: workspace %s", pHost);
+    }
+    else
+    {
+        WelcomeStatus (StrWelcomeNotAdded, pHost);
+    }
+}
+
+static int WelcomeAdapter (int nIndex)
+{
+    char Host[PATH_MAX_OKAPIA];
+    switch (WelcomeOperate (&s_Welcome, nIndex))
+    {
+    case WelcomeTarget:
+        s_Welcome.Status[0] = '\0';     // the hint for the other target goes too
+        s_bStatusIsOurs = false;
+        break;
+
+    case WelcomePrepare:
+        if (s_Welcome.nTarget != WelcomeForDesktop && HostPrepareStart (s_Welcome.TargetId[s_Welcome.nTarget]))
+        {
+            s_bPreparing = true;
+            s_bStatusIsOurs = false;
+            s_Welcome.bPrepareEnabled = false;
+            WelcomeSync (&s_Welcome);
+        }
+        return 0;
+
+    case WelcomeCard:
+        if (RunCards (Host, sizeof Host))
+        {
+            WelcomeUse (Host);
+        }
+        break;
+
+    case WelcomeOpen:
+        if (HostPick (HostPickWorkspace, Str (StrWelcomePickOpen), Host, sizeof Host))
+        {
+            WelcomeUse (Host);
+        }
+        break;
+
+    case WelcomeCreate:
+        // A save panel's answer: the new folder's path, named by the person
+        // (the proposed name comes in Host). Made here; an empty folder of that
+        // name will do, one that holds something never does.
+        snprintf (Host, sizeof Host, "%s", Str (StrWelcomeNewName));
+        if (HostPick (HostPickWorkspaceNew, Str (StrWelcomePickCreate), Host, sizeof Host))
+        {
+            if (mkdir (Host, 0755) != 0 && !(errno == EEXIST && FolderEmpty (Host)))
+            {
+                Fill1 (s_Welcome.Status, sizeof s_Welcome.Status, StrWelcomeNotCreated, BaseName (Host));
+                s_bStatusIsOurs = false;
+                break;
+            }
+            WelcomeUse (Host);
+            // The language the welcome page spoke, which the boot menu then
+            // speaks too.
+            const char *pCode = HostLanguage ();
+            if (pCode != 0 && StringsFromCode (pCode) != (TLanguage) 0)
+            {
+                PrefsFileSet ("language", pCode, false);
+            }
+        }
+        break;
+
+    case WelcomeAddRom:
+        WelcomeAdd (true);
+        break;
+
+    case WelcomeListen68k:
+    case WelcomeListenPowerPC:
+    {
+        // Played as the board plays it; the page does not change.
+        const TWelcomeRom &R = s_Welcome.Rom[WelcomeOperate (&s_Welcome, nIndex) == WelcomeListen68k
+                                             ? WelcomeRom68k : WelcomeRomPowerPC];
+        if (R.bThere)
+        {
+            HostChimeListen (R.CardPath);
+        }
+        return 0;
+    }
+
+    case WelcomeAddSystem:
+        WelcomeAdd (false);
+        break;
+
+    case WelcomeContinue:
+        return (int) WelcomeContinue;
+
+    case WelcomeQuit:
+        return (int) WelcomeQuit;
+
+    default:
+        return 0;
+    }
+    WelcomeGather ();
+    WelcomeReleaseState ();
+    return PageRelayout;
+}
+
+static void WelcomeRelayout (TSurface *)
+{
+    WelcomeLayout ();
+}
+
+bool FirmwareWelcome (void)
+{
+    TSurface Surface;
+    if (!HostOutputClaim (&Surface))
+    {
+        return false;
+    }
+    HostInputWatch ();
+    HostInputBounds (Surface.nWidth, Surface.nHeight);
+    StringsSetLanguage (StringsFromCode (HostLanguage ()));
+    TTheme Theme;
+    const unsigned nScale16 = ThemeScaleFor (Surface.nWidth, Surface.nHeight);
+    ThemeMake (nScale16, &Theme);
+
+    // A window the person resizes: the page fills it at the scale it opened
+    // with, on a shadow as large as the output may grow.
+    unsigned nMaxW = Surface.nWidth, nMaxH = Surface.nHeight;
+    const bool bFill = HostOutputResizable (&nMaxW, &nMaxH);
+    if (bFill)
+    {
+        PageFixScale (nScale16);
+    }
+    s_nWelcomeMaxHeight = nMaxH;
+    TSurface Shadow = Surface;
+    Shadow.nPitch  = nMaxW * (unsigned) sizeof (unsigned);
+    Shadow.pPixels = new unsigned char[(size_t) Shadow.nPitch * nMaxH];
+    s_pWelcomeOutput = &Surface;
+    s_pWelcomeShadow = &Shadow;
+    s_pWelcomeTheme  = &Theme;
+
+    memset (&s_Welcome, 0, sizeof s_Welcome);
+    s_Welcome.bFill = bFill;
+    s_ReleaseSeen = (THostReleaseState) -1;
+    s_bPreparing = false;
+    s_bStatusIsOurs = false;
+    THostRelease Release;
+    HostRelease (&Release);             // the lookup starts now, in the background
+    WelcomeTargets (Release);
+    WelcomeGather ();
+    WelcomeTargetFromVolume ();         // opened on a card: for the Pi
+    WelcomeGather ();
+    WelcomeReleaseState ();
+    WelcomeLayout ();
+    HostInputBounds (Surface.nWidth, Surface.nHeight);
+
+    static const TPageDriver Driver =
+    {
+        WelcomeRepaint, WelcomeWidgets, WelcomeAdapter, 0, WelcomeRelayout, 0, WelcomeTick
+    };
+    const int nAnswer = RunPage (&Surface, &Shadow, &Theme, &Driver);
+    delete[] Shadow.pPixels;
+    PageFixScale (0);
+    if (nAnswer != (int) WelcomeContinue || s_Welcome.Workspace[0] == '\0')
+    {
+        return false;
+    }
+    HostWorkspaceStart ();
+    return true;
+}
+
 TFirmwareResult FirmwareRun (TFirmwareEngine Built)
 {
     // Before the window, once per power-on, and only when `netbench` asks:
@@ -1757,7 +2786,17 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     StringsSetLanguage (StringsFromCode (PrefsFindString ("language")));
 
     TTheme Theme;
-    const unsigned nScale16 = ThemeScaleFor (nWidth, nHeight);
+    unsigned nScale16 = ThemeScaleFor (nWidth, nHeight);
+    // A desktop's output is in device pixels, its window in points: the scale
+    // the window's points give, times their density, so a 5K screen's menu is
+    // the size a 1080p one's is, only sharper (ThemeScaleFor stops at four
+    // times, which pixels reach long before points do). Every page takes it.
+    THostWindow Window;
+    if (HostWindowDescribe (&Window) && Window.nWidth != 0 && nWidth > Window.nWidth)
+    {
+        nScale16 = ThemeScaleFor (Window.nWidth, Window.nHeight) * nWidth / Window.nWidth;
+    }
+    PageFixScale (HostKind () == HostDesktop ? nScale16 : 0);
     ThemeMake (nScale16, &Theme);
 
     Theme.DrawDesktop (&Surface, &Theme);
@@ -1796,7 +2835,12 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     // Two seconds of nothing before a menu one has asked to see every time is
     // two seconds of a machine looking broken — and on a board with no keyboard
     // attached, Option is not an answer at all.
-    const bool bAlways = PrefsFindBool ("bootmenu");
+    // Not when the host has just started itself again on an answer the menu
+    // gave (HostMenuAnswered): asking the same question twice reads as a loop.
+    const bool bAnswered = HostMenuAnswered ();
+    // Started again for the menu itself (a new window size): straight to it.
+    s_nReopenTab = HostMenuReopen ();
+    const bool bAlways = (PrefsFindBool ("bootmenu") || s_nReopenTab >= 0) && !bAnswered;
 
     HostLog (FROM, HostLogNotice,
                             "Output %ux%u, theme scale %u/16, language %s, %s, %s",
@@ -1817,7 +2861,7 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built)
     // than the window it replaces.
     static const unsigned GRACE_MS = 250;
     unsigned nStop = WINDOW_MS;
-    for (unsigned nWaited = 0; !bAlways && nWaited < nStop; nWaited += SLICE_MS)
+    for (unsigned nWaited = 0; !bAlways && !bAnswered && nWaited < nStop; nWaited += SLICE_MS)
     {
         // Drained rather than read, so that a window nobody touches cannot end
         // with a full queue: this one only wants the latch, but the queue is

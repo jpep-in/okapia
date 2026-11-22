@@ -53,10 +53,14 @@ unsigned VideoScreenSizeList (const uint32_t *pStandardIds, const uint32_t *pExt
         nCount++;
     }
 
+    const TVideoSize Half = VideoHalfSize (nDisplayW, nDisplayH);
+    const TVideoSize Third = VideoTwoThirdsSize (nDisplayW, nDisplayH);
     const unsigned Extra[VIDEO_SCREEN_EXTRA][2] =
     {
-        { nDisplayW, nDisplayH },
-        { nWantW,    nWantH    },
+        { nDisplayW,   nDisplayH   },
+        { nWantW,      nWantH      },
+        { Half.nWidth, Half.nHeight },
+        { Third.nWidth, Third.nHeight },
     };
     unsigned nExtras = 0;
     for (unsigned i = 0; i < VIDEO_SCREEN_EXTRA; i++)
@@ -97,6 +101,18 @@ unsigned VideoScreenSizeList (const uint32_t *pStandardIds, const uint32_t *pExt
         }
     }
     return nCount;
+}
+
+TVideoSize VideoHalfSize (unsigned nDisplayW, unsigned nDisplayH)
+{
+    const TVideoSize Half = {nDisplayW / 2 / 8 * 8, nDisplayH / 2};
+    return VideoCustomSizeValid (Half) ? Half : TVideoSize {0, 0};
+}
+
+TVideoSize VideoTwoThirdsSize (unsigned nDisplayW, unsigned nDisplayH)
+{
+    const TVideoSize Size = {nDisplayW * 2 / 3 / 8 * 8, nDisplayH * 2 / 3};
+    return VideoCustomSizeValid (Size) ? Size : TVideoSize {0, 0};
 }
 
 bool VideoSizeEqual (TVideoSize A, TVideoSize B)

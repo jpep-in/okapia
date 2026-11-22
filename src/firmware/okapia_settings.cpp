@@ -18,6 +18,7 @@ static int s_nMemory   = -1;
 static int s_nMouse    = -1;
 static int s_nSound    = -1;
 static int s_nLanguage = -1;
+static int s_nNetwork  = -1;
 static int s_nJit      = -1;
 static int s_nQuickDraw = -1;
 static int s_nShared   = -1;
@@ -48,7 +49,11 @@ static TListItem  s_MemoryItems[MEMORY_COUNT];
 static char       s_MouseText[MOUSE_DPI_COUNT][16];
 static TListItem  s_MouseItems[MOUSE_DPI_COUNT];
 static TListItem  s_SoundItems[SoundOutputCount];
+// The outputs the list shows, in its order: list index to TSoundOutput.
+static unsigned   s_SoundMap[SoundOutputCount];
+static unsigned   s_nSoundShown = SoundOutputCount;
 static TListItem  s_LanguageItems[LanguageCount];
+static TListItem  s_NetworkItems[2];
 
 // The nearest offered value, so a card carrying something we do not list — set
 // by hand, or by a later version — comes back as the closest thing on the menu
@@ -93,16 +98,6 @@ static void BuildMenus (void)
         s_MouseItems[i].nState = StateNormal;
     }
 
-    static const TStringId SoundNames[SoundOutputCount] =
-    {
-        StrSoundOff, StrSoundHdmi, StrSoundJack, StrSoundUsb
-    };
-    for (unsigned i = 0; i < SoundOutputCount; i++)
-    {
-        s_SoundItems[i].pText  = Str (SoundNames[i]);
-        s_SoundItems[i].pIcon  = 0;
-        s_SoundItems[i].nState = StateNormal;
-    }
 
     // Each language in its own tongue, which is how every list of languages
     // that has ever been useful is written. Straight from the table rather than
@@ -158,19 +153,57 @@ bool SettingsOverflowed (void)
     return s_Page.Layout.bOverflow;
 }
 
-void SettingsSync (TSettings *pSettings)
+// The sound list as this machine offers it: the board's four outputs, the
+// ones it lacks grey; or a desktop's own, and only those.
+static void SoundItems (const TSettings *pSettings)
 {
-    const unsigned nHave = pSettings->nSoundAvailable == 0 ? ~0u
-                                                           : pSettings->nSoundAvailable;
+    static const TStringId SoundNames[SoundOutputCount] =
+    {
+        StrSoundOff, StrSoundHdmi, StrSoundJack, StrSoundUsb, StrSoundBuiltin
+    };
+    const unsigned nOffered = pSettings->nSoundOffered != 0
+        ? pSettings->nSoundOffered
+        : (1u << SoundOff) | (1u << SoundHDMI) | (1u << SoundJack) | (1u << SoundUSB);
+    const unsigned nHave = pSettings->nSoundAvailable == 0 ? ~0u : pSettings->nSoundAvailable;
+    s_nSoundShown = 0;
     for (unsigned i = 0; i < SoundOutputCount; i++)
     {
-        s_SoundItems[i].nState = (nHave & (1u << i)) != 0 ? StateNormal : StateDisabled;
+        if ((nOffered & (1u << i)) == 0)
+        {
+            continue;
+        }
+        TListItem &Item = s_SoundItems[s_nSoundShown];
+        Item.pText  = Str (SoundNames[i]);
+        Item.pIcon  = 0;
+        Item.nState = (nHave & (1u << i)) != 0 ? StateNormal : StateDisabled;
+        s_SoundMap[s_nSoundShown++] = i;
     }
+}
+
+static int SoundIndex (unsigned nSound)
+{
+    for (unsigned i = 0; i < s_nSoundShown; i++)
+    {
+        if (s_SoundMap[i] == nSound)
+        {
+            return (int) i;
+        }
+    }
+    return 0;
+}
+
+void SettingsSync (TSettings *pSettings)
+{
+    SoundItems (pSettings);
 
     s_Widgets[s_nMemory].nChoice   = MemoryIndex (pSettings->V.nMemoryMB);
     s_Widgets[s_nMouse].nChoice    = MouseDpiIndex (pSettings->V.nMouseDpi);
-    s_Widgets[s_nSound].nChoice    = (int) pSettings->V.nSound;
+    s_Widgets[s_nSound].nChoice    = SoundIndex (pSettings->V.nSound);
     s_Widgets[s_nLanguage].nChoice = (int) pSettings->V.nLanguage;
+    if (s_nNetwork >= 0)
+    {
+        s_Widgets[s_nNetwork].nChoice = pSettings->nNetwork != 0 ? 1 : 0;
+    }
 
     // The translator's box goes grey in an image built without one, and the
     // tick still says what the file holds: the next image may have it.
@@ -282,9 +315,9 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
     // The Okapia things, two to a row: five menus on five rows left no room for
     // the groups under them at 640x480. Each column measures its own labels.
     static const TStringId Left[]  = { StrMemory, StrMouseDpi, StrLanguage };
-    static const TStringId Right[] = { StrSound };
+    static const TStringId Right[] = { StrSound, StrTabNetwork };
     const unsigned nLeft  = Widest (pTheme, Left, 3, " *");
-    const unsigned nRight = Widest (pTheme, Right, 1, 0);
+    const unsigned nRight = Widest (pTheme, Right, pSettings->bNetworkOffered ? 2 : 1, 0);
 
     // One label carries the mark, so one buffer holds it. It has to outlive
     // this function: a component keeps the pointer it was given.
@@ -308,13 +341,24 @@ void SettingsDraw (TSurface *pSurface, TSettings *pSettings)
         case 1:
             Popup (&s_Page, Labelled (&s_Page, A, nLeft, Str (StrMouseDpi)), &s_nMouse,
                    s_MouseItems, MOUSE_DPI_COUNT);
+            SoundItems (pSettings);
             Popup (&s_Page, Labelled (&s_Page, B, nRight, Str (StrSound)), &s_nSound,
-                   s_SoundItems, SoundOutputCount);
+                   s_SoundItems, s_nSoundShown);
             break;
 
         default:
             Popup (&s_Page, Labelled (&s_Page, A, nLeft, Str (StrLanguage)), &s_nLanguage,
                    s_LanguageItems, LanguageCount);
+            s_nNetwork = -1;
+            if (pSettings->bNetworkOffered)
+            {
+                s_NetworkItems[0] = {};
+                s_NetworkItems[0].pText = Str (StrNetOff);
+                s_NetworkItems[1] = {};
+                s_NetworkItems[1].pText = Str (StrNetShared);
+                Popup (&s_Page, Labelled (&s_Page, B, nRight, Str (StrTabNetwork)), &s_nNetwork,
+                       s_NetworkItems, 2);
+            }
             break;
         }
         LayoutRowGap (&Layout);
@@ -415,9 +459,17 @@ TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex)
     else if (nIndex == s_nSound)
     {
         const int n = s_Widgets[s_nSound].nChoice;
-        if (n >= 0 && n < (int) SoundOutputCount)
+        if (n >= 0 && n < (int) s_nSoundShown)
         {
-            pSettings->V.nSound = (unsigned) n;
+            pSettings->V.nSound = s_SoundMap[n];
+        }
+    }
+    else if (nIndex == s_nNetwork && s_nNetwork >= 0)
+    {
+        const int n = s_Widgets[s_nNetwork].nChoice;
+        if (n == 0 || n == 1)
+        {
+            pSettings->nNetwork = (unsigned) n;
         }
     }
     else if (nIndex == s_nLanguage)

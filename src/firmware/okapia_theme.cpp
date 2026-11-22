@@ -820,8 +820,8 @@ void ThemeMake (unsigned nScale16, TTheme *pOut)
     M.nTitleHeight    = Scaled (B.nTitleHeight,    nScale16, 8);
     M.nTabHeight      = Scaled (B.nTabHeight,      nScale16, 10);
 
-    // The faces are picked from the ladder rather than magnified, which is the
-    // whole point of compiling several sizes in.
+    // The faces are drawn at these heights from their outlines, never
+    // magnified: text is the size the scale asks for at any scale.
     const TOkapiaFontSet *pBody  = FontNearest (M.nBodyHeight);
     const TOkapiaFontSet *pTitle = FontNearest (M.nTitleHeight);
     pOut->pBodyFont      = pBody->pRegular;
@@ -849,6 +849,24 @@ void ThemeMake (unsigned nScale16, TTheme *pOut)
     {
         M.nLineHeight = nLine + 2;
     }
+    // A label is centred on its capitals (GfxTextTop), and a whole pixel
+    // either side is only possible when the band and the capitals have the
+    // same parity: otherwise one side gets a row more. The bitmap faces
+    // happened to agree; faces drawn at any height do not, so the bands do.
+    // A row less where the floor above allows it, a row more where it does
+    // not: at 640x480 the pages are laid out to the row.
+    const unsigned nCap = pOut->pBodyFont->nCapHeight;
+    unsigned *const Bands[] = { &M.nButtonHeight, &M.nTabHeight, &M.nFieldHeight,
+                                &M.nLineHeight };
+    const unsigned Floors[] = { nLine + 8, nLine + 10, nLine + 6, nLine + 2 };
+    for (unsigned i = 0; i < sizeof Floors / sizeof Floors[0]; i++)
+    {
+        if ((*Bands[i] - nCap) % 2 != 0)
+        {
+            *Bands[i] = *Bands[i] > Floors[i] ? *Bands[i] - 1 : *Bands[i] + 1;
+        }
+    }
+
     // After the line height's own floor, not before it: a menu item measured
     // against a value that is about to change is measured against nothing.
     if (M.nMenuRow < M.nLineHeight + 4)

@@ -13,6 +13,13 @@ MACEMU_REF="474ea0ab55cac933de35fa349820c9dd0944bf77"         # no useful tags: 
 # Nothing else is taken from this tree: Basilisk itself stays kanjitalk755's.
 MACEMU_JIT_URL="https://github.com/rcarmo/macemu-jit.git"
 MACEMU_JIT_REF="ba4a541f7afb554069e7401841a48bbbf71004b2"     # no tags for the JIT work
+# stb_truetype, the rasteriser of the firmware's outline fonts (one header).
+# No tags: the last commit to it before the autumn 2026 rework, stable since.
+STB_URL="https://github.com/nothings/stb.git"
+STB_REF="52a4ba61ef8d75b4be0d24bc70c08fb02499d7b7"
+# miniz (MIT), the desktop's reader of release zips (src/hosts/desktop/install*).
+MINIZ_URL="https://github.com/richgel999/miniz.git"
+MINIZ_REF="3.1.2"
 
 # circle-stdlib also declares doctest, json, mbedtls and mongoose. Those serve
 # its TLS support and its samples only: we never build them.
@@ -51,6 +58,8 @@ git -C external/circle-stdlib/libs/circle submodule update --init --force $CIRCL
 
 add "$MACEMU_URL" external/macemu "$MACEMU_REF"
 add "$MACEMU_JIT_URL" external/macemu-jit "$MACEMU_JIT_REF"
+add "$STB_URL" external/stb "$STB_REF"
+add "$MINIZ_URL" external/miniz "$MINIZ_REF"
 
 # The exceptions to "never edit external/", each explaining itself in its own
 # header. Idempotent, so running bootstrap again is safe.

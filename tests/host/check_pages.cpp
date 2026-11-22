@@ -1026,7 +1026,7 @@ int main (void)
                         "the display popup stores the refresh period in VBLs");
             }
             pW[nList].nChoice = 0;
-            Expect (pW[nList].pItems[0].bAction && DisplayOperate (&Display, nList, 0),
+            Expect (pW[nList].pItems[0].bAction && DisplayOperate (&Display, nList, 0) == DisplayNewResolution,
                     "the first row opens the new resolution dialog");
 
             NewResolutionDraw (&s_Surface, &Display);
@@ -1036,7 +1036,7 @@ int main (void)
             for (unsigned i = 0; i < nNew; i++)
             {
                 if (pNew[i].Type == WidgetField)
-                    StrAppend (pNew[i].pEdit, pNew[i].nEditSize, 0, nField++ == 0 ? "960" : "600");
+                    StrAppend (pNew[i].pEdit, pNew[i].nEditSize, 0, nField++ == 0 ? "1000" : "600");
                 if (pNew[i].Type == WidgetButton && pNew[i].pText == Str (StrCreate))
                     nCreate = (int) i;
                 if (pNew[i].Type == WidgetButton && pNew[i].pText == Str (StrCancel))
@@ -1050,14 +1050,14 @@ int main (void)
                     "create accepts a valid resolution");
             DisplayDraw (&s_Surface, &Display);
             const unsigned nCustom = (unsigned) pW[nList].nChoice;
-            Expect (Display.bModesChanged && VideoSizeEqual (Display.Modes.Custom[0], {960, 600})
+            Expect (Display.bModesChanged && VideoSizeEqual (Display.Modes.Custom[0], {1000, 600})
                     && (pW[nList].pItems[nCustom].nCell[0] & StateChecked) != 0,
-                    "adding 960x600 checks it in Monitors");
+                    "adding 1000x600 checks it in Monitors");
             DisplayOperate (&Display, nList, 2);
-            Expect (Display.bStartChanged && VideoSizeEqual (Display.Start, {960, 600}),
+            Expect (Display.bStartChanged && VideoSizeEqual (Display.Start, {1000, 600}),
                     "the new resolution can start the Mac");
             DisplayOperate (&Display, nList, 1);
-            Expect (VideoModeHidden (Display.Modes, {960, 600})
+            Expect (VideoModeHidden (Display.Modes, {1000, 600})
                     && (pW[nList].pItems[nCustom].nCell[1] & StateDisabled) != 0,
                     "hiding it disables its startup choice");
             Expect ((pW[nList].pItems[2].nCell[0] & (StateChecked | StateDisabled))
@@ -1067,7 +1067,7 @@ int main (void)
             nField = 0;
             for (unsigned i = 0; i < nNew; i++)
                 if (pNew[i].Type == WidgetField)
-                    StrAppend (pNew[i].pEdit, pNew[i].nEditSize, 0, nField++ == 0 ? "960" : "600");
+                    StrAppend (pNew[i].pEdit, pNew[i].nEditSize, 0, nField++ == 0 ? "1000" : "600");
             NewResolutionSync (&Display);
             Expect (NewResolutionOperate (&Display, nCreate) == NewResolutionNothing
                     && Display.Modes.Custom[1].nWidth == 0, "a duplicate consumes no custom slot");

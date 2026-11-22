@@ -32,6 +32,24 @@ static TPage s_NewPage;
 static TWidget s_NewWidgets[12];
 static TWidget *s_pCreate, *s_pCancel, *s_pNewNote;
 static char s_Width[6], s_Height[6];
+static bool s_bWindowEntry;
+
+// A desktop's window sizes, in points: the usual ones that fit, then the two
+// that follow the screen, then the editor.
+static const TVideoSize WindowPresets[] =
+{
+    {800, 600}, {1024, 768}, {1152, 870}, {1280, 800}, {1280, 960}, {1440, 900},
+    {1600, 1000}, {1920, 1080}, {2560, 1440}
+};
+static const unsigned WINDOW_ITEMS = sizeof WindowPresets / sizeof WindowPresets[0] + 4;
+static TListItem  s_WindowItems[WINDOW_ITEMS];
+static char       s_WindowText[WINDOW_ITEMS][48];
+static unsigned   s_WindowMode[WINDOW_ITEMS];
+static TVideoSize s_WindowSize[WINDOW_ITEMS];
+static int        s_nWindowOther = -1;
+static TWidget   *s_pWindow;
+static char       s_Screen[24];
+static const unsigned WINDOW_OTHER = 99;
 
 static unsigned SizeText (char *pText, unsigned nCapacity, TVideoSize Size)
 {
@@ -97,12 +115,26 @@ static void Rows (const TDisplaySettings *pDisplay)
         unsigned n = SizeText (s_Names[i], sizeof s_Names[i], Size);
         if (bFits)
         {
-            const unsigned x = Output.nWidth / Size.nWidth;
-            const unsigned y = Output.nHeight / Size.nHeight;
-            const unsigned nScale = x < y ? x : y;
+            // In device pixels, as the screen is magnified, then said in output
+            // pixels: on a Retina desktop 1008x654 of 1512x982 is three device
+            // pixels a Mac pixel, x1.5, not the x1 whole output pixels give.
+            const unsigned d = pDisplay->nDensity > 1 ? pDisplay->nDensity : 1;
+            const unsigned x = Output.nWidth * d / Size.nWidth;
+            const unsigned y = Output.nHeight * d / Size.nHeight;
+            const unsigned nDevice = x < y ? x : y;
             n = StrAppend (s_Names[i], sizeof s_Names[i], n, "   ×");
-            n = StrAppendNumber (s_Names[i], sizeof s_Names[i], n, nScale);
-            if (Size.nWidth * nScale == Output.nWidth && Size.nHeight * nScale == Output.nHeight)
+            n = StrAppendNumber (s_Names[i], sizeof s_Names[i], n, nDevice / d);
+            if (nDevice % d != 0)
+            {
+                // One decimal is all a density of 2 or 3 needs.
+                n = StrAppend (s_Names[i], sizeof s_Names[i], n, Str (StrDecimalPoint));
+                n = StrAppendNumber (s_Names[i], sizeof s_Names[i], n, nDevice % d * 10 / d);
+            }
+            // Full screen when it covers the output to the last row or two:
+            // 654 rows at three device pixels leave 2 of 1964.
+            const unsigned nScale = nDevice;
+            if (Size.nWidth * nScale + 2 * d >= Output.nWidth * d
+                && Size.nHeight * nScale + 2 * d >= Output.nHeight * d)
             {
                 n = StrAppend (s_Names[i], sizeof s_Names[i], n, " · ");
                 StrAppend (s_Names[i], sizeof s_Names[i], n, Str (StrDisplayFullScreen));
@@ -134,6 +166,80 @@ static void InfoPair (TStringId Label, const char *pValue, const TRect &Band)
     PageAdd (&s_Page, WidgetLabel, RowRest (&Row, StateNormal), pValue, StateNormal);
 }
 
+static void AddWindowItem (unsigned *pn, unsigned nMode, TVideoSize Size, TStringId Name)
+{
+    const unsigned i = (*pn)++;
+    s_WindowItems[i] = {};
+    unsigned n = 0;
+    s_WindowText[i][0] = '\0';
+    if (Name != (TStringId) 0)
+    {
+        n = StrAppend (s_WindowText[i], sizeof s_WindowText[i], 0, Str (Name));
+        if (Size.nWidth != 0)
+            n = StrAppend (s_WindowText[i], sizeof s_WindowText[i], n, " — ");
+    }
+    if (Size.nWidth != 0)
+        SizeText (s_WindowText[i] + n, sizeof s_WindowText[i] - n, Size);
+    s_WindowItems[i].pText = s_WindowText[i];
+    s_WindowMode[i] = nMode;
+    s_WindowSize[i] = Size;
+}
+
+// The window's line on a desktop: its size, chosen from the list, and the
+// screen's beside it.
+static void DrawWindow (const TDisplaySettings *pDisplay)
+{
+    const TTheme &Theme = s_Page.Theme;
+    unsigned nItems = 0;
+    int nChoice = -1;
+    bool bCurrentListed = pDisplay->nWindowMode != 0;
+    for (const TVideoSize &Size : WindowPresets)
+    {
+        if (Size.nWidth > pDisplay->Fill.nWidth || Size.nHeight > pDisplay->Fill.nHeight)
+            continue;
+        if (pDisplay->nWindowMode == 0 && VideoSizeEqual (Size, pDisplay->Window))
+        {
+            nChoice = (int) nItems;
+            bCurrentListed = true;
+        }
+        AddWindowItem (&nItems, 0, Size, (TStringId) 0);
+    }
+    if (!bCurrentListed)
+    {
+        // A size entered by hand stays in the list while it is the window's.
+        nChoice = (int) nItems;
+        AddWindowItem (&nItems, 0, pDisplay->Window, (TStringId) 0);
+    }
+    if (pDisplay->nWindowMode == 1)
+        nChoice = (int) nItems;
+    AddWindowItem (&nItems, 1, pDisplay->Fill, StrDisplayWindowFill);
+    if (pDisplay->nWindowMode == 2)
+        nChoice = (int) nItems;
+    AddWindowItem (&nItems, 2, pDisplay->Screen, StrDisplayFullScreen);
+    s_nWindowOther = (int) nItems;
+    AddWindowItem (&nItems, WINDOW_OTHER, {0, 0}, StrDisplayWindowOther);
+
+    const TRect Band = LayoutRow (&s_Page.Layout, Theme.M.nButtonHeight, StateFocused);
+    const unsigned nLeft = Band.nWidth * 3 / 5;
+    TRow Row;
+    RowBegin (&Row, &Theme, Rect (Band.nX, Band.nY, nLeft, Band.nHeight));
+    const char *pLabel = Str (StrDisplayOutputWindow);
+    TRect Label = RowNext (&Row, GfxTextWidth (Theme.pBodyFont, pLabel), StateNormal);
+    Label.nY += (int) (Band.nHeight - Theme.M.nLineHeight) / 2;
+    Label.nHeight = Theme.M.nLineHeight;
+    PageAdd (&s_Page, WidgetLabel, Label, pLabel, StateDisabled);
+    s_pWindow = PageAdd (&s_Page, WidgetPopup, RowRest (&Row, StateFocused), nullptr, StateNormal);
+    s_pWindow->pItems = s_WindowItems;
+    s_pWindow->nItems = nItems;
+    s_pWindow->nChoice = nChoice;
+
+    SizeText (s_Screen, sizeof s_Screen, pDisplay->Screen);
+    const unsigned nRight = nLeft + Theme.M.nGap;
+    const TRect Pair = Rect (Band.nX + (int) nRight, Band.nY + (int) (Band.nHeight - Theme.M.nLineHeight) / 2,
+                             Band.nWidth - nRight, Theme.M.nLineHeight);
+    InfoPair (StrDisplayPreferredScreen, s_Screen, Pair);
+}
+
 static void DrawMonitor (const TDisplaySettings *pDisplay)
 {
     TLayout &Layout = s_Page.Layout;
@@ -160,8 +266,15 @@ static void DrawMonitor (const TDisplaySettings *pDisplay)
         Str (!pDisplay->bConfigAvailable ? StrDisplayUnknown
              : pDisplay->bHdmiDirectives ? StrDisplayHdmiDirectives : StrDisplayHdmiAuto)
     };
+    s_pWindow = nullptr;
     for (unsigned i = 0; i < 2; i++)
     {
+        if (i == 0 && pDisplay->bWindowSizes)
+        {
+            DrawWindow (pDisplay);
+            LayoutRowGap (&Layout);
+            continue;
+        }
         const TRect Band = LayoutTop (&Layout, Theme.M.nLineHeight);
         const unsigned nLeft = Band.nWidth * 2 / 5;
         const unsigned nRight = nLeft + Theme.M.nGap;
@@ -275,6 +388,15 @@ static TVideoSize EnteredSize (void)
 static TStringId SizeNote (const TDisplaySettings *pDisplay)
 {
     const TVideoSize Size = EnteredSize ();
+    if (s_bWindowEntry)
+    {
+        if (*s_Width == '\0' || *s_Height == '\0')
+            return StrDisplayWindowHint;
+        if (Size.nWidth < 640 || Size.nHeight < 480
+            || Size.nWidth > pDisplay->Fill.nWidth || Size.nHeight > pDisplay->Fill.nHeight)
+            return StrDisplayWindowBad;
+        return StrDisplayWindowReady;
+    }
     if (*s_Width == '\0' || *s_Height == '\0')
         return StrDisplaySizeHint;
     if (!VideoCustomSizeValid (Size) || !VideoScreenFits (Size, pDisplay->Output))
@@ -288,11 +410,26 @@ static TStringId SizeNote (const TDisplaySettings *pDisplay)
     return StrDisplayFull;
 }
 
-bool DisplayOperate (TDisplaySettings *pDisplay, int nIndex, unsigned nCell)
+TDisplayAction DisplayOperate (TDisplaySettings *pDisplay, int nIndex, unsigned nCell)
 {
     if (nIndex < 0 || (unsigned) nIndex >= s_Page.nCount)
-        return false;
+        return DisplayNothing;
     TWidget *pWidget = &s_Widgets[nIndex];
+    if (pWidget == s_pWindow && s_pWindow != nullptr)
+    {
+        const int nChoice = s_pWindow->nChoice;
+        if (nChoice < 0 || (unsigned) nChoice >= s_pWindow->nItems)
+            return DisplayNothing;
+        if (s_WindowMode[nChoice] == WINDOW_OTHER)
+            return DisplayWindowOther;
+        const unsigned nMode = s_WindowMode[nChoice];
+        const TVideoSize Size = s_WindowSize[nChoice];
+        if (nMode == pDisplay->nWindowMode && (nMode != 0 || VideoSizeEqual (Size, pDisplay->Window)))
+            return DisplayNothing;      // what the window already is
+        pDisplay->nWantedMode = nMode;
+        pDisplay->Wanted = Size;
+        return DisplayWindowChosen;
+    }
     if (pWidget == s_pRefresh)
     {
         const int nChoice = s_pRefresh->nChoice;
@@ -301,16 +438,16 @@ bool DisplayOperate (TDisplaySettings *pDisplay, int nIndex, unsigned nCell)
             pDisplay->nFrameSkip = RefreshRates[nChoice].nSkip;
             pDisplay->bRefreshChanged = true;
         }
-        return false;
+        return DisplayNothing;
     }
     if (pWidget != s_pList || s_pList->nChoice < 0)
-        return false;
+        return DisplayNothing;
     if (s_pList->nChoice == 0)
-        return nCell == 0;
+        return nCell == 0 ? DisplayNewResolution : DisplayNothing;
     const unsigned i = (unsigned) s_pList->nChoice;
     if (i >= s_pList->nItems || nCell == 0 || nCell > 2
         || (s_Rows[i].nCell[nCell - 1] & StateDisabled) != 0)
-        return false;
+        return DisplayNothing;
 
     const TVideoSize Size = {s_Sizes[i - 1].nWidth, s_Sizes[i - 1].nHeight};
     if (nCell == 1)
@@ -318,7 +455,7 @@ bool DisplayOperate (TDisplaySettings *pDisplay, int nIndex, unsigned nCell)
         if (!VideoModeSetHidden (&pDisplay->Modes, Size, !VideoModeHidden (pDisplay->Modes, Size)))
         {
             s_pStatus->pText = Str (StrDisplayHiddenFull);
-            return false;
+            return DisplayNothing;
         }
         pDisplay->bModesChanged = true;
     }
@@ -331,18 +468,19 @@ bool DisplayOperate (TDisplaySettings *pDisplay, int nIndex, unsigned nCell)
     pDisplay->Selected = Size;
     Rows (pDisplay);
     SelectSize (Size);
-    return false;
+    return DisplayNothing;
 }
 
-void NewResolutionDraw (TSurface *pSurface, const TDisplaySettings *pDisplay)
+void NewResolutionDraw (TSurface *pSurface, const TDisplaySettings *pDisplay, bool bWindow)
 {
     *s_Width = *s_Height = '\0';
+    s_bWindowEntry = bWindow;
     PageBeginAlert (&s_NewPage, pSurface, s_NewWidgets, sizeof s_NewWidgets / sizeof s_NewWidgets[0],
-                    430, 202, Str (StrDisplayNewTitle));
+                    430, 202, Str (bWindow ? StrDisplayWindowTitle : StrDisplayNewTitle));
     const TTheme &Theme = s_NewPage.Theme;
     TLayout &Layout = s_NewPage.Layout;
     PageFooter (&s_NewPage);
-    const int nCreate = PageLast (&s_NewPage, Str (StrCreate), StateDefault);
+    const int nCreate = PageLast (&s_NewPage, Str (bWindow ? StrApply : StrCreate), StateDefault);
     const int nCancel = PageLast (&s_NewPage, Str (StrCancel), StateNormal);
     s_pCreate = &s_NewWidgets[nCreate];
     s_pCancel = &s_NewWidgets[nCancel];
@@ -375,7 +513,7 @@ void NewResolutionSync (const TDisplaySettings *pDisplay, TScreen *pScreen)
 {
     const TStringId Note = SizeNote (pDisplay);
     const char *pText = Str (Note);
-    const bool bReady = Note == StrDisplayReady;
+    const bool bReady = Note == StrDisplayReady || Note == StrDisplayWindowReady;
     if (pScreen != nullptr)
     {
         if (s_pNewNote->pText != pText)
@@ -393,6 +531,14 @@ TNewResolutionAction NewResolutionOperate (TDisplaySettings *pDisplay, int nInde
         return NewResolutionNothing;
     if (&s_NewWidgets[nIndex] == s_pCancel)
         return NewResolutionCancel;
+    if (s_bWindowEntry)
+    {
+        if (&s_NewWidgets[nIndex] != s_pCreate || SizeNote (pDisplay) != StrDisplayWindowReady)
+            return NewResolutionNothing;
+        pDisplay->nWantedMode = 0;
+        pDisplay->Wanted = EnteredSize ();
+        return NewResolutionCreate;
+    }
     if (&s_NewWidgets[nIndex] != s_pCreate || SizeNote (pDisplay) != StrDisplayReady)
         return NewResolutionNothing;
 

@@ -2,7 +2,7 @@
 
 > The Okapia firmware: a configuration utility in a plausible Apple style that opens before any emulator
 > code runs — the Open Firmware a 68k Macintosh never had. One window with six tabs: System, Settings,
-> Network, Information, Display, Logs. Main files: `src/firmware/` (pure: no Circle type), `src/common/okapia_menu.cpp` (the driver: preferences, card and pages, the same on every host), `src/common/okapia_host.h` (what it asks of the machine), `src/hosts/circle/firmware/okapia_host_circle.cpp` (the Pi's answers), `okapia_input.cpp` (USB
+> Network, Display, Information, Logs (a desktop leaves Network out: its one setting is on Settings). Main files: `src/firmware/` (pure: no Circle type), `src/common/okapia_menu.cpp` (the driver: preferences, card and pages, the same on every host), `src/common/okapia_host.h` (what it asks of the machine), `src/hosts/circle/firmware/okapia_host_circle.cpp` (the Pi's answers), `okapia_input.cpp` (USB
 > bridge), `okapia_output.cpp` (frame buffer claim), `assets/strings.tsv`, `assets/fonts/`, `assets/icons/`.
 
 ## Using it
@@ -14,7 +14,8 @@ the Macintosh — except **Command-Option-P-R**, which forgets the parameter RAM
 its ROM before ADB was alive.
 
 **One window, six tabs**, with the tab control Mac OS 8's Appearance Manager introduced: **System** (the
-volumes), **Settings**, **Network**, **Information**, **Display** and **Logs**. The footer is the window's and the same on every page: forget
+volumes), **Settings**, **Network**, **Display**, **Information** and **Logs**; a host may leave one out of the strip
+(`PageChromeHideTab`), the others keeping their order. The footer is the window's and the same on every page: forget
 the PRAM, shut down, **Show this menu at startup** (`bootmenu`, beside Start because it is about starting; unticked, a grey line under it says *Press Alt during startup to show this menu*, so the way back is never lost), and **Start**, which reads **Save and restart** with a note beside it when a change made on any page needs Okapia to
 restart. What the pages change is written to the card when the Macintosh starts or the board shuts down — as a
 control panel keeps what was set in it; there is no Cancel.
@@ -214,10 +215,22 @@ levels — note, caution, stop — because they are a promise about consequences
 
 ### Text
 
-- **Fonts**: the X11 Adobe Helvetica bitmap faces (`assets/fonts/`), licence read in the files: permission to
-  use, copy, modify, distribute and sell, compatible with GPLv3. Geneva was essentially a Helvetica fitted to a
-  small pixel grid. Six sizes, real bold; `scripts/gen-font.py` reads BDF directly, `fetch-fonts.sh` and
-  `trim-bdf.py` vendor only printable characters (380 KB). **Never Chicago**: it is Apple's, under copyright.
+- **Fonts**: TeX Gyre Heros 2.004, regular and bold (`assets/fonts/`, GUST Font License, compatible with GPLv3),
+  a Helvetica of its own: Geneva was essentially a Helvetica fitted to a small pixel grid. `scripts/fetch-fonts.sh`
+  vendors it trimmed with fontTools to Latin-1, Latin Extended-A, typographic punctuation and a few symbols, with
+  its pair kerning and without hints (31 KB a weight); the build only turns the files into bytes
+  (`gen-blob.py`). **Never Chicago**: it is Apple's, under copyright.
+- **Rasterising** (`okapia_font_vector.cpp`, stb_truetype from `external/stb`, public domain): each face is drawn
+  at the cell height the theme asks for, to the row, with one byte of coverage a pixel, each glyph trimmed to its
+  ink and packed. Built on first use per height and weight and kept, so the board allocates once, before any
+  Macintosh runs; the kerning pairs are read once per weight in the face's units. Advances are in sixteenths of
+  a pixel (`TPen` in `okapia_gfx.cpp`), so measuring and drawing agree. Text blends into the shadow surface
+  (`Blend`), never into the frame buffer itself. Measured on an M-series host: a face in about 1 ms, a weight's
+  kerning (319 × 319 pairs, about 4,000 kept) in about 5 ms; on a Pi 4, to be measured.
+- **Why not the bitmaps any more** (2026-11-22): six sizes and no greys. At a scale between two rungs (26/16)
+  the nearest one was taken, and a desktop's Retina screen doubled it with its stairs. The outline faces are
+  slightly softer at 1x (no hinting) and right at every other scale; the kernel lost 129 KB (3,490,624 to
+  3,358,784 bytes), the faces being 62 KB of outlines and 25 KB of code against 215 KB of bitmaps.
 - **Translations**: `assets/strings.tsv` holds every label in every language; `scripts/gen-strings.py`
   generates both the tables and the `TStringId` enumeration, so a removed key breaks the build. English is the
   default; `language` selects; an unknown code falls back to the first language.
@@ -279,6 +292,17 @@ levels — note, caution, stop — because they are a promise about consequences
 
 ## Pitfalls
 
+- **Inverting black and white alone leaves an antialiased edge grey.** `GfxInvert` swapped the two palette
+  values only, as QuickDraw did: a selected row's text came out fringed and its radio button frayed (the rings
+  were already antialiased with the bitmap faces). A neutral grey now turns inside out with its stroke; colours
+  (icons) are left.
+- **A label centres to the pixel only when its band and its capitals have the same parity.** The bitmap faces
+  happened to agree with the theme; faces drawn at any height do not, so the theme moves each band a row
+  (`ThemeMake`, down where its floor allows). Across, the caller's width decides: an odd remainder is one pixel
+  to a side, and the geometry check allows exactly that.
+- **Pixel boxes round outwards.** The scale that maps the ink to the asked height gave a cell one row taller, and
+  at 640x480 three pages no longer fitted under their tabs. The scale is brought down until the cell is the
+  height asked for.
 - **A field drawn under the footer passes `CheckFrame`**: it is still inside the dialogue. Each page checks its own
   `…Overflowed()` and that no row came out flat; only that catches a page that ran out of room.
 - **A group's frame overlaps everything it holds**, on purpose: the overlap checks exempt `WidgetGroup` and check

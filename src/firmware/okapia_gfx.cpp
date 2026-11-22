@@ -591,6 +591,17 @@ void GfxInvert (TSurface *pSurface, const TRect &rRect)
             {
                 p[nX] = nBlack;
             }
+            else
+            {
+                // A neutral grey, the edge of an antialiased stroke, turns
+                // inside out with its stroke; a colour (an icon) is left.
+                const unsigned v = p[nX] & 0xFF;
+                if (((p[nX] >> 8) & 0xFF) == v && ((p[nX] >> 16) & 0xFF) == v)
+                {
+                    const unsigned w = 255 - v;
+                    p[nX] = (p[nX] & 0xFF000000u) | (w << 16) | (w << 8) | w;
+                }
+            }
         }
     }
 }
@@ -599,21 +610,50 @@ void GfxInvert (TSurface *pSurface, const TRect &rRect)
  *  Text
  */
 
-// -1 when the face has no such glyph.
+// -1 when the faces have no such glyph; an index without ink answers an
+// advance of 0 and draws nothing.
 static int GlyphIndex (const TOkapiaFont *pFont, int nCode)
 {
-    if (nCode >= (int) pFont->nFirst && nCode <= (int) pFont->nLast)
+    (void) pFont;
+    return FontGlyphIndex (nCode);
+}
+
+/*
+ *  The pen
+ *
+ *  Every walk along a line goes through it, so that measuring and drawing agree
+ *  to the pixel: advances are in sixteenths and kerned by pair, and a glyph
+ *  starts at the pen rounded. A width is where the pen ends, rounded.
+ */
+struct TPen
+{
+    const TOkapiaFont *pFont;
+    int nPrev;                          // the glyph before, for kerning
+    int n16;
+};
+
+static inline TPen PenAt (const TOkapiaFont *pFont)
+{
+    TPen Pen = { pFont, -1, 0 };
+    return Pen;
+}
+
+// Where glyph nIndex starts, in pixels from the pen's origin; the pen moves on.
+static inline int PenStep (TPen *pPen, int nIndex)
+{
+    if (pPen->nPrev >= 0)
     {
-        return nCode - (int) pFont->nFirst;
+        pPen->n16 += FontKern16 (pPen->pFont, pPen->nPrev, nIndex);
     }
-    for (unsigned i = 0; i < pFont->nExtra; i++)
-    {
-        if (pFont->pExtraCode[i] == (unsigned short) nCode)
-        {
-            return (int) (pFont->nLast - pFont->nFirst + 1 + i);
-        }
-    }
-    return -1;
+    const int nX = (pPen->n16 + 8) >> 4;
+    pPen->n16 += pPen->pFont->pGlyphs[nIndex].nAdvance16;
+    pPen->nPrev = nIndex;
+    return nX;
+}
+
+static inline unsigned PenWidth (const TPen &Pen)
+{
+    return Pen.n16 <= 0 ? 0 : (unsigned) ((Pen.n16 + 8) >> 4);
 }
 
 /*
@@ -663,7 +703,7 @@ static int NextChar (const unsigned char **pp)
 static unsigned GfxTextWidthRun (const unsigned char *p, const unsigned char *pEnd,
                                  const TOkapiaFont *pFont)
 {
-    unsigned nWidth = 0;
+    TPen Pen = PenAt (pFont);
     while (pEnd == 0 || p < pEnd)
     {
         const int nCode = NextChar (&p);
@@ -674,38 +714,29 @@ static unsigned GfxTextWidthRun (const unsigned char *p, const unsigned char *pE
         const int nIndex = GlyphIndex (pFont, nCode);
         if (nIndex >= 0)
         {
-            nWidth += pFont->pWidth[nIndex];
+            PenStep (&Pen, nIndex);
         }
     }
-    return nWidth;
+    return PenWidth (Pen);
 }
 
 unsigned GfxTextWidth (const TOkapiaFont *pFont, const char *pText)
 {
-    unsigned nWidth = 0;
-    const unsigned char *p = (const unsigned char *) pText;
-
-    for (int nCode = NextChar (&p); nCode >= 0; nCode = NextChar (&p))
-    {
-        const int nIndex = GlyphIndex (pFont, nCode);
-        if (nIndex < 0)
-        {
-            continue;
-        }
-        nWidth += pFont->pWidth[nIndex];
-    }
-    return nWidth;
+    return GfxTextWidthRun ((const unsigned char *) pText, 0, pFont);
 }
 
 // Draws from p up to but not including pEnd, or to the terminator when pEnd is
 // zero. The bound is what lets a box draw a prefix without copying it anywhere:
 // a firmware that allocates nothing has no scratch string to truncate into.
+//
+// Each pixel is mixed with what is under it by its coverage, as the shapes are
+// (Blend), so text sits on a selection's black as on white. On the board this
+// is the shadow surface, ordinary memory, never the frame buffer itself.
 static void TextRun (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
                      const unsigned char *p, const unsigned char *pEnd, TOkapiaColor Color)
 {
-    const unsigned nStride = pFont->nBytesPerRow;
-    const unsigned nBits   = nStride * 8;
-
+    const unsigned nValue = Value (Color);
+    TPen Pen = PenAt (pFont);
     while (pEnd == 0 || p < pEnd)
     {
         const int nCode = NextChar (&p);
@@ -718,37 +749,30 @@ static void TextRun (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int n
         {
             continue;
         }
-        const unsigned char *pBits = pFont->pBits
-                                   + (size_t) nIndex * pFont->nHeight * nStride;
-
-        for (unsigned row = 0; row < pFont->nHeight; row++)
+        const TOkapiaGlyph &G = pFont->pGlyphs[nIndex];
+        const int nLeft = nX + PenStep (&Pen, nIndex) + G.nLeft;
+        const int nTop  = nY + G.nTop;
+        const unsigned char *pA = pFont->pAlpha + G.nOffset;
+        for (unsigned row = 0; row < G.nHeight; row++)
         {
-            const unsigned char *pRow = pBits + row * nStride;
-            int nRunStart = -1;
-
-            for (unsigned bit = 0; bit <= nBits; bit++)
+            const int y = nTop + (int) row;
+            if (y < 0 || y >= (int) pSurface->nHeight)
             {
-                bool bInk = false;
-                if (bit < nBits)
+                continue;
+            }
+            for (unsigned col = 0; col < G.nWidth; col++)
+            {
+                const unsigned a = pA[row * G.nWidth + col];
+                if (a == 255)
                 {
-                    bInk = (pRow[bit >> 3] & (0x80u >> (bit & 7))) != 0;
+                    Span (pSurface, nLeft + (int) col, y, 1, nValue);
                 }
-                // Runs rather than pixels: a 34-pixel face would otherwise pay
-                // a bounds check per bit, and a whole screen of text is the one
-                // place this loop is hot.
-                if (bInk && nRunStart < 0)
+                else if (a != 0)
                 {
-                    nRunStart = (int) bit;
-                }
-                else if (!bInk && nRunStart >= 0)
-                {
-                    Span (pSurface, nX + nRunStart, nY + (int) row,
-                          (int) bit - nRunStart, Value (Color));
-                    nRunStart = -1;
+                    Blend (pSurface, nLeft + (int) col, y, nValue, (float) a * (1.0f / 255.0f));
                 }
             }
         }
-        nX += (int) pFont->pWidth[nIndex];
     }
 }
 
@@ -758,14 +782,14 @@ void GfxText (TSurface *pSurface, const TOkapiaFont *pFont, int nX, int nY,
     TextRun (pSurface, pFont, nX, nY, (const unsigned char *) pText, 0, Color);
 }
 
-unsigned GfxTextInkWidth (const TOkapiaFont *pFont, const char *pText)
+// The columns the ink of a run reaches, from the pen's origin. Ink is what is
+// at least half covered: a faint fringe is not where anyone sees a stroke end.
+// False when the run has no ink.
+static bool TextInk (const TOkapiaFont *pFont, const char *pText, int *pnLeft, int *pnRight)
 {
-    const unsigned nStride = pFont->nBytesPerRow;
-    const unsigned nBits   = nStride * 8;
     const unsigned char *p = (const unsigned char *) pText;
-
-    int nLeft = (int) nBits, nRight = -1;
-    int nPen = 0;
+    int nLeft = 1 << 30, nRight = -(1 << 30);
+    TPen Pen = PenAt (pFont);
     for (int nCode = NextChar (&p); nCode >= 0; nCode = NextChar (&p))
     {
         const int nIndex = GlyphIndex (pFont, nCode);
@@ -773,24 +797,28 @@ unsigned GfxTextInkWidth (const TOkapiaFont *pFont, const char *pText)
         {
             continue;
         }
-        const unsigned char *pBits = pFont->pBits
-                                   + (size_t) nIndex * pFont->nHeight * nStride;
-        for (unsigned row = 0; row < pFont->nHeight; row++)
+        const TOkapiaGlyph &G = pFont->pGlyphs[nIndex];
+        const int nAt = PenStep (&Pen, nIndex) + G.nLeft;
+        const unsigned char *pA = pFont->pAlpha + G.nOffset;
+        for (unsigned i = 0; i < (unsigned) G.nWidth * G.nHeight; i++)
         {
-            const unsigned char *pRow = pBits + row * nStride;
-            for (unsigned bit = 0; bit < nBits; bit++)
+            if (pA[i] >= 128)
             {
-                if (pRow[bit >> 3] & (0x80u >> (bit & 7)))
-                {
-                    const int x = nPen + (int) bit;
-                    if (x < nLeft)  nLeft = x;
-                    if (x > nRight) nRight = x;
-                }
+                const int x = nAt + (int) (i % G.nWidth);
+                if (x < nLeft)  nLeft = x;
+                if (x > nRight) nRight = x;
             }
         }
-        nPen += (int) pFont->pWidth[nIndex];
     }
-    return nRight < nLeft ? 0 : (unsigned) (nRight - nLeft + 1);
+    *pnLeft = nLeft;
+    *pnRight = nRight;
+    return nRight >= nLeft;
+}
+
+unsigned GfxTextInkWidth (const TOkapiaFont *pFont, const char *pText)
+{
+    int nLeft, nRight;
+    return TextInk (pFont, pText, &nLeft, &nRight) ? (unsigned) (nRight - nLeft + 1) : 0;
 }
 
 unsigned GfxTextWidthUpTo (const TOkapiaFont *pFont, const char *pText, unsigned nBytes)
@@ -873,7 +901,7 @@ static const unsigned char *TextCut (const TOkapiaFont *pFont, const unsigned ch
 
     const unsigned char *p = pText;
     const unsigned char *pGood = pText;
-    unsigned nWidth = 0;
+    TPen Pen = PenAt (pFont);
     for (;;)
     {
         const int nCode = NextChar (&p);
@@ -884,9 +912,9 @@ static const unsigned char *TextCut (const TOkapiaFont *pFont, const unsigned ch
         const int nIndex = GlyphIndex (pFont, nCode);
         if (nIndex >= 0)
         {
-            nWidth += pFont->pWidth[nIndex];
+            PenStep (&Pen, nIndex);
         }
-        if (nWidth > nRoom)
+        if (PenWidth (Pen) > nRoom)
         {
             return pGood;
         }
@@ -907,7 +935,15 @@ unsigned GfxTextBox (TSurface *pSurface, const TOkapiaFont *pFont, const TRect &
     if (nWidth <= rBox.nWidth)
     {
         int nX = rBox.nX;
-        if (Align == TextAlignCenter)
+        int nInkLeft, nInkRight;
+        if (Align == TextAlignCenter && TextInk (pFont, pText, &nInkLeft, &nInkRight))
+        {
+            // On the ink, not the advances: a label's side bearings are not
+            // the same on both sides, and centred by its advances "Hom" sits
+            // half a pixel to one side — the eye centres what it sees.
+            nX += ((int) rBox.nWidth - (nInkRight - nInkLeft + 1)) / 2 - nInkLeft;
+        }
+        else if (Align == TextAlignCenter)
         {
             nX += ((int) rBox.nWidth - (int) nWidth) / 2;
         }
@@ -942,7 +978,7 @@ unsigned GfxTextOffsetAt (const TOkapiaFont *pFont, const char *pText, int nX)
     }
     const unsigned char *pStart = (const unsigned char *) pText;
     const unsigned char *p = pStart;
-    int nWidth = 0;
+    TPen Pen = PenAt (pFont);
     for (;;)
     {
         const unsigned char *pBefore = p;
@@ -952,12 +988,17 @@ unsigned GfxTextOffsetAt (const TOkapiaFont *pFont, const char *pText, int nX)
             return (unsigned) (pBefore - pStart);
         }
         const int nIndex = GlyphIndex (pFont, nCode);
-        const int nAdvance = nIndex < 0 ? 0 : (int) pFont->pWidth[nIndex];
-        if (nX < nWidth + nAdvance / 2)
+        if (nIndex < 0)
+        {
+            continue;
+        }
+        const int nFrom = (int) PenWidth (Pen);
+        PenStep (&Pen, nIndex);
+        const int nTo = (int) PenWidth (Pen);
+        if (nX < (nFrom + nTo) / 2)
         {
             return (unsigned) (pBefore - pStart);
         }
-        nWidth += nAdvance;
     }
 }
 
@@ -1148,7 +1189,7 @@ static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TR
     const unsigned char *pLine  = (const unsigned char *) pText;
     const unsigned char *p      = pLine;
     const unsigned char *pBreak = 0;            // after the last space seen
-    unsigned nWidth = 0;
+    TPen     Pen    = PenAt (pFont);            // along the line being set
     unsigned nLines = 0;
     int      nY     = rBox.nY;
 
@@ -1174,21 +1215,25 @@ static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TR
             nY += (int) nLineHeight;
             pLine  = p;
             pBreak = 0;
-            nWidth = 0;
+            Pen    = PenAt (pFont);
             continue;
         }
 
         const int nIndex = GlyphIndex (pFont, nCode);
-        const unsigned nAdvance = nIndex < 0 ? 0 : pFont->pWidth[nIndex];
+        TPen Next = Pen;
+        if (nIndex >= 0)
+        {
+            PenStep (&Next, nIndex);
+        }
 
         if (nCode == ' ')
         {
             pBreak = p;
-            nWidth += nAdvance;
+            Pen = Next;
             continue;
         }
 
-        if (nWidth + nAdvance > rBox.nWidth && pBefore != pLine)
+        if (PenWidth (Next) > rBox.nWidth && pBefore != pLine)
         {
             // Back to the last space if there was one on this line; otherwise
             // break where it stands, which is a word too long for the box.
@@ -1204,10 +1249,10 @@ static unsigned TextWrap (TSurface *pSurface, const TOkapiaFont *pFont, const TR
             pLine  = pEnd;
             p      = pEnd;
             pBreak = 0;
-            nWidth = 0;
+            Pen    = PenAt (pFont);
             continue;
         }
-        nWidth += nAdvance;
+        Pen = Next;
     }
 
     if (p != pLine)

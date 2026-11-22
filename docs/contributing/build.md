@@ -122,7 +122,7 @@ the shared ones and the merge intermediates.
 Generated at build time, never typed: the 68k opcode tables (`scripts/gen-cpu.sh`, host-built `build68k` and `gencpu`,
 about 195,000 lines), kpx_cpu's execute table (`scripts/gen-ppc-exec.sh`), the key table (`gen-keycodes.py`), the
 MacRoman table (`gen-macroman.py`), the firmware's strings (`gen-strings.py` from `assets/strings.tsv`), fonts
-(`gen-font.py`) and icons (`gen-icons.py`).
+(`gen-blob.py`, the outline faces as bytes) and icons (`gen-icons.py`).
 
 ### Version
 

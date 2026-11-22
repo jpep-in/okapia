@@ -342,6 +342,9 @@ bool VideoScreenApply (const u8 *pSource, unsigned nWidth, unsigned nHeight,
                             s_Compositor.nScale, s_Compositor.nOriginX,
                             s_Compositor.nOriginY);
 
+    BoardOutputShows (s_Compositor.nOriginX, s_Compositor.nOriginY, nWidth, nHeight,
+                      s_Compositor.nScale);
+
     // Onto the card now and not at the next seam: a mode is the moment a
     // screen goes wrong, and a board that stops drawing it takes the log with
     // it. A Macintosh at 912x492 once did exactly that, and left nothing.

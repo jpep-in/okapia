@@ -92,11 +92,17 @@ unsigned CSoundBaseDevice::GetQueueSizeFrames (void)
     return s_nQueueFrames;
 }
 
+// The frames still waiting to be played, *not* the room left: that is what
+// Circle's method answers (soundbasedevice.h:157), and audio_okapia.cpp takes
+// the room as GetQueueSizeFrames() minus this. Answering the room, as this did
+// at first, turned the pump's feedback upside down: an empty queue read as full
+// and was left to run dry, a full one was fed again — sound in bursts with holes
+// between, like an echo.
 unsigned CSoundBaseDevice::GetQueueFramesAvail (void)
 {
     const int nQueued = s_pStream != 0 ? SDL_GetAudioStreamQueued (s_pStream) : 0;
     const unsigned nFrames = nQueued > 0 ? (unsigned) nQueued / FRAME_BYTES : 0;
-    return nFrames >= s_nQueueFrames ? 0 : s_nQueueFrames - nFrames;
+    return nFrames > s_nQueueFrames ? s_nQueueFrames : nFrames;
 }
 
 bool CSoundBaseDevice::IsActive (void)
@@ -173,6 +179,34 @@ static bool ChimeQueue (const char *pROM)
     }
     free (pRom);
     return bQueued;
+}
+
+// The welcome page's Listen (okapia_host.h).
+bool HostChimeKnown (const char *pCardPath)
+{
+    FILE *pFile = pCardPath != 0 ? fopen (CardPath (pCardPath), "rb") : 0;
+    if (pFile == 0)
+    {
+        return false;
+    }
+    u8 *pRom = (u8 *) malloc (ROM_MAX);
+    const size_t nSize = pRom != 0 ? fread (pRom, 1, ROM_MAX, pFile) : 0;
+    fclose (pFile);
+    TRomChime Chime;
+    const bool bKnown = nSize >= ROM_MIN && nSize <= ROM_MAX
+                        && RomChimeFind (pRom, (u32) nSize, &Chime) == RomChimeFound;
+    free (pRom);
+    return bKnown;
+}
+
+bool HostChimeListen (const char *pCardPath)
+{
+    if (!OpenStream ())
+    {
+        return false;
+    }
+    SDL_ClearAudioStream (s_pStream);
+    return ChimeQueue (pCardPath);
 }
 
 void BoardChimePlay (void)

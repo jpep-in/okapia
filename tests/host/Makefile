@@ -16,7 +16,10 @@ ROOT     = ../..
 FIRMWARE = $(ROOT)/src/firmware
 GEN      = $(ROOT)/build/generated
 FONTDIR  = $(ROOT)/assets/fonts
-BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR12-75.bdf $(FONTDIR)/helvB12-75.bdf $(FONTDIR)/helvR14-75.bdf $(FONTDIR)/helvB14-75.bdf $(FONTDIR)/helvR24-75.bdf $(FONTDIR)/helvB24-75.bdf $(FONTDIR)/helvR14-100.bdf $(FONTDIR)/helvB14-100.bdf $(FONTDIR)/helvR24-100.bdf $(FONTDIR)/helvB24-100.bdf
+# The faces: TeX Gyre Heros, regular and bold (scripts/fetch-fonts.sh), carried
+# whole as bytes and rasterised at run time (src/firmware/okapia_font_vector.cpp).
+OTF      = $(FONTDIR)/texgyreheros-regular.otf $(FONTDIR)/texgyreheros-bold.otf
+STB      = $(ROOT)/external/stb
 
 FONT_SRC = $(GEN)/okapia_font_data.cpp
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
@@ -25,7 +28,7 @@ STR_IDS  = $(GEN)/okapia_strings_ids.h
 LIBSRCS  = $(wildcard $(FIRMWARE)/*.cpp) $(ROOT)/src/common/video_sizes_okapia.cpp $(FONT_SRC) $(ICON_SRC) $(STR_SRC)
 LIBOBJS  = $(notdir $(LIBSRCS:.cpp=.o))
 
-CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -I$(FIRMWARE) -I$(GEN) -std=c++14
+CXXFLAGS = -O2 -Wall -Wextra -Wno-unused-parameter -I$(FIRMWARE) -I$(GEN) -I$(STB) -std=c++14
 
 VPATH = $(FIRMWARE):$(ROOT)/src/common:$(GEN):.
 
@@ -54,9 +57,9 @@ HFS_OBJS      = $(addprefix hfs_,$(notdir $(HFS_SRCS:.c=.o)))
 
 all: specimen.ppm check
 
-$(FONT_SRC): $(ROOT)/scripts/gen-font.py $(BDF)
+$(FONT_SRC): $(ROOT)/scripts/gen-blob.py $(OTF)
 	@mkdir -p $(GEN)
-	$(ROOT)/scripts/gen-font.py $@ $(BDF)
+	$(ROOT)/scripts/gen-blob.py $@ OkapiaOutlineRegular $(word 1,$(OTF)) OkapiaOutlineBold $(word 2,$(OTF))
 
 $(ICON_SRC): $(ROOT)/scripts/gen-icons.py $(ROOT)/assets/icons/system-icons.c \
               $(ROOT)/assets/icons/cdrom-icon.c
@@ -138,6 +141,53 @@ check_platform.o: check_platform.cpp
 
 check_platform: check_platform.o $(PLATFORM_OBJS) $(HFS_OBJS)
 	$(CXX) -o $@ $^
+
+# The ROM rules and the disk verdicts (src/common/okapia_rom.cpp), pure.
+p_okapia_rom.o: $(ROOT)/src/common/okapia_rom.cpp
+	$(CXX) $(CXXFLAGS) -I$(ROOT)/src/common -MMD -MP -c -o $@ $<
+
+check_rom.o: check_rom.cpp
+	$(CXX) $(CXXFLAGS) -I$(ROOT)/src/common -MMD -MP -c -o $@ $<
+
+check_rom: check_rom.o p_okapia_rom.o
+	$(CXX) -o $@ $^
+
+# What a volume is as a card (src/common/okapia_card_check.cpp), pure.
+p_okapia_card_check.o: $(ROOT)/src/common/okapia_card_check.cpp
+	$(CXX) $(CXXFLAGS) -I$(ROOT)/src/common -MMD -MP -c -o $@ $<
+
+check_card.o: check_card.cpp
+	$(CXX) $(CXXFLAGS) -I$(ROOT)/src/common -MMD -MP -c -o $@ $<
+
+check_card: check_card.o p_okapia_card_check.o
+	$(CXX) -o $@ $^
+
+# Putting a release on a card (src/hosts/desktop/install*.cpp): standard C++
+# and POSIX files, no SDL.
+INSTALL_DIR = $(ROOT)/src/hosts/desktop
+d_install_manifest.o: $(INSTALL_DIR)/install_manifest.cpp
+	$(CXX) -O2 -Wall -Wextra -std=c++17 -I$(INSTALL_DIR) -MMD -MP -c -o $@ $<
+
+d_install_card.o: $(INSTALL_DIR)/install_card.cpp
+	$(CXX) -O2 -Wall -Wextra -std=c++17 -I$(INSTALL_DIR) -MMD -MP -c -o $@ $<
+
+MINIZ_DIR = $(ROOT)/external/miniz
+MINIZ_INC = -isystem $(MINIZ_DIR) -I$(INSTALL_DIR)/shims
+d_install_release.o: $(INSTALL_DIR)/install_release.cpp
+	$(CXX) -O2 -Wall -Wextra -std=c++17 -I$(INSTALL_DIR) $(MINIZ_INC) -MMD -MP -c -o $@ $<
+
+d_install_fetch.o: $(INSTALL_DIR)/install_fetch.cpp
+	$(CXX) -O2 -Wall -Wextra -std=c++17 -I$(INSTALL_DIR) -MMD -MP -c -o $@ $<
+
+mz_%.o: $(MINIZ_DIR)/%.c
+	$(CC) -O2 -w $(MINIZ_INC) -MMD -MP -c -o $@ $<
+
+check_install.o: check_install.cpp
+	$(CXX) -O2 -Wall -Wextra -std=c++17 -I$(INSTALL_DIR) $(MINIZ_INC) -MMD -MP -c -o $@ $<
+
+check_install: check_install.o d_install_manifest.o d_install_card.o d_install_release.o d_install_fetch.o \
+               mz_miniz.o mz_miniz_tdef.o mz_miniz_tinfl.o mz_miniz_zip.o
+	$(CXX) -o $@ $^ -lcurl
 
 # video_blit.cpp is upstream's and lives one directory deeper than the p_ rule
 # above can name, so it gets its own. It is the only display code Okapia does
@@ -227,13 +277,16 @@ check_fpu_core.o: check_fpu_core.cpp
 check_fpu_core: check_fpu_core.o fc_fpu_softfloat.o $(SOFTFLOAT_OBJS)
 	$(CXX) -o $@ $^
 
-check: check_geometry check_screen check_chooser check_pages check_platform check_blit \
+check: check_geometry check_screen check_chooser check_pages check_platform check_rom check_card check_install check_blit \
        check_encoding check_net check_clock check_quickdraw check_fpu check_fpu_core
 	./check_geometry
 	./check_screen
 	./check_chooser
 	./check_pages
 	./check_platform
+	./check_rom
+	./check_card
+	./check_install
 	./check_blit
 	./check_encoding
 	./check_net
@@ -255,7 +308,7 @@ view: render_specimen
 
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
-	      check_chooser check_pages check_platform check_platform.tmp check_blit \
+	      check_chooser check_pages check_platform check_platform.tmp check_rom check_card check_install check_blit \
 	      check_encoding check_quickdraw check_fpu check_fpu_core make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm
 

@@ -83,10 +83,15 @@ static const u32 STANDARD_IDS[VIDEO_SCREEN_STANDARD] =
     OKAPIA_1920x1200,
     OKAPIA_2560x1440,
 };
-static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { APPLE_CUSTOM, OKAPIA_EXTRA };
-
 // The driver lists identifiers up to APPLE_ID_MAX and no further.
 static const u32 FIRST_CUSTOM_ID = OKAPIA_EXTRA + 1;
+// Half the display, numbered after the custom slots so that theirs, which a
+// Monitors choice may already name, do not move.
+static const u32 OKAPIA_HALF = FIRST_CUSTOM_ID + VIDEO_SCREEN_CUSTOM;
+static const u32 OKAPIA_TWO_THIRDS = OKAPIA_HALF + 1;
+static_assert (OKAPIA_TWO_THIRDS <= (unsigned) APPLE_ID_MAX, "an identifier the driver would not list");
+static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { APPLE_CUSTOM, OKAPIA_EXTRA, OKAPIA_HALF,
+                                                   OKAPIA_TWO_THIRDS };
 static_assert (FIRST_CUSTOM_ID + VIDEO_SCREEN_CUSTOM - 1 <= (unsigned) APPLE_ID_MAX,
                "an identifier the driver would not list");
 static_assert (VIDEO_SCREEN_SIZES_MAX * VIDEO_SCREEN_DEPTHS + 1 <= VIDEO_MODES_MAX,

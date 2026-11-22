@@ -114,6 +114,7 @@ shared_group	Folder sharing	Partage de dossier
 share	Share	Partager
 clock_group	Date & Time	Date et heure
 clock_help	Okapia sets the Macintosh’s clock each time it starts.\n\n– Network on (Ethernet cable or Wi-Fi connected, and “Time from the network” selected): Okapia asks the time server for the time as soon as the network is connected, then once a day.\n\n– Network off (no Internet, or “Time from the network” deselected): the clock continues from the last time the volumes were used.\n\n– Setting the time yourself: use the Date & Time control panel on the Macintosh. Okapia keeps the time you set.	Okapia règle l’horloge du Macintosh à chaque démarrage.\n\n– Réseau actif (câble Ethernet ou Wi-Fi connecté, et « Heure par le réseau » cochée) : Okapia demande l’heure au serveur de temps indiqué dès que la connexion est établie, puis une fois par jour.\n\n– Réseau inactif (pas d’Internet, ou « Heure par le réseau » décochée) : l’horloge reprend à partir de la dernière utilisation des volumes.\n\n– Réglage manuel : utilisez le tableau de bord « Date et heure » du Macintosh. Okapia conservera l’heure que vous réglez.
+clock_help_desktop	Okapia gives the Macintosh this computer’s date and time, in its time zone, every second.\n\n– To change them, use this computer’s Date & Time settings: the Macintosh follows at once.\n\n– The Date & Time control panel on the Macintosh has no lasting effect here: the next second brings this computer’s time back.	Okapia donne au Macintosh la date et l’heure de cet ordinateur, dans son fuseau, à chaque seconde.\n\n– Pour les changer, utilisez les réglages Date et heure de cet ordinateur : le Macintosh suit aussitôt.\n\n– Le tableau de bord « Date et heure » du Macintosh n’a pas d’effet durable ici : la seconde suivante ramène l’heure de cet ordinateur.
 ok	OK	OK
 screen_refresh	Screen refresh	Rafraîchissement
 dynamic	Dynamic	Dynamique
@@ -170,6 +171,7 @@ information	Information	Informations
 sound_hdmi	HDMI	HDMI
 sound_jack	Headphone jack	Prise casque
 sound_usb	USB	USB
+sound_builtin	Built-in (this Mac)	Intégré (ce Mac)
 unit_hz	Hz	Hz
 unit_mb	MB	Mo
 info_version	Okapia	Okapia
@@ -181,7 +183,7 @@ info_model	Macintosh model	Modèle de Macintosh
 info_model_auto	from the system installed	d’après le système installé
 info_model_pref	from the preferences	d’après les préférences
 info_card	SD card	Carte SD
-info_folder	Card folder	Dossier carte
+info_folder	Okapia Workspace	Okapia Workspace
 info_startup	Startup volume	Volume de démarrage
 clock_from_ntp	Given by	Donnée par
 clock_from_mac	Set on the Macintosh	Réglée sur le Macintosh
@@ -234,3 +236,102 @@ spec_unchecked	Unticked	Décochée
 spec_checked	Ticked	Cochée
 spec_inactive	Inactive	Inactive
 spec_other	Other	Autre
+welcome_title	Welcome to Okapia	Bienvenue dans Okapia
+welcome_intro	Okapia runs a classic Macintosh, 68K or PowerPC, on this computer or on a Raspberry Pi. Prepare its Okapia Workspace, a folder here or the Pi’s SD card, with Macintosh ROMs and disks holding a compatible System.	Okapia fait tourner un Macintosh classique, 68K ou PowerPC, sur cet ordinateur ou sur un Raspberry Pi. Préparez son Okapia Workspace, un dossier ici ou la carte SD du Pi, avec les ROM de Macintosh et des disques avec un Système compatible.
+welcome_step_workspace	1 · Okapia Workspace	1 · Okapia Workspace
+welcome_no_workspace	None yet: open one, or create a new one.	Aucun pour l’instant : ouvrez-en un, ou créez-en un nouveau.
+welcome_open	Open…	Ouvrir…
+welcome_create	Create…	Créer…
+welcome_step_rom	2 · Macintosh ROM	2 · ROM du Macintosh
+welcome_step_system	3 · The Mac’s disk	3 · Disque du Mac
+welcome_no_system	A disk image with System 7, Mac OS 8 or 9, or an installation CD.	Une image disque avec System 7, Mac OS 8 ou 9, ou un CD d’installation.
+welcome_add_system	Add a disk image…	Ajouter une image disque…
+welcome_continue	Continue	Continuer
+welcome_quit	Quit	Quitter
+welcome_copying	Copying	Copie de
+welcome_added	Added:	Ajouté :
+welcome_not_added	Could not add:	Impossible d’ajouter :
+welcome_need	Choose or create a workspace to begin.	Choisissez ou créez un workspace pour commencer.
+welcome_ready	Continue opens the boot menu.	Continuer ouvre le menu de démarrage.
+welcome_pick_open	Choose an Okapia Workspace	Choisir un Okapia Workspace
+welcome_pick_create	Create an Okapia Workspace	Créer un Okapia Workspace
+welcome_new_name	Okapia Workspace	Okapia Workspace
+welcome_not_created	Not created, the folder exists and is not empty: {}	Non créé, le dossier existe et n’est pas vide : {}
+welcome_pick_rom	Choose a Macintosh ROM	Choisir une ROM de Macintosh
+welcome_pick_system	Choose a disk image or a CD	Choisir une image disque ou un CD
+welcome_and_more	and more	et d’autres
+display_window_fill	Fill the screen	Remplir l’écran
+display_window_other	Other…	Autre…
+display_window_title	Window size	Taille de la fenêtre
+display_window_hint	In points, from 640 × 480 to what the screen holds.	En points, de 640 × 480 à ce que l’écran contient.
+display_window_bad	From 640 × 480 to what the screen holds.	De 640 × 480 à ce que l’écran contient.
+display_window_ready	The boot menu is drawn again at this size.	Le menu de démarrage sera redessiné à cette taille.
+apply	Apply	Appliquer
+decimal_point	.	,
+welcome_fl_68k	68K	68K
+welcome_fl_ppc	PowerPC	PowerPC
+welcome_fl_universal	universal	universel
+welcome_rom_choose	Choose…	Choisir…
+welcome_rom_replace	Replace…	Remplacer…
+welcome_rom_listen	Listen	Écouter
+welcome_rom_none	None.	Aucune.
+welcome_rom_none_68k	Recommended: a Quadra or Centris 610, 650 or 800’s (1993, F1ACAD13).	Recommandée : celle d’un Quadra ou Centris 610, 650 ou 800 (1993, F1ACAD13).
+welcome_rom_none_ppc	Recommended: a Power Macintosh 9600’s (Old World), for Mac OS 7.5.2 to 9.0.4.	Recommandée : celle d’un Power Macintosh 9600 (Old World), pour Mac OS 7.5.2 à 9.0.4.
+welcome_rom_starts_68k	Starts System 7.0.1 to Mac OS 8.1.	Démarre System 7.0.1 à Mac OS 8.1.
+welcome_rom_starts_old	Starts Mac OS 7.5.2 to 9.0.4.	Démarre Mac OS 7.5.2 à 9.0.4.
+welcome_rom_starts_new	Starts Mac OS 8.1 to 9.0.4.	Démarre Mac OS 8.1 à 9.0.4.
+welcome_rom_not_quadra	It works, but Okapia is tuned for the 1993 Quadra ROM.	Elle marche, mais Okapia est réglé pour la ROM Quadra de 1993.
+welcome_rom_bad_32bit	this Mac’s ROM is too old (not 32-bit clean)	la ROM de ce Mac est trop ancienne (pas « 32-bit clean »)
+welcome_rom_bad_checksum	damaged (checksum)	endommagée (somme de contrôle)
+welcome_rom_bad_unknown	not recognised as a Mac ROM	pas reconnue comme une ROM de Mac
+welcome_rom_bad_nanokernel	unknown PowerPC ROM	ROM PowerPC inconnue
+welcome_v_data	not a startup disk: mounted as a data disk	pas un disque de démarrage : monté comme disque de données
+welcome_v_no_system	no System Folder: a data disk	pas de dossier Système : un disque de données
+welcome_v_unreadable	a System Folder whose version could not be read	un dossier Système dont la version n’a pas pu être lue
+welcome_v_too_new	Okapia starts Mac OS up to 9.0.4, not later	Okapia démarre Mac OS jusqu’à 9.0.4, pas au-delà
+welcome_v_starts_68k	starts with the 68K ROM	démarre avec la ROM 68K
+welcome_v_starts_ppc	starts with the PowerPC ROM	démarre avec la ROM PowerPC
+welcome_v_starts_both	starts with either ROM: the boot menu chooses	démarre avec l’une ou l’autre ROM : le menu de démarrage choisit
+welcome_v_needs_68k	needs a 68K ROM (Quadra, Centris)	a besoin d’une ROM 68K (Quadra, Centris)
+welcome_v_needs_ppc	needs a PowerPC ROM	a besoin d’une ROM PowerPC
+welcome_v_needs_any	needs a 68K or a PowerPC ROM	a besoin d’une ROM 68K ou PowerPC
+welcome_v_ppc_floor	the PowerPC ROM needs Mac OS 8.1 or later	la ROM PowerPC demande Mac OS 8.1 ou plus récent
+welcome_need_matching_rom	No disk can start with these ROMs: add the ROM it needs.	Aucun disque ne peut démarrer avec ces ROM : ajoutez celle qu’il lui faut.
+welcome_card	SD Card…	Carte SD…
+welcome_cards_title	SD card	Carte SD
+welcome_cards_none	Insert the SD card into this computer: it appears here on its own.	Insérez la carte SD dans cet ordinateur : elle apparaîtra ici toute seule.
+welcome_cards_hint	The card becomes the Okapia Workspace: what is added goes onto it.	La carte devient l’Okapia Workspace : ce qui est ajouté y est copié.
+welcome_cards_use	Use This Card	Utiliser cette carte
+welcome_c_card	SD card	Carte SD
+welcome_c_folder	Folder	Dossier
+welcome_c_clusters	{} KB clusters	clusters de {} Ko
+welcome_c_free	{} free	{} libres
+welcome_c_okapia	Okapia {}	Okapia {}
+welcome_c_no_okapia	Okapia is not on this card yet	Okapia n’est pas encore sur cette carte
+welcome_c_boot_missing	Okapia’s boot files are missing: {}	Fichiers de démarrage d’Okapia absents : {}
+welcome_c_small_clusters	{} KB clusters: it works, but large disks are faster with 32 KB clusters.	Clusters de {} Ko : ça marche, mais les gros disques sont plus rapides avec des clusters de 32 Ko.
+welcome_c_not_fat32	{}: the Raspberry Pi needs FAT32. Erase the card in FAT32 (Disk Utility: MS-DOS FAT).	{} : le Raspberry Pi a besoin de FAT32. Effacez la carte en FAT32 (Utilitaire de disque : MS-DOS FAT).
+welcome_c_not_fat	{}: the Raspberry Pi cannot start from this card. Erase it in FAT32 (Disk Utility: MS-DOS FAT).	{} : le Raspberry Pi ne peut pas démarrer sur cette carte. Effacez-la en FAT32 (Utilitaire de disque : MS-DOS FAT).
+welcome_c_unclean	Last time the Pi was switched off without Shut Down: Okapia will check the disk at the next start.	La dernière fois, le Pi a été coupé sans Éteindre : Okapia vérifiera le disque au prochain démarrage.
+unit_gb	GB	Go
+welcome_for	For	Pour
+welcome_target_desktop	This computer	Cet ordinateur
+welcome_target_rpi4	Raspberry Pi 4	Raspberry Pi 4
+welcome_step_card	1 · SD card	1 · Carte SD
+welcome_folder	Folder…	Dossier…
+welcome_no_card	None yet: insert the Pi’s SD card and choose it.	Aucune pour l’instant : insérez la carte SD du Pi et choisissez-la.
+welcome_c_stand_in	Folder standing in for a card	Dossier tenant lieu de carte
+welcome_need_card	Insert the SD card and choose it to begin.	Insérez la carte SD et choisissez-la pour commencer.
+welcome_prepare	Prepare the Card	Préparer la carte
+welcome_update_card	Update the Card	Mettre à jour la carte
+welcome_rel_looking	Looking for the latest Okapia…	Recherche de la dernière version d’Okapia…
+welcome_rel_ready	Okapia {} is ready to put on the card.	Okapia {} est prêt à être mis sur la carte.
+welcome_rel_none	No release of Okapia is published yet.	Aucune version d’Okapia n’est encore publiée.
+welcome_rel_failed	The latest Okapia could not be read: {}	Impossible de lire la dernière version d’Okapia : {}
+welcome_rel_uptodate	Okapia {} is on the card: up to date.	Okapia {} est sur la carte : elle est à jour.
+welcome_rel_refused	Okapia {} is available: update Okapia to prepare this card.	Okapia {} est disponible : mettez à jour Okapia pour préparer cette carte.
+welcome_rel_update	Okapia {} is available for this card.	Okapia {} est disponible pour cette carte.
+welcome_prep_fetching	Downloading {}	Téléchargement de {}
+welcome_prep_writing	Writing {} on the card	Écriture de {} sur la carte
+welcome_prep_done	The card is ready: put it in the Raspberry Pi.	La carte est prête : mettez-la dans le Raspberry Pi.
+welcome_prep_failed	Preparing the card failed: {}	La préparation de la carte a échoué : {}

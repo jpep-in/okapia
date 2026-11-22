@@ -32,6 +32,7 @@ enum TSoundOutput
     SoundHDMI,
     SoundJack,
     SoundUSB,
+    SoundBuiltIn,                       // a desktop's own output, the host's default
     SoundOutputCount
 };
 
@@ -76,10 +77,19 @@ struct TSettings
     // what is true. Zero means "offer them all", so a caller that has not
     // thought about it does not silently offer nothing.
     unsigned nSoundAvailable;
+    // One bit per TSoundOutput the list shows at all, enabled or grey. Zero
+    // means the board's four. A desktop shows only what it has — Off and its
+    // built-in output — since an HDMI socket greyed on a laptop says nothing.
+    unsigned nSoundOffered;
     // Whether this image carries the translator at all (OKAPIA_JIT_ARM64). A
     // fact about the image, like the sound outputs about the board: without it
     // the box is there and grey, and its value is kept as the file had it.
     bool bJitAvailable;
+    // A desktop's network, on this page rather than a page of its own: the
+    // host's, shared (1), or none (0). The caller turns it into the network's
+    // kind; a board leaves bNetworkOffered false and has its Network page.
+    bool     bNetworkOffered;
+    unsigned nNetwork;
     // What they were when the screen opened. Kept so that the screen can say
     // whether anything asked for a restart, which is not the same question as
     // whether anything changed.

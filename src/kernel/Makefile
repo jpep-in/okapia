@@ -227,7 +227,8 @@ REUSED_SRCS = $(MACEMU)/Unix/extfs_unix.cpp $(MACEMU)/Unix/sys_unix.cpp
 # font and icon sources are generated from assets/, like the key table.
 FIRMWARE      = ../../src/firmware
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp) \
-                $(COMMON)/okapia_menu.cpp $(OKAPIA)/firmware/okapia_host_circle.cpp \
+                $(COMMON)/okapia_menu.cpp $(COMMON)/okapia_rom.cpp $(COMMON)/okapia_card_check.cpp \
+                $(OKAPIA)/firmware/okapia_host_circle.cpp \
                 $(OKAPIA)/firmware/okapia_input.cpp \
                 $(OKAPIA)/firmware/okapia_output.cpp
 
@@ -281,12 +282,9 @@ WLAN_HOSTAP_FLAGS = -I $(WLAN_HOSTAP) -I $(WLAN_HOSTAP)/src -I $(WLAN_HOSTAP)/sr
                     -DCONFIG_NO_WMM_AC -DIEEE8021X_EAPOL
 FONTDIR       = ../../assets/fonts
 ICONDIR       = ../../assets/icons
-BDF           = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf \
-                $(FONTDIR)/helvR12-75.bdf $(FONTDIR)/helvB12-75.bdf \
-                $(FONTDIR)/helvR14-75.bdf $(FONTDIR)/helvB14-75.bdf \
-                $(FONTDIR)/helvR24-75.bdf $(FONTDIR)/helvB24-75.bdf \
-                $(FONTDIR)/helvR14-100.bdf $(FONTDIR)/helvB14-100.bdf \
-                $(FONTDIR)/helvR24-100.bdf $(FONTDIR)/helvB24-100.bdf
+# The faces: TeX Gyre Heros, regular and bold (scripts/fetch-fonts.sh), carried
+# whole as bytes and rasterised at run time (src/firmware/okapia_font_vector.cpp).
+OTF           = $(FONTDIR)/texgyreheros-regular.otf $(FONTDIR)/texgyreheros-bold.otf
 
 # libhfs (Robert Leslie, GPLv2-or-later) reads and repairs HFS volumes. It is
 # what lets Okapia scavenge a volume left dirty by an interrupted session,
@@ -380,7 +378,7 @@ EMU_DEFINES = $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_BUILD_TIME=$(OKAPIA_BUILD
 # CPUGEN ahead of GEN: both hold a cputbl.h when the JIT core is built.
 EMU_INCLUDES = -I$(ENGINE_CONFIG) -I$(COMMON) -I$(OKAPIA) -I$(OKAPIA)/compat $(JIT_INCLUDES) \
                -I$(CPUGEN) -I$(GEN) -I$(HFS) \
-               -I$(FIRMWARE) -I$(OKAPIA)/firmware \
+               -I$(FIRMWARE) -I$(OKAPIA)/firmware -I../../external/stb \
                -I$(MACEMU)/include -I$(UAE) -I$(MACEMU)/Unix \
                -I$(MACEMU)/CrossPlatform -I$(MACEMU)/kpx_cpu/include -I$(MACEMU)/kpx_cpu/src
 
@@ -507,9 +505,9 @@ $(OBJ)/mac_encoding_okapia.o: $(MACROMAN_H)
 FONT_SRC = $(GEN)/okapia_font_data.cpp
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
 
-$(FONT_SRC): ../../scripts/gen-font.py $(BDF)
+$(FONT_SRC): ../../scripts/gen-blob.py $(OTF)
 	@mkdir -p $(GEN)
-	@../../scripts/gen-font.py $@ $(BDF)
+	@../../scripts/gen-blob.py $@ OkapiaOutlineRegular $(word 1,$(OTF)) OkapiaOutlineBold $(word 2,$(OTF))
 
 $(ICON_SRC): ../../scripts/gen-icons.py $(ICONDIR)/system-icons.c \
              $(ICONDIR)/cdrom-icon.c

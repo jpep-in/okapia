@@ -8,7 +8,7 @@ that uses them cannot drift out of step with it: the identifiers are generated
 from the same rows as the text, so a key that is renamed or removed stops the
 build rather than showing an empty label at run time.
 
-Same habit as scripts/gen-keycodes.py and gen-font.py — nothing about the
+Same habit as scripts/gen-keycodes.py and gen-blob.py — nothing about the
 interface is typed twice.
 
     usage: gen-strings.py <out.cpp> <out-ids.h> <strings.tsv>

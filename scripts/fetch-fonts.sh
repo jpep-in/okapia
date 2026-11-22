@@ -1,59 +1,57 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026  Jonathan Pepin
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Fetch the X11 Adobe Helvetica bitmap faces and vendor the ones the firmware
-# uses into assets/fonts/, trimmed to the characters it can show.
+# Fetch TeX Gyre Heros and vendor its regular and bold faces into assets/fonts/,
+# trimmed to the characters the firmware can show.
 #
-# Why these: Geneva was in substance a Helvetica fitted to a small pixel grid,
-# so a bitmap Helvetica is the closest thing to it that anyone may redistribute.
-# The X11 BDFs are plain text — no rasteriser, no build dependency, and our own
-# parser reads them (scripts/gen-font.py).
+# Why these: a Helvetica of its own, the face the boot menu had as X11 bitmaps,
+# now as outlines that src/firmware/okapia_font_vector.cpp rasterises at the
+# height the theme asks for, antialiased (docs/topics/boot-menu.md, Fonts).
 #
-# Licence: Adobe Systems 1984-1989/1994 and Digital Equipment 1988/1994, with
-# permission to use, copy, modify, distribute and sell without fee provided the
-# notices are kept. Compatible with the repository's GPLv3. COPYING is vendored
-# beside the faces and must stay there.
+# Licence: the GUST Font License, a LaTeX Project Public Licence for fonts;
+# redistribution, modified or not, is allowed with the licence kept beside the
+# faces. Compatible with the repository's GPLv3. GUST-FONT-LICENSE.txt is
+# vendored with them and must stay there.
 #
-# Run once; the result is committed, so the build never needs the network.
+# The subset keeps Latin-1, Latin Extended-A, typographic punctuation and the
+# few symbols a Macintosh interface names, with the pair kerning (GPOS 'kern')
+# and without the hints, which the rasteriser does not read. It needs fontTools
+# (pip install fonttools) when this is run, never when the firmware is built:
+# the result is committed, so the build needs neither the network nor Python
+# packages.
+#
+#   usage: fetch-fonts.sh [python with fontTools]
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${REPO_ROOT}/assets/fonts"
-BASE="https://www.x.org/releases/individual/font"
-VERSION="1.0.4"
+PYTHON="${1:-python3}"
+VERSION="2.004"
+ARCHIVE="https://www.gust.org.pl/projects/e-foundry/tex-gyre/heros/qhv${VERSION}otf.zip"
+LICENCE="https://www.gust.org.pl/projects/e-foundry/licenses/GUST-FONT-LICENSE.txt"
 
-# <dpi> <point size>: the pair that yields the pixel cell we want. The cell is
-# FONT_ASCENT + FONT_DESCENT, not the point size — helvR12 at 75 dpi is a
-# fourteen-row cell, and the ladder is built from the cells, not the names.
-WANTED_75="10 12 14 24"
-WANTED_100="14 24"
+# U+0020-007E, U+00A0-00FF, Latin Extended-A, the dashes, quotes, bullet,
+# ellipsis, per mille and guillemets, the euro, the trade mark, the arrows,
+# and the Command and Option signs.
+UNICODES="U+0020-007E,U+00A0-017F,U+2010-2027,U+2030,U+2039-203A,U+20AC,U+2122,U+2190-2193,U+2318,U+2325"
+
+"$PYTHON" -c "import fontTools" 2>/dev/null \
+    || { echo "fontTools is needed: pip install fonttools, then give that python" >&2; exit 1; }
 
 WORK="$(mktemp -d -t okapiafonts)"
 trap 'rm -rf "$WORK"' EXIT
-
 mkdir -p "$DEST"
 
-for dpi in 75 100; do
-    pkg="font-adobe-${dpi}dpi-${VERSION}"
-    printf 'Fetching %s\n' "$pkg"
-    curl -sSL -o "${WORK}/${pkg}.tar.gz" "${BASE}/${pkg}.tar.gz"
-    tar xzf "${WORK}/${pkg}.tar.gz" -C "$WORK"
+printf 'Fetching TeX Gyre Heros %s\n' "$VERSION"
+curl -fsSL -o "${WORK}/heros.zip" "$ARCHIVE"
+curl -fsSL -o "${DEST}/GUST-FONT-LICENSE.txt" "$LICENCE"
+unzip -q -o "${WORK}/heros.zip" texgyreheros-regular.otf texgyreheros-bold.otf -d "$WORK"
 
-    eval "sizes=\$WANTED_${dpi}"
-    for size in $sizes; do
-        for weight in R B; do
-            src="${WORK}/${pkg}/helv${weight}$(printf '%02d' "$size").bdf"
-            [ -f "$src" ] || { echo "missing $src" >&2; exit 1; }
-            out="${DEST}/helv${weight}${size}-${dpi}.bdf"
-            "${REPO_ROOT}/scripts/trim-bdf.py" "$src" "$out"
-            printf '  %-28s %s\n' "$(basename "$out")" \
-                   "$(wc -c < "$out" | tr -d ' ') bytes"
-        done
-    done
-
-    if [ ! -f "${DEST}/COPYING" ]; then
-        cp "${WORK}/${pkg}/COPYING" "${DEST}/COPYING"
-    fi
+for face in regular bold; do
+    out="${DEST}/texgyreheros-${face}.otf"
+    "$PYTHON" -m fontTools.subset "${WORK}/texgyreheros-${face}.otf" \
+        --unicodes="$UNICODES" --layout-features=kern --no-hinting \
+        --name-IDs='*' --name-legacy --name-languages='*' \
+        --output-file="$out"
+    printf '  %-28s %s bytes\n' "$(basename "$out")" "$(wc -c < "$out" | tr -d ' ')"
 done
-
-printf '\nVendored in %s — commit them; the build must not need the network.\n' "$DEST"

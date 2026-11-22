@@ -7,7 +7,7 @@
 // The folder, first match wins: the one named, the one holding the
 // application (a card folder carried with its program), the last one opened,
 // otherwise a picker. Its layout is the card's: BasiliskII_Prefs, the ROMs, the
-// disk images, BasiliskII_XPRAM, shared/, okapia.log.
+// disk images, BasiliskII_XPRAM, shared/; the desktop's own log, okapia-desktop.log.
 //
 // The test mode drives the same binary without a window, on the model of the
 // Mamba project's snow-runner (docs/notes/research/desktop-host.md, "The test
@@ -21,12 +21,21 @@
 //                           {up} {down} {left} {right} {space} {delete} {backspace}
 //                           {home} {end} {pageup} {pagedown} {cmd-X}
 //   --click X,Y,MS          press and release the button at X,Y (menu points)
+//   --resize W,H,MS         the welcome window W x H points at MS, as a mouse would
 //   --screenshot FILE       a PNG of the screen when the run ends
 //   --screenshot-at MS      and another at MS, FILE with -MS before .png
 //   --datetime "YYYY-MM-DD HH:MM:SS"   the clock, fixed
 //   --seconds N             end the run after N seconds (exit code 0)
 //   --quiet                 only warnings and errors on the terminal
 //   --sound-file FILE       the sound written there, raw 44.1 kHz 16-bit stereo
+//   --welcome               the welcome page first (also: no workspace yet, or
+//                           Shift held at launch), with the folder if one is named
+//   --release PATH          the release a card is prepared with: a folder, its
+//                           manifest or a board's zip, instead of GitHub's latest
+//   --cards-images          a mounted disk image counts as an SD card (tests)
+//   --density N             device pixels per point a headless run pretends (2: Retina)
+//   --pick PATH             what the welcome page's next chooser answers ("" to
+//                           cancel), in order
 //
 // Exit codes, as snow-runner's where they mean the same: 0 the run ended as
 // asked, 1 an error, 3 the menu answered Shut Down.
@@ -71,7 +80,7 @@ enum TStepKind
 {
     StepKeys,
     StepClick,
-    StepScreenshot
+    StepResize, StepScreenshot
 };
 
 struct TStep
@@ -91,6 +100,18 @@ static bool     s_bFixedTime;
 static time_t   s_nFixedTime;
 static Uint64   s_nFixedAtMs;
 static Uint64   s_nStartMs;
+static char     s_Picks[8][1024];
+static unsigned s_nPicks, s_nPicked;
+
+bool DesktopScriptPick (char *pOut, unsigned nSize)
+{
+    if (s_nPicked >= s_nPicks)
+    {
+        return false;
+    }
+    snprintf (pOut, nSize, "%s", s_Picks[s_nPicked++]);
+    return true;
+}
 
 static TStep *NewStep (TStepKind Kind, Uint64 nAtMs)
 {
@@ -220,6 +241,11 @@ void DesktopScriptStep (void)
             DesktopPostMouse (p->nX, p->nY, -1);
             break;
 
+        case StepResize:
+            HostLog (FROM, HostLogNotice, "Script: window %dx%d", p->nX, p->nY);
+            DesktopWindowResize ((unsigned) p->nX, (unsigned) p->nY);
+            break;
+
         case StepScreenshot:
             ScreenshotNamed (p->nAtMs);
             break;
@@ -294,15 +320,6 @@ static bool ExecutableFolder (char *pOut, size_t nSize)
 #endif
 }
 
-static const char *s_pPicked;
-static bool        s_bPickerDone;
-
-static void SDLCALL Picked (void *, const char *const *ppList, int)
-{
-    s_pPicked = ppList != 0 && ppList[0] != 0 ? strdup (ppList[0]) : 0;
-    s_bPickerDone = true;
-}
-
 static bool ChooseFolder (const char *pNamed, bool bHeadless, char *pOut, size_t nSize)
 {
     char Candidate[PATH_MAX];
@@ -334,23 +351,61 @@ static bool ChooseFolder (const char *pNamed, bool bHeadless, char *pOut, size_t
             return true;
         }
     }
-    if (bHeadless)
+    // Nothing to open: the welcome page asks, in Okapia's own window.
+    (void) bHeadless;
+    return false;
+}
+
+/*
+ *  The window, as it was left: its size in points, or full screen
+ */
+static void WindowStateFile (char *pOut, size_t nSize)
+{
+    char *pPref = SDL_GetPrefPath ("Okapia", "Okapia");
+    snprintf (pOut, nSize, "%swindow", pPref != 0 ? pPref : "./");
+    SDL_free (pPref);
+}
+
+void DesktopSaveWindowState (THostWindowMode Mode, unsigned nWidth, unsigned nHeight)
+{
+    if (SDL_GetHintBoolean ("OKAPIA_HEADLESS", false))
     {
-        fprintf (stderr, "okapia: no folder named, and no window to ask in\n");
+        return;                         // a test's window is no one's
+    }
+    char Path[PATH_MAX];
+    WindowStateFile (Path, sizeof Path);
+    FILE *pFile = fopen (Path, "w");
+    if (pFile != 0)
+    {
+        // The mode, and the size it gave: a sized window is opened at it, the
+        // other two at what the screen gives then.
+        fprintf (pFile, "%s %ux%u\n", Mode == HostWindowFullScreen ? "fullscreen"
+                                     : Mode == HostWindowFillScreen ? "fill" : "window", nWidth, nHeight);
+        fclose (pFile);
+    }
+}
+
+static bool LoadWindowState (THostWindowMode *pMode, unsigned *pnWidth, unsigned *pnHeight)
+{
+    char Path[PATH_MAX];
+    WindowStateFile (Path, sizeof Path);
+    FILE *pFile = fopen (Path, "r");
+    if (pFile == 0)
+    {
         return false;
     }
-    SDL_ShowOpenFolderDialog (Picked, 0, 0, 0, false);
-    while (!s_bPickerDone)
+    char Kind[16] = "";
+    unsigned nW = 0, nH = 0;
+    const bool bOK = fscanf (pFile, "%15s %ux%u", Kind, &nW, &nH) == 3 && nW >= 640 && nH >= 480;
+    fclose (pFile);
+    if (bOK)
     {
-        SDL_Event Event;
-        SDL_WaitEventTimeout (&Event, 50);
+        *pMode = strcmp (Kind, "fullscreen") == 0 ? HostWindowFullScreen
+               : strcmp (Kind, "fill") == 0       ? HostWindowFillScreen : HostWindowSized;
+        *pnWidth = nW;
+        *pnHeight = nH;
     }
-    if (s_pPicked == 0)
-    {
-        return false;
-    }
-    snprintf (pOut, nSize, "%s", s_pPicked);
-    return true;
+    return bOK;
 }
 
 static void RememberFolder (const char *pPath)
@@ -367,6 +422,8 @@ static void RememberFolder (const char *pPath)
 
 // Never two emulators on one card (AGENTS.md): the folder is locked for as
 // long as this process runs, and a second one is turned away.
+static int s_nLockFD = -1;
+
 static bool LockFolder (const char *pPath)
 {
     // Closed on exec: reboot() starts the process again and it locks anew.
@@ -374,8 +431,17 @@ static bool LockFolder (const char *pPath)
     if (nFD < 0 || flock (nFD, LOCK_EX | LOCK_NB) != 0)
     {
         fprintf (stderr, "okapia: %s is in use by another Okapia\n", pPath);
+        if (nFD >= 0)
+        {
+            close (nFD);
+        }
         return false;
     }
+    if (s_nLockFD >= 0)
+    {
+        close (s_nLockFD);              // the workspace the welcome page left
+    }
+    s_nLockFD = nFD;
     return true;                        // held until the process ends
 }
 
@@ -394,11 +460,30 @@ static bool CopyFolder (const char *pFrom, const char *pTo)
  */
 static volatile bool s_bEngineDone;
 static int           s_nExitCode;
+static bool          s_bWelcome;
 
 // okapia_boot.cpp's loop, as the board runs it: the 68k engine first, and
 // whichever one the startup volume asks for after, by a call.
 static int SDLCALL EngineThread (void *)
 {
+    if (s_bWelcome)
+    {
+        if (!FirmwareWelcome ())
+        {
+            s_nExitCode = 0;            // Quit
+            s_bEngineDone = true;
+            return 0;
+        }
+        // Continue: on with this workspace in the same process and window, as
+        // a board goes on from its power-on to its boot menu. Its log in it,
+        // and remembered for the next start.
+        DesktopLogFollowRoot ();
+        if (!SDL_GetHintBoolean ("OKAPIA_HEADLESS", false))
+        {
+            RememberFolder (DesktopRoot ());
+        }
+        HostLog (FROM, HostLogNotice, "Okapia Workspace %s, from the welcome page", DesktopRoot ());
+    }
     bool bPowerPC = false, bSwitched = false;
     for (;;)
     {
@@ -418,10 +503,10 @@ static int SDLCALL EngineThread (void *)
             HostLog (FROM, HostLogNotice, "Handing over to the %s engine", bPowerPC ? "PowerPC" : "68k");
             continue;
         }
-        // OkapiaReboot: on the board a reset, which starts again at the 68k
-        // engine; here the process goes round, its engines kept.
-        HostLog (FROM, HostLogNotice, "Restart");
-        bPowerPC = false;
+        // OkapiaReboot: on the board a reset, and here the process started
+        // again — what a setting such as the memory needs, the Mac RAM block
+        // being claimed once per start.
+        reboot ();
     }
     s_bEngineDone = true;
     return 0;
@@ -453,10 +538,164 @@ void reboot (void)
         snprintf (Exe, sizeof Exe, "%s", s_ppArgv[0]);
     }
     const bool bHeadless = SDL_GetHintBoolean ("OKAPIA_HEADLESS", false);
+    // The menu has answered already; the new process starts what it chose.
+    setenv ("OKAPIA_MENU_ANSWERED", "1", 1);
     char *Args[] = { Exe, (char *) (bHeadless ? "--headless" : "--quiet"),
                      (char *) DesktopRoot (), 0 };
     execv (Exe, Args);
     _exit (1);
+}
+
+// Start this application again on a workspace, at its boot menu or at the
+// welcome page: a new process, as a new board would be.
+static void StartAgain (const char *pFolder, bool bWelcome)
+{
+    const bool bHeadless = SDL_GetHintBoolean ("OKAPIA_HEADLESS", false);
+    HostLog (FROM, HostLogNotice, "Okapia Workspace: %s, starting again there%s",
+             pFolder[0] != '\0' ? pFolder : "(none)", bWelcome ? " on the welcome page" : "");
+    if (!bHeadless && !bWelcome)
+    {
+        RememberFolder (pFolder);
+    }
+    DesktopLogClose ();
+    char Exe[PATH_MAX];
+    uint32_t nExe = sizeof Exe;
+#ifdef __APPLE__
+    if (_NSGetExecutablePath (Exe, &nExe) != 0)
+#endif
+    {
+        snprintf (Exe, sizeof Exe, "%s", s_ppArgv[0]);
+    }
+    unsetenv ("OKAPIA_MENU_ANSWERED");
+    char *Args[6];
+    unsigned n = 0;
+    Args[n++] = Exe;
+    Args[n++] = (char *) (bHeadless ? "--headless" : "--quiet");
+    if (bWelcome)
+    {
+        Args[n++] = (char *) "--welcome";
+    }
+    if (pFolder[0] != '\0')
+    {
+        Args[n++] = (char *) pFolder;
+    }
+    Args[n] = 0;
+    execv (Exe, Args);
+    _exit (1);
+}
+
+static bool PullThePlugAnyway (const char *pWhat);
+
+// The Display page chose another window: the output is claimed once per
+// process, so the process starts again, straight into the menu at that page.
+void DesktopStartForMenu (THostWindowMode Mode, unsigned nWidth, unsigned nHeight, int nTab)
+{
+    HostLog (FROM, HostLogNotice, "Window changed: starting again at the boot menu");
+    DesktopLogClose ();
+    char Exe[PATH_MAX];
+    uint32_t nExe = sizeof Exe;
+#ifdef __APPLE__
+    if (_NSGetExecutablePath (Exe, &nExe) != 0)
+#endif
+    {
+        snprintf (Exe, sizeof Exe, "%s", s_ppArgv[0]);
+    }
+    char Tab[8], Size[32];
+    snprintf (Tab, sizeof Tab, "%d", nTab);
+    setenv ("OKAPIA_MENU_TAB", Tab, 1);
+    unsetenv ("OKAPIA_MENU_ANSWERED");
+    // A test's window is remembered nowhere: its size goes on the command line.
+    snprintf (Size, sizeof Size, "%ux%u", nWidth, nHeight);
+    (void) Mode;
+    const bool bHeadless = SDL_GetHintBoolean ("OKAPIA_HEADLESS", false);
+    char *Args[] = { Exe, (char *) (bHeadless ? "--headless" : "--quiet"),
+                     (char *) (bHeadless ? "--size" : DesktopRoot ()),
+                     bHeadless ? Size : 0, bHeadless ? (char *) DesktopRoot () : 0, 0 };
+    execv (Exe, Args);
+    _exit (1);
+}
+
+/*
+ *  The welcome page's half of the host (okapia_host.h)
+ */
+bool HostWorkspaceSet (const char *pHostPath)
+{
+    char Real[PATH_MAX];
+    if (realpath (pHostPath, Real) == 0 || !LockFolder (Real))
+    {
+        return false;
+    }
+    DesktopSetRoot (Real);
+    DesktopRootChanged ();
+    return true;
+}
+
+void HostWorkspaceStart (void)
+{
+    // The boot menu at once, on its first page (HostMenuReopen), in an
+    // ordinary window again: the same one, given back its title bar and the
+    // boot menu's size.
+    setenv ("OKAPIA_MENU_TAB", "0", 1);
+    DesktopWelcomeEnd ();
+}
+
+void HostOpenWelcome (void)
+{
+    StartAgain (DesktopRoot (), true);
+}
+
+// Change Okapia Workspace (the File menu, Control-O): the welcome page, after
+// asking when the Macintosh runs.
+void DesktopChangeWorkspace (void)
+{
+    if (PullThePlugAnyway ("Changing the Okapia Workspace"))
+    {
+        StartAgain (DesktopRoot (), true);
+    }
+}
+
+// Asked before anything that stops a running Macintosh from the outside.
+static bool PullThePlugAnyway (const char *pWhat)
+{
+    if (!DesktopMacHasInput ())
+    {
+        return true;
+    }
+    static const SDL_MessageBoxButtonData Buttons[] =
+    {
+        { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 0, "Cancel" },
+        { 0, 1, "Continue Anyway" },
+    };
+    char Text[512];
+    snprintf (Text, sizeof Text, "%s while the Macintosh runs is pulling the plug: the volumes in use "
+              "will be repaired at the next start. Shut it down from the Special menu first.", pWhat);
+    const SDL_MessageBoxData Box =
+    {
+        SDL_MESSAGEBOX_WARNING, 0, "The Macintosh is running", Text, 2, Buttons, 0
+    };
+    int nButton = 0;
+    return SDL_ShowMessageBox (&Box, &nButton) && nButton == 1;
+}
+
+// The File menu's commands (menus_desktop.mm), on the main thread.
+void DesktopMenuRequests (void)
+{
+#ifdef __APPLE__
+    switch (DesktopTakeMenuRequest ())
+    {
+    case 1:
+        DesktopChangeWorkspace ();
+        break;
+    case 2:
+        DesktopRevealWorkspace (DesktopRoot ());
+        break;
+    case 3:
+        DesktopToggleFullScreen ();
+        break;
+    default:
+        break;
+    }
+#endif
 }
 
 // Closing the window is not pulling the plug (docs/topics/storage.md): while
@@ -491,9 +730,10 @@ static void Usage (void)
 {
     fprintf (stderr,
              "usage: okapia [--headless] [--size WxH] [--work-dir DIR] [--option]\n"
-             "              [--keys MS,SEQ]... [--click X,Y,MS]... [--screenshot FILE]\n"
+             "              [--keys MS,SEQ]... [--click X,Y,MS]... [--resize W,H,MS]... [--screenshot FILE]\n"
              "              [--screenshot-at MS]... [--datetime \"YYYY-MM-DD HH:MM:SS\"]\n"
-             "              [--seconds N] [--quiet] [--sound-file FILE] [folder]\n");
+             "              [--seconds N] [--quiet] [--sound-file FILE] [--welcome]\n"
+             "              [--pick PATH]... [folder]\n");
 }
 
 int main (int argc, char **argv)
@@ -510,6 +750,16 @@ int main (int argc, char **argv)
         if (strcmp (a, "--headless") == 0)            bHeadless = true;
         else if (strcmp (a, "--option") == 0)         bOption = true;
         else if (strcmp (a, "--quiet") == 0)          bQuiet = true;
+        else if (strcmp (a, "--welcome") == 0)        s_bWelcome = true;
+        else if (strcmp (a, "--density") == 0 && v)   { SDL_SetHint ("OKAPIA_DENSITY", v); i++; }
+        else if (strcmp (a, "--cards-images") == 0)   setenv ("OKAPIA_CARDS_IMAGES", "1", 1);
+        else if (strcmp (a, "--release") == 0 && v)   { setenv ("OKAPIA_RELEASE", v, 1); i++; }
+        else if (strcmp (a, "--pick") == 0 && v)
+        {
+            if (s_nPicks < sizeof s_Picks / sizeof s_Picks[0])
+                snprintf (s_Picks[s_nPicks++], sizeof s_Picks[0], "%s", v);
+            i++;
+        }
         else if (strcmp (a, "--size") == 0 && v)      { sscanf (v, "%ux%u", &nWidth, &nHeight); i++; }
         else if (strcmp (a, "--work-dir") == 0 && v)  { pWorkDir = v; i++; }
         else if (strcmp (a, "--sound-file") == 0 && v){ pSoundFile = v; i++; }
@@ -526,6 +776,16 @@ int main (int argc, char **argv)
             if (pComma == 0) { Usage (); return 1; }
             TStep *p = NewStep (StepKeys, strtoull (v, 0, 10));
             snprintf (p->Text, sizeof p->Text, "%s", pComma + 1);
+            i++;
+        }
+        else if (strcmp (a, "--resize") == 0 && v)
+        {
+            int w, h;
+            unsigned long long nMs;
+            if (sscanf (v, "%d,%d,%llu", &w, &h, &nMs) != 3 || w <= 0 || h <= 0) { Usage (); return 1; }
+            TStep *p = NewStep (StepResize, nMs);
+            p->nX = w;
+            p->nY = h;
             i++;
         }
         else if (strcmp (a, "--click") == 0 && v)
@@ -566,6 +826,9 @@ int main (int argc, char **argv)
         SDL_SetHint (SDL_HINT_AUDIO_DRIVER, "disk");
         SDL_SetHint (SDL_HINT_AUDIO_DISK_OUTPUT_FILE, pSoundFile);
     }
+    // Full screen over the desktop rather than in a Space of its own: at once,
+    // and its menu bar ours to show (Control-Command) and hide (a click).
+    SDL_SetHint (SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
     if (!SDL_Init (SDL_INIT_VIDEO | SDL_INIT_EVENTS))
     {
         fprintf (stderr, "okapia: SDL: %s\n", SDL_GetError ());
@@ -574,13 +837,29 @@ int main (int argc, char **argv)
     s_nStartMs = SDL_GetTicks ();
     s_nFixedAtMs = s_nStartMs;
 
-    char Folder[PATH_MAX];
-    if (!ChooseFolder (pFolder, bHeadless, Folder, sizeof Folder))
+    char Folder[PATH_MAX] = "";
+#ifdef __APPLE__
+    // Shift held as the application opens: the welcome page, whatever was
+    // opened last.
+    if (!bHeadless && pFolder == 0 && DesktopShiftHeld ())
     {
-        SDL_Quit ();
-        return 1;
+        s_bWelcome = true;
     }
-    if (pWorkDir != 0)
+#endif
+    if (!(s_bWelcome && pFolder == 0) && !ChooseFolder (pFolder, bHeadless, Folder, sizeof Folder))
+    {
+        if (pFolder != 0)
+        {
+            SDL_Quit ();
+            return 1;
+        }
+        s_bWelcome = true;              // nothing to open: the welcome page
+    }
+    if (Folder[0] == '\0')
+    {
+        // No workspace: the welcome page, its log on the terminal only.
+    }
+    else if (pWorkDir != 0)
     {
         char Work[PATH_MAX];
         if (!CopyFolder (Folder, pWorkDir) || realpath (pWorkDir, Work) == 0)
@@ -590,11 +869,13 @@ int main (int argc, char **argv)
         }
         snprintf (Folder, sizeof Folder, "%s", Work);
     }
-    else
+    else if (!bHeadless && !s_bWelcome)
     {
+        // A window's folder only: a test run must not become the folder the
+        // application opens next time (it did, and a user found a test's card).
         RememberFolder (Folder);
     }
-    if (!LockFolder (Folder))
+    if (Folder[0] != '\0' && !LockFolder (Folder))
     {
         return 1;
     }
@@ -603,8 +884,16 @@ int main (int argc, char **argv)
     DesktopLogOpen (bQuiet);
     HostLog (FROM, HostLogNotice, "Okapia %s (desktop, %s), built " __DATE__ " " __TIME__,
              OKAPIA_VERSION, SDL_GetPlatform ());
-    HostLog (FROM, HostLogNotice, "Card folder %s", Folder);
+    HostLog (FROM, HostLogNotice, "Card folder %s%s", Folder[0] != '\0' ? Folder : "(none)",
+             s_bWelcome ? ", welcome page" : "");
 
+    THostWindowMode Mode = HostWindowSized;
+    if ((nWidth == 0 || nHeight == 0) && !bHeadless)
+    {
+        // As the Display page left it: a size, or the screen filled, or full
+        // screen — the output is that, and the Macintosh is offered it.
+        LoadWindowState (&Mode, &nWidth, &nHeight);
+    }
     if (nWidth == 0 || nHeight == 0)
     {
         // The Pi's menu at a size a laptop holds comfortably, in points.
@@ -621,10 +910,21 @@ int main (int argc, char **argv)
             }
         }
     }
-    if (!DesktopWindowOpen (nWidth, nHeight, bHeadless))
+    if (s_bWelcome)
+    {
+        // Its own window first; the boot menu's, this one, once it is done.
+        DesktopWindowForWelcome (Mode, nWidth, nHeight);
+    }
+    if (!DesktopWindowOpen (nWidth, nHeight, bHeadless, Mode))
     {
         return 1;
     }
+#ifdef __APPLE__
+    if (!bHeadless)
+    {
+        DesktopMenusToControl ();
+    }
+#endif
     if (bOption)
     {
         DesktopHoldModifiers (ModOption);

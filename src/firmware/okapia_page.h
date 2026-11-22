@@ -41,6 +41,7 @@ struct TPage
     int       nTabs;
     int       nPower;
     int       nPram;
+    int       nWorkspace;               // a desktop's Okapia Workspace button, or -1
     int       nStart;
     int       nNote;
     int       nBootMenu;
@@ -68,8 +69,8 @@ enum TPageTab
     PageTabSystem,
     PageTabSettings,
     PageTabNetwork,
-    PageTabInformation,
     PageTabDisplay,
+    PageTabInformation,
     PageTabJournal,
     PageTabCount
 };
@@ -84,6 +85,7 @@ enum TPageAnswer
     PageAnswerShutDown,                 // asks, and offers Restart as well
     PageAnswerForgetPram,
     PageAnswerBootMenu,                 // the footer's tick box was pressed
+    PageAnswerWorkspace,                // a desktop's: the welcome page, to change workspace
     PageAnswerTab       = 1100          // + the TPageTab now in front
 };
 
@@ -102,6 +104,12 @@ void PageChromeBootMenu (bool bOn, bool bFocus);
 // The grey line under the box, saying how to ask for the menu: Alt on the
 // board's PC keyboard, Option on a desktop Mac. 0 for the board's.
 void PageChromeBootMenuHint (const char *pHint);
+// Whether the footer offers the Okapia Workspace button (the logo), beside the
+// parameter RAM and the power: a desktop's, which has more than one card.
+// A tab left out of the strip (a desktop's Network: its one setting is on the
+// Settings page). The others keep their order.
+void PageChromeHideTab (TPageTab Tab, bool bHidden);
+void PageChromeWorkspace (bool bOffered);
 
 // What the last PageChromeSet said about restarting. Saving and restarting
 // needs no startup volume, so a page that greys Start for want of one asks
@@ -123,12 +131,18 @@ int PageChromeAnswer (int nIndex);
 // none of them may choose their own: three dialogues of three sizes read as
 // three programs, while one frame whose contents change reads as pages of one.
 // An alert is the exception, and it earns it by interrupting.
+// The scale every page takes, in sixteenths, instead of the one the surface's
+// size gives; 0 to follow the surface again. A window the person resizes keeps
+// its text the same size.
+void PageFixScale (unsigned nScale16);
+
 static const unsigned PAGE_WIDTH  = 608;
 static const unsigned PAGE_HEIGHT = 458;
 
 // Centres a dialogue of nWide by nHigh design units on the surface, puts the
 // title in it and rules under it, and leaves the rest to LayoutTop/Bottom
-// through pPage->Layout.
+// through pPage->Layout. nWide 0: the dialogue is the whole surface (a
+// desktop's welcome window, whose edge is the page's frame).
 void PageBegin (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nMax,
                 unsigned nWide, unsigned nHigh, const char *pTitle);
 void PageBeginAlert (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nMax,

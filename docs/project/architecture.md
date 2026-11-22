@@ -194,7 +194,7 @@ src/hosts/circle/firmware/ the firmware's Circle side: host answers, USB bridge,
 src/hosts/desktop/   the desktop host (SDL3, POSIX), its Circle shim, entry point and test mode
 src/firmware/        the boot menu, pure: no Circle type in it
 src/kernel/          the Okapia kernel: Makefile, both CKernel classes, okapia_boot
-assets/              fonts (BDF), icons, strings.tsv — sources of generated tables
+assets/              fonts (outlines), icons, strings.tsv — sources of generated tables
 scripts/             build, run, test, card and generator scripts
 tests/host/          host-side checks and renders
 tests/smoke/         the Phase 1 Circle smoke kernel (C++ exceptions, frame buffer, SD)

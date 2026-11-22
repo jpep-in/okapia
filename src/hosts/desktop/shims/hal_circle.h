@@ -35,6 +35,8 @@ typedef void TBoardTickHandler (void);
 bool BoardFineTick (unsigned nPeriodUsec, TBoardTickHandler *pHandler);
 void BoardWatchClock (bool bReport);
 void BoardLogFlush (void);
+void BoardOutputShows (unsigned nX, unsigned nY, unsigned nWidth, unsigned nHeight,
+                       unsigned nScale);
 void BoardSerialLog (bool bOn);
 void BoardSerialReplay (void);
 class CSoundBaseDevice;

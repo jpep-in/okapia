@@ -18,7 +18,9 @@ GEN      = ../../../../build/generated
 # The build's version, as in src/kernel/Makefile: hal_circle.cpp logs it.
 $(shell ../../../../scripts/gen-version.sh $(GEN)/okapia_version.h)
 FONTDIR  = ../../../../assets/fonts
-BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR12-75.bdf $(FONTDIR)/helvB12-75.bdf $(FONTDIR)/helvR14-75.bdf $(FONTDIR)/helvB14-75.bdf $(FONTDIR)/helvR24-75.bdf $(FONTDIR)/helvB24-75.bdf $(FONTDIR)/helvR14-100.bdf $(FONTDIR)/helvB14-100.bdf $(FONTDIR)/helvR24-100.bdf $(FONTDIR)/helvB24-100.bdf
+# The faces: TeX Gyre Heros, regular and bold (scripts/fetch-fonts.sh), carried
+# whole as bytes and rasterised at run time (src/firmware/okapia_font_vector.cpp).
+OTF      = $(FONTDIR)/texgyreheros-regular.otf $(FONTDIR)/texgyreheros-bold.otf
 
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp)
 FIRMWARE_OBJS = $(addprefix obj/,$(notdir $(FIRMWARE_SRCS:.cpp=.o)))
@@ -36,16 +38,14 @@ OBJS = obj/specimen_main.o obj/specimen_kernel.o obj/okapia_input.o obj/hal_circ
 
 include $(CIRCLEHOME)/Rules.mk
 
-INCLUDE := -I$(FIRMWARE) -I$(COMMON) -I$(CIRCLE) -I$(GEN) $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
+INCLUDE := -I$(FIRMWARE) -I$(COMMON) -I$(CIRCLE) -I$(GEN) -I../../../../external/stb $(CIRCLE_STDLIB_INCLUDES) $(INCLUDE)
 LIBS := $(CIRCLE_STDLIB_LIBS)
 
-# The fonts are converted from Circle's own console faces rather than typed out,
-# the same habit as scripts/gen-keycodes.py for the key table. When a
-# proportional face is adopted, only the generator changes.
+# The outline faces, carried as bytes (scripts/gen-blob.py).
 FONT_SRC = $(GEN)/okapia_font_data.cpp
-$(FONT_SRC): ../../../../scripts/gen-font.py $(BDF)
+$(FONT_SRC): ../../../../scripts/gen-blob.py $(OTF)
 	@mkdir -p $(GEN)
-	@../../../../scripts/gen-font.py $@ $(BDF)
+	@../../../../scripts/gen-blob.py $@ OkapiaOutlineRegular $(word 1,$(OTF)) OkapiaOutlineBold $(word 2,$(OTF))
 
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
 ICONDIR  = ../../../../assets/icons

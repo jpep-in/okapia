@@ -10,3 +10,9 @@
 [submodule "external/macemu-jit"]
 	path = external/macemu-jit
 	url = https://github.com/rcarmo/macemu-jit.git
+[submodule "external/stb"]
+	path = external/stb
+	url = https://github.com/nothings/stb.git
+[submodule "external/miniz"]
+	path = external/miniz
+	url = https://github.com/richgel999/miniz.git

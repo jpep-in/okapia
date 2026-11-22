@@ -63,6 +63,10 @@ void OkapiaPaintStop (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 // the case is taller than it is wide, so the rectangle's width is a bound.
 void OkapiaPaintLogo (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
 
+// A loudspeaker sending out three waves, outlined: the welcome page's Listen,
+// which plays a ROM's startup chime.
+void OkapiaPaintSpeaker (TSurface *, const TRect &, TOkapiaColor, TOkapiaColor);
+
 /*
  *  The marks a Wi-Fi network wears in a list
  *

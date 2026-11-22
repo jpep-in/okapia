@@ -81,9 +81,6 @@ struct TNetwork
     // The kind running on this board right now, NetworkOff when none. Circle
     // cannot give a network device back, so changing it means restarting.
     unsigned nRunning;
-    // A desktop's network: the wired kind is the host's, shared by NAT, and the
-    // page says so instead of speaking of a cable.
-    bool bShared;
 
     TNetworkSeen  Seen[NETWORK_SEEN];   // strongest first, one line per name
     unsigned      nSeen;

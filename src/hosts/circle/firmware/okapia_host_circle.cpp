@@ -165,6 +165,11 @@ const char *HostMachineName (void)
     return CMachineInfo::Get ()->GetMachineName ();
 }
 
+bool HostMenuAnswered (void)
+{
+    return false;
+}
+
 void HostMenuPrelude (void)
 {
     // Before the window, once per power-on, and only when `netbench` asks:
@@ -240,6 +245,7 @@ void HostOutputDescribe (THostOutputFacts *pFacts)
     pFacts->nPreferredHeight = Monitor.nPreferredHeight;
     snprintf (pFacts->Monitor, sizeof pFacts->Monitor, "%s", Monitor.Name);
     pFacts->bHdmiDirectives = HasHdmiDirectives (&pFacts->bConfigAvailable);
+    pFacts->nDensity        = 1;          // the monitor shows the output as it is
 }
 
 /*
@@ -272,6 +278,11 @@ bool HostCardSpace (unsigned long *pTotalMB, unsigned long *pFreeMB)
     *pTotalMB = (unsigned long) (pFS->n_fatent - 2) * pFS->csize / nSectorsPerMB;
     *pFreeMB  = (unsigned long) nFreeClusters * pFS->csize / nSectorsPerMB;
     return true;
+}
+
+const char *HostCardLocation (void)
+{
+    return 0;
 }
 
 bool HostFileExists (const char *pPath)
@@ -324,6 +335,40 @@ THostRemove HostFileRemove (const char *pPath)
     const FRESULT nResult = f_unlink (Full);
     return nResult == FR_OK ? HostRemoved : nResult == FR_NO_FILE ? HostAbsent : HostRemoveFailed;
 }
+
+/*
+ *  The Okapia Workspace: a board has its card, and nothing else
+ */
+bool HostHasWelcome (void)                                  { return false; }
+const char *HostLanguage (void)                             { return 0; }
+bool HostPick (THostPick, const char *, char *, unsigned)   { return false; }
+bool HostWorkspaceSet (const char *)                        { return false; }
+bool HostCopyToCard (const char *, char *, unsigned)        { return false; }
+void HostWorkspaceStart (void)                              {}
+void HostOpenWelcome (void)                                 {}
+bool HostChimeKnown (const char *)                          { return false; }
+bool HostChimeListen (const char *)                         { return false; }
+unsigned HostCards (TCardVolume *, unsigned)                { return 0; }
+bool HostVolumeOf (const char *, TCardVolume *)             { return false; }
+void HostTidy (const char *)                                {}
+// A board does not install itself.
+void HostRelease (THostRelease *pOut)                       { memset (pOut, 0, sizeof *pOut);
+                                                              pOut->State = HostReleaseNone; }
+void HostCardPlan (const char *, THostCardPlan *pOut)       { memset (pOut, 0, sizeof *pOut); }
+bool HostPrepareStart (const char *)                        { return false; }
+void HostPrepareStatus (THostPrepare *pOut)                 { memset (pOut, 0, sizeof *pOut); }
+
+// The output is the monitor's, chosen by the firmware and config.txt.
+bool HostWindowDescribe (THostWindow *)                     { return false; }
+void HostWindowApply (THostWindowMode, unsigned, unsigned, int) {}
+int HostMenuReopen (void)                                   { return -1; }
+// The output is the screen's, claimed once: nothing to resize or drag.
+// No system draws a pointer here: the menu draws its own (okapia_screen.cpp).
+bool HostPointer (bool)                                      { return false; }
+bool HostOutputResizable (unsigned *, unsigned *)            { return false; }
+bool HostOutputResized (TSurface *)                         { return false; }
+void HostOutputExtend (TSurface *, unsigned)                 {}
+void HostOutputBands (unsigned, unsigned, unsigned)         {}
 
 /*
  *  What this board offers

@@ -192,6 +192,15 @@ void BoardWatchClock (bool bReport);
  */
 void BoardLogFlush (void);
 
+// Where the compositor put the Macintosh's screen in the output at each mode
+// change: its origin in output pixels, its own size, and the whole factor it
+// was scaled by. A desktop shows that rectangle alone while the Macintosh runs,
+// at the Mac's own size magnified by the largest whole number of device pixels
+// (2/3 of a Retina screen at three device pixels a Mac pixel); the board's
+// output is scanned as it is, so the board ignores it.
+void BoardOutputShows (unsigned nX, unsigned nY, unsigned nWidth, unsigned nHeight,
+                       unsigned nScale);
+
 // COkapiaBoard::SerialLog for a caller that has no board in hand. Under QEMU,
 // whose serial port costs nothing and whose log the scripts read, it never
 // shuts: see SerialLogWanted() in okapia_circle.h.

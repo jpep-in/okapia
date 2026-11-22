@@ -17,6 +17,7 @@
 #ifndef _okapia_host_h
 #define _okapia_host_h
 
+#include "okapia_card_check.h"
 #include "okapia_event.h"
 #include "okapia_gfx.h"
 #include "okapia_network.h"
@@ -84,6 +85,11 @@ const char *HostMachineName (void);
 // Once per power-on, before the window: what the host wants done with nothing
 // else running (the Pi's network bench, when asked for).
 void HostMenuPrelude (void);
+// True once when this start follows a start the menu already decided — a
+// desktop that started itself again because the PowerPC engine cannot go round
+// in place, or because a setting asked for it. The menu then does not open
+// again for the same answer, and the startup volume starts. False on a board.
+bool HostMenuAnswered (void);
 
 /*
  *  The picture
@@ -101,8 +107,57 @@ struct THostOutputFacts
     char     Monitor[24];                           // its name, "" when unknown
     bool     bConfigAvailable;                      // the Pi's config.txt exists
     bool     bHdmiDirectives;                       // and sets the mode itself
+    // Device pixels per output pixel: 2 on a Retina desktop, whose output is
+    // in points; 0 or 1 on a board. The Macintosh's screen is magnified by a
+    // whole number of device pixels (desktop.md), which the Display page says.
+    unsigned nDensity;
 };
 void HostOutputDescribe (THostOutputFacts *pFacts);
+
+// A desktop's window, which the Display page sizes. The output is fixed for the
+// life of a process (the Macintosh is offered it), so a new size starts the
+// process again, at the boot menu, on page nTab.
+enum THostWindowMode
+{
+    HostWindowSized,                    // nWidth × nHeight points
+    HostWindowFillScreen,               // as large as the screen allows, title bar kept
+    HostWindowFullScreen                // the whole screen
+};
+struct THostWindow
+{
+    THostWindowMode Mode;
+    unsigned nWidth, nHeight;           // the output now, in points
+    unsigned nFillWidth, nFillHeight;   // what Fill the screen would give
+    unsigned nScreenWidth, nScreenHeight;
+};
+bool HostWindowDescribe (THostWindow *pWindow);     // false: a board's output
+void HostWindowApply (THostWindowMode Mode, unsigned nWidth, unsigned nHeight, int nTab);
+// The welcome page's window, which the person sizes with the mouse: the page
+// fills it, and when the page needs more height than the window has, the
+// output grows taller than the window and the host shows a slice of it with a
+// scroller of its own (pointer coordinates are the output's). A board's output
+// never changes: false, and the calls below do nothing.
+//   Resizable: the largest output the host can hold.
+//   Resized:   true once after the window changed; *pSurface takes the
+//              window's size (its height, the shortest the output may be).
+//   Extend:    the output's height, at least the window's, at most the
+//              largest; 0 asks for exactly the window, scrolled to the top.
+//   Bands:     the output's first nTop rows (the page's header, which also
+//              moves the window) and last nBottom rows (its buttons) stay in
+//              place; only what lies between them scrolls, its scroller kept
+//              nRight columns (the page's frame) from the right edge.
+// The pointer over the menu, which only a board's menu draws itself: a
+// desktop's system shows its own, its arrow or its text beam as asked, and
+// answers true; a board answers false and the menu draws one into the output.
+bool HostPointer (bool bBeam);
+
+bool HostOutputResizable (unsigned *pnMaxWidth, unsigned *pnMaxHeight);
+bool HostOutputResized (TSurface *pSurface);
+void HostOutputExtend (TSurface *pSurface, unsigned nHeight);
+void HostOutputBands (unsigned nTop, unsigned nBottom, unsigned nRight);
+// The page to open the boot menu on when the host started again for it (a new
+// window size), at once and without the power-on window; -1 otherwise. Once.
+int HostMenuReopen (void);
 
 /*
  *  Input, for the menu
@@ -125,6 +180,9 @@ bool     HostQuitRequested (void);
  */
 // Its size and free space in megabytes; false when unknown.
 bool HostCardSpace (unsigned long *pTotalMB, unsigned long *pFreeMB);
+// Where the card is, for the Information page: a desktop's Okapia Workspace
+// path. 0 on a board, whose card is just the card.
+const char *HostCardLocation (void);
 bool HostFileExists (const char *pPath);
 // A new file of its whole size, allocated before anything is written into it.
 bool HostFileCreate (const char *pPath, unsigned long nMB);
@@ -135,6 +193,101 @@ enum THostRemove
     HostRemoveFailed
 };
 THostRemove HostFileRemove (const char *pPath);
+
+/*
+ *  The Okapia Workspace, on a host that has more than one (a desktop)
+ *
+ *  The welcome page (FirmwareWelcome) asks for these; a board has its card and
+ *  answers false or nothing to all of them.
+ */
+// Whether the boot menu offers the welcome page, to change workspace.
+bool HostHasWelcome (void);
+// The language to speak before any workspace says one: "fr", "en", or 0.
+const char *HostLanguage (void);
+enum THostPick
+{
+    HostPickWorkspace,                  // an existing folder
+    HostPickWorkspaceNew,               // a new one: its place and name, the folder not made yet
+    HostPickRom,                        // a file
+    HostPickDisk                        // a disk image or a CD image
+};
+// The host's own chooser, titled. A host path, or false when cancelled.
+bool HostPick (THostPick What, const char *pTitle, char *pOut, unsigned nSize);
+// The card is now this folder: CardPath() and HostCardLocation() follow.
+bool HostWorkspaceSet (const char *pHostPath);
+// A file brought into the card, under its own name or a free one: answers the
+// card path ("/Quadra 650.rom"). The whole file, as on the card.
+bool HostCopyToCard (const char *pHostPath, char *pCardPath, unsigned nSize);
+// Leave the welcome page for the workspace's boot menu: the caller goes on to
+// start the workspace as any start does, in the same window, and the boot menu
+// opens without the power-on window (HostMenuReopen answers its first page).
+void HostWorkspaceStart (void);
+// From the boot menu: the welcome page, with the workspace in hand.
+void HostOpenWelcome (void);
+// A ROM's startup chime, read from it as the board plays it (rom_chime):
+// whether this reader knows one in the file at that card path, and playing it
+// now, in place of anything playing.
+bool HostChimeKnown (const char *pCardPath);
+bool HostChimeListen (const char *pCardPath);
+// The SD cards and other removable volumes mounted now, for the welcome page's
+// Carte SD (TCardVolume, okapia_card_check.h); and what any folder's volume
+// is. A board has its card and lists nothing.
+unsigned HostCards (TCardVolume *pList, unsigned nMax);
+bool     HostVolumeOf (const char *pHostPath, TCardVolume *pVolume);
+// After the welcome page wrote a file at this card path: what the host left
+// beside it goes (macOS keeps a file's extended attributes in "._name" on a
+// FAT card, the installer's drop_appledouble).
+void     HostTidy (const char *pCardPath);
+
+/*
+ *  The release of Okapia a card can be prepared with, and preparing it
+ *  (a desktop's: src/hosts/desktop/install.h). Looked for in the background
+ *  when the welcome page opens; polled by its Tick.
+ */
+enum THostReleaseState
+{
+    HostReleaseLooking,
+    HostReleaseReady,                   // its version and boards are known
+    HostReleaseNone,                    // the repository has published nothing yet
+    HostReleaseFailed                   // offline, or not readable: Why says
+};
+static const unsigned HOST_BOARDS = 8;
+struct THostRelease
+{
+    THostReleaseState State;
+    char     Version[32];               // "26.11.1"
+    char     Why[160];
+    unsigned nBoards;
+    char     BoardId[HOST_BOARDS][16];  // "pi4"
+    char     BoardName[HOST_BOARDS][48];// "Raspberry Pi 4"
+};
+void HostRelease (THostRelease *pOut);
+
+// What the workspace, as a card for this board, holds against the release:
+// the version installed ("" none), whether it is that release, and what
+// preparing it would write.
+struct THostCardPlan
+{
+    char               Installed[32];
+    bool               bUpToDate;
+    unsigned long long nBytes;
+    bool               bKnown;          // false while there is no release to compare with
+    bool               bRefused;        // the release needs a newer Okapia: update the app first
+};
+void HostCardPlan (const char *pBoardId, THostCardPlan *pOut);
+
+// Puts the release for this board onto the workspace, in the background.
+bool HostPrepareStart (const char *pBoardId);
+enum THostPrepareState { HostPrepareIdle, HostPrepareFetching, HostPrepareWriting, HostPrepareDone,
+                         HostPrepareFailed };
+struct THostPrepare
+{
+    THostPrepareState State;
+    char     Name[96];                  // the file being fetched or written
+    unsigned nPercent;
+    char     Why[160];
+};
+void HostPrepareStatus (THostPrepare *pOut);
 
 /*
  *  What this host offers

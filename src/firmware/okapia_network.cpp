@@ -238,7 +238,7 @@ static void StatusText (const TNetwork *pNetwork)
         if (pNetwork->State == NetStateCableUp)
         {
             unsigned n = StrAppend (s_Status, sizeof s_Status, 0,
-                                    Str (pNetwork->bShared ? StrNetStSharedUp : StrNetStCableUp));
+                                    Str (StrNetStCableUp));
             if (pNetwork->nMbps != 0)
             {
                 n = StrAppend (s_Status, sizeof s_Status, n, " · ");
@@ -424,7 +424,7 @@ void NetworkDraw (TSurface *pSurface, TNetwork *pNetwork)
                   L.nWidth, pTheme->M.nLineHeight);
         PageAdd (&s_Page, WidgetLabel, L, Str (StrNetConnection), StateNormal);
         const TStringId Kinds[NetworkKindCount] =
-            { StrNetOff, pNetwork->bShared ? StrNetShared : StrNetCable, StrNetWifi };
+            { StrNetOff, StrNetCable, StrNetWifi };
         for (unsigned i = 0; i < NetworkKindCount; i++)
         {
             const unsigned nWide = pTheme->M.nCheckSize + pTheme->M.nGap

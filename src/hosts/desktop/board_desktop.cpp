@@ -259,6 +259,11 @@ bool BoardFineTick (unsigned nPeriodUsec, TBoardTickHandler *pHandler)
 
 void BoardWatchClock (bool)      {}
 void BoardLogFlush (void)        {}   // every line is in the file already
+void BoardOutputShows (unsigned nX, unsigned nY, unsigned nWidth, unsigned nHeight,
+                       unsigned nScale)
+{
+    DesktopMacArea (nX, nY, nWidth, nHeight, nScale);
+}
 void BoardSerialLog (bool)       {}
 void BoardSerialReplay (void)    {}
 void BoardPowerOff (void)        {}

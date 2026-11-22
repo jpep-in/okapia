@@ -87,6 +87,28 @@ static TBox InkBox (const TSurface *pSurface, const TRect &rWindow)
     return b;
 }
 
+// Text's ink as the eye takes it: a pixel at least half covered. The faces are
+// antialiased, and a fringe a quarter grey is not where a stroke ends.
+static TBox InkBoxDark (const TSurface *pSurface, const TRect &rWindow)
+{
+    TBox b = { (int) pSurface->nWidth, (int) pSurface->nHeight, -1, -1 };
+    for (int y = rWindow.nY; y < rWindow.nY + (int) rWindow.nHeight; y++)
+    {
+        for (int x = rWindow.nX; x < rWindow.nX + (int) rWindow.nWidth; x++)
+        {
+            if ((PixelAt (pSurface, x, y) & 0xFF) >= 0x80)
+            {
+                continue;
+            }
+            if (x < b.nLeft)   b.nLeft = x;
+            if (x > b.nRight)  b.nRight = x;
+            if (y < b.nTop)    b.nTop = y;
+            if (y > b.nBottom) b.nBottom = y;
+        }
+    }
+    return b;
+}
+
 static void Expect (const char *pWhat, int nGot, int nWant)
 {
     const bool bOK = nGot == nWant;
@@ -196,12 +218,17 @@ static void CheckScale (unsigned nScale16)
     s = Blank ();
     T.DrawButton (&s, Button, "Hom", StateNormal, &T);
     const TRect Inside = RectInset (Button, (int) T.M.nStroke + 2, (int) T.M.nStroke + 2);
-    const TBox b = InkBox (&s, Inside);
+    const TBox b = InkBoxDark (&s, Inside);
     printf ("  button — text\n");
     Expect ("air above minus below",
             (b.nTop - Button.nY) - (Button.nY + (int) Button.nHeight - 1 - b.nBottom), 0);
-    Expect ("air left minus right",
-            (b.nLeft - Button.nX) - (Button.nX + (int) Button.nWidth - 1 - b.nRight), 0);
+    // Across, the button's width is the caller's and the ink's is the face's:
+    // when they differ by an odd number of pixels the remainder cannot be split,
+    // and one side has the extra pixel. Anything more is a centring fault.
+    const int nAcross = (b.nLeft - Button.nX) - (Button.nX + (int) Button.nWidth - 1 - b.nRight);
+    const int nOdd = ((int) Button.nWidth - (b.nRight - b.nLeft + 1)) % 2 != 0;
+    Expect ("air left minus right, beyond an odd pixel",
+            nAcross == 0 || (nOdd && (nAcross == 1 || nAcross == -1)) ? 0 : nAcross, 0);
 }
 
 // Nothing a screen draws may stray into the dialogue's frame or its margin.

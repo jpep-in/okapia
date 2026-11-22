@@ -23,7 +23,9 @@
 - **Resolutions** are chosen in the Mac's **Monitors** control panel (Mac OS 7.5 and later list them). Both
   engines offer the same sizes, those that fit the output unscaled: 512×384, 640×480, 800×600, 1024×768,
   1152×870, 1280×720, 1280×960, 1280×1024, 1600×900, 1600×1200, 1920×1080, 1920×1200, 2560×1440, plus the
-  display's own size and the `screen` preference's when not listed. All six depths up to what 16 MB holds.
+  display's own size, the `screen` preference's, half the display (width down to a multiple of 8: 960×540 on
+  1080p, 752×491 on a 1512×982 desktop screen, every Mac pixel 2×2) and two thirds of it (1008×654 there: three
+  device pixels a Mac pixel on a Retina screen, the sharp size between the two) when not listed. All six depths up to what 16 MB holds.
 - **Display in the boot menu** shows the output frame buffer, the monitor's preferred EDID mode, and whether the
   card's top-level `config.txt` contains HDMI mode directives. Its **Monitors** column controls which sizes the
   Mac is offered. Its **Startup** column sets the initial size for the next Macintosh start. Sizes which exceed
@@ -66,9 +68,12 @@ the wrong colours on the Pi until then.
 ### The mode list
 
 `VideoScreenSizeList()` (`video_sizes_okapia.cpp`, pure, host-tested) builds the list: the thirteen standard sizes,
-then the display's size and the preference's, each only if not listed. Each engine supplies its identifiers:
-Basilisk numbers `0x80…0x8C` then `0x8D`, `0x8E`; SheepShaver keeps upstream's Apple names where they exist and
-numbers the rest past `APPLE_CUSTOM` (`patches/macemu/0011`). **A fixed size keeps its identifier whatever monitor
+then the display's size, the preference's, half the display (`VideoHalfSize`) and two thirds
+(`VideoTwoThirdsSize`), each only if not listed. Each engine supplies its identifiers: Basilisk numbers
+`0x80…0x8C` then `0x8D`, `0x8E`, `0x8F`, and `0x96` after the custom slots; SheepShaver keeps upstream's Apple
+names where they exist and numbers the rest past `APPLE_CUSTOM` (`patches/macemu/0011`), half and two thirds after
+the six custom slots so theirs do not move. That is twenty-three sizes at six depths: 0011 sizes SheepShaver's
+`VModes` at 139 entries, exactly that and the end marker. **A fixed size keeps its identifier whatever monitor
 is plugged in**, because Mac OS 7.5 and later store the Monitors choice by identifier in the Preferences folder, not
 in PRAM.
 

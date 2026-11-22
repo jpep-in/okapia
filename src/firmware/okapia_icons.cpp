@@ -9,6 +9,8 @@
 #include "okapia_font.h"
 #include "okapia_logo_shape.h"
 
+#include <math.h>
+
 /*
  *  Chrome icons, painted from the rectangle they are given
  *
@@ -257,24 +259,10 @@ void OkapiaPaintInfo (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
     // weight: the mark already sits in a button, and a button inside a circle
     // inside a button is two frames doing one frame's work.
     //
-    // The largest face that fits the height with a little air, asked for
-    // largest first — the same rule the caution mark uses, for the same reason:
-    // a letter chosen by a fraction of the height reads well at one size and
-    // badly at the next.
+    // The face whose capital fills the height with a little air. Drawn at that
+    // height, not chosen from sizes that exist: the letter is the mark.
     const int nRoom = (int) rRect.nHeight - (int) rRect.nHeight / 5;
-    const TOkapiaFont *pFace = 0;
-    for (int i = (int) OkapiaFaceCount - 1; i >= 0; i--)
-    {
-        if ((int) OkapiaFaces[i].pBold->nCapHeight <= nRoom)
-        {
-            pFace = OkapiaFaces[i].pBold;
-            break;
-        }
-    }
-    if (pFace == 0)
-    {
-        pFace = OkapiaFaces[0].pBold;   // the smallest there is, rather than nothing
-    }
+    const TOkapiaFont *pFace = FontBoldWithCap (nRoom > 4 ? (unsigned) nRoom : 4);
 
     // On the cap height, so it sits where the other marks sit: an "i" has a dot
     // above its cap and centring the whole ascent would push the stem low.
@@ -446,13 +434,17 @@ void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor In
     // that can sit centred" answers one rung higher than it did.
     const int nMiddle = rRect.nY + H * 60 / 100;
 
+    // The mark's width follows its capital: measured once on a large face and
+    // scaled, so each candidate height is judged without drawing a face for it.
+    const TOkapiaFont *pRef = FontBoldWithCap (32);
+    const float fInkPerCap = pRef->nCapHeight != 0
+                           ? (float) GfxTextInkWidth (pRef, "!") / (float) pRef->nCapHeight : 0.2f;
+
     const TOkapiaFont *pFace = 0;
     int nTop = 0;
-    for (int i = (int) OkapiaFaceCount - 1; i >= 0; i--)
+    for (int nCap = nLowest - rRect.nY; nCap >= 4; nCap--)
     {
-        const TOkapiaFont *p = OkapiaFaces[i].pBold;
-        const int nCap = (int) p->nCapHeight;
-        const int nInk = (int) GfxTextInkWidth (p, "!");
+        const int nInk = (int) ((float) nCap * fInkPerCap + 0.5f);
 
         // The highest the mark may start. The interior's half-width at a height
         // y is the outer taper less the stroke measured *across* rather than
@@ -468,25 +460,22 @@ void OkapiaPaintCaution (TSurface *pSurface, const TRect &rRect, TOkapiaColor In
         const int y = nMiddle - nCap / 2;
         if (y >= nHighest && y <= nLatest)
         {
-            pFace = p;
+            pFace = FontBoldWithCap ((unsigned) nCap);
             nTop  = y;
             break;
         }
     }
     // Nothing could be centred: take the largest that fits at all rather than
     // leave the triangle empty, and let it sit where it can.
-    for (int i = (int) OkapiaFaceCount - 1; pFace == 0 && i >= 0; i--)
+    for (int nCap = nLowest - rRect.nY; pFace == 0 && nCap >= 4; nCap--)
     {
-        const TOkapiaFont *p = OkapiaFaces[i].pBold;
-        const int nCap = (int) p->nCapHeight;
-        const int nInk = (int) GfxTextInkWidth (p, "!");
+        const int nInk = (int) ((float) nCap * fInkPerCap + 0.5f);
         const int nHighest = W > 0
             ? rRect.nY + (nInk / 2 + t * 9 / 8 + 2) * 2 * H / W
             : rRect.nY;
-        const int nLatest = nLowest - nCap;
-        if (nHighest <= nLatest)
+        if (nHighest <= nLowest - nCap)
         {
-            pFace = p;
+            pFace = FontBoldWithCap ((unsigned) nCap);
             nTop  = nHighest;
         }
     }
@@ -549,4 +538,67 @@ void OkapiaPaintLogo (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink,
                         (unsigned) (nX + Round ((LOGO_SCREEN_X + LOGO_SCREEN_W) * kx) - nSX),
                         (unsigned) (nY + Round ((LOGO_SCREEN_Y + LOGO_SCREEN_H) * ky) - nSY)),
                   (unsigned) Round (LOGO_SCREEN_RADIUS * k), Ink);
+}
+
+// Distance from (x, y) to the segment from (ax, ay) to (bx, by).
+static float SegmentDistance (float x, float y, float ax, float ay, float bx, float by)
+{
+    const float dx = bx - ax, dy = by - ay;
+    const float l2 = dx * dx + dy * dy;
+    float u = l2 > 0.0f ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0.0f;
+    u = u < 0.0f ? 0.0f : u > 1.0f ? 1.0f : u;
+    const float ex = ax + u * dx - x, ey = ay + u * dy - y;
+    return sqrtf (ex * ex + ey * ey);
+}
+
+void OkapiaPaintSpeaker (TSurface *pSurface, const TRect &rRect, TOkapiaColor Ink, TOkapiaColor)
+{
+    // Drawn as a distance field, pixel by pixel, one stroke weight throughout:
+    // the box and the cone as six segments, the waves as arcs of a circle
+    // centred on the cone's mouth. No antialiasing, as every other mark here.
+    const int N = (int) (rRect.nWidth < rRect.nHeight ? rRect.nWidth : rRect.nHeight);
+    if (N < 8)
+    {
+        return;
+    }
+    const float f = (float) N;
+    const float t = f / 14.0f < 1.0f ? 1.0f : f / 14.0f;
+    const float h = t / 2.0f;
+    const int nX0 = rRect.nX + ((int) rRect.nWidth - N) / 2;
+    const int nY0 = rRect.nY + ((int) rRect.nHeight - N) / 2;
+    // In the square's own units, 0 to 1.
+    static const float Lines[6][4] =
+    {
+        { 0.03f, 0.36f, 0.18f, 0.36f }, { 0.03f, 0.64f, 0.18f, 0.64f },   // the box
+        { 0.03f, 0.36f, 0.03f, 0.64f }, { 0.18f, 0.36f, 0.18f, 0.64f },
+        { 0.18f, 0.36f, 0.38f, 0.14f }, { 0.18f, 0.64f, 0.38f, 0.86f },   // the cone
+    };
+    // The waves a stroke and two of air apart at sixteen pixels, the size a
+    // button gives it: closer, they read as a smudge.
+    static const float MOUTH_X = 0.38f;
+    static const float Waves[3] = { 0.20f, 0.39f, 0.58f };
+    for (int y = 0; y < N; y++)
+    {
+        for (int x = 0; x < N; x++)
+        {
+            const float px = (float) x + 0.5f, py = (float) y + 0.5f;
+            bool bInk = SegmentDistance (px, py, MOUTH_X * f, 0.14f * f, MOUTH_X * f, 0.86f * f) <= h;
+            for (unsigned i = 0; !bInk && i < 6; i++)
+            {
+                bInk = SegmentDistance (px, py, Lines[i][0] * f, Lines[i][1] * f,
+                                        Lines[i][2] * f, Lines[i][3] * f) <= h;
+            }
+            const float dx = px - MOUTH_X * f, dy = py - 0.5f * f;
+            const float r = sqrtf (dx * dx + dy * dy);
+            for (unsigned i = 0; !bInk && i < 3; i++)
+            {
+                // Within 45 degrees either side of the axis, the ends square.
+                bInk = dx > 0.0f && (dy < 0.0f ? -dy : dy) <= dx && fabsf (r - Waves[i] * f) <= h;
+            }
+            if (bInk)
+            {
+                GfxFill (pSurface, Rect (nX0 + x, nY0 + y, 1, 1), Ink);
+            }
+        }
+    }
 }

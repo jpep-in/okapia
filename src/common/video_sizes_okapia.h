@@ -28,9 +28,13 @@ struct TVideoScreenSize
 static const unsigned VIDEO_SCREEN_STANDARD = 13;
 extern const unsigned VideoScreenStandard[VIDEO_SCREEN_STANDARD][2];
 
-// Then the display's own size and the one the preferences ask for, each only
-// when not already listed.
-static const unsigned VIDEO_SCREEN_EXTRA = 2;
+// Then the display's own size, the one the preferences ask for, half the
+// display (every Macintosh pixel two by two on it: 960x540 on a 1080p
+// television) and two thirds of it (three by three device pixels on a desktop
+// whose points are two: the sharp size between the whole screen and half of
+// it), each only when not already listed. The later ones come last, so the
+// earlier keep the identifiers they had.
+static const unsigned VIDEO_SCREEN_EXTRA = 4;
 static const unsigned VIDEO_SCREEN_CUSTOM = 6;
 static const unsigned VIDEO_SCREEN_LEGACY_MAX = VIDEO_SCREEN_STANDARD + VIDEO_SCREEN_EXTRA;
 static const unsigned VIDEO_SCREEN_SIZES_MAX = VIDEO_SCREEN_LEGACY_MAX + VIDEO_SCREEN_CUSTOM;
@@ -54,6 +58,11 @@ void VideoPrefsWrite (const TVideoScreenConfig &Config);
 bool VideoSizeEqual (TVideoSize A, TVideoSize B);
 bool VideoCustomSizeValid (TVideoSize Size);
 bool VideoScreenFits (TVideoSize Size, TVideoSize Output);
+// Half the display, its width down to whole bytes at every depth; 0x0 when
+// that is too small to be a Macintosh screen.
+TVideoSize VideoHalfSize (unsigned nDisplayW, unsigned nDisplayH);
+// Two thirds of the display, the same way.
+TVideoSize VideoTwoThirdsSize (unsigned nDisplayW, unsigned nDisplayH);
 bool VideoModeHidden (const TVideoScreenConfig &Config, TVideoSize Size);
 bool VideoModeSetHidden (TVideoScreenConfig *pConfig, TVideoSize Size, bool bHidden);
 unsigned VideoScreenBufferBytes (TVideoSize Output);

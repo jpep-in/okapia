@@ -55,7 +55,7 @@ CXXFLAGS = $(OPTIMIZE) -g -std=c++17 -Wall -Wextra -Wno-unused-parameter \
            -DOKAPIA_HOSTED $(ENGINE_DEFINES) -D_GNU_SOURCE -DOKAPIA_NETBENCH=0 \
            -include shims/okapia_circle.h -Ishims \
            -I. -I$(CIRCLE) -I$(COMMON) -I$(FIRMWARE) -I$(CHOST)/firmware -I$(KERNEL) \
-           -I$(GEN) -I$(CPUGEN) -I$(LIBHFS) \
+           -I$(GEN) -I$(CPUGEN) -I$(LIBHFS) -I$(ROOT)/external/stb -isystem $(ROOT)/external/miniz \
            -I$(MACEMU)/include -I$(UAE) -I$(MACEMU)/Unix -I$(MACEMU)/CrossPlatform \
            $(SDL_CFLAGS)
 # The 68k→AArch64 translator (patches/macemu/0012), on by default here: an
@@ -68,21 +68,24 @@ ifeq ($(OKAPIA_JIT_ARM64),1)
 CXXFLAGS += -DJIT_ARM64 -DJIT_ARM64_OWN_POLL -DOKAPIA_TRANSLATOR=1
 JIT_SRCS  = $(UAE)/jit_arm64/jit_arm64.cpp
 endif
+# AppKit includes <Block.h>, which a case-insensitive disk finds as libhfs's
+# block.h, and okapia_gfx.h's Rect meets the Mac's: the Objective-C++ file
+# gets no include path of the project's.
+MMFLAGS  = $(OPTIMIZE) -g -std=c++17 -Wall
 # Upstream's files, quietly: their warnings are upstream's.
 UPFLAGS  = $(CXXFLAGS) -w
 
 FONTDIR  = $(ROOT)/assets/fonts
-BDF      = $(FONTDIR)/helvR10-75.bdf $(FONTDIR)/helvB10-75.bdf $(FONTDIR)/helvR12-75.bdf \
-           $(FONTDIR)/helvB12-75.bdf $(FONTDIR)/helvR14-75.bdf $(FONTDIR)/helvB14-75.bdf \
-           $(FONTDIR)/helvR24-75.bdf $(FONTDIR)/helvB24-75.bdf $(FONTDIR)/helvR14-100.bdf \
-           $(FONTDIR)/helvB14-100.bdf $(FONTDIR)/helvR24-100.bdf $(FONTDIR)/helvB24-100.bdf
+# The faces: TeX Gyre Heros, regular and bold (scripts/fetch-fonts.sh), carried
+# whole as bytes and rasterised at run time (src/firmware/okapia_font_vector.cpp).
+OTF      = $(FONTDIR)/texgyreheros-regular.otf $(FONTDIR)/texgyreheros-bold.otf
 FONT_SRC = $(GEN)/okapia_font_data.cpp
 ICON_SRC = $(GEN)/okapia_icons_data.cpp
 STR_SRC  = $(GEN)/okapia_strings_data.cpp
 STR_IDS  = $(GEN)/okapia_strings_ids.h
 
 FIRMWARE_SRCS = $(wildcard $(FIRMWARE)/*.cpp)
-COMMON_SRCS   = $(COMMON)/okapia_menu.cpp
+COMMON_SRCS   = $(COMMON)/okapia_menu.cpp $(COMMON)/okapia_rom.cpp $(COMMON)/okapia_card_check.cpp
 # src/common's platform files, all of which build here. Left out: the Circle host's
 # own (src/hosts/circle:
 # (hal, board_sound, board_net, wlan, clock, net_clock, net_bench, execmem,
@@ -113,11 +116,21 @@ REUSED_SRCS   = $(MACEMU)/Unix/sys_unix.cpp $(MACEMU)/Unix/extfs_unix.cpp \
 # Sparse bundles declined, as on the card: the plain-image factory takes over.
 COMPAT_SRCS   = $(CHOST)/compat/disk_stubs.cpp
 DESKTOP_SRCS  = okapia_host_desktop.cpp main_desktop.cpp board_desktop.cpp wraps_desktop.cpp \
+                cards_desktop.cpp install_manifest.cpp install_card.cpp install_release.cpp \
+                install_fetch.cpp install_host.cpp \
                 sound_desktop.cpp board_net_desktop.cpp
+ifeq ($(shell uname),Darwin)
+# The application's menus, Command handed to the Macintosh (Objective-C++).
+DESKTOP_MM    = menus_desktop.mm
+SDL_LIBS     += -framework AppKit -framework DiskArbitration -framework CoreFoundation
+endif
 HFS_SRCS      = $(filter-out $(LIBHFS)/memcmp.c,$(wildcard $(LIBHFS)/*.c))
 # The network: upstream's slirp (NAT in user space, no privileges), under
 # ether_okapia.cpp as on the board, by way of board_net_desktop.cpp.
 SLIRP_SRCS    = $(wildcard $(MACEMU)/slirp/*.c)
+# miniz (MIT), the release zips' reader (install_release.cpp).
+MINIZ         = $(ROOT)/external/miniz
+MINIZ_SRCS    = $(MINIZ)/miniz.c $(MINIZ)/miniz_tdef.c $(MINIZ)/miniz_tinfl.c $(MINIZ)/miniz_zip.c
 SF_SRCS       = $(SOFTFLOAT)/softfloat.c $(SOFTFLOAT)/softfloat_fpsp.c $(SOFTFLOAT)/softfloat_decimal.c
 KEYCODES_H    = $(GEN)/keycodes_default.h
 MACROMAN_H    = $(GEN)/macroman_table.h
@@ -138,10 +151,13 @@ OBJS = $(addprefix $(OBJ)/fw_,$(notdir $(FIRMWARE_SRCS:.cpp=.o))) \
        $(addprefix $(OBJ)/p_,$(notdir $(COMPAT_SRCS:.cpp=.o))) \
        $(addprefix $(OBJ)/sf_,$(notdir $(SF_SRCS:.c=.o))) \
        $(addprefix $(OBJ)/sl_,$(notdir $(SLIRP_SRCS:.c=.o))) \
+       $(addprefix $(OBJ)/mz_,$(notdir $(MINIZ_SRCS:.c=.o))) \
        $(addprefix $(OBJ)/d_,$(DESKTOP_SRCS:.cpp=.o)) \
+       $(addprefix $(OBJ)/d_,$(DESKTOP_MM:.mm=.o)) \
        $(addprefix $(OBJ)/hfs_,$(notdir $(HFS_SRCS:.c=.o))) \
        $(OBJ)/gen_okapia_font_data.o $(OBJ)/gen_okapia_icons_data.o \
        $(OBJ)/gen_okapia_strings_data.o
+
 
 # The PowerPC engine, as the kernel builds it for ENGINE=sheepshaver: SheepShaver's
 # core, kpx_cpu interpreted, src/common/sheepshaver and the shared platform files
@@ -193,7 +209,7 @@ all: $(OUT)/okapia
 
 $(OUT)/okapia: $(OBJS) $(OBJ)/engine-ppc.o
 	@printf '  LD    %s\n' "$(notdir $@)"
-	@$(CXX) -o $@ $^ $(SDL_LIBS)
+	@$(CXX) -o $@ $^ $(SDL_LIBS) -lcurl
 
 $(OBJ)/engine-ppc.o: $(PPC_OBJS)
 	@printf '  LD -r  engine-ppc.o (OkapiaRunPowerPC alone global)\n'
@@ -247,9 +263,9 @@ $(PPCOBJ)/d_%.o: %.cpp | $(PPCOBJ) $(STR_IDS)
 $(OBJ):
 	@mkdir -p $(OBJ)
 
-$(FONT_SRC): $(ROOT)/scripts/gen-font.py $(BDF)
+$(FONT_SRC): $(ROOT)/scripts/gen-blob.py $(OTF)
 	@mkdir -p $(GEN)
-	@$(ROOT)/scripts/gen-font.py $@ $(BDF)
+	@$(ROOT)/scripts/gen-blob.py $@ OkapiaOutlineRegular $(word 1,$(OTF)) OkapiaOutlineBold $(word 2,$(OTF))
 
 $(ICON_SRC): $(ROOT)/scripts/gen-icons.py $(ROOT)/assets/icons/system-icons.c \
              $(ROOT)/assets/icons/cdrom-icon.c
@@ -311,6 +327,10 @@ $(OBJ)/re_%.o: $(MACEMU)/CrossPlatform/%.cpp | $(OBJ)
 	$(upcompile)
 $(OBJ)/k_%.o: $(KERNEL)/%.cpp | $(OBJ) $(STR_IDS)
 	$(compile)
+$(OBJ)/mz_%.o: $(MINIZ)/%.c | $(OBJ)
+	@printf '  CC    %s\n' "$(notdir $<)"
+	@$(CC) -O2 -w -I$(MINIZ) -Ishims -MMD -MP -c -o $@ $<
+
 $(OBJ)/sl_%.o: $(MACEMU)/slirp/%.c | $(OBJ)
 	@printf '  CC    slirp/%s\n' "$(notdir $<)"
 	@$(CC) -O2 -w -Ishims/slirp -I$(MACEMU)/slirp -MMD -MP -c -o $@ $<
@@ -326,6 +346,9 @@ $(MACROMAN_H): $(ROOT)/scripts/gen-macroman.py
 	@$(ROOT)/scripts/gen-macroman.py $@
 $(OBJ)/d_%.o: %.cpp | $(OBJ) $(STR_IDS)
 	$(compile)
+$(OBJ)/d_%.o: %.mm | $(OBJ) $(STR_IDS)
+	@printf '  OBJCXX %s\n' "$(notdir $<)"
+	@$(CXX) $(MMFLAGS) -fobjc-arc -MMD -MP -c -o $@ $<
 $(OBJ)/gen_%.o: $(GEN)/%.cpp | $(OBJ) $(STR_IDS)
 	$(compile)
 $(OBJ)/hfs_%.o: $(LIBHFS)/%.c | $(OBJ)

@@ -96,7 +96,9 @@ static const u32 STANDARD_IDS[VIDEO_SCREEN_STANDARD] =
 {
     0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C,
 };
-static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { 0x8D, 0x8E };
+// 0x8F was free before the custom slots: the third extra, half the display;
+// two thirds of it after them (0x90 to 0x95), so theirs do not move.
+static const u32 EXTRA_IDS[VIDEO_SCREEN_EXTRA] = { 0x8D, 0x8E, 0x8F, 0x96 };
 
 // The largest guest frame offered, and therefore the size of the buffer and of
 // the shadow, both taken once. 16 MB holds 2560x1440 in millions of colours; a

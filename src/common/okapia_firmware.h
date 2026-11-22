@@ -39,6 +39,12 @@ TFirmwareResult FirmwareRun (TFirmwareEngine Built);
 // since the last drain. Optional: the specimen has no board and passes none.
 void FirmwareSetLogFlush (void (*pFlush) (void));
 
+// The welcome page, before any workspace (a desktop's; okapia_welcome.h): what
+// Okapia is, then a workspace opened or made, a ROM and a System added. Answers
+// false when the person quit, true on Continue: the workspace is the card from
+// then on, and the caller starts it, boot menu first.
+bool FirmwareWelcome (void);
+
 // Which emulator the startup volume asks for, once FirmwareRun has been. Equal
 // to what was handed in unless the card says otherwise, and then it is the
 // kernel's business — it is the only thing that can go and fetch another image.

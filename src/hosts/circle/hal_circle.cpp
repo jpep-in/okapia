@@ -399,6 +399,11 @@ static void LogStart (void)
     BoardLogFlush ();
 }
 
+void BoardOutputShows (unsigned, unsigned, unsigned, unsigned, unsigned)
+{
+    // The board shows the output as it is (hal_circle.h).
+}
+
 void BoardLogFlush (void)
 {
     while (s_bLog)

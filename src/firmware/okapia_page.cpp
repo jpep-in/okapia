@@ -19,12 +19,30 @@ static int PageScale (const TPage *pPage, int nValue)
 // The tabbed page laid out last, which is the one on the screen: there is one
 // window and it shows one page at a time.
 static const TPage *s_pChrome;
+static unsigned     s_nFixedScale16;
+
+void PageFixScale (unsigned nScale16)
+{
+    s_nFixedScale16 = nScale16;
+}
+
 static bool         s_bRestart;
 static bool         s_bFocusTabs;
 static bool         s_bCanStart = true;
 static bool         s_bBootMenu;
 static bool         s_bFocusBootMenu;
 static TListItem    s_TabItems[PageTabCount];
+static TPageTab     s_TabOf[PageTabCount];  // strip index to page
+static unsigned     s_nTabsShown = PageTabCount;
+static bool         s_bTabHidden[PageTabCount];
+
+void PageChromeHideTab (TPageTab Tab, bool bHidden)
+{
+    if (Tab < PageTabCount)
+    {
+        s_bTabHidden[Tab] = bHidden;
+    }
+}
 
 void PageBegin (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nMax,
                 unsigned nWide, unsigned nHigh, const char *pTitle)
@@ -33,6 +51,7 @@ void PageBegin (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nM
     pPage->nTabs    = -1;
     pPage->nPower   = -1;
     pPage->nPram    = -1;
+    pPage->nWorkspace = -1;
     pPage->nStart   = -1;
     pPage->nNote    = -1;
     pPage->nBootMenu = -1;
@@ -40,13 +59,21 @@ void PageBegin (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nM
     pPage->pWidgets = pWidgets;
     pPage->nMax     = nMax;
     pPage->nCount   = 0;
-    pPage->nScale16 = ThemeScaleFor (pSurface->nWidth, pSurface->nHeight);
+    pPage->nScale16 = s_nFixedScale16 != 0 ? s_nFixedScale16
+                                           : ThemeScaleFor (pSurface->nWidth, pSurface->nHeight);
     ThemeMake (pPage->nScale16, &pPage->Theme);
 
-    const unsigned nDW = (unsigned) PageScale (pPage, (int) nWide);
-    const unsigned nDH = (unsigned) PageScale (pPage, (int) nHigh);
-    pPage->Dialog = Rect ((int) (pSurface->nWidth  - nDW) / 2,
-                          (int) (pSurface->nHeight - nDH) / 2, nDW, nDH);
+    if (nWide == 0)
+    {
+        pPage->Dialog = Rect (0, 0, pSurface->nWidth, pSurface->nHeight);
+    }
+    else
+    {
+        const unsigned nDW = (unsigned) PageScale (pPage, (int) nWide);
+        const unsigned nDH = (unsigned) PageScale (pPage, (int) nHigh);
+        pPage->Dialog = Rect ((int) (pSurface->nWidth  - nDW) / 2,
+                              (int) (pSurface->nHeight - nDH) / 2, nDW, nDH);
+    }
 
     LayoutBegin (&pPage->Layout, &pPage->Theme, ThemeContent (pPage->Dialog, &pPage->Theme));
 
@@ -157,6 +184,12 @@ void PagePaint (TSurface *pSurface, const TPage *pPage)
 }
 
 static const char *s_pBootMenuHint;
+static bool        s_bWorkspaceOffered;
+
+void PageChromeWorkspace (bool bOffered)
+{
+    s_bWorkspaceOffered = bOffered;
+}
 
 void PageChromeBootMenuHint (const char *pHint)
 {
@@ -214,22 +247,36 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
     // a window naming its page twice reads as two windows.
     static const TStringId Names[PageTabCount] =
     {
-        StrTabSystem, StrTabSettings, StrTabNetwork, StrTabInformation, StrTabDisplay,
+        StrTabSystem, StrTabSettings, StrTabNetwork, StrTabDisplay, StrTabInformation,
         StrTabJournal
     };
+    // The strip shows the tabs not left out; its index is mapped back to the
+    // page it names (s_TabOf), so a hidden one leaves no gap.
+    s_nTabsShown = 0;
+    int nShown = 0;
     for (unsigned i = 0; i < PageTabCount; i++)
     {
-        s_TabItems[i].pText  = Str (Names[i]);
-        s_TabItems[i].pIcon  = 0;
-        s_TabItems[i].nState = StateNormal;
+        if (s_bTabHidden[i])
+        {
+            continue;
+        }
+        if (i == (unsigned) Tab)
+        {
+            nShown = (int) s_nTabsShown;
+        }
+        TListItem &Item = s_TabItems[s_nTabsShown];
+        Item.pText  = Str (Names[i]);
+        Item.pIcon  = 0;
+        Item.nState = StateNormal;
+        s_TabOf[s_nTabsShown++] = (TPageTab) i;
     }
     pPage->nTabs = (int) pPage->nCount;
     TWidget *pTabs = PageAdd (pPage, WidgetTabs,
                               LayoutTop (&pPage->Layout, ThemeTabsHeight (pTheme)), 0,
                               s_bFocusTabs ? StateFocused : StateNormal);
     pTabs->pItems  = s_TabItems;
-    pTabs->nItems  = PageTabCount;
-    pTabs->nChoice = (int) Tab;
+    pTabs->nItems  = s_nTabsShown;
+    pTabs->nChoice = nShown;
     LayoutSectionGap (&pPage->Layout);
 
     // The machine's buttons, the same on every page. Start is where the
@@ -238,6 +285,10 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
     PageFooter (pPage);
     pPage->nPram  = PageIconButton (pPage, OkapiaPaintPram,  StateNormal);
     pPage->nPower = PageIconButton (pPage, OkapiaPaintPower, StateNormal);
+    if (s_bWorkspaceOffered)
+    {
+        pPage->nWorkspace = PageIconButton (pPage, OkapiaPaintLogo, StateNormal);
+    }
     // Laid out with the label it will actually wear: a button sized for "Save
     // and restart" and drawn saying "Start" is a button with a hole in it, so a
     // change of either lays the page out again.
@@ -315,11 +366,13 @@ int PageChromeAnswer (int nIndex)
     if (nIndex == p->nStart)  return PageAnswerStart;
     if (nIndex == p->nPower)  return PageAnswerShutDown;
     if (nIndex == p->nPram)   return PageAnswerForgetPram;
+    if (nIndex == p->nWorkspace) return PageAnswerWorkspace;
     if (nIndex == p->nBootMenu) return PageAnswerBootMenu;
     if (nIndex == p->nTabs)
     {
-        const int nTab = p->pWidgets[p->nTabs].nChoice;
-        return nTab >= 0 && nTab < (int) PageTabCount ? PageAnswerTab + nTab : PageAnswerNone;
+        const int nShown = p->pWidgets[p->nTabs].nChoice;
+        return nShown >= 0 && nShown < (int) s_nTabsShown ? PageAnswerTab + (int) s_TabOf[nShown]
+                                                          : PageAnswerNone;
     }
     return PageAnswerNone;
 }

@@ -264,7 +264,7 @@ static void CheckSizes (void)
     {
         Ids[i] = 0x100 + i;
     }
-    const u32 Extra[VIDEO_SCREEN_EXTRA] = { 0x200, 0x201 };
+    const u32 Extra[VIDEO_SCREEN_EXTRA] = { 0x200, 0x201, 0x202, 0x203 };
     TVideoScreenSize L[VIDEO_SCREEN_SIZES_MAX];
 
     bool bOrdered = true;
@@ -276,33 +276,40 @@ static void CheckSizes (void)
     Expect (bOrdered, "the fixed list is ordered like the Monitors control panel, with no duplicate");
 
     unsigned n = VideoScreenSizeList (Ids, Extra, 2560, 1440, 1280, 720, L);
-    bool bSame = n == VIDEO_SCREEN_STANDARD;
-    for (unsigned i = 0; bSame && i < n; i++)
+    bool bSame = n == VIDEO_SCREEN_STANDARD + 1;
+    for (unsigned i = 0; bSame && i < VIDEO_SCREEN_STANDARD; i++)
     {
         bSame = L[i].nWidth == VideoScreenStandard[i][0]
              && L[i].nHeight == VideoScreenStandard[i][1] && L[i].nId == Ids[i];
     }
-    Expect (bSame, "a 1440p display and screen 1280/720: the fixed list alone, each size under its identifier");
+    Expect (bSame && L[VIDEO_SCREEN_STANDARD].nWidth == 1704 && L[VIDEO_SCREEN_STANDARD].nHeight == 960 && L[VIDEO_SCREEN_STANDARD].nId == 0x200,
+            "a 1440p display and screen 1280/720: the fixed list, each size under its identifier, then two thirds");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1280, 720, L);
-    Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1366
-            && L[n - 1].nHeight == 768 && L[n - 1].nId == 0x200,
+    Expect (n == VIDEO_SCREEN_STANDARD + 3 && L[VIDEO_SCREEN_STANDARD].nWidth == 1366
+            && L[VIDEO_SCREEN_STANDARD].nHeight == 768 && L[VIDEO_SCREEN_STANDARD].nId == 0x200,
             "the own size of a display not in the list comes after, under the first free identifier");
+    Expect (L[VIDEO_SCREEN_STANDARD + 1].nWidth == 680 && L[VIDEO_SCREEN_STANDARD + 1].nHeight == 384 && L[VIDEO_SCREEN_STANDARD + 1].nId == 0x201,
+            "then half the display, its width down to whole bytes, under the next");
+    Expect (L[VIDEO_SCREEN_STANDARD + 2].nWidth == 904 && L[VIDEO_SCREEN_STANDARD + 2].nHeight == 512 && L[VIDEO_SCREEN_STANDARD + 2].nId == 0x202,
+            "then two thirds of it, the same way");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1000, 700, L);
-    Expect (n == VIDEO_SCREEN_LEGACY_MAX && L[n - 2].nId == 0x200
-            && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x201,
-            "then the one the preferences ask for, under the second");
+    Expect (n == VIDEO_SCREEN_LEGACY_MAX && L[VIDEO_SCREEN_STANDARD].nId == 0x200
+            && L[VIDEO_SCREEN_STANDARD + 1].nWidth == 1000 && L[VIDEO_SCREEN_STANDARD + 1].nId == 0x201
+            && L[VIDEO_SCREEN_STANDARD + 2].nId == 0x202 && L[VIDEO_SCREEN_STANDARD + 3].nId == 0x203,
+            "then the one the preferences ask for, under the second, and half and two thirds last");
 
     n = VideoScreenSizeList (Ids, Extra, 0, 0, 1000, 700, L);
     Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x200,
             "with no usable display size, the preference takes the first");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1366, 768, L);
-    Expect (n == VIDEO_SCREEN_STANDARD + 1, "a preference equal to the display is not offered twice");
+    Expect (n == VIDEO_SCREEN_STANDARD + 3, "a preference equal to the display is not offered twice");
 
     n = VideoScreenSizeList (Ids, Extra, 1920, 1080, 0, 0, L);
-    Expect (n == VIDEO_SCREEN_STANDARD, "with no preference, nothing more");
+    Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 960 && L[n - 1].nHeight == 540,
+            "with no preference, half the display more (two thirds is 1280x720, listed)");
 
     TVideoScreenConfig Config = {};
     Config.Custom[2] = {960, 600};
