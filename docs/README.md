@@ -65,6 +65,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | [Building](contributing/build.md) | Toolchain, targets, the merged image, dependencies, patches |
 | [Testing and debugging](contributing/testing-and-debugging.md) | Host tests, QEMU scripts, crash testing, traces, logs |
 | [Benchmarks](contributing/benchmarks.md) | Method and results |
+| [Releases](contributing/release.md) | Versions, the manifest, signing, the release procedure, updates (a plan) |
 
 ### Notes
 

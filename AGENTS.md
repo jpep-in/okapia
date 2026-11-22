@@ -40,7 +40,7 @@ Outranks performance and features: when in doubt, lose speed, never data. Detail
 ## Work locally
 
 - `external/macemu/` (Basilisk II + SheepShaver, `kanjitalk755`), `external/circle-stdlib/` (newlib, libstdc++;
-  **Circle is in `libs/circle/`**, docs in `libs/circle/doc/`), `external/hfsutils/` (libhfs).
+  **Circle is in `libs/circle/`**, docs in `libs/circle/doc/`), `external/hfsutils/` (libhfs), `external/stb/` (stb_truetype, the firmware's font rasteriser).
 - `reference/` — study material cloned on demand: `scripts/fetch-reference.sh` lists what exists. **Ask before
   cloning** one; don't read it on the web instead.
 - **Never modify `external/` or `reference/`.** Upstream changes go to `patches/<submodule>/`, minimal and documented
@@ -113,8 +113,11 @@ make -C tests/host                    # host tests and the firmware specimen
 ./scripts/specimen.sh [page|live]     # boot menu specimen, no card
 ./scripts/run-qemu.sh [kernel] -s -S  # bare kernel, GDB on :1234
 ./scripts/make-pi-sd.sh               # stage a Pi 4 card in rpi4-sd-contents/
+./scripts/make-release.sh [folder]    # a release: okapia-manifest.json and a zip per board (network)
+./scripts/release.sh <YY.MM.N> [--publish]  # checks, tests, tag, builds, manifest; publishes only when asked
 ./scripts/build-macbench.sh [image]   # MacBench (tools/macbench, Retro68), into Startup Items
 ./scripts/build-native-basilisk.sh <name> [configure options]  # desktop Basilisk II for tools/macbench/run.py
 make -C src/hosts/desktop             # build/desktop/okapia: Okapia on macOS (SDL3), docs/topics/desktop.md
+./scripts/make-desktop-app.sh         # build/desktop/Okapia.app, SDL3 inside, signed ad hoc
 build/desktop/okapia --headless --work-dir DIR --screenshot F --seconds N <folder>  # native test run
 ```
