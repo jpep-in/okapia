@@ -763,6 +763,9 @@ struct TPageDriver
 };
 
 static const int PageRelayout = -1;
+// A page's Tick saw its model change shape (more lines, fewer): RunPage lays it
+// out again, as for a resized window.
+static bool s_bPageRelayoutAsked;
 // The host asked to quit (a desktop's window closed) on a page with no refusal.
 static const int PageQuit = -2;
 
@@ -853,7 +856,9 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
 
         // A desktop window resized with the mouse: the page laid out again at
         // its new size, as a change of language does it.
-        if (pDriver->Relayout != 0 && HostOutputResized (pOutput))
+        const bool bAsked = s_bPageRelayoutAsked;
+        s_bPageRelayoutAsked = false;
+        if (pDriver->Relayout != 0 && (HostOutputResized (pOutput) || bAsked))
         {
             pShadow->nWidth  = pOutput->nWidth;
             pShadow->nHeight = pOutput->nHeight;
@@ -2534,9 +2539,63 @@ static void WelcomeReleaseState (void)
 }
 
 // Four times a second: the release as it arrives, the card as it is written.
+// What the workspace's top level holds, in one number: names, sizes and times.
+// Files copied in by hand show up without a button.
+static unsigned long WelcomeFolderSignature (void)
+{
+    unsigned long nSum = 5381;
+    DIR *pDir = opendir (CardPath ("/"));
+    if (pDir == 0)
+    {
+        return 0;
+    }
+    while (const struct dirent *p = readdir (pDir))
+    {
+        if (p->d_name[0] == '.')
+        {
+            continue;
+        }
+        char Card[80];
+        if (snprintf (Card, sizeof Card, "/%s", p->d_name) >= (int) sizeof Card)
+        {
+            continue;
+        }
+        struct stat Info;
+        unsigned long nOne = 0;
+        for (const char *c = p->d_name; *c != '\0'; c++)
+        {
+            nOne = nOne * 33 + (unsigned char) *c;
+        }
+        if (stat (CardPath (Card), &Info) == 0)
+        {
+            nOne = nOne * 31 + (unsigned long) Info.st_size;
+            nOne = nOne * 31 + (unsigned long) Info.st_mtime;
+        }
+        nSum += nOne;                   // the order readdir gives does not matter
+    }
+    closedir (pDir);
+    return nSum;
+}
+
+static unsigned long s_nFolderSeen;
+static unsigned      s_nFolderTicks;
+
 static bool WelcomeTick (void)
 {
     bool bChanged = false;
+    // Every two seconds, the folder read again; a change is gathered and laid
+    // out, the disks' lines being as many as there are disks.
+    if (s_Welcome.Workspace[0] != '\0' && !s_bPreparing && ++s_nFolderTicks % 8 == 0)
+    {
+        const unsigned long nNow = WelcomeFolderSignature ();
+        if (nNow != s_nFolderSeen)
+        {
+            s_nFolderSeen = nNow;
+            WelcomeGather ();
+            s_bPageRelayoutAsked = true;
+            bChanged = true;
+        }
+    }
     THostRelease R;
     HostRelease (&R);
     if (R.State != s_ReleaseSeen)
@@ -2756,6 +2815,20 @@ bool FirmwareWelcome (void)
     if (nAnswer != (int) WelcomeContinue || s_Welcome.Workspace[0] == '\0')
     {
         return false;
+    }
+    // A ROM copied in by hand is shown on the page; the engine reads only the
+    // one the preferences name, so the page's choice is written down.
+    static const char *const Keys[WelcomeRomCount] = { "rom", "romppc" };
+    for (unsigned e = 0; e < WelcomeRomCount; e++)
+    {
+        char Named[64] = "";
+        PrefsFileGet (Keys[e], Named, sizeof Named);
+        if (s_Welcome.Rom[e].bThere && strcmp (Named, s_Welcome.Rom[e].CardPath) != 0)
+        {
+            PrefsFileSet (Keys[e], s_Welcome.Rom[e].CardPath, false);
+            HostLog (FROM, HostLogNotice, "Welcome: %s %s, found in the workspace", Keys[e],
+                     s_Welcome.Rom[e].CardPath);
+        }
     }
     HostWorkspaceStart ();
     return true;

@@ -235,7 +235,7 @@ static bool LooksLikeAnImage (const char *pName)
     // a bare volume; MountReadOnly() takes both kinds, so what is behind the
     // name no longer decides what may be listed.
     static const char *Suffixes[] = { ".image", ".img", ".hda", ".dsk", ".hfv",
-                                      ".iso", ".toast", 0 };
+                                      ".iso", ".toast", ".cdr", 0 };
 
     const char *pDot = strrchr (pName, '.');
     if (pDot == 0)

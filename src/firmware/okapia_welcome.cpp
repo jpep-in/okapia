@@ -59,8 +59,19 @@ void WelcomeRepaint (TSurface *pSurface)
 }
 
 // One step: a frame, its lines, and its buttons on the last line's right.
+// A grey paragraph across the group, wrapped: what a step accepts, said once.
+static void Hint (const char *pText)
+{
+    const TTheme *pTheme = &s_Page.Theme;
+    TLayout &Layout = s_Page.Layout;
+    const TRect Whole = LayoutTop (&Layout, 0);
+    const unsigned nHigh = GfxTextWrapHeight (pTheme->pBodyFont, Whole.nWidth, pText, pTheme->M.nLineHeight);
+    LayoutRowGap (&Layout);
+    PageAdd (&s_Page, WidgetParagraph, LayoutTop (&Layout, nHigh), pText, StateDisabled);
+}
+
 static void Step (TStringId Title, int *pLines, unsigned nLines,
-                  const TStringId *pButtons, int *pnButtons, unsigned nButtons)
+                  const TStringId *pButtons, int *pnButtons, unsigned nButtons, const char *pHint = 0)
 {
     const TTheme *pTheme = &s_Page.Theme;
     TLayout &Layout = s_Page.Layout;
@@ -105,6 +116,10 @@ static void Step (TStringId Title, int *pLines, unsigned nLines,
         {
             LayoutSkip (&Layout, nOver + ThemeReach (pTheme, StateFocused));
         }
+    }
+    if (pHint != 0)
+    {
+        Hint (pHint);
     }
     PageGroupEnd (&s_Page, &Group);
     LayoutSectionGap (&Layout);
@@ -249,6 +264,8 @@ void WelcomeDraw (TSurface *pSurface, TWelcome *pWelcome)
         PageAdd (&s_Page, WidgetLabel, Text, "", StateNormal);
         s_nWorkspaceNote = (int) s_Page.nCount;
         PageAdd (&s_Page, WidgetLabel, LayoutTop (&Layout, pTheme->M.nLineHeight), "", StateDisabled);
+        // The buttons copy files in; the person may as well do it.
+        Hint (Str (bBoard ? StrWelcomeHintCard : StrWelcomeHintFolder));
         PageGroupEnd (&s_Page, &Group);
         LayoutSectionGap (&Layout);
     }
@@ -308,7 +325,7 @@ void WelcomeDraw (TSurface *pSurface, TWelcome *pWelcome)
                              : (pWelcome->nSystems > s_nDisksShown ? s_nDisksShown + 1
                                                                     : pWelcome->nSystems);
     static const TStringId SysButtons[] = { StrWelcomeAddSystem };
-    Step (StrWelcomeStepSystem, s_nSysLines, nSysLines, SysButtons, &s_nAddSys, 1);
+    Step (StrWelcomeStepSystem, s_nSysLines, nSysLines, SysButtons, &s_nAddSys, 1, Str (StrWelcomeHintDisks));
     for (unsigned i = nSysLines; i <= WELCOME_LINES; i++)
     {
         s_nSysLines[i] = -1;

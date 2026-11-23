@@ -75,7 +75,16 @@ the output is made again at that size.
 3. **The Mac's disk**: two disks, then how many others, each with its System and what the ROMs at hand make of
    it (`DiskJudge`: starts with the 68K ROM, the PowerPC one, either, needs one, too new, a data disk). The
    status line says when no disk can start with these ROMs. *Add a disk image…* copies an image in and adds a
-   `disk` line, or a `cdrom` line for `.iso`, `.toast`, `.cdr`.
+   `disk` line, or a `cdrom` line for `.iso`, `.toast`, `.cdr`. A grey paragraph says which images serve: raw
+   images of a hard disk or a CD under the names the inventory knows (`hfs_volume_okapia.cpp`,
+   `LooksLikeAnImage`), a single volume or a whole disk, HFS or HFS+ from 8.1; a compressed one (`.dmg`, `.sit`,
+   compressed Disk Copy) converted first. Upstream skips a header of up to 511 bytes and Disk Copy 4.2's 84
+   (`FileDiskLayout`, `macos_util.cpp:95`), nothing more.
+
+**Files copied in by hand** count as the buttons' do, and the workspace step says so. The page reads the folder's
+top level again every two seconds (`WelcomeFolderSignature`: names, sizes, times) and lays itself out again on a
+change; on *Continue*, a ROM the page shows but the preferences do not name is written into them (`rom`,
+`romppc`), since the engine loads only the one named.
 
 **An SD card as the workspace** (the installer's card step): *SD Card…* opens a sheet listing the removable
 volumes mounted now, read again four times a second so a card appears when inserted (`HostCards`,

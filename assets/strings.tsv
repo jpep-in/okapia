@@ -245,6 +245,9 @@ welcome_create	Create…	Créer…
 welcome_step_rom	2 · Macintosh ROM	2 · ROM du Macintosh
 welcome_step_system	3 · The Mac’s disk	3 · Disque du Mac
 welcome_no_system	A disk image with System 7, Mac OS 8 or 9, or an installation CD.	Une image disque avec System 7, Mac OS 8 ou 9, ou un CD d’installation.
+welcome_hint_folder	ROMs and disk images can also be copied into this folder by hand: Okapia recognises them automatically.	Les ROM et les images disques peuvent aussi être copiées manuellement dans ce dossier : Okapia les reconnaît automatiquement.
+welcome_hint_card	ROMs and disk images can also be copied onto the SD card by hand: Okapia recognises them automatically.	Les ROM et les images disques peuvent aussi être copiées manuellement sur la carte SD : Okapia les reconnaît automatiquement.
+welcome_hint_disks	Uncompressed disk images (.img, .dsk, .hda, .hfv, .image) or CD images (.iso, .toast, .cdr), in HFS format (or HFS+ from Mac OS 8.1).	Images disques non compressées (.img, .dsk, .hda, .hfv, .image) ou images de CD (.iso, .toast, .cdr), au format HFS (ou HFS+ à partir de Mac OS 8.1).
 welcome_add_system	Add a disk image…	Ajouter une image disque…
 welcome_continue	Continue	Continuer
 welcome_quit	Quit	Quitter
