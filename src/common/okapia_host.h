@@ -289,6 +289,23 @@ struct THostPrepare
 };
 void HostPrepareStatus (THostPrepare *pOut);
 
+// Whether a newer Okapia exists for this computer (docs/contributing/
+// release.md, R5). Polled by the welcome page and the boot menu: answered from
+// the last check when it is less than a day old, otherwise by a lookup in the
+// background (the release's frozen core: its version, its page, an app for
+// this platform and system). A development build, and a board, answer None;
+// Off when the person turned the check off.
+enum THostUpdateState { HostUpdateChecking, HostUpdateNone, HostUpdateAvailable, HostUpdateOff };
+struct THostUpdate
+{
+    THostUpdateState State;
+    char Version[32];                   // "26.12.1", when Available
+    char Page[192];                     // the release's page
+};
+void HostUpdate (THostUpdate *pOut);
+// The system's browser on that page (until the app replaces itself, R6).
+void HostOpenPage (const char *pUrl);
+
 /*
  *  What this host offers
  */

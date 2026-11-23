@@ -35,6 +35,7 @@ bool DesktopDeviceRemovable (const char *pDevice);
 
 void DesktopRevealWorkspace (const char *pPath);
 int  DesktopTakeMenuRequest (void);
+bool DesktopUpdateCheckOn (void);
 
 static void Log (const char *pFormat, ...)
 {
@@ -56,7 +57,9 @@ static bool French (void)
 /*
  *  Requests from the menus, taken by the main loop (main_desktop.cpp)
  */
-static volatile int s_nRequest;         // 0 none, 1 change workspace, 2 reveal it, 3 full screen
+// 0 none, 1 change workspace, 2 reveal it, 3 full screen, 4 check for a newer
+// Okapia now, 5 the automatic check on, 6 off.
+static volatile int s_nRequest;
 
 @interface OkapiaMenuTarget : NSObject
 @end
@@ -65,6 +68,14 @@ static volatile int s_nRequest;         // 0 none, 1 change workspace, 2 reveal 
 - (void) changeWorkspace:(id)sender { (void) sender; s_nRequest = 1; }
 - (void) revealWorkspace:(id)sender { (void) sender; s_nRequest = 2; }
 - (void) toggleFullScreenOkapia:(id)sender { (void) sender; s_nRequest = 3; }
+- (void) checkForUpdates:(id)sender { (void) sender; s_nRequest = 4; }
+- (void) toggleAutomaticUpdates:(id)sender
+{
+    NSMenuItem *pItem = (NSMenuItem *) sender;
+    const bool bOn = [pItem state] != NSControlStateValueOn;
+    [pItem setState:bOn ? NSControlStateValueOn : NSControlStateValueOff];
+    s_nRequest = bOn ? 5 : 6;
+}
 @end
 
 static OkapiaMenuTarget *s_pTarget;
@@ -127,6 +138,21 @@ void DesktopMenusToControl (void)
         [pFile addItem:[NSMenuItem separatorItem]];
         [pFile addItem:Item (bFr ? @"Plein écran" : @"Full Screen",
                              @selector (toggleFullScreenOkapia:), @"f")];
+        // In the application's menu, under About, as Mac applications put it.
+        if ([pMain numberOfItems] > 0 && [[pMain itemAtIndex:0] hasSubmenu])
+        {
+            NSMenu *pApp = [[pMain itemAtIndex:0] submenu];
+            const NSInteger nAt = [pApp numberOfItems] > 0 ? 1 : 0;
+            NSMenuItem *pNow = Item (bFr ? @"Rechercher les mises à jour…" : @"Check for Updates…",
+                                     @selector (checkForUpdates:), @"");
+            NSMenuItem *pAuto = Item (bFr ? @"Rechercher automatiquement les mises à jour"
+                                          : @"Check for Updates Automatically",
+                                      @selector (toggleAutomaticUpdates:), @"");
+            [pAuto setState:DesktopUpdateCheckOn () ? NSControlStateValueOn : NSControlStateValueOff];
+            [pApp insertItem:[NSMenuItem separatorItem] atIndex:nAt];
+            [pApp insertItem:pNow atIndex:nAt + 1];
+            [pApp insertItem:pAuto atIndex:nAt + 2];
+        }
         NSMenuItem *pFileItem = [[NSMenuItem alloc] initWithTitle:[pFile title] action:nil
                                                     keyEquivalent:@""];
         [pFileItem setSubmenu:pFile];

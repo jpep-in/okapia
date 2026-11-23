@@ -45,6 +45,7 @@ struct TPage
     int       nStart;
     int       nNote;
     int       nBootMenu;
+    int       nUpdate;                  // a desktop's: a newer Okapia, or -1
 };
 
 // A group being laid out: see PageGroupBegin().
@@ -86,6 +87,7 @@ enum TPageAnswer
     PageAnswerForgetPram,
     PageAnswerBootMenu,                 // the footer's tick box was pressed
     PageAnswerWorkspace,                // a desktop's: the welcome page, to change workspace
+    PageAnswerUpdate,                   // a desktop's: a newer Okapia, its page
     PageAnswerTab       = 1100          // + the TPageTab now in front
 };
 
@@ -110,6 +112,9 @@ void PageChromeBootMenuHint (const char *pHint);
 // Settings page). The others keep their order.
 void PageChromeHideTab (TPageTab Tab, bool bHidden);
 void PageChromeWorkspace (bool bOffered);
+// A newer Okapia, on a desktop: its button at the right end of the tab strip,
+// saying which ("Okapia 26.12.1 available…"); 0 for none.
+void PageChromeUpdate (const char *pLabel);
 
 // What the last PageChromeSet said about restarting. Saving and restarting
 // needs no startup volume, so a page that greys Start for want of one asks

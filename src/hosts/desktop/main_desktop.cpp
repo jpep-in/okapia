@@ -32,6 +32,7 @@
 //                           Shift held at launch), with the folder if one is named
 //   --release PATH          the release a card is prepared with: a folder, its
 //                           manifest or a board's zip, instead of GitHub's latest
+//   --as-release YY.MM.N    this app pretends to be that release (the update notice)
 //   --cards-images          a mounted disk image counts as an SD card (tests)
 //   --density N             device pixels per point a headless run pretends (2: Retina)
 //   --pick PATH             what the welcome page's next chooser answers ("" to
@@ -681,7 +682,8 @@ static bool PullThePlugAnyway (const char *pWhat)
 void DesktopMenuRequests (void)
 {
 #ifdef __APPLE__
-    switch (DesktopTakeMenuRequest ())
+    const int nRequest = DesktopTakeMenuRequest ();
+    switch (nRequest)
     {
     case 1:
         DesktopChangeWorkspace ();
@@ -691,6 +693,13 @@ void DesktopMenuRequests (void)
         break;
     case 3:
         DesktopToggleFullScreen ();
+        break;
+    case 4:
+        DesktopUpdateCheckNow ();
+        break;
+    case 5:
+    case 6:
+        DesktopUpdateCheckSet (nRequest == 5);
         break;
     default:
         break;
@@ -754,6 +763,7 @@ int main (int argc, char **argv)
         else if (strcmp (a, "--density") == 0 && v)   { SDL_SetHint ("OKAPIA_DENSITY", v); i++; }
         else if (strcmp (a, "--cards-images") == 0)   setenv ("OKAPIA_CARDS_IMAGES", "1", 1);
         else if (strcmp (a, "--release") == 0 && v)   { setenv ("OKAPIA_RELEASE", v, 1); i++; }
+        else if (strcmp (a, "--as-release") == 0 && v) { setenv ("OKAPIA_AS_RELEASE", v, 1); i++; }
         else if (strcmp (a, "--pick") == 0 && v)
         {
             if (s_nPicks < sizeof s_Picks / sizeof s_Picks[0])

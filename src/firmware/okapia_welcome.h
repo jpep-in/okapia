@@ -60,6 +60,7 @@ struct TWelcome
     unsigned    nSystems;                       // all of them, shown or not
     bool        bNothingStarts;                 // disks, and none the ROMs start
     bool        bFill;                          // the page is the window (a desktop's)
+    char        Update[WELCOME_LINE];           // "Okapia 26.12.1 available…": its button, or "" 
     char        Status[WELCOME_LINE * 2];       // what the last action did
 };
 
@@ -88,7 +89,8 @@ enum TWelcomeAction
     WelcomeAddSystem,
     WelcomePrepare,                     // put the release on the card
     WelcomeContinue,                    // to the boot menu
-    WelcomeQuit
+    WelcomeQuit,
+    WelcomeUpdate                       // a newer Okapia: its page (R5)
 };
 
 TWelcomeAction WelcomeOperate (TWelcome *pWelcome, int nIndex);

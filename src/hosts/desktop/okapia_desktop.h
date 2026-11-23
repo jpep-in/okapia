@@ -35,6 +35,11 @@ void DesktopWindowForWelcome (THostWindowMode Mode, unsigned nWidth, unsigned nH
 // From the engine thread, once the welcome page is done: the window becomes
 // the boot menu's, by the main thread, and the output with it.
 void DesktopWelcomeEnd (void);
+// The check for a newer Okapia (install_host.cpp, R5): on or off, kept in the
+// app's support folder; and one now, the last answer not trusted.
+bool DesktopUpdateCheckOn (void);
+void DesktopUpdateCheckSet (bool bOn);
+void DesktopUpdateCheckNow (void);
 // The welcome window resized as the mouse would (the test mode's --resize).
 void DesktopWindowResize (unsigned nWidth, unsigned nHeight);
 const TSurface *DesktopSurface (void);

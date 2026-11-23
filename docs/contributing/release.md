@@ -76,9 +76,18 @@ rather than a second one:
 - **Checking**: once a day at most, after the window is up, in the background: `GET
   https://api.github.com/repos/<repo>/releases/latest`, then that release's `okapia-manifest.json`. A generic
   `User-Agent` (`Okapia/<version>`), nothing about the person or the machine. The time of the last check and the
-  answer are kept in the app's support folder. Offline, it says nothing. A setting turns it off.
-- **Saying**: on the welcome page and the boot menu's footer, *Okapia 26.12.1 is available* with **Update…**; when
-  the workspace is a Pi card with an older kernel, the card's line says so with **Update the card**.
+  answer are kept in the app's support folder. Offline, it says nothing. *Check for Updates Automatically* in the Okapia menu turns it off; *Check for
+  Updates…* asks now, the last answer not trusted.
+- **Saying**: a button **Okapia 26.12.1 available…** at the top right, where there is room: at the end of the
+  welcome page's title line, as the installer put its own, and at the right end of the boot menu's tab strip, above
+  its rule (`DrawTabs` leaves that part of the strip alone). Its slot is kept when there is none, an empty label,
+  so the focus, which a relayout keeps by index, does not move when the answer comes. Both open the release's page (`okapia.page`, HTTPS only) until the app replaces itself (R6).
+  Only an app for this platform whose `min_os` this system meets is announced, and only to a release build: a
+  development build (no `OKAPIA_RELEASE`) says nothing. When the workspace is a Pi card with an older kernel, the
+  welcome page says so with **Update the card**.
+- **Where it is kept**: the app's support folder, `update` (when, the version, its page, whether newer), read while
+  less than a day old; `update-off` when the check is turned off. A lookup that fails keeps nothing. A test's
+  `--release` is never kept.
 - **Replacing the app** (macOS):
   1. download the platform's zip into the support folder, check its size and SHA-256 against the manifest;
   2. unzip it beside, check the code signature (`SecStaticCodeCheckValidity`) and that its Team ID is the
@@ -142,7 +151,7 @@ out, and the bad one is marked *pre-release* so `releases/latest` stops naming i
 | R2 | The desktop prepares cards: libcurl, miniz, the *For* menu from the manifest's boards, *Prepare the card* — **done 2026-11-22**, a real card in a reader still to try | R1 |
 | R3 | `make-desktop-app.sh` signs with a Developer ID, notarises, staples; `make-release.sh` records the Team ID | Apple account |
 | R4 | `scripts/release.sh`, the notes folder (`docs/releases/`) — **done 2026-11-22**, signed ad hoc until R3; rehearsed by parts (the refusals, `make-release.sh` writing the manifest with the app, the app reading it), not yet run whole: it needs this work on `main`. A first release `v26.MM.1` then | R1, R2 |
-| R5 | The app checks once a day and says so; *Update the card* for an older kernel | R2, R4 |
+| R5 | The app checks once a day and says so — **done 2026-11-23**: `HostUpdate` (`install_host.cpp`), a button at the top right of the welcome page and of the boot menu's tab strip, opening the release's page until R6; *Check for Updates…* and *Check for Updates Automatically* in the Okapia menu (macOS; Linux and Windows have no menu yet). *Update the card* in the boot menu for a Pi card with an older kernel is still to do (the welcome page has it) | R2, R4 |
 | R6 | The app replaces itself, signature and Team ID checked | R3, R5 |
 | R7 | CI on GitHub Actions for the host tests, then for the builds | R4 |
 | — | okapia-installer retired once R2 does what it did; its repository says so and points here | R2 |

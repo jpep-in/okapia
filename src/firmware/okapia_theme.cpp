@@ -518,7 +518,16 @@ static void DrawTabs (TSurface *pSurface, const TRect &rStrip, const char *const
         nStep = 2 * nStroke;
     }
 
-    GfxFill (pSurface, rStrip, ColorWhite);
+    // Above the rule, only as far as the tabs reach: what stands right of them
+    // in the strip (a desktop's update button) is drawn by itself, and a tab
+    // repainted alone must not wipe it.
+    {
+        const TRect Last = nCount != 0 ? ThemeTabRect (pTheme, rStrip, pLabels, nCount, nCount - 1)
+                                       : Rect (rStrip.nX, rStrip.nY, 0, 0);
+        const int nRight = Last.nX + (int) Last.nWidth + (int) nStroke;
+        GfxFill (pSurface, Rect (rStrip.nX, rStrip.nY, (unsigned) (nRight - rStrip.nX),
+                                 (unsigned) (nBase - rStrip.nY)), ColorWhite);
+    }
 
     for (unsigned i = 0; i < nCount; i++)
     {

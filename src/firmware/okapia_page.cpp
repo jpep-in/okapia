@@ -55,6 +55,7 @@ void PageBegin (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsigned nM
     pPage->nStart   = -1;
     pPage->nNote    = -1;
     pPage->nBootMenu = -1;
+    pPage->nUpdate  = -1;
     s_pChrome       = 0;
     pPage->pWidgets = pWidgets;
     pPage->nMax     = nMax;
@@ -186,6 +187,13 @@ void PagePaint (TSurface *pSurface, const TPage *pPage)
 static const char *s_pBootMenuHint;
 static bool        s_bWorkspaceOffered;
 
+static const char *s_pUpdateLabel;
+
+void PageChromeUpdate (const char *pLabel)
+{
+    s_pUpdateLabel = pLabel;
+}
+
 void PageChromeWorkspace (bool bOffered)
 {
     s_bWorkspaceOffered = bOffered;
@@ -277,6 +285,32 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
     pTabs->pItems  = s_TabItems;
     pTabs->nItems  = s_nTabsShown;
     pTabs->nChoice = nShown;
+    // A newer Okapia, at the strip's right end, above its rule, where the tabs
+    // leave room: added after the strip, so it takes its own clicks. As tall
+    // as the tab less what its focus ring reaches, so the ring stays off the
+    // rule. Its slot is taken either way, an empty label standing in: the
+    // button coming when the check answers lays the page out again, and the
+    // focus is kept by index (RunPage).
+    if (s_pUpdateLabel == 0)
+    {
+        // Inside the strip and a line high, as every component is: no width.
+        PageAdd (pPage, WidgetLabel, Rect (pTabs->Rect.nX, pTabs->Rect.nY, 0, pTheme->M.nLineHeight), "",
+                 StateNormal);
+    }
+    else
+    {
+        const unsigned nReach = ThemeReach (pTheme, StateFocused);
+        const unsigned nHigh = pTheme->M.nTabHeight > 2 * nReach + pTheme->M.nLineHeight
+                             ? pTheme->M.nTabHeight - 2 * nReach : pTheme->M.nLineHeight;
+        const unsigned nHigh2 = nHigh < pTheme->M.nButtonHeight ? nHigh : pTheme->M.nButtonHeight;
+        const unsigned nWide = WidgetButtonWidth (pTheme, s_pUpdateLabel, StateNormal);
+        const TRect &S = pTabs->Rect;
+        pPage->nUpdate = (int) pPage->nCount;
+        PageAdd (pPage, WidgetButton,
+                 Rect (S.nX + (int) S.nWidth - (int) (nWide + nReach),
+                       S.nY + (int) (pTheme->M.nTabHeight - nHigh2) / 2, nWide, nHigh2),
+                 s_pUpdateLabel, StateNormal);
+    }
     LayoutSectionGap (&pPage->Layout);
 
     // The machine's buttons, the same on every page. Start is where the
@@ -289,6 +323,7 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
     {
         pPage->nWorkspace = PageIconButton (pPage, OkapiaPaintLogo, StateNormal);
     }
+
     // Laid out with the label it will actually wear: a button sized for "Save
     // and restart" and drawn saying "Start" is a button with a hole in it, so a
     // change of either lays the page out again.
@@ -368,6 +403,7 @@ int PageChromeAnswer (int nIndex)
     if (nIndex == p->nPram)   return PageAnswerForgetPram;
     if (nIndex == p->nWorkspace) return PageAnswerWorkspace;
     if (nIndex == p->nBootMenu) return PageAnswerBootMenu;
+    if (nIndex == p->nUpdate) return PageAnswerUpdate;
     if (nIndex == p->nTabs)
     {
         const int nShown = p->pWidgets[p->nTabs].nChoice;

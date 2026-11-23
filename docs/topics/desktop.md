@@ -240,6 +240,7 @@ build/desktop/okapia --headless --work-dir /tmp/card --option --click 593,82,150
 | `--sound-file FILE` | the sound into FILE, raw 44.1 kHz 16-bit stereo (SDL's `disk` driver), instead of the speakers |
 | `--welcome` | the welcome page first, on the folder named if there is one |
 | `--release PATH` | the release a card is prepared with (a folder, its manifest, a board's zip) instead of GitHub's latest |
+| `--as-release YY.MM.N` | this app pretends to be that release, so a newer one (`--release`) is announced |
 | `--cards-images` | a mounted disk image counts as an SD card (to test *SD Card…* with `hdiutil`) |
 | `--density N` | device pixels per point a headless run pretends (2 for Retina), for the Display page's scales |
 | `--pick PATH` | what the welcome page's next chooser answers, in order (`""` cancels) |

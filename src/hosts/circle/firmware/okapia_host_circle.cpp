@@ -357,6 +357,13 @@ void HostRelease (THostRelease *pOut)                       { memset (pOut, 0, s
 void HostCardPlan (const char *, THostCardPlan *pOut)       { memset (pOut, 0, sizeof *pOut); }
 bool HostPrepareStart (const char *)                        { return false; }
 void HostPrepareStatus (THostPrepare *pOut)                 { memset (pOut, 0, sizeof *pOut); }
+// A board is updated from a computer, its card prepared there (R5).
+void HostUpdate (THostUpdate *pOut)                         { memset (pOut, 0, sizeof *pOut);
+                                                              pOut->State = HostUpdateNone; }
+void HostOpenPage (const char *pUrl)
+{
+    HostLog ("host", HostLogNotice, "No browser on a board: %s", pUrl);
+}
 
 // The output is the monitor's, chosen by the firmware and config.txt.
 bool HostWindowDescribe (THostWindow *)                     { return false; }

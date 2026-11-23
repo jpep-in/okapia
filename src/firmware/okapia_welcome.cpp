@@ -35,6 +35,7 @@ static int s_nAddSys   = -1;
 static int s_nContinue = -1;
 static int s_nQuit     = -1;
 static int s_nStatus   = -1;
+static int s_nUpdate   = -1;
 
 // The lines each step shows, set by WelcomeSync.
 static int s_nWorkspaceLine = -1;
@@ -190,9 +191,31 @@ void WelcomeDraw (TSurface *pSurface, TWelcome *pWelcome)
         RowSkip (&Band, pTheme->M.nGap);
         const TRect Text = RowRest (&Band, StateNormal);
         const int nTop = Text.nY + (int) (nHigh - nTextH) / 2;
+        // A newer Okapia at the title line's right end, as the installer put
+        // its own: centred on the title, its ring kept clear of the sentence.
+        unsigned nButtonW = 0;
+        s_nUpdate = -1;
+        if (pWelcome->Update[0] == '\0')
+        {
+            // Its slot kept, so the focus, kept by index, stays where it was
+            // when the button comes.
+            PageAdd (&s_Page, WidgetLabel, Rect (Text.nX, nTop, 0, nTitleH), "", StateNormal);
+        }
+        else
+        {
+            nButtonW = WidgetButtonWidth (pTheme, pWelcome->Update, StateNormal);
+            const unsigned nH = pTheme->M.nButtonHeight;
+            s_nUpdate = (int) s_Page.nCount;
+            PageAdd (&s_Page, WidgetButton,
+                     Rect (Text.nX + (int) Text.nWidth - (int) nButtonW,
+                           nTop + (int) nTitleH / 2 - (int) nH / 2, nButtonW, nH),
+                     pWelcome->Update, StateNormal);
+        }
+        const unsigned nTitleRoom = Text.nWidth > nButtonW + pTheme->M.nGap ? Text.nWidth - nButtonW - pTheme->M.nGap
+                                                                             : Text.nWidth;
         const unsigned nTitleW = GfxTextWidth (pTheme->pTitleBoldFont, pTitle);
         PageAdd (&s_Page, WidgetTitle,
-                 Rect (Text.nX, nTop, nTitleW < Text.nWidth ? nTitleW : Text.nWidth, nTitleH), pTitle,
+                 Rect (Text.nX, nTop, nTitleW < nTitleRoom ? nTitleW : nTitleRoom, nTitleH), pTitle,
                  StateNormal);
         PageAdd (&s_Page, WidgetParagraph,
                  Rect (Text.nX, nTop + (int) (nTitleH + pTheme->M.nRowGap), Text.nWidth, nIntroH),
@@ -450,6 +473,7 @@ TWelcomeAction WelcomeOperate (TWelcome *pWelcome, int nIndex)
     if (nIndex == s_nAddSys)   return WelcomeAddSystem;
     if (nIndex == s_nContinue) return WelcomeContinue;
     if (nIndex == s_nQuit)     return WelcomeQuit;
+    if (nIndex == s_nUpdate && s_nUpdate >= 0) return WelcomeUpdate;
     return WelcomeNothing;
 }
 

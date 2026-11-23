@@ -766,6 +766,34 @@ static const int PageRelayout = -1;
 // A page's Tick saw its model change shape (more lines, fewer): RunPage lays it
 // out again, as for a resized window.
 static bool s_bPageRelayoutAsked;
+
+// A newer Okapia (HostUpdate, R5): the boot menu's footer button, polled while
+// the tabbed pages run on a desktop.
+static bool s_bMenuUpdates;
+static char s_UpdateLabel[64];
+static char s_UpdatePage[192];
+
+static void Fill1 (char *pOut, unsigned nSize, TStringId Id, const char *pValue);
+
+// True when the footer's button came or went (the page is laid out again).
+static bool MenuUpdatePoll (void)
+{
+    THostUpdate U;
+    HostUpdate (&U);
+    char Label[sizeof s_UpdateLabel] = "";
+    if (U.State == HostUpdateAvailable)
+    {
+        Fill1 (Label, sizeof Label, StrUpdateButton, U.Version);
+        snprintf (s_UpdatePage, sizeof s_UpdatePage, "%s", U.Page);
+    }
+    if (strcmp (Label, s_UpdateLabel) == 0)
+    {
+        return false;
+    }
+    snprintf (s_UpdateLabel, sizeof s_UpdateLabel, "%s", Label);
+    PageChromeUpdate (s_UpdateLabel[0] != '\0' ? s_UpdateLabel : 0);
+    return true;
+}
 // The host asked to quit (a desktop's window closed) on a page with no refusal.
 static const int PageQuit = -2;
 
@@ -873,6 +901,11 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
             HostInputBounds (pOutput->nWidth, pOutput->nHeight);
             Screen.bDirtyAll = true;
             bChanged = true;
+        }
+
+        if (s_bMenuUpdates && nTick % 25 == 0 && pDriver->Relayout != 0 && MenuUpdatePoll ())
+        {
+            s_bPageRelayoutAsked = true;
         }
 
         if (pDriver->Tick != 0 && nTick % 25 == 0 && pDriver->Tick ())
@@ -1708,6 +1741,11 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
     PageChromeHideTab (PageTabNetwork, bDesktop);
     s_Settings.bNetworkOffered = bDesktop;
     s_Settings.nNetwork = s_Network.V.nKind != NetworkOff ? 1 : 0;
+    s_bMenuUpdates = bDesktop;
+    if (bDesktop)
+    {
+        MenuUpdatePoll ();              // the last answer, at once, when there is one
+    }
 
     static const TPageDriver Drivers[PageTabCount] =
     {
@@ -1786,6 +1824,10 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
         case PageAnswerBootMenu:
             s_Settings.V.bBootMenu = !s_Settings.V.bBootMenu;
             s_bFocusBootMenu = true;
+            break;
+
+        case PageAnswerUpdate:
+            HostOpenPage (s_UpdatePage);
             break;
 
         case PageAnswerWorkspace:
@@ -2583,6 +2625,23 @@ static unsigned      s_nFolderTicks;
 static bool WelcomeTick (void)
 {
     bool bChanged = false;
+    // A newer Okapia, as the check answers (at once from the last one).
+    {
+        THostUpdate U;
+        HostUpdate (&U);
+        char Line[sizeof s_Welcome.Update] = "";
+        if (U.State == HostUpdateAvailable)
+        {
+            Fill1 (Line, sizeof Line, StrUpdateButton, U.Version);
+            snprintf (s_UpdatePage, sizeof s_UpdatePage, "%s", U.Page);
+        }
+        if (strcmp (Line, s_Welcome.Update) != 0)
+        {
+            snprintf (s_Welcome.Update, sizeof s_Welcome.Update, "%s", Line);
+            s_bPageRelayoutAsked = true;
+            bChanged = true;
+        }
+    }
     // Every two seconds, the folder read again; a change is gathered and laid
     // out, the disks' lines being as many as there are disks.
     if (s_Welcome.Workspace[0] != '\0' && !s_bPreparing && ++s_nFolderTicks % 8 == 0)
@@ -2746,6 +2805,10 @@ static int WelcomeAdapter (int nIndex)
 
     case WelcomeQuit:
         return (int) WelcomeQuit;
+
+    case WelcomeUpdate:
+        HostOpenPage (s_UpdatePage);
+        return 0;
 
     default:
         return 0;

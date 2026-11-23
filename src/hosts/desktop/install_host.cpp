@@ -14,9 +14,16 @@
 
 #include "install.h"
 #include "okapia_card.h"
+#include "okapia_desktop.h"
 #include "okapia_host.h"
 
+#include "okapia_version.h"
+
 #include <SDL3/SDL.h>
+#if defined (__APPLE__)
+#include <sys/sysctl.h>
+#endif
+#include <time.h>
 
 #include <mutex>
 #include <stdio.h>
@@ -70,16 +77,242 @@ static void LookUp (void)
              R.Description.c_str (), s_Release.nBoards);
 }
 
+// With s_Lock held.
+static void StartLookUp (void)
+{
+    if (!s_bLooking)
+    {
+        s_bLooking = true;
+        std::thread (LookUp).detach ();
+    }
+}
+
 void HostRelease (THostRelease *pOut)
 {
+    std::lock_guard<std::mutex> Guard (s_Lock);
+    StartLookUp ();
+    *pOut = s_Release;
+}
+
+/*
+ *  A newer Okapia for this computer (R5)
+ *
+ *  Once a day at most: the last answer is kept in the app's support folder
+ *  (update: when, the version, its page, whether it is newer than this one)
+ *  and used while less than a day old, so most starts touch no network. A
+ *  failed lookup (offline) keeps nothing and says nothing. update-off in the
+ *  same folder turns the check off (the Okapia menu's item).
+ */
+static THostUpdate s_Update = { HostUpdateChecking, "", "" };
+static bool        s_bUpdateDecided;
+static bool        s_bUpdateWaiting;     // for the lookup to finish
+static bool        s_bUpdateForced;      // Check now: the cache not trusted
+
+static std::string SupportFile (const char *pName)
+{
+    char *pPref = SDL_GetPrefPath ("Okapia", "Okapia");
+    std::string Path = std::string (pPref != 0 ? pPref : "./") + pName;
+    SDL_free (pPref);
+    return Path;
+}
+
+// This app's release number, "" for a development build; the test mode's
+// --as-release pretends one.
+static std::string SelfRelease (void)
+{
+    const char *pTest = getenv ("OKAPIA_AS_RELEASE");
+    return pTest != 0 ? pTest : OKAPIA_RELEASE;
+}
+
+static const char *Platform (void)
+{
+#if defined (__APPLE__) && defined (__aarch64__)
+    return "macos-arm64";
+#elif defined (__APPLE__)
+    return "macos-x86_64";
+#elif defined (__linux__) && defined (__aarch64__)
+    return "linux-arm64";
+#elif defined (__linux__)
+    return "linux-x86_64";
+#elif defined (_WIN32)
+    return "windows-x86_64";
+#else
+    return "";
+#endif
+}
+
+static std::string SystemVersion (void)
+{
+#if defined (__APPLE__)
+    char Version[32] = "";
+    size_t nSize = sizeof Version;
+    if (sysctlbyname ("kern.osproductversion", Version, &nSize, 0, 0) == 0)
+        return Version;
+#endif
+    return "";
+}
+
+bool DesktopUpdateCheckOn (void)
+{
+    FILE *pFile = fopen (SupportFile ("update-off").c_str (), "r");
+    if (pFile != 0)
     {
-        std::lock_guard<std::mutex> Guard (s_Lock);
-        if (!s_bLooking)
+        fclose (pFile);
+        return false;
+    }
+    return true;
+}
+
+void DesktopUpdateCheckSet (bool bOn)
+{
+    const std::string Off = SupportFile ("update-off");
+    if (bOn)
+    {
+        remove (Off.c_str ());
+    }
+    else if (FILE *pFile = fopen (Off.c_str (), "w"))
+    {
+        fputs ("The check for a newer Okapia is off (Okapia menu).\n", pFile);
+        fclose (pFile);
+    }
+    std::lock_guard<std::mutex> Guard (s_Lock);
+    s_bUpdateDecided = false;           // asked again at the next poll
+    s_bUpdateForced = bOn;
+    if (bOn)
+    {
+        s_bLooking = false;             // a fresh lookup
+        s_Release.State = HostReleaseLooking;
+    }
+    HostLog (FROM, HostLogNotice, "Update check %s", bOn ? "on" : "off");
+}
+
+void DesktopUpdateCheckNow (void)
+{
+    std::lock_guard<std::mutex> Guard (s_Lock);
+    s_bUpdateDecided = false;
+    s_bUpdateForced = true;
+    s_bLooking = false;
+    s_Release.State = HostReleaseLooking;
+    HostLog (FROM, HostLogNotice, "Update check asked for now");
+}
+
+// With s_Lock held: what the release found says, kept for a day.
+static void UpdateFromRelease (void)
+{
+    s_Update = THostUpdate ();
+    s_Update.State = HostUpdateNone;
+    if (s_Release.State != HostReleaseReady)
+    {
+        return;                         // offline, or nothing published: nothing said, nothing kept
+    }
+    const TManifest &M = s_Source.Manifest;
+    const std::string Self = SelfRelease ();
+    const TManifestApp *pApp = ManifestApp (M, Platform ());
+    const std::string System = SystemVersion ();
+    const bool bNewer = !Self.empty () && VersionLess (Self, M.Version) && pApp != 0
+                     && (pApp->MinOs.empty () || System.empty () || !VersionLess (System, pApp->MinOs));
+    const std::string Page = !M.Page.empty () ? M.Page
+                           : std::string ("https://github.com/") + OKAPIA_REPOSITORY + "/releases/latest";
+    Copy (s_Update.Version, sizeof s_Update.Version, M.Version);
+    Copy (s_Update.Page, sizeof s_Update.Page, Page);
+    s_Update.State = bNewer ? HostUpdateAvailable : HostUpdateNone;
+    // A release on this computer (the test mode's --release) is not GitHub's
+    // answer: it is not kept for the next start.
+    FILE *pFile = getenv ("OKAPIA_RELEASE") == 0 ? fopen (SupportFile ("update").c_str (), "w") : 0;
+    if (pFile != 0)
+    {
+        fprintf (pFile, "checked %lld\nversion %s\npage %s\nnewer %d\n", (long long) time (0),
+                 M.Version.c_str (), Page.c_str (), bNewer ? 1 : 0);
+        fclose (pFile);
+    }
+    HostLog (FROM, HostLogNotice, "Update: this is %s, the latest Okapia %s%s", Self.empty () ? "a development build" : Self.c_str (),
+             M.Version.c_str (), bNewer ? ", newer: said" : (pApp == 0 ? ", no app for this platform" : ""));
+}
+
+// The last answer, when less than a day old.
+static bool UpdateFromCache (void)
+{
+    FILE *pFile = fopen (SupportFile ("update").c_str (), "r");
+    if (pFile == 0)
+    {
+        return false;
+    }
+    long long nWhen = 0;
+    char Version[32] = "", Page[192] = "";
+    int nNewer = 0;
+    const bool bRead = fscanf (pFile, "checked %lld\nversion %31s\npage %191s\nnewer %d", &nWhen, Version, Page,
+                               &nNewer) == 4;
+    fclose (pFile);
+    const long long nAge = (long long) time (0) - nWhen;
+    if (!bRead || nAge < 0 || nAge >= 24 * 3600)
+    {
+        return false;
+    }
+    s_Update = THostUpdate ();
+    // Newer than this app then, and still: the app may have been replaced since.
+    const std::string Self = SelfRelease ();
+    const bool bNewer = nNewer != 0 && !Self.empty () && VersionLess (Self, Version);
+    s_Update.State = bNewer ? HostUpdateAvailable : HostUpdateNone;
+    Copy (s_Update.Version, sizeof s_Update.Version, Version);
+    Copy (s_Update.Page, sizeof s_Update.Page, Page);
+    return true;
+}
+
+void HostUpdate (THostUpdate *pOut)
+{
+    std::lock_guard<std::mutex> Guard (s_Lock);
+    if (!s_bUpdateDecided && !s_bUpdateWaiting)
+    {
+        if (!DesktopUpdateCheckOn ())
         {
-            s_bLooking = true;
-            std::thread (LookUp).detach ();
+            s_Update = THostUpdate ();
+            s_Update.State = HostUpdateOff;
+            s_bUpdateDecided = true;
         }
-        *pOut = s_Release;
+        else if (!s_bUpdateForced && getenv ("OKAPIA_RELEASE") == 0 && UpdateFromCache ())
+        {
+            s_bUpdateDecided = true;
+        }
+        else
+        {
+            s_Update.State = HostUpdateChecking;
+            s_bUpdateWaiting = true;
+            StartLookUp ();
+        }
+    }
+    if (s_bUpdateWaiting && s_Release.State != HostReleaseLooking)
+    {
+        UpdateFromRelease ();
+        s_bUpdateWaiting = false;
+        s_bUpdateForced = false;
+        s_bUpdateDecided = true;
+    }
+    *pOut = s_Update;
+}
+
+static void SDLCALL OpenOnMainThread (void *pData)
+{
+    char *pUrl = (char *) pData;
+    if (!SDL_OpenURL (pUrl))
+    {
+        HostLog (FROM, HostLogWarning, "The page could not be opened: %s", SDL_GetError ());
+    }
+    free (pUrl);
+}
+
+void HostOpenPage (const char *pUrl)
+{
+    // HTTPS only: the manifest is data from the network.
+    if (strncmp (pUrl, "https://", 8) != 0)
+    {
+        HostLog (FROM, HostLogWarning, "Not opened, not an HTTPS page: %s", pUrl);
+        return;
+    }
+    HostLog (FROM, HostLogNotice, "Opening %s", pUrl);
+    char *pCopy = strdup (pUrl);
+    if (pCopy != 0 && !SDL_RunOnMainThread (OpenOnMainThread, pCopy, false))
+    {
+        free (pCopy);
     }
 }
 
