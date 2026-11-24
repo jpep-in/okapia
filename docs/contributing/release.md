@@ -83,8 +83,14 @@ rather than a second one:
   its rule (`DrawTabs` leaves that part of the strip alone). Its slot is kept when there is none, an empty label,
   so the focus, which a relayout keeps by index, does not move when the answer comes. Both open the release's page (`okapia.page`, HTTPS only) until the app replaces itself (R6).
   Only an app for this platform whose `min_os` this system meets is announced, and only to a release build: a
-  development build (no `OKAPIA_RELEASE`) says nothing. When the workspace is a Pi card with an older kernel, the
-  welcome page says so with **Update the card**.
+  development build (no `OKAPIA_RELEASE`) says nothing. When the workspace is a Pi card with an older Okapia than the
+  release (its `okapia-manifest.json` names a board and an older version), the welcome page says so (*Okapia 26.11.1 is
+  available.*, the footer's default button **Update**), and so does the boot menu, in the same top-right slot when
+  the app itself is current: the same sentence on a line above the strip, over an **Update** button (`PageChromeUpdate`'s note), which opens
+  the welcome page on that card, its board chosen, where the card is prepared with its progress. The boot menu looks
+  the release up only for such a card, and not when the check is turned off; it reads the card once per menu
+  (`MenuCardOutdated`, `okapia_menu.cpp`). The welcome page chooses the board a card's manifest names, a folder copy
+  included, and takes the version from that manifest when neither the kernel nor a log says it.
 - **Where it is kept**: the app's support folder, `update` (when, the version, its page, whether newer), read while
   less than a day old; `update-off` when the check is turned off. A lookup that fails keeps nothing. A test's
   `--release` is never kept.
@@ -151,7 +157,7 @@ out, and the bad one is marked *pre-release* so `releases/latest` stops naming i
 | R2 | The desktop prepares cards: libcurl, miniz, the *For* menu from the manifest's boards, *Prepare the card* — **done 2026-11-22**, a real card in a reader still to try | R1 |
 | R3 | `make-desktop-app.sh` signs with a Developer ID, notarises, staples; `make-release.sh` records the Team ID | Apple account |
 | R4 | `scripts/release.sh`, the notes folder (`docs/releases/`) — **done 2026-11-22**, signed ad hoc until R3; rehearsed by parts (the refusals, `make-release.sh` writing the manifest with the app, the app reading it), not yet run whole: it needs this work on `main`. A first release `v26.MM.1` then | R1, R2 |
-| R5 | The app checks once a day and says so — **done 2026-11-23**: `HostUpdate` (`install_host.cpp`), a button at the top right of the welcome page and of the boot menu's tab strip, opening the release's page until R6; *Check for Updates…* and *Check for Updates Automatically* in the Okapia menu (macOS; Linux and Windows have no menu yet). *Update the card* in the boot menu for a Pi card with an older kernel is still to do (the welcome page has it) | R2, R4 |
+| R5 | The app checks once a day and says so — **done 2026-11-23**: `HostUpdate` (`install_host.cpp`), a button at the top right of the welcome page and of the boot menu's tab strip, opening the release's page until R6; *Check for Updates…* and *Check for Updates Automatically* in the Okapia menu (macOS; Linux and Windows have no menu yet). *Update* in the boot menu, in the same slot, for a Pi card with an older Okapia (2026-11-24) | R2, R4 |
 | R6 | The app replaces itself, signature and Team ID checked | R3, R5 |
 | R7 | CI on GitHub Actions for the host tests, then for the builds | R4 |
 | — | okapia-installer retired once R2 does what it did; its repository says so and points here | R2 |

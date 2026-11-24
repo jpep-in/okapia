@@ -188,10 +188,12 @@ static const char *s_pBootMenuHint;
 static bool        s_bWorkspaceOffered;
 
 static const char *s_pUpdateLabel;
+static const char *s_pUpdateNote;
 
-void PageChromeUpdate (const char *pLabel)
+void PageChromeUpdate (const char *pLabel, const char *pNote)
 {
     s_pUpdateLabel = pLabel;
+    s_pUpdateNote  = pLabel != 0 ? pNote : 0;
 }
 
 void PageChromeWorkspace (bool bOffered)
@@ -278,6 +280,13 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
         Item.nState = StateNormal;
         s_TabOf[s_nTabsShown++] = (TPageTab) i;
     }
+    // The update's note, when it has one, takes a line above the strip; its
+    // widget is added after the button, so the indices before it stay.
+    TRect Note = Rect (0, 0, 0, 0);
+    if (s_pUpdateNote != 0)
+    {
+        Note = LayoutTop (&pPage->Layout, pTheme->M.nLineHeight);
+    }
     pPage->nTabs = (int) pPage->nCount;
     TWidget *pTabs = PageAdd (pPage, WidgetTabs,
                               LayoutTop (&pPage->Layout, ThemeTabsHeight (pTheme)), 0,
@@ -310,6 +319,25 @@ void PageBeginTabbed (TPage *pPage, TSurface *pSurface, TWidget *pWidgets, unsig
                  Rect (S.nX + (int) S.nWidth - (int) (nWide + nReach),
                        S.nY + (int) (pTheme->M.nTabHeight - nHigh2) / 2, nWide, nHigh2),
                  s_pUpdateLabel, StateNormal);
+    }
+    // The note's slot, taken either way as the button's is: inside the strip
+    // and a line high when there is none.
+    if (s_pUpdateNote == 0)
+    {
+        PageAdd (pPage, WidgetLabel, Rect (pTabs->Rect.nX, pTabs->Rect.nY, 0, pTheme->M.nLineHeight), "",
+                 StateNormal);
+    }
+    else
+    {
+        const unsigned nReach = ThemeReach (pTheme, StateFocused);
+        unsigned nWide = GfxTextWidth (pTheme->pBodyFont, s_pUpdateNote);
+        if (nWide + nReach > Note.nWidth)
+        {
+            nWide = Note.nWidth > nReach ? Note.nWidth - nReach : Note.nWidth;
+        }
+        PageAdd (pPage, WidgetLabel,
+                 Rect (Note.nX + (int) Note.nWidth - (int) (nWide + nReach), Note.nY, nWide, Note.nHeight),
+                 s_pUpdateNote, StateNormal);
     }
     LayoutSectionGap (&pPage->Layout);
 

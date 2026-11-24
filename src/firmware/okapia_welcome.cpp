@@ -157,7 +157,7 @@ void WelcomeDraw (TSurface *pSurface, TWelcome *pWelcome)
     if (bForBoard)
     {
         // The card's own button, the default: what the page is for, for a Pi.
-        s_nPrepare = PageLast (&s_Page, Str (pWelcome->bUpdate ? StrWelcomeUpdateCard : StrWelcomePrepare),
+        s_nPrepare = PageLast (&s_Page, Str (pWelcome->bUpdate ? StrUpdateCardButton : StrWelcomePrepare),
                                StateDefault);
     }
     s_nContinue = PageLast (&s_Page, Str (StrWelcomeContinue), bForBoard ? StateNormal : StateDefault);
@@ -412,7 +412,7 @@ void WelcomeSync (TWelcome *pWelcome)
     s_Widgets[s_nTarget].nChoice = (int) pWelcome->nTarget;
     if (s_nPrepare >= 0)
     {
-        s_Widgets[s_nPrepare].pText = Str (pWelcome->bUpdate ? StrWelcomeUpdateCard : StrWelcomePrepare);
+        s_Widgets[s_nPrepare].pText = Str (pWelcome->bUpdate ? StrUpdateCardButton : StrWelcomePrepare);
         WidgetSetState (&s_Widgets[s_nPrepare],
                         pWelcome->bPrepareEnabled ? StateDefault : StateDefault | StateDisabled);
     }

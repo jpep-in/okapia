@@ -113,8 +113,10 @@ void PageChromeBootMenuHint (const char *pHint);
 void PageChromeHideTab (TPageTab Tab, bool bHidden);
 void PageChromeWorkspace (bool bOffered);
 // A newer Okapia, on a desktop: its button at the right end of the tab strip,
-// saying which ("Okapia 26.12.1 available…"); 0 for none.
-void PageChromeUpdate (const char *pLabel);
+// saying which ("Okapia 26.12.1 available…"); 0 for none. With a note, the
+// note on a line of its own above the strip, right-aligned over the button
+// ("Okapia 26.12.1 is available for this card.", over "Update").
+void PageChromeUpdate (const char *pLabel, const char *pNote = 0);
 
 // What the last PageChromeSet said about restarting. Saving and restarting
 // needs no startup volume, so a page that greys Start for want of one asks

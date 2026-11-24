@@ -265,10 +265,12 @@ void HostRelease (THostRelease *pOut);
 
 // What the workspace, as a card for this board, holds against the release:
 // the version installed ("" none), whether it is that release, and what
-// preparing it would write.
+// preparing it would write. No board (0): the one the card's own manifest
+// names, as the boot menu asks (Update the Card).
 struct THostCardPlan
 {
     char               Installed[32];
+    char               Board[16];       // the board the card was prepared for, "" none
     bool               bUpToDate;
     unsigned long long nBytes;
     bool               bKnown;          // false while there is no release to compare with

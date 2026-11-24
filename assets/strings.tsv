@@ -246,6 +246,7 @@ welcome_step_rom	2 · Macintosh ROM	2 · ROM du Macintosh
 welcome_step_system	3 · The Mac’s disk	3 · Disque du Mac
 welcome_no_system	A disk image with System 7, Mac OS 8 or 9, or an installation CD.	Une image disque avec System 7, Mac OS 8 ou 9, ou un CD d’installation.
 update_button	Okapia {} available…	Okapia {} disponible…
+update_card_button	Update	Mettre à jour
 welcome_hint_folder	ROMs and disk images can also be copied into this folder by hand: Okapia recognises them automatically.	Les ROM et les images disques peuvent aussi être copiées manuellement dans ce dossier : Okapia les reconnaît automatiquement.
 welcome_hint_card	ROMs and disk images can also be copied onto the SD card by hand: Okapia recognises them automatically.	Les ROM et les images disques peuvent aussi être copiées manuellement sur la carte SD : Okapia les reconnaît automatiquement.
 welcome_hint_disks	Uncompressed disk images (.img, .dsk, .hda, .hfv, .image) or CD images (.iso, .toast, .cdr), in HFS format (or HFS+ from Mac OS 8.1).	Images disques non compressées (.img, .dsk, .hda, .hfv, .image) ou images de CD (.iso, .toast, .cdr), au format HFS (ou HFS+ à partir de Mac OS 8.1).
@@ -327,14 +328,13 @@ welcome_no_card	None yet: insert the Pi’s SD card and choose it.	Aucune pour l
 welcome_c_stand_in	Folder standing in for a card	Dossier tenant lieu de carte
 welcome_need_card	Insert the SD card and choose it to begin.	Insérez la carte SD et choisissez-la pour commencer.
 welcome_prepare	Prepare the Card	Préparer la carte
-welcome_update_card	Update the Card	Mettre à jour la carte
 welcome_rel_looking	Looking for the latest Okapia…	Recherche de la dernière version d’Okapia…
 welcome_rel_ready	Okapia {} is ready to put on the card.	Okapia {} est prêt à être mis sur la carte.
 welcome_rel_none	No release of Okapia is published yet.	Aucune version d’Okapia n’est encore publiée.
 welcome_rel_failed	The latest Okapia could not be read: {}	Impossible de lire la dernière version d’Okapia : {}
 welcome_rel_uptodate	Okapia {} is on the card: up to date.	Okapia {} est sur la carte : elle est à jour.
 welcome_rel_refused	Okapia {} is available: update Okapia to prepare this card.	Okapia {} est disponible : mettez à jour Okapia pour préparer cette carte.
-welcome_rel_update	Okapia {} is available for this card.	Okapia {} est disponible pour cette carte.
+welcome_rel_update	Okapia {} is available.	Okapia {} est disponible.
 welcome_prep_fetching	Downloading {}	Téléchargement de {}
 welcome_prep_writing	Writing {} on the card	Écriture de {} sur la carte
 welcome_prep_done	The card is ready: put it in the Raspberry Pi.	La carte est prête : mettez-la dans le Raspberry Pi.

@@ -767,31 +767,79 @@ static const int PageRelayout = -1;
 // out again, as for a resized window.
 static bool s_bPageRelayoutAsked;
 
-// A newer Okapia (HostUpdate, R5): the boot menu's footer button, polled while
-// the tabbed pages run on a desktop.
+// A newer Okapia (HostUpdate, R5): the button at the top right of the boot
+// menu's tab strip, polled while the tabbed pages run on a desktop. Failing
+// that, a Pi card with an older Okapia than the release: Update the Card,
+// which opens the welcome page on it, where the card is prepared.
 static bool s_bMenuUpdates;
 static char s_UpdateLabel[64];
 static char s_UpdatePage[192];
+static char s_UpdateNote[96];           // over the button, for the card
+static bool s_bUpdateIsCard;            // the button is Update the Card
+static int  s_nCardOutdated = -1;       // -1 not known yet, 0 no, 1 yes
 
 static void Fill1 (char *pOut, unsigned nSize, TStringId Id, const char *pValue);
 
-// True when the footer's button came or went (the page is laid out again).
+// Whether the workspace is a card Okapia was installed on, for a board, with
+// an older release than the published one. The card is read once the release
+// is known (its files hashed), and not again while the menu runs. Not asked
+// when the person turned the check off: the welcome page still says it.
+static bool MenuCardOutdated (const THostUpdate &U)
+{
+    if (s_nCardOutdated >= 0)
+    {
+        return s_nCardOutdated != 0;
+    }
+    THostCardPlan Plan;
+    HostCardPlan (0, &Plan);            // the card's manifest only, while no release is known
+    if (Plan.Board[0] == '\0' || U.State == HostUpdateOff)
+    {
+        s_nCardOutdated = 0;
+        return false;
+    }
+    THostRelease R;
+    HostRelease (&R);                   // the lookup starts now, in the background
+    if (R.State == HostReleaseLooking)
+    {
+        return false;
+    }
+    if (R.State == HostReleaseReady)
+    {
+        HostCardPlan (0, &Plan);
+    }
+    s_nCardOutdated = Plan.bKnown && !Plan.bUpToDate && !Plan.bRefused ? 1 : 0;
+    if (s_nCardOutdated != 0)
+    {
+        Fill1 (s_UpdateNote, sizeof s_UpdateNote, StrWelcomeRelUpdate, R.Version);
+    }
+    HostLog (FROM, HostLogNotice, "Card: Okapia %s for %s, release %s: %s", Plan.Installed, Plan.Board,
+             R.State == HostReleaseReady ? R.Version : "unknown", s_nCardOutdated ? "older" : "kept");
+    return s_nCardOutdated != 0;
+}
+
+// True when the strip's button came or went (the page is laid out again).
 static bool MenuUpdatePoll (void)
 {
     THostUpdate U;
     HostUpdate (&U);
     char Label[sizeof s_UpdateLabel] = "";
+    s_bUpdateIsCard = false;
     if (U.State == HostUpdateAvailable)
     {
         Fill1 (Label, sizeof Label, StrUpdateButton, U.Version);
         snprintf (s_UpdatePage, sizeof s_UpdatePage, "%s", U.Page);
+    }
+    else if (U.State != HostUpdateChecking && MenuCardOutdated (U))
+    {
+        snprintf (Label, sizeof Label, "%s", Str (StrUpdateCardButton));
+        s_bUpdateIsCard = true;
     }
     if (strcmp (Label, s_UpdateLabel) == 0)
     {
         return false;
     }
     snprintf (s_UpdateLabel, sizeof s_UpdateLabel, "%s", Label);
-    PageChromeUpdate (s_UpdateLabel[0] != '\0' ? s_UpdateLabel : 0);
+    PageChromeUpdate (s_UpdateLabel[0] != '\0' ? s_UpdateLabel : 0, s_bUpdateIsCard ? s_UpdateNote : 0);
     return true;
 }
 // The host asked to quit (a desktop's window closed) on a page with no refusal.
@@ -1827,7 +1875,17 @@ static TFirmwareResult RunScreens (TSurface *pOutput, const TTheme *pTheme)
             break;
 
         case PageAnswerUpdate:
-            HostOpenPage (s_UpdatePage);
+            if (s_bUpdateIsCard)
+            {
+                // The welcome page, on this card, its board chosen: Update
+                // the Card there, with its progress. What was set is kept.
+                SaveAll ();
+                HostOpenWelcome ();
+            }
+            else
+            {
+                HostOpenPage (s_UpdatePage);
+            }
             break;
 
         case PageAnswerWorkspace:
@@ -2038,6 +2096,14 @@ static void WelcomeVolumeNote (char *pOut, unsigned nSize, bool bBoard)
     if (bBoard)
     {
         char Okapia[96];
+        if (D.Version[0] == '\0')
+        {
+            // Not in the kernel nor in a log: what the card's manifest says
+            // was installed, when Okapia was installed there.
+            THostCardPlan Plan;
+            HostCardPlan (0, &Plan);
+            snprintf (D.Version, sizeof D.Version, "%s", Plan.Installed);
+        }
         if (D.bKernel && D.Missing[0] == '\0')
             Fill1 (Okapia, sizeof Okapia, StrWelcomeCOkapia, D.Version[0] != '\0' ? D.Version : "?");
         else if (D.bKernel)
@@ -2696,13 +2762,24 @@ static bool WelcomeTick (void)
 }
 
 // A card in a reader is for a board: the "For" menu follows it, as the
-// installer's did; a folder leaves the choice as it was.
+// installer's did, and so does a folder Okapia was installed on (a card's
+// copy, the boot menu's Update the Card); any other folder leaves the choice
+// as it was.
 static void WelcomeTargetFromVolume (void)
 {
+    if (s_Welcome.Workspace[0] == '\0')
+    {
+        return;
+    }
     TCardVolume V;
-    if (s_Welcome.Workspace[0] != '\0' && HostVolumeOf (CardPath ("/"), &V) && V.bRemovable)
+    THostCardPlan Plan;
+    HostCardPlan (0, &Plan);
+    if (Plan.Board[0] != '\0' || (HostVolumeOf (CardPath ("/"), &V) && V.bRemovable))
     {
         s_Welcome.nTarget = WelcomeForFirstBoard;
+        for (unsigned t = 1; t < s_Welcome.nTargets; t++)
+            if (strcmp (s_Welcome.TargetId[t], Plan.Board) == 0)
+                s_Welcome.nTarget = t;
     }
 }
 

@@ -98,8 +98,9 @@ build on it (read in `kernel8-rpi4.img`) or that it is not there yet. What the w
 card loses the `._name` file macOS keeps its provenance attribute in (`HostTidy`). `--cards-images` lets a
 mounted disk image stand in for a card in a test.
 
-**Putting Okapia on the card.** For a board, the footer's default button is **Prepare the Card** (**Update the
-Card** when an older Okapia is on it); the status line says what the release is and then how the work goes. The
+**Putting Okapia on the card.** For a board, the footer's default button is **Prepare the Card** (**Update**
+when an older Okapia is on it, which the boot menu also offers at the top right of its tab strip, the release
+named on a line above, opening this page on the card); the board a card's own manifest names is chosen, a folder copy included. The status line says what the release is and then how the work goes. The
 release is looked for in the background when the page opens: GitHub's latest of `OKAPIA_REPOSITORY`, through
 libcurl, HTTPS only, a `User-Agent` of `Okapia` and nothing else (`install_fetch.cpp`); or a release on this
 computer with `--release PATH` (a folder, its manifest, or a board's zip). Its manifest's boards fill the *For*

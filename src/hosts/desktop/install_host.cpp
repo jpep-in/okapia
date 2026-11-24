@@ -319,6 +319,20 @@ void HostOpenPage (const char *pUrl)
 void HostCardPlan (const char *pBoardId, THostCardPlan *pOut)
 {
     memset (pOut, 0, sizeof *pOut);
+    TManifest OnCard;
+    if (InstallReadCard (CardPath ("/"), &OnCard))
+    {
+        Copy (pOut->Installed, sizeof pOut->Installed, OnCard.Version);
+        Copy (pOut->Board, sizeof pOut->Board, OnCard.Board);
+    }
+    if (pBoardId == 0)
+    {
+        if (pOut->Board[0] == '\0')
+        {
+            return;                     // not a card Okapia was installed on
+        }
+        pBoardId = pOut->Board;
+    }
     TManifest Board;
     {
         std::lock_guard<std::mutex> Guard (s_Lock);
@@ -327,18 +341,12 @@ void HostCardPlan (const char *pBoardId, THostCardPlan *pOut)
         pOut->bRefused = s_Release.State == HostReleaseReady && !ManifestRefusal (s_Source.Manifest).empty ();
         if (pOut->bRefused || s_Release.State != HostReleaseReady || !ManifestForBoard (s_Source.Manifest, pBoardId, &Board))
         {
-            TManifest OnCard;
-            if (InstallReadCard (CardPath ("/"), &OnCard))
-                Copy (pOut->Installed, sizeof pOut->Installed, OnCard.Version);
             return;
         }
     }
     if (!ManifestRefusal (Board).empty ())
     {
         pOut->bRefused = true;
-        TManifest OnCard;
-        if (InstallReadCard (CardPath ("/"), &OnCard))
-            Copy (pOut->Installed, sizeof pOut->Installed, OnCard.Version);
         return;
     }
     const TInstallPlan Plan = InstallPlan (CardPath ("/"), Board);
