@@ -66,4 +66,4 @@ Found and not yet fixed — each is tracked in its topic:
 
 NVMe, a Happy Mac or Sad Mac drawn by Okapia (the ROM already draws
 its own; a Sad Mac would mean simulating a hardware failure), Mini vMac for System 1 to 7.5, a CRT mode. Later candidates:
-QuickDraw acceleration on the 68k, a shared clipboard, a ready-to-flash SD image, full Pi 5 support.
+a shared clipboard, a ready-to-flash SD image, full Pi 5 support.

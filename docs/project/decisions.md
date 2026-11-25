@@ -125,6 +125,21 @@
 
 ## Storage and data
 
+### QuickDraw acceleration set aside
+
+- **Decision** (2026-11-26, the owner): the 68k QuickDraw hooks (`qdaccel`: native `BitBlt` and `RgnBlt` loops, a
+  worker on core 2, the boot menu's box) leave this branch for `wip-quickdraw`, with their study, their host test
+  and their measurements. The branch is the last state of that work, uncommitted parts included.
+- **Why**: the translator already runs QuickDraw's own loops as ARM64 code, so a hook saves less than it did over
+  the interpreter, and every call into the host is a journey out of translated code. Speedometer does not see the
+  hooks, with or without the translator. Their code and their modes (`sync`, `parallel`, `probe`, `verify`) were a
+  maintenance cost on every start path.
+- **Evidence for, kept on record**: MacBench on a Pi 4 with the translator, 152.0 s → 132.2 s, from whole-window
+  copies (4.8×), scrolling (3.2×) and regions (−31 %); nothing else moves
+  ([Benchmarks](../contributing/benchmarks.md#raspberry-pi-4-the-night-of-2026-11-15)).
+- **Would reopen**: a real application (the Finder's windows, a game, a scrolling editor) measured faster by a margin
+  that matters with the translator on, against what it costs to keep the hooks right at every depth.
+
 ### No write-back cache between the guest and the card
 
 - **Why**: data safety. Every write the guest issues goes straight to the card, like BlueSCSI, whose

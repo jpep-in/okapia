@@ -48,11 +48,6 @@ esac
 # of text and 4.9 MB of tables (docs/notes/research/jit-68k.md).
 KERNEL_MAX_SIZE_MB=16
 CONFIGURE_ARGS+=(--kernel-max-size "$KERNEL_MAX_SIZE_MB")
-QD_MULTICORE=0
-if [ "$TARGET" = pi4 ] && [ "${OKAPIA_QD_MULTICORE:-0}" = 1 ]; then
-    QD_MULTICORE=1
-    CONFIGURE_ARGS+=(--option ARM_ALLOW_MULTI_CORE)
-fi
 
 # macOS ships Bash 3.2 (no mapfile) and BSD getopt (no --long): circle-stdlib's
 # configure needs GNU versions of both. install-tools.sh puts GNU getopt on PATH.
@@ -199,7 +194,6 @@ build_stamp ()
     cat "${REPO_ROOT}"/patches/circle-stdlib/*.patch 2>/dev/null | shasum | cut -d' ' -f1
     # The reservation is compiled into newlib and Circle alike.
     printf 'kernel-max-size %s\n' "$KERNEL_MAX_SIZE_MB"
-    if [ "$QD_MULTICORE" = 1 ]; then printf 'quickdraw multicore\n'; fi
     for tree in . libs/circle libs/circle-newlib libs/circle/addon/wlan/hostap; do
         printf '%s %s\n' "$(git -C "${STDLIB}/${tree}" rev-parse HEAD 2>/dev/null)" "$tree"
     done

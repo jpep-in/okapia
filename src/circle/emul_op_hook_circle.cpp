@@ -27,7 +27,6 @@
 #include "sysdeps.h"
 #include "cpu_emulation.h"
 #include "emul_op.h"
-#include "quickdraw_circle.h"
 
 #include "okapia_circle.h"
 
@@ -53,7 +52,6 @@ static bool     s_bRestart = false;
  */
 void MacRestartArm (void)
 {
-    QDReset ();
     s_nResets  = 0;
     s_bRestart = false;
     quit_program = 0;
@@ -68,11 +66,6 @@ extern "C" void __real__Z6EmulOptP13M68kRegisters (uint16 opcode, M68kRegisters 
 
 extern "C" void __wrap__Z6EmulOptP13M68kRegisters (uint16 opcode, M68kRegisters *r)
 {
-    if (opcode == QD_EMUL_OP)
-    {
-        QDEmulOp (*r);
-        return;
-    }
     __real__Z6EmulOptP13M68kRegisters (opcode, r);
 
     // One comparison per EmulOp, against a constant. Everything else — the VBL,

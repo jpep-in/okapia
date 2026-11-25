@@ -7,6 +7,9 @@
 > (`MacOSX/PrefsEditor.mm`, `Unix/prefs_editor_gtk.cpp`, BasiliskIIGUI). Which code stays, which is rewritten, and what
 > becomes a build variant? **Read, not built, not run, not measured.** The line counts are `wc -l` of the tree
 > at `004882e`. Every effort figure is an estimate, and is called one.
+>
+> *(Since 2026-11-26: the QuickDraw hooks it counts — `quickdraw_*`, `qdaccel`, `OKAPIA_QD_MULTICORE` — are on the
+> `wip-quickdraw` branch, see [Decisions](../../project/decisions.md#quickdraw-acceleration-set-aside).)*
 
 ## Verdict
 

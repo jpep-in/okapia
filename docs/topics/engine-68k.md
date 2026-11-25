@@ -157,7 +157,8 @@ every instruction the translator does not know.
   translated code, and the block ends there. An emulator opcode is one of those, so every `EmulOp` is a
   journey: the sixteen registers and the flags written out, the handler, everything read back, and a jump
   through the return table. `MOVE CCR,<ea>` and `MOVE <ea>,CCR` are translated for that reason alone — the
-  QuickDraw trampolines open and close with them, and each call used to make that journey three times.
+  QuickDraw trampolines (now on `wip-quickdraw`) opened and closed with them, and each call used to make that
+  journey three times.
 - **Coherence**: a `CPUSHA`, or a `FlushCodeCache()` over translated code, raises an epoch. A block of an
   older epoch leaves at its first instruction and is compared, byte for byte, with its source before it runs
   again; nothing is rewritten in translated code for that, and no checksum stands in for the comparison.
@@ -246,9 +247,12 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - **A translator makes 68040-clean code a requirement.** Code modified without a cache flush runs stale until
   the next one, as it would on a real 68040 with a larger cache than any ever built. The interpreter forgives
   it; `jit true` does not.
-- **`qdaccel` and the translator are on together** (2026-11-15), and the translator changes what a hook is
-  worth: QuickDraw's own loops are ARM64 code now, and the call to the host is what costs. See
-  [Display](display.md#68k-quickdraw) for the gate this led to and the measurements.
+- **Leaving translated code is the unit of cost under the translator**, and QEMU overstates it: every indirect
+  branch leaves TCG's chained code. On the QuickDraw hooks (`wip-quickdraw`), a call the host declined cost 1.3 µs
+  under QEMU with three journeys, 0.5 µs with one, and a hook declined 21.8 million times in one MacBench turned
+  126 ticks of lines into 1,063. A call into the host has to save more than the guest's own loop costs, which is
+  why native stand-ins for guest code pay less once that code is translated
+  ([Decisions](../project/decisions.md#quickdraw-acceleration-set-aside)).
 - **A fault that moves with timing is not yet a fault of the translator.** One drawing check of MacBench
   differed by nine pixels between two configurations, stably, and only with `jit true`. A long run of
   suspicion went to the carry shortcut between blocks; the cause was the Font Manager failing to reallocate a
@@ -315,15 +319,15 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   (19.5), sin 104 (208); through `fpuop_arithmetic`: `FMOVE` 4.8 ns (8.7), `FTST` 4.6 (6.4), `FADD` 8.4, `FMUL`
   7.2, `FSIN` 118. A sine is some thirty FPSP additions and multiplications; staying the Quadra's bits keeps
   it there. The traced kernel under QEMU: same digest, fast paths identical, Finder.
-- **2026-09-13** — Pi 4 performance: frequency, libraries and loop taxes before any architectural work; see the
-  bottleneck study.
-
-## References
 - **2026-11-15** — The translator (`0012`) on a Pi 4: Speedometer CPU 35.01 against 6.53 interpreted, Dhry 15.9×,
   Towers 12.6×; FPU 1.3× only, which set off the softfloat work above.
 - **2026-11-16** — On the Pi, after `FMOVEM` was translated, the first pass of K'Whet fell to 2.4 (10.2 after): the
   trace showed ~250,000 `FDIV`, `FSUB`, `FMOVE.D` a second sent to the interpreter, each ending its block. Declined
   F-line forms are no longer chained by opcode word, and immediates are translated: first pass 8.1, then 10.7.
+- **2026-09-13** — Pi 4 performance: frequency, libraries and loop taxes before any architectural work; see the
+  bottleneck study.
+
+## References
 
 - `BasiliskII/src/rom_patches.cpp:838`, `:1036`, `:1053`, `:1069`; `uae_cpu_2021/newcpu.h:281`, `:329-333`;
   `uae_cpu_2021/fpu/types.h:67`; `Unix/configure.ac:1651`, `:1660`, `:1691`, `:1881-1885`

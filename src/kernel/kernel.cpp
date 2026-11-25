@@ -23,7 +23,6 @@
 #include "hfs_volume_circle.h"
 #include "card_circle.h"
 #include "clock_circle.h"
-#include "quickdraw_worker.h"
 
 #define FROM "okapia"
 
@@ -146,7 +145,6 @@ bool CKernel::Initialize (void)
     // it. There is no state to read back: CUSBKeyboardDevice will say when
     // something changes and never what is down.
     FwInputWatch ();
-    QDStartWorker ();
 
     return true;
 }

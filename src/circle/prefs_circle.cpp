@@ -108,8 +108,6 @@ prefs_desc platform_prefs_items[] = {
 	{"mousedpi", TYPE_INT32, false, "what the pointing device reports per inch"},
 	{"perfreport", TYPE_BOOLEAN, false, "print engine, video, input and clock counters every 5 s"},
 	{"serial", TYPE_BOOLEAN, false, "send the log's lines to the serial port as well as to the card"},
-	{"qdaccel", TYPE_STRING, false, "68k QuickDraw acceleration: off, sync, parallel or probe"},
-	{"qdaccelmin", TYPE_INT32, false, "with the translator, bytes of pixels below which a transfer stays in the guest"},
 	{"macmode", TYPE_STRING, true, "custom Macintosh mode: slot WIDTHxHEIGHT"},
 	{"machidemode", TYPE_STRING, true, "hide a Macintosh resolution: WIDTHxHEIGHT"},
 	{NULL, TYPE_END, false, NULL}	// End of list
