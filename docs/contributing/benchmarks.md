@@ -78,6 +78,7 @@ bits on any host, so `fpu_*` checks agree between exact cores and runs, interpre
 | [Okapia, QEMU raspi3b on M4 — later](<../../benchmark/okapia in rpi3 qemu in macbook pro m4 - basilisk.png>) | 68k | 5.14 | 1.68 | 4.48 | 65.77 | 3.30 | 5.78 | 2.82 | 2.48 | Quadra 650 |
 | [Okapia, Raspberry Pi 4 — first](<../../benchmark/okapia rpi4 68K basilisk.png>) | 68k | 2.25 | 1.06 | 3.40 | 28.76 | 1.91 | 2.38 | 1.12 | 1.92 | Quadra 650 |
 | [Okapia, Raspberry Pi 4 — rev2](<../../benchmark/okapia rpi4 68K basilisk-rev2.png>) | 68k | 6.84 | 3.18 | 3.72 | 94.45 | 4.82 | 7.15 | 2.98 | 5.58 | Quadra 650 |
+| [Okapia, Raspberry Pi 4 — translator](#raspberry-pi-4-with-the-68k-translator-2026-11-15)³ | 68k | 35.01 | 28.08 | 3.53 | 177.67 | 12.60 | 55.26 | 3.81 | 33.94 | Quadra 650 |
 | [Okapia, QEMU raspi3b on M4](<../../benchmark/okapia in rpi3 qemu in macbook pro m4 - sheepshaver.png>) | PowerPC | 1.56 | 0.00² | 3.36 | 319.94 | 3.16 | 7.50 | 3.02 | 1.13² | Power Mac 8100/80AV |
 | [Okapia, Raspberry Pi 4 — first](<../../benchmark/okapia rpi4 ppc sheepshaver.png>) | PowerPC | 1.24 | 0.46 | 4.72 | 208.52 | 0.98 | 5.17 | 1.87 | 0.90 | Power Mac 6100/60 |
 | [Okapia, Raspberry Pi 4 — rev2](<../../benchmark/okapia rpi4 ppc sheepshaver-rev2.png>) | PowerPC | 2.96 | 0.95 | 3.08 | 492.45 | 1.99 | 11.08 | 4.62 | 2.08 | Power Mac 6100/60 |
@@ -88,6 +89,8 @@ in the depths offered (8-bit only, then all), with no revision recorded, so thei
 
 ¹ The native capture shows CPU 1.32 and Math 19.17 for the same record; a rounding difference.
 ² `0.00` means the test or depth was not run; the colour average is then 8-bit only and not comparable.
+³ `OKAPIA_JIT_ARM64=1`, `jit true`, binary128 FPU (2026-11-15). With the FPU translated in softfloat the FPU average
+is 6.26 ([below](#raspberry-pi-4-the-fpu-translated-2026-11-16)).
 
 ### 68k engine, detailed
 
@@ -259,7 +262,7 @@ Read off two screenshots; the reference values of Bubble Sort, 2 Bit, 4 Bit and 
   each, and the cause of that gap is not known. The column stays as a second run of the translator: its lines
   differ from the first by 1 to 3 %, the colour lines by up to 11 %, Graf by 26 %.
 - **Owed**: both columns again with a kernel that carries the fix, MacBench beside Speedometer, the System
-  version, depth and `frameskip` written down.
+  version, depth and `frameskip` written down. Done in part the same night: next section.
 
 ### Raspberry Pi 4, the FPU translated (2026-11-16)
 

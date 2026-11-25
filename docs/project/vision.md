@@ -19,7 +19,7 @@ The virtual machine it presents:
 
 | | |
 |---|---|
-| CPU | 68040 or PowerPC, interpreted — no JIT by default (an experimental 68k one: `OKAPIA_JIT=1`) |
+| CPU | 68040 or PowerPC, interpreted — no JIT by default (an experimental 68k translator: `OKAPIA_JIT_ARM64=1`) |
 | RAM | 256 MB, the native ceiling of a Quadra 900/950 |
 | Video | a virtual display card, several resolutions and all six depths, switchable live from Monitors |
 | Input | USB keyboard and mouse presented as ADB devices |
@@ -56,8 +56,9 @@ Nothing on a board beyond 2 GB helps this project: 256 MB of Mac RAM plus the re
 
 - A cycle-accurate emulation of a specific Apple machine. The ROM supplies code, not identity: the model
   announced to Mac OS is chosen to suit the System (see [68k engine](../topics/engine-68k.md)).
-- A JIT. The interpreter already outruns a Quadra, and Circle marks the heap non-executable. A JIT stays a
-  later, measured question (see [68k JIT study](../notes/research/jit-68k.md)).
+- A JIT by default. The interpreter already outruns a Quadra. The 68k translator (`OKAPIA_JIT_ARM64=1`) is
+  measured, 5.4× the interpreter on a Pi 4, and stays opt-in until it is proved as safe for data as the
+  interpreter (see [Decisions](decisions.md#no-jit-by-default-two-experimental-ones)).
 - "No proprietary binary": Circle needs the Raspberry Pi firmware. The goal is no host *operating system*.
 - Shipping Apple software. No ROM, System or disk image is ever committed or re-hosted; the user supplies
   them.
@@ -73,7 +74,7 @@ In rough order, and each only when the one before is stable and measured:
 - Multicore: the compositor, then audio and disk, on secondary cores — see
   [Architecture](architecture.md#multicore).
 - Mini vMac for System 1 → 6, shared clipboard, AppleTalk, a ready-to-flash card image, full Pi 5
-  support, and only if measurements demand it, a 68k JIT.
+  support, and the 68k translator by default once it is proved safe.
 
 The priority does not move:
 

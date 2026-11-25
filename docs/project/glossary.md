@@ -23,6 +23,7 @@
 | **FSM** | File System Manager 1.2, required by ExtFS; built into Mac OS 7.6, an extension for earlier Systems. |
 | **Gestalt** | The Mac OS call that reports machine and software capabilities. |
 | **HFS** | Hierarchical File System, the classic Mac volume format. Read and repaired on the card by libhfs. |
+| **JIT** | Just-in-time compilation of guest code into host code. Okapia has two experimental ones for the 68k engine, off by default: `macemu-jit`'s (`OKAPIA_JIT=1`, kept for reference) and the *translator*. |
 | **`kpx_cpu`** | SheepShaver's PowerPC CPU core, used interpreted, with a decode cache. |
 | **libhfs** | Robert Leslie's HFS library (hfsutils), GPLv2+, used for the volume inventory, System version and repair. |
 | **MDB** | Master Directory Block, the HFS volume header. |
@@ -37,6 +38,7 @@
 | **Shadow buffer** | The compositor's copy of the last frame drawn, compared tile by tile. |
 | **Specimen** | The firmware screen showing every widget in every state; rendered identically under QEMU and on the host. |
 | **Tick** | The Mac's 60 Hz interrupt (16,625 µs), driving `Ticks` and VBL tasks. |
+| **Translator** | Okapia's own 68k to AArch64 JIT (`patches/macemu/0012`, `OKAPIA_JIT_ARM64=1`, used with `jit true`), beside `uae_cpu_2021`'s interpreter, which runs whatever it does not translate. See [68k engine](../topics/engine-68k.md#the-translator-okapia_jit_arm641-experimental). |
 | **Universal System** | Mac OS 7.5.2 to 8.1, whose System file carries both 68k and PowerPC code; the `engine` preference records which emulator starts it. |
 | **VBL** | Vertical blanking interrupt; on the Mac, the 60 Hz tick. |
 | **Wrap** | `--wrap=<symbol>` at link time, used to hook upstream functions for tracing without patching `external/`. |

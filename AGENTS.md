@@ -52,7 +52,8 @@ Outranks performance and features: when in doubt, lose speed, never data. Detail
 
 Don't reopen without new evidence ([Decisions](docs/project/decisions.md)): 256 MB Mac RAM · `DIRECT_ADDRESSING` ·
 `uae_cpu_2021` · the 68881 in 80-bit softfloat (`fpu_softfloat`) · circle-stdlib `STDLIB_SUPPORT=3` · the `F1ACAD13` Quadra ROM for the
-68k engine · a fixed output frame buffer and a compositor · network by sharing the Pi's MAC · no JIT · GPLv3.
+68k engine · a fixed output frame buffer and a compositor · network by sharing the Pi's MAC · no JIT by default (the
+experimental translator: `OKAPIA_JIT_ARM64=1`) · GPLv3.
 Multicore (S1) is a goal, not implemented: everything runs on core 0 today.
 
 ## Cross-cutting pitfalls
@@ -105,6 +106,7 @@ Multicore (S1) is a goal, not implemented: everything runs on core 0 today.
 ./scripts/build-libs.sh qemu|pi4      # circle-stdlib for one target; switching is a rename
 . scripts/env.sh && $MAKE -C src/kernel               # kernel8.img, both engines
 $MAKE -C src/kernel OKAPIA_TRACE=1                    # trace build (okapia-clean first)
+$MAKE -C src/kernel OKAPIA_JIT_ARM64=1                # the 68k translator, used with `jit true` (okapia-clean first)
 make -C tests/host                    # host tests and the firmware specimen
 ./scripts/make-sd-image.sh            # qemu/sd.img from qemu/sd-contents/
 ./scripts/run-live.sh [seconds]       # QEMU window, monitor socket; end with Shut Down

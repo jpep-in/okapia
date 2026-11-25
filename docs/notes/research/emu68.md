@@ -106,6 +106,11 @@ put every hot block back to "verify before use".
 
 ## Route G: an Emu68-shaped JIT for Okapia
 
+> **Taken (2026-11-15)**: `patches/macemu/0012`, `OKAPIA_JIT_ARM64=1`. It was built in upstream Basilisk II on macOS
+> first, then on Circle; step 0 was skipped, and on a Pi 4 it gives 5.4× the interpreter's Speedometer CPU score. Two choices differ from
+> the list below: blocks are chained directly, and coherence is by epoch and a byte-for-byte compare of the source
+> rather than CRC32 ([68k engine](../../topics/engine-68k.md#the-translator-okapia_jit_arm641-experimental)).
+
 Not the translator copied, **the design**, in the order that settles each risk before the next costs anything:
 
 0. **Measure what there is to beat.** Cycles per 68k instruction of the interpreter on the Pi 4 with the PMU

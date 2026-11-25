@@ -105,7 +105,8 @@ constructor runs before the serial port and fails silently.
 6. **Firmware window**: two seconds of plain grey; Option, the `bootmenu` preference, or nothing bootable
    opens the boot menu ([Boot menu](../topics/boot-menu.md)).
 7. **Engine**: the startup volume's System decides 68k or PowerPC; the other engine is entered by a call.
-8. **Macintosh**: `InitAll()`, input, tick, then the interpreter until the Mac stops.
+8. **Macintosh**: `InitAll()`, input, tick, then the interpreter (or, with `jit true` in a translator build, the
+   68k translator) until the Mac stops.
 9. **Restart, switch or shut down** — see [Startup and shutdown](../topics/startup-and-shutdown.md).
 
 ## Memory

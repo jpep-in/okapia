@@ -24,6 +24,7 @@
 | M14 | Provisioning: usable with nothing prepared | not started |
 | M15 | Appliance: power on → Mac OS | open |
 | — | Second engine: SheepShaver in the same image | **done** (2026-09-07); Mac OS 8.6 CD install milestone open |
+| — | 68k translator (`OKAPIA_JIT_ARM64=1`) | **experimental**: 5.4× the interpreter's CPU score on a Pi 4, FPU translated (2026-11-16); default once proved safe |
 
 ## By topic
 
@@ -31,7 +32,7 @@
 |---|---:|---:|---|
 | [Startup and shutdown](../topics/startup-and-shutdown.md) | 7 | 4 | The 7.6.1 → 7.1.2 restart freeze; appliance start |
 | [Boot menu](../topics/boot-menu.md) | 10 | 5 | Open the menu with the reason when the Macintosh cannot start; repair dialog |
-| [68k engine](../topics/engine-68k.md) | 7 | 6 | Understand the System 7.1 crash (unredirected ASC write hypothesis); remaining bottleneck ranks |
+| [68k engine](../topics/engine-68k.md) | 16 | 10 | The translator's remaining safety checks (System 7.1, five restarts, `run-test.sh` on the Pi); the System 7.1 crash |
 | [PowerPC engine](../topics/engine-powerpc.md) | 11 | 7 | Mac OS 8.6 installs from its CD; a `kpx_cpu` bottleneck study (`Graf` at 63% of a 6100/60) |
 | [Display](../topics/display.md) | 9 | 7 | Vertical sync; compositor on core 2 once measured |
 | [Sound](../topics/sound.md) | 9 | 7 | Understand the System 7.1 crash; hear the Quadra and IIci chimes on a Pi |
@@ -42,7 +43,7 @@
 | [Network](../topics/network.md) | 8 | 12 | Why Wi-Fi drops while the Mac starts; DHCP by cable; a group rekey |
 | [Build](../contributing/build.md) | 5 | 3 | Continuous integration without Apple ROMs |
 | [Testing and debugging](../contributing/testing-and-debugging.md) | 4 | 5 | Automated QEMU boot check in CI; a PowerPC boot signal |
-| [Benchmarks](../contributing/benchmarks.md) | 3 | 7 | Five runs per configuration; attribute the seven changes |
+| [Benchmarks](../contributing/benchmarks.md) | 7 | 10 | Five runs per configuration; MacBench's FPU tests on the Pi 4 |
 
 ## Known defects
 
@@ -63,6 +64,6 @@ Found and not yet fixed — each is tracked in its topic:
 
 ## Out of scope unless measurements demand it
 
-A 68k JIT ([study](../notes/research/jit-68k.md)), NVMe, a Happy Mac or Sad Mac drawn by Okapia (the ROM already draws
+NVMe, a Happy Mac or Sad Mac drawn by Okapia (the ROM already draws
 its own; a Sad Mac would mean simulating a hardware failure), Mini vMac for System 1 to 7.5, a CRT mode. Later candidates:
 QuickDraw acceleration on the 68k, a shared clipboard, a ready-to-flash SD image, full Pi 5 support.
