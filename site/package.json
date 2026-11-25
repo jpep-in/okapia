@@ -1,0 +1,25 @@
+{
+  "name": "okapia-website",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "author": "Jonathan Pepin",
+  "copyright": "Copyright (C) 2026 Jonathan Pepin",
+  "scripts": {
+    "dev": "node scripts/assets.mjs && node scripts/menu-preview.mjs && node scripts/astro.mjs dev --host 127.0.0.1",
+    "build": "node scripts/assets.mjs && node scripts/menu-preview.mjs && node scripts/astro.mjs build",
+    "menu-preview": "node scripts/menu-preview.mjs",
+    "preview": "node scripts/astro.mjs preview --host 127.0.0.1",
+    "release": "node scripts/releases.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check-links": "node scripts/check-links.mjs"
+  },
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "7.3.10",
+    "astro": "7.4.13"
+  }
+}

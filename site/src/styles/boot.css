@@ -1,0 +1,87 @@
+/* Copyright (C) 2026 Jonathan Pepin
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+    #okapia-boot-study { --ok-ink:light-dark(#18231f,#edf1ef); --ok-muted:light-dark(#5c6963,#a6b6ad); --ok-metal:#ced4d5; --ok-edge:#929d9e; --ok-bezel:#202725; --ok-paper:#fff; --ok-pixel:#151515; --ok-desktop:#a4a5a4; color:var(--ok-ink); font-family:Arial,Helvetica,sans-serif; }
+    #okapia-boot-study * { box-sizing:border-box; }
+    #okapia-boot-study .ok-machines { display:block; }
+    #okapia-boot-study [hidden] { display:none !important; }
+
+
+
+    #okapia-boot-study figure { margin:0; min-width:0; }
+    #okapia-boot-study .ok-scene { position:relative; width:100%; aspect-ratio:1.33; max-width:520px; margin:auto; }
+    #okapia-boot-study .ok-animation-toggle { position:absolute; inset:0; z-index:2; display:block; width:100%; height:100%; padding:0; border:0; border-radius:0; background:transparent; cursor:pointer; }
+    #okapia-boot-study .ok-laptop { position:absolute; width:100%; left:0; bottom:5%; }
+    #okapia-boot-study .ok-lid { width:89%; padding:12px 9px 16px; margin:auto; aspect-ratio:1.47; border:2px solid var(--ok-edge); border-radius:15px 15px 5px 5px; background:var(--ok-bezel); position:relative; }
+    #okapia-boot-study .ok-camera { position:absolute; width:3px; height:3px; border-radius:50%; background:#75867c; left:calc(50% - 1px); top:4px; }
+    #okapia-boot-study .ok-laptop-panel { height:100%; position:relative; overflow:hidden; background:#080b09; }
+    #okapia-boot-study .ok-laptop-panel .ok-screen { position:absolute; inset:0; }
+    #okapia-boot-study .ok-deck { position:relative; height:30px; background:linear-gradient(#e1e5e5,#b9c1c2); clip-path:polygon(5.5% 0,94.5% 0,100% 76%,99% 92%,97% 100%,3% 100%,1% 92%,0 76%); }
+    #okapia-boot-study .ok-keyboard { position:absolute; left:18%; right:18%; height:8px; top:2px; background:repeating-linear-gradient(90deg,#7e898b 0 7px,#c9cfd0 7px 9px); transform:perspective(80px) rotateX(42deg); border-radius:1px; }
+    #okapia-boot-study .ok-trackpad { position:absolute; width:22%; height:7px; left:39%; bottom:7px; border:1px solid #a4adae; border-radius:2px; }
+    #okapia-boot-study .ok-front { position:absolute; bottom:0; height:5px; left:3%; right:3%; border-top:1px solid #a1abad; border-radius:0 0 50% 50%; }
+    #okapia-boot-study .ok-monitor { position:absolute; width:84%; right:0; top:7%; }
+    #okapia-boot-study .ok-monitor-body { position:relative; aspect-ratio:1.36; background:var(--ok-bezel); border:2px solid #53605b; border-radius:9px; padding:10px 9px 20px; }
+    #okapia-boot-study .ok-monitor-body .ok-screen { height:100%; }
+    #okapia-boot-study .ok-monitor-led { position:absolute; width:3px; height:3px; bottom:7px; right:15px; border-radius:50%; background:#93b7a2; }
+    #okapia-boot-study .ok-neck { width:14%; aspect-ratio:1.75; margin:auto; background:linear-gradient(90deg,#929e9c,#bec7c4 50%,#929e9c); clip-path:polygon(25% 0,75% 0,100% 100%,0 100%); }
+    #okapia-boot-study .ok-foot { width:43%; aspect-ratio:21; margin:auto; background:#a0aca7; border-radius:50% 50% 3px 3px; }
+    #okapia-boot-study .ok-cable { position:absolute; inset:0; width:100%; height:100%; fill:none; stroke:var(--ok-ink); stroke-width:2.5px; stroke-linecap:round; }
+    #okapia-boot-study .ok-board { position:absolute; width:31%; height:25%; left:1%; bottom:1%; transform:rotate(-9deg); background:#287253; border:1px solid #17583d; border-radius:5px; }
+    #okapia-boot-study .ok-board:before,#okapia-boot-study .ok-board:after { content:""; position:absolute; width:6px; height:6px; border:1px solid #c2c8b6; border-radius:50%; left:5px; top:5px; background:#335344; }
+    #okapia-boot-study .ok-board:after { top:auto; bottom:5px; }
+    #okapia-boot-study .ok-gpio { position:absolute; top:5px; left:18px; width:58%; height:8px; border:2px solid #273d30; background:repeating-linear-gradient(90deg,#c1bb7d 0 1px,#273d30 1px 4px); }
+    #okapia-boot-study .ok-chip { position:absolute; width:29%; height:38%; left:38%; top:35%; background:#333c36; border:2px solid #8ca792; }
+    #okapia-boot-study .ok-traces { position:absolute; width:22%; height:30%; left:11%; top:37%; background:repeating-linear-gradient(0deg,transparent 0 5px,#6ca078 5px 6px); }
+    #okapia-boot-study .ok-port { position:absolute; right:-4px; width:20%; height:25%; top:25%; background:#c5ceca; border:1px solid #879992; }
+    #okapia-boot-study .ok-port.second { top:57%; }
+    #okapia-boot-study .ok-port:after { content:""; position:absolute; right:1px; top:3px; bottom:3px; width:4px; background:#405b50; }
+    #okapia-boot-study .ok-hdmi { position:absolute; bottom:-3px; width:11%; height:8px; left:37%; background:#bdc6bf; border:1px solid #718b7b; }
+    #okapia-boot-study .ok-hdmi.second { left:55%; }
+    #okapia-boot-study .ok-power { position:absolute; bottom:-3px; width:12%; height:8px; left:15%; background:#bac7bf; border:1px solid #718b7b; }
+    #okapia-boot-study .ok-screen { color-scheme:light; position:relative; overflow:hidden; background:var(--ok-desktop); color:var(--ok-pixel); font-family:Geneva,Tahoma,Arial,sans-serif; font-size:11px; line-height:1.2; image-rendering:pixelated; }
+    #okapia-boot-study .ok-layer { position:absolute; inset:0; display:none; }
+    #okapia-boot-study [data-stage="happy"] .ok-happy-layer,#okapia-boot-study [data-stage="welcome"] .ok-welcome-layer,#okapia-boot-study [data-stage="finder"] .ok-finder-layer { display:block; }
+    #okapia-boot-study .ok-happy-layer,#okapia-boot-study .ok-welcome-layer { background:#b9b9b9; }
+    #okapia-boot-study .ok-happy-layer { background-image:repeating-conic-gradient(#b9b9b9 0% 25%,#b3b3b3 0% 50%); background-size:2px 2px; }
+    #okapia-boot-study .ok-happy-holder { position:absolute; top:43%; left:50%; transform:translate(-50%,-50%); }
+    #okapia-boot-study .ok-happy { width:28px; height:34px; border:2px solid #151515; background:#f5f5f5; border-radius:2px; position:relative; }
+    #okapia-boot-study .ok-face { position:absolute; left:3px; right:3px; top:4px; height:17px; background:#fff; border:1px solid #151515; }
+    #okapia-boot-study .ok-face:before { content:""; position:absolute; width:2px; height:3px; left:4px; top:3px; background:#151515; box-shadow:6px 0 #151515; }
+    #okapia-boot-study .ok-face:after { content:""; position:absolute; width:8px; height:4px; left:4px; top:8px; border-bottom:1px solid #151515; border-radius:0 0 6px 6px; }
+    #okapia-boot-study .ok-happy:after { content:""; position:absolute; width:9px; height:2px; right:3px; bottom:4px; background:#151515; }
+    #okapia-boot-study .ok-welcome-panel { position:absolute; top:33%; left:9%; width:82%; background:#fff; border:1px solid #151515; box-shadow:1px 1px #151515; padding:15px 9px 14px; text-align:center; }
+    #okapia-boot-study .ok-welcome-title { font-size:11px; font-weight:500; white-space:nowrap; }
+    #okapia-boot-study .ok-boot-track { width:72%; height:8px; border:1px solid #151515; margin:15px auto 0; padding:1px; }
+    #okapia-boot-study .ok-boot-fill { width:var(--ok-load,0%); height:100%; background:#151515; }
+    #okapia-boot-study .ok-extensions { display:flex; position:absolute; left:10%; bottom:7%; gap:5px; }
+    #okapia-boot-study .ok-extension { width:15px; height:16px; background:#fff; border:1px solid #151515; opacity:0; position:relative; }
+    #okapia-boot-study .ok-extension:after { content:""; position:absolute; inset:4px 3px; background:#8e9a9f; border:1px solid #151515; }
+    #okapia-boot-study .ok-extension.is-loaded { opacity:1; }
+    #okapia-boot-study .ok-finder-layer { background:#969796; background-image:repeating-conic-gradient(#aaa 0% 25%,#999 0% 50%); background-size:2px 2px; }
+    #okapia-boot-study .ok-menubar { position:absolute; top:0; left:0; right:0; height:20px; display:flex; align-items:center; gap:10px; background:#fff; border-bottom:1px solid #151515; white-space:nowrap; padding:0 7px; border-radius:0 0 3px 3px; }
+    #okapia-boot-study .ok-finder-mark { width:10px; height:10px; position:relative; background:#151515; border-radius:3px 3px 2px 2px; flex-shrink:0; }
+    #okapia-boot-study .ok-finder-mark:after { content:""; position:absolute; width:4px; height:2px; top:-3px; left:6px; background:#151515; transform:rotate(-35deg); }
+    #okapia-boot-study .ok-drive { position:absolute; top:33px; right:6px; width:76px; text-align:center; }
+    #okapia-boot-study .ok-disk-icon { width:29px; height:22px; margin:0 auto 3px; background:#ddd; border:1px solid #151515; box-shadow:1px 1px #151515; position:relative; }
+    #okapia-boot-study .ok-disk-icon:before { content:""; position:absolute; inset:3px 3px auto; height:2px; background:#fff; border-bottom:1px solid #151515; }
+    #okapia-boot-study .ok-disk-icon:after { content:""; position:absolute; width:3px; height:2px; bottom:3px; right:3px; background:#151515; }
+    #okapia-boot-study .ok-icon-label { display:inline-block; padding:0 2px; background:#fff; white-space:nowrap; font-size:11px; }
+    #okapia-boot-study .ok-trash { position:absolute; bottom:10px; right:18px; text-align:center; }
+    #okapia-boot-study .ok-trash-icon { width:20px; height:24px; margin:0 auto 3px; border:1px solid #151515; border-top:3px double #151515; background:repeating-linear-gradient(90deg,#fff 0 3px,#aaa 3px 4px); transform:perspective(60px) rotateX(-8deg); }
+    #okapia-boot-study .ok-window { position:absolute; top:38%; left:5%; width:71%; height:51%; background:#fff; border:1px solid #151515; box-shadow:1px 1px #151515; opacity:0; }
+    #okapia-boot-study .ok-window.is-open { opacity:1; }
+    #okapia-boot-study .ok-titlebar { position:relative; height:18px; display:flex; align-items:center; justify-content:center; background:repeating-linear-gradient(0deg,#fff 0 1px,#151515 1px 2px,#fff 2px 3px); border-bottom:1px solid #151515; margin:2px 2px 0; }
+    #okapia-boot-study .ok-titlebar span { padding:0 6px; background:#fff; font-size:11px; }
+    #okapia-boot-study .ok-closebox { position:absolute; top:2px; left:5px; width:11px; height:11px; border:1px solid #151515; background:#fff; box-shadow:0 0 0 2px #fff; }
+    #okapia-boot-study .ok-window-info { border-bottom:1px solid #151515; padding:1px 7px 4px; height:18px; line-height:12px; font-size:11px; white-space:nowrap; overflow:hidden; }
+    #okapia-boot-study .ok-folders { display:flex; justify-content:space-around; padding:12px 5px 0; gap:4px; text-align:center; }
+    #okapia-boot-study .ok-folder { width:27px; height:20px; margin:0 auto 5px; background:#c3cedd; border:1px solid #151515; position:relative; }
+    #okapia-boot-study .ok-folder:before { content:""; position:absolute; width:12px; height:4px; top:-4px; left:-1px; background:#c3cedd; border:1px solid #151515; border-bottom:0; }
+    #okapia-boot-study .ok-folder.system:after { content:""; position:absolute; left:8px; top:4px; width:8px; height:8px; background:#53667f; border-radius:2px; }
+    #okapia-boot-study .ok-folder-name { display:block; font-size:11px; white-space:nowrap; }
+    #okapia-boot-study .ok-scrollbar { position:absolute; top:36px; bottom:0; right:0; width:10px; border-left:1px solid #151515; background:repeating-conic-gradient(#fff 0% 25%,#aaa 0% 50%); background-size:2px 2px; }
+    #okapia-boot-study .ok-scrollbar:before { content:""; display:block; height:12px; border-bottom:1px solid #151515; background:#fff; }
+    #okapia-boot-study .ok-cursor { position:absolute; left:var(--ok-cursor-x,78%); top:var(--ok-cursor-y,29%); width:11px; height:15px; clip-path:polygon(0 0,0 100%,29% 74%,48% 100%,66% 91%,48% 66%,91% 65%); background:#151515; filter:drop-shadow(1px 0 #fff); }
+    @media(max-width:800px) { #okapia-boot-study .ok-machines { grid-template-columns:1fr; gap:28px; } #okapia-boot-study .ok-scene { max-width:490px; } }
+    @media(max-width:390px) { #okapia-boot-study .ok-menubar { gap:7px; padding:0 5px; } #okapia-boot-study .ok-menubar .ok-label-menu { display:none; } #okapia-boot-study .ok-folders { padding-top:5px; } #okapia-boot-study .ok-folder { height:17px; margin-bottom:3px; } #okapia-boot-study .ok-folder-extra { display:none; } #okapia-boot-study .ok-window { width:76%; min-height:85px; } #okapia-boot-study .ok-lid { padding:10px 6px 13px; } #okapia-boot-study .ok-monitor { top:4%; } }

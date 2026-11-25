@@ -1,0 +1,55 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+import Layout from '../layouts/Layout.astro';
+import BootIllustration from '../components/BootIllustration.astro';
+import BootMenuPreview from '../components/BootMenuPreview.astro';
+import { link } from '../lib/links';
+import { readRelease } from '../lib/releases.mjs';
+const release = readRelease();
+const mac = release.downloads.find(item => item.platform === 'macos-arm64');
+---
+<Layout home>
+  <section class="hero wrap">
+    <div class="hero-copy">
+      <p class="eyebrow" data-for-target="mac">A classic Macintosh, at home again.</p>
+      <p class="eyebrow" data-for-target="pi" hidden>Raspberry Pi 4. Bare-metal Macintosh.</p>
+      <h1 data-for-target="mac">Run System 7<br />through<br /><span>Mac OS 9.</span></h1>
+      <h1 class="pi-headline" data-for-target="pi" hidden>Your 68K Mac.<br /><span>Reborn.</span></h1>
+      <p class="retina-promise" data-for-target="mac">Made for Retina. Beautifully sharp.</p>
+      <p class="hero-description" data-for-target="mac">Your old favourites. A familiar Finder. Crisp classic pixels and sharp Okapia menus on your Retina display.</p>
+      <p class="bare-metal-promise" data-for-target="pi" hidden>No Linux. No host OS.</p>
+      <p class="hero-description pi-description" data-for-target="pi" hidden>Switch on the power, hear the chime, and land in the Finder. Okapia boots directly on Pi 4 hardware, like a standalone classic Macintosh.</p>
+      <p class="performance-proof" data-for-target="pi" hidden><strong>Over 5× a Quadra 650.</strong><span>68K CPU · Speedometer · Pi 4 interpreter baseline</span><a href={link('advanced/benchmarks/')}>See the benchmark and method</a></p>
+      <div class="hero-actions" data-for-target="mac"><a class="button primary" href={mac?.url || link('start/mac/')}>{mac ? 'Download for macOS' : 'Get started on Mac'}</a><a class="text-link" href={link('start/mac/')}>See how it works</a></div>
+      <div class="hero-actions" data-for-target="pi" hidden><a class="button primary" href={link('start/pi/')}>Prepare your SD card</a><a class="text-link" href={link('downloads/')}>Downloads</a></div>
+      <p class="bring-note">Bring your own Macintosh ROM and Mac OS disk image.</p>
+    </div>
+    <div class="hero-art"><BootIllustration /></div>
+  </section>
+  <section class="intro-band"><div class="wrap intro-line"><p><strong>Two generations of Macintosh.</strong> One place to start.</p><span>68K &amp; PowerPC</span><span>Pi 4: no host operating system</span><span>Free &amp; open source</span></div></section>
+  <section class="wrap section first-run" id="first-steps">
+    <div class="section-heading"><p class="eyebrow">From here to the Finder</p><h2>A few familiar things.<br />A fresh start.</h2><p>Okapia helps you bring the pieces together. Choose a home for your Macintosh, add your files, and let it start.</p></div>
+    <div class="steps" data-for-target="mac">
+      <article><div class="step-drawing folder-drawing"><span></span></div><h3>Make a little space.</h3><p>Create an Okapia Workspace. It’s a folder for your ROMs, disks and settings.</p></article>
+      <article><div class="step-drawing disk-drawing"><span>ROM</span><span>Mac OS</span></div><h3>Bring your Macintosh.</h3><p>Add a compatible ROM and a disk image with Mac OS installed. Okapia checks what can start.</p></article>
+      <article><div class="step-drawing finder-drawing"><span>File&nbsp; Edit&nbsp; View</span><i></i></div><h3>Hello again, Finder.</h3><p>Choose your startup disk in the boot menu. Your Macintosh is ready to use.</p></article>
+    </div>
+    <div class="steps" data-for-target="pi" hidden>
+      <article><div class="step-drawing folder-drawing"><span></span></div><h3>Pick your SD card.</h3><p>Open Okapia on your Mac, choose Raspberry Pi 4, and select a FAT32 card.</p></article>
+      <article><div class="step-drawing disk-drawing"><span>ROM</span><span>Mac OS</span></div><h3>Prepare your Macintosh.</h3><p>Add your ROM and Mac OS disk image. Prepare the Card installs the Pi’s Okapia files.</p></article>
+      <article><div class="step-drawing finder-drawing"><span>File&nbsp; Edit&nbsp; View</span><i></i></div><h3>Power on. It’s a Mac.</h3><p>Put the card in your Pi 4 and connect your screen, keyboard and mouse. It starts directly in Mac OS: no Linux installation, no host desktop.</p></article>
+    </div>
+    <a class="text-link section-link" data-start-link href={link('start/mac/')}>Follow the getting started guide</a>
+  </section>
+  <section class="eras"><div class="wrap eras-grid">
+    <div><p class="eyebrow">The best of both eras</p><h2>One Okapia.<br />Two generations<br />of Macintosh.</h2><p>From the System 7 desktop to the world of Mac OS 9. Okapia brings 68K and PowerPC together, with a boot menu that finds the right engine for your startup disk.</p><a class="button light" href={link('help/#which-systems')}>Explore compatibility</a></div>
+    <BootMenuPreview />
+  </div></section>
+  <section class="wrap section everyday">
+    <div class="section-heading"><p class="eyebrow">Made to be used</p><h2>Settle back in.</h2></div>
+    <div class="everyday-grid"><article><span class="feature-symbol" aria-hidden="true">⌘</span><h3>A familiar desktop.</h3><p>Open your applications, revisit your documents, and find your way around the Macintosh you remember.</p></article><article><span class="feature-symbol shared-symbol" aria-hidden="true">▤</span><h3>Room to share.</h3><p>A shared folder gives your classic Macintosh a way to exchange files with the world outside its disk images.</p></article><article><span class="feature-symbol" aria-hidden="true">◧</span><h3 data-for-target="mac">Retina, done right.</h3><p data-for-target="mac">Crisp Macintosh pixels. Menus drawn at your display’s full resolution. Choose a comfortable window size, or let your Macintosh fill the screen.</p><h3 data-for-target="pi" hidden>Your screen, your way.</h3><p data-for-target="pi" hidden>Choose your Macintosh’s display size in Okapia’s menu, then enjoy it on the Pi’s dedicated screen.</p></article></div>
+  </section>
+  <section class="wrap before section"><div><p class="eyebrow">A little preparation</p><h2>You bring the memories.<br />And two files.</h2></div><div><p>Okapia is free, open source software. Apple’s ROMs and Mac OS aren’t included. You’ll need a compatible Macintosh ROM and a bootable Mac OS disk image.</p><p>New to ROMs or disk images? The guide explains what each one is and what to look for.</p><a class="text-link" data-start-link href={link('start/mac/')}>What you’ll need</a></div></section>
+  <section class="closing wrap"><p class="eyebrow">Make yourself at home.</p><h2>Your next startup<br />can be a familiar one.</h2><a class="button primary" data-start-link href={link('start/mac/')}>Get started with Okapia</a><p>Looking under the hood? <a href={link('advanced/')}>Come on in.</a></p><p><a href={link('about/')}>Why I imagined Okapia</a></p></section>
+</Layout>

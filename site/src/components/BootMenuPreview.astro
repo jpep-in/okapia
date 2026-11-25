@@ -1,0 +1,21 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { readFileSync } from 'node:fs';
+import { link } from '../lib/links';
+const bounds = JSON.parse(readFileSync('.cache/menu-preview/tabs.json','utf8'));
+const pages = ['startup','settings','network','display','info','journal'];
+const names = ['System','Settings','Network','Display','Information','Logs'];
+---
+<figure class="boot-menu-preview">
+  <div class="menu-preview-screen">
+    {pages.map((page,i) => <img src={link('assets/boot-menu-' + page + '.png')} width="1280" height="960" alt={'Okapia boot menu — ' + names[i]} hidden={i !== 0} loading="lazy" />)}
+    <div class="menu-preview-tabs" role="group" aria-label="Explore the boot menu">
+      {names.map((name,i) => <button type="button" aria-label={'Show ' + name} aria-pressed={i === 0 ? 'true' : 'false'} data-menu-page={i} style={`left:${bounds[i].x / 12.8}%;top:${bounds[i].y / 9.6}%;width:${bounds[i].width / 12.8}%;height:${bounds[i].height / 9.6}%;`}></button>)}
+    </div>
+  </div>
+  <figcaption>Explore Okapia’s boot menu · select a tab</figcaption>
+</figure>
+<script>
+  import '../scripts/menu-preview.js';
+</script>

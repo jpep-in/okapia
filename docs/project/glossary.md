@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Glossary
 
 | Term | Meaning |
@@ -8,7 +10,7 @@
 | **Board** | `COkapiaBoard` in `hal_circle.cpp`: the Raspberry Pi brought up once — serial, log, interrupts, timer, USB, card — and the hardware resources claimed once for its life. |
 | **Boot menu** | The Okapia firmware's window before the Mac starts: system chooser, settings, information, shut down. |
 | **`bootmenu`** | Preference that opens the boot menu at every start without holding Option. |
-| **Circle** | The C++ bare-metal environment for Raspberry Pi that Okapia runs on. |
+| **Circle** | The C++ bare-metal environment used by Okapia's Raspberry Pi host. The desktop host uses SDL3/POSIX. |
 | **circle-stdlib** | newlib + libstdc++ built for Circle; carries Circle as a submodule. |
 | **Compositor** | `compositor_okapia.cpp`: converts the Mac's frame buffer to the output, scales by an integer, centres, and redraws only changed tiles. |
 | **DBDMA** | Descriptor-Based DMA, the Power Macintosh's DMA command lists; the 9500-family boot chime is stored with one. |
@@ -17,12 +19,14 @@
 | **`DIRECT_ADDRESSING`** | Basilisk's memory model: host address = Mac address + `MEMBaseDiff`. |
 | **`drAtrb`, `drLsMod`** | MDB fields: volume attributes (bit 8 = unmounted cleanly, image offset 1034) and last modification date. |
 | **EmulOp** | An illegal 68k opcode Basilisk uses to call into the emulator from patched ROM code (`M68K_EMUL_OP_*`). |
-| **Engine** | One of the two emulators in the image: 68k (Basilisk II) or PowerPC (SheepShaver). |
+| **Engine** | One of the two emulators in the application or kernel image: 68k (Basilisk II) or PowerPC (SheepShaver). |
 | **ExtFS** | Basilisk's external file system: a host directory shown as a Mac volume — the shared folder. |
 | **Firmware** | Okapia's own boot-time program (`src/firmware/`), not the Raspberry Pi firmware (`start4.elf`). The context says which. |
 | **FSM** | File System Manager 1.2, required by ExtFS; built into Mac OS 7.6, an extension for earlier Systems. |
 | **Gestalt** | The Mac OS call that reports machine and software capabilities. |
 | **HFS** | Hierarchical File System, the classic Mac volume format. Read and repaired on the card by libhfs. |
+| **Host** | What runs Okapia: Circle on a Raspberry Pi, or the SDL3/POSIX desktop implementation. `okapia_host.h` separates the shared firmware from the machine. |
+| **Installer** | The card-preparation functionality integrated into the desktop application's welcome page. It installs Okapia release files, not Apple ROMs or guest Systems. |
 | **JIT** | Just-in-time compilation of guest code into host code. Okapia has two experimental ones for the 68k engine, off by default: `macemu-jit`'s (`OKAPIA_JIT=1`, kept for reference) and the *translator*. |
 | **`kpx_cpu`** | SheepShaver's PowerPC CPU core, used interpreted, with a decode cache. |
 | **libhfs** | Robert Leslie's HFS library (hfsutils), GPLv2+, used for the volume inventory, System version and repair. |
@@ -30,7 +34,8 @@
 | **`modelid`** | Gestalt model ID minus 6, patched into the ROM: `5` = Mac IIci, `14` = Quadra 900. |
 | **Nanokernel** | The PowerPC ROM's low-level kernel, which also hosts its 68k emulator. |
 | **New World / Old World** | PowerPC ROM generations: a `<CHRP-BOOT>` "Mac OS ROM" file (8.1+) versus a 4 MB ROM image (7.5.2+). |
-| **PRAM / XPRAM** | Parameter RAM: startup disk, sound level, mouse tracking, screen depth. Kept per engine on the card. |
+| **PRAM / XPRAM** | Parameter RAM: startup disk, sound level, mouse tracking, screen depth. Kept per engine in the workspace or on the card. |
+| **Release manifest** | `okapia-manifest.json`: a release's version, boards, desktop builds and archive/file hashes. Used by card preparation and website downloads. |
 | **`perfreport`** | Preference printing engine, video, input and clock counters every five seconds. |
 | **QEMU `raspi3b`** | The emulated Raspberry Pi 3 used for development. |
 | **Seam** | A periodic call from inside an engine's interpreter loop, the only place blocking work may run: `cpu_do_check_ticks` (68k), `powerpc_check_ticks` (PowerPC). |
@@ -42,3 +47,4 @@
 | **Universal System** | Mac OS 7.5.2 to 8.1, whose System file carries both 68k and PowerPC code; the `engine` preference records which emulator starts it. |
 | **VBL** | Vertical blanking interrupt; on the Mac, the 60 Hz tick. |
 | **Wrap** | `--wrap=<symbol>` at link time, used to hook upstream functions for tracing without patching `external/`. |
+| **Workspace** | The folder containing `Okapia_Prefs`, ROMs, disk images, PRAM and `shared/`. Desktop folders and Pi cards use the same layout. |

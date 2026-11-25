@@ -110,6 +110,9 @@ check_chooser: $(LIBOBJS) check_chooser.o chooser_sample.o
 render_pages: $(LIBOBJS) render_pages.o pages_sample.o
 	$(CXX) -o $@ $^
 
+render_website: $(LIBOBJS) render_website.o
+	$(CXX) -o $@ $^
+
 check_pages: $(LIBOBJS) check_pages.o pages_sample.o
 	$(CXX) -o $@ $^
 
@@ -318,7 +321,7 @@ view: render_specimen
 	@command -v open >/dev/null && open specimen-2x.ppm || echo "wrote specimen-2x.ppm"
 
 clean:
-	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
+	rm -f *.o *.d render_specimen render_chooser render_pages render_website check_geometry check_screen \
 	      check_chooser check_pages check_platform check_platform.tmp check_prefs_file check_rom check_card check_install check_blit \
 	      check_encoding check_fpu check_fpu_core make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm

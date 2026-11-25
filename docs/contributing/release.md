@@ -1,10 +1,14 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Releases
 
-> **Status: a plan (2026-11-22), nothing published yet.** One release carries every product of a version: the
+> **Status (2026-11-24): release metadata, card installation, update announcements and the local release script are
+> implemented; no public release yet.** Signing/notarisation and replacing the running desktop app are still planned.
+> One release carries every product of a version: the
 > image for each Raspberry Pi board and the desktop application for each platform, described by one
 > `okapia-manifest.json`. The desktop application reads that manifest to prepare SD cards
-> ([Desktop](../topics/desktop.md)) and to replace itself when a newer release exists. Decisions taken with the
-> author: date versions, the desktop app downloads and replaces itself, Developer ID signing and notarisation on
+> ([Desktop](../topics/desktop.md)) and announces a newer app; self-replacement is R6 below. Decisions taken with the
+> author: date versions, eventual app self-replacement, Developer ID signing and notarisation on
 > macOS, a local release script before any CI.
 
 ## Versions
@@ -27,7 +31,7 @@
 |---|---|
 | `okapia-manifest.json` | the release: number, notes, the boards, the desktop builds |
 | `okapia-<release>-<board>.zip` | one per board: everything that goes on its card, licences included, and the manifest resolved to that board (unzipped onto a FAT32 card it boots) |
-| `Okapia-<release>-macos-arm64.zip` | the desktop app, signed with a Developer ID, notarised and stapled |
+| `Okapia-<release>-macos-arm64.zip` | desktop app; currently packaged with an ad-hoc signature. Developer ID signing, notarisation and stapling are the R3 distribution target |
 | later `…-macos-x86_64.zip`, `…-linux-<arch>.tar.gz`, `…-windows-<arch>.zip` | the same, as the platforms come |
 
 The manifest is the one place that says what exists. A board or a platform a release adds appears in an older app
@@ -94,7 +98,7 @@ rather than a second one:
 - **Where it is kept**: the app's support folder, `update` (when, the version, its page, whether newer), read while
   less than a day old; `update-off` when the check is turned off. A lookup that fails keeps nothing. A test's
   `--release` is never kept.
-- **Replacing the app** (macOS):
+- **Replacing the app** (macOS, R6 — planned, not implemented):
   1. download the platform's zip into the support folder, check its size and SHA-256 against the manifest;
   2. unzip it beside, check the code signature (`SecStaticCodeCheckValidity`) and that its Team ID is the
      manifest's and the running app's — never install something signed by anyone else;
@@ -102,7 +106,7 @@ rather than a second one:
      aside and the new one in (`rename`, same volume), then start the new one and remove the old;
   4. any failure leaves the running app untouched and says why; the app must be in a place the person can write
      (it says so if `/Applications` needs an administrator).
-- Linux and Windows replace themselves the same way once their builds exist; a package manager's install is left
+- The intended Linux and Windows design uses the same replacement policy once their builds exist; a package manager's install is left
   alone (the app only says that a version is available).
 
 ## Trust
@@ -112,7 +116,8 @@ rather than a second one:
 - **One official source**: the app reads releases from the official repository only, over HTTPS, and every file it
   installs or downloads is checked against the SHA-256 the manifest gives. The README and each release page name
   that repository, so a copy published elsewhere is recognisable as one.
-- **The app's own code**: on macOS the Developer ID signature and its Team ID, checked before replacing the app.
+- **The app's own code** (R3/R6 target): on macOS the Developer ID signature and its Team ID are to be checked before
+  replacing the app. Today's bundle is signed ad hoc and does not replace itself.
 - **No signature of the manifest itself** (decided 2026-11-22): a key would not stop anyone publishing a copy
   elsewhere, which is the risk that matters. What it alone would cover — someone publishing through the official
   account — is left to that account's protection: two-factor authentication, protected `v*` tags, the publishing
@@ -120,9 +125,12 @@ rather than a second one:
 
 ## Signing and notarisation (macOS)
 
+**Planned (R3).** `scripts/make-desktop-app.sh:85-88` currently signs SDL3 and the bundle ad hoc. It does not yet
+implement the Developer ID or notarisation environment variables below. These are the intended release interface:
+
 - An Apple Developer Program membership; a **Developer ID Application** certificate in the keychain.
-- `scripts/make-desktop-app.sh` signs with it when `OKAPIA_SIGN_IDENTITY` is set (ad hoc otherwise, for local
-  builds): hardened runtime, the `allow-jit` entitlement, SDL3 inside signed first.
+- `scripts/make-desktop-app.sh` will sign with it when `OKAPIA_SIGN_IDENTITY` is set (ad hoc otherwise, for local
+  builds): hardened runtime, the `allow-jit` entitlement, SDL3 inside signed first. This branch is not implemented yet.
 - `xcrun notarytool submit --wait` with an App Store Connect API key kept out of the repository
   (`OKAPIA_NOTARY_PROFILE`, a keychain profile), then `xcrun stapler staple`.
 - Without notarisation the downloaded app opens only through right-click → Open; with it, it opens like any other.
@@ -137,10 +145,11 @@ Run on the release Mac, from a clean tree on `main`. Every step stops the releas
    (durability); the desktop: a headless run to the Finder of System 7.1.
 3. **Tag** `v<YY.MM.N>` locally (annotated, the notes as message).
 4. **Build**, from the tag: each board's kernel (`build-libs.sh pi4`, the kernel, `make-pi-sd.sh`), the desktop
-   app (`make-desktop-app.sh`, signed, notarised, stapled), each zipped as a release asset.
+   app (`make-desktop-app.sh`, currently signed ad hoc; signing/notarisation to be added by R3), each zipped as a release asset.
 5. **Manifest**: `make-release.sh`, the boards' files and the apps with their hashes.
-6. **Hardware gate**, by hand: the board's zip unzipped onto a real card boots a Pi 4 to the Finder; the app
-   downloaded as a stranger would (quarantined) opens and prepares a card. The script waits for a yes.
+6. **Hardware gate**, by hand: the board's zip unzipped onto a real card boots a Pi 4 to the Finder and shuts down.
+   The script waits for that confirmation (`scripts/release.sh:135-139`). A complete public-release rehearsal must
+   also validate the downloaded, quarantined app and real-card preparation; the current prompt alone does not prove them.
 7. **Publish**: push the tag, create the GitHub release with the notes, upload the assets (`gh release create`,
    or the API with a token from the keychain); the manifest last, so an app checking at that moment never sees a
    manifest naming assets not yet there.
@@ -149,16 +158,28 @@ Run on the release Mac, from a clean tree on `main`. Every step stops the releas
 A release that turns out bad is not deleted (apps may have read its manifest): a new one with the next number goes
 out, and the bad one is marked *pre-release* so `releases/latest` stops naming it.
 
+## Public website
+
+The site's `/changelog/` page imports published GitHub release notes at build time through `site/scripts/releases.mjs`,
+alongside the current download manifest. It retains pre-release labels and publication dates, excludes drafts and
+has an explicit empty state. Update the GitHub release body to correct its changelog entry, then rebuild the site;
+see [Website](website.md#downloads).
+
+The [website](website.md) reads the same release manifest at build time. Only declared, uploaded archives become
+download links. Before the first public release, Downloads says that no package is available and points to the
+guides and source. The GitHub Pages workflow is prepared, not yet published; it is separate from R7, the planned
+emulator test/build CI. A release created using a workflow token may need an explicit Website workflow dispatch.
+
 ## Order of work
 
 | # | Work | Depends on |
 |---|---|---|
 | R1 | Release number in `gen-version.sh` (`OKAPIA_RELEASE`); the manifest's `apps`, `build` and `page`, in schema 1 (nothing published before them), read, tests — **done 2026-11-22** | — |
 | R2 | The desktop prepares cards: libcurl, miniz, the *For* menu from the manifest's boards, *Prepare the card* — **done 2026-11-22**, a real card in a reader still to try | R1 |
-| R3 | `make-desktop-app.sh` signs with a Developer ID, notarises, staples; `make-release.sh` records the Team ID | Apple account |
+| R3 | **Planned:** `make-desktop-app.sh` signs with a Developer ID, notarises, staples; `make-release.sh` records the Team ID | Apple account |
 | R4 | `scripts/release.sh`, the notes folder (`docs/releases/`) — **done 2026-11-22**, signed ad hoc until R3; rehearsed by parts (the refusals, `make-release.sh` writing the manifest with the app, the app reading it), not yet run whole: it needs this work on `main`. A first release `v26.MM.1` then | R1, R2 |
 | R5 | The app checks once a day and says so — **done 2026-11-23**: `HostUpdate` (`install_host.cpp`), a button at the top right of the welcome page and of the boot menu's tab strip, opening the release's page until R6; *Check for Updates…* and *Check for Updates Automatically* in the Okapia menu (macOS; Linux and Windows have no menu yet). *Update* in the boot menu, in the same slot, for a Pi card with an older Okapia (2026-11-24) | R2, R4 |
-| R6 | The app replaces itself, signature and Team ID checked | R3, R5 |
+| R6 | **Planned:** the app replaces itself, signature and Team ID checked | R3, R5 |
 | R7 | CI on GitHub Actions for the host tests, then for the builds | R4 |
 | — | okapia-installer retired once R2 does what it did; its repository says so and points here | R2 |
 

@@ -1,0 +1,16 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+import Layout from '../layouts/Layout.astro';
+import { link, repository } from '../lib/links';
+import { readRelease } from '../lib/releases.mjs';
+const release = readRelease();
+const names = { 'macos-arm64':'macOS · Apple silicon', 'macos-x86_64':'macOS · Intel', 'pi4':'Raspberry Pi 4' };
+---
+<Layout title="Downloads" description="Official Okapia releases for macOS and Raspberry Pi. One app to run your Macintosh and prepare your Pi’s card.">
+  <div class="wrap page-heading"><p class="eyebrow">Take your Macintosh home</p><h1>Get Okapia.</h1><p class="lead">One application to run your Macintosh on a Mac and prepare a card for your Raspberry Pi.</p></div>
+  <section class="wrap guide-layout"><div class="prose">
+    {release.version ? <><h2>Okapia {release.version}</h2><p><a href={release.page}>Read the release notes</a> for changes, requirements and known limitations.</p><div class="download-list">{release.downloads.map(item => <div class="download-row"><div><strong>{names[item.platform] || item.name}</strong><small>{item.kind === 'board' ? 'Manual card installation' : 'Desktop application and card preparation'}{item.min_os ? ` · Requires ${item.min_os} or later` : ''}</small>{item.sha256 && <details><summary>SHA-256</summary><code>{item.sha256}</code></details>}</div><a class="button primary" href={item.url}>Download</a></div>)}</div></> : <div class="download-state"><p class="eyebrow">In development</p><h2>The first public release is on its way.</h2><p>The desktop application and card preparation are taking shape. There are no packaged public downloads yet. The guides show how it works; the source is available now.</p><a class="button primary" data-start-link href={link('start/mac/')}>Read the getting started guide</a><p style="margin-top:20px"><a href={repository + '/releases'}>Official GitHub releases</a></p></div>}
+    <p><a href={link('changelog/')}>See the release changelog</a></p><h2>Your files, your Macintosh.</h2><p>Bring a compatible Macintosh ROM and a disk image with Mac OS installed. Apple software is not included in an Okapia download.</p><h2>What about other platforms?</h2><p>macOS comes first. Linux, Windows and Intel Mac builds may follow. Each published platform will appear here when its release files are available.</p><h2>Build it yourself</h2><p>The <a href={link('advanced/')}>advanced guide</a> points to the desktop and Pi build instructions. Okapia’s source is available under GPLv3 or later.</p>
+  </div></section>
+</Layout>

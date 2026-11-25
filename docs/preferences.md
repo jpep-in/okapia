@@ -1,10 +1,12 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Preferences
 
 > Every keyword of `Okapia_Prefs`, what it does on Okapia, and which upstream keywords do nothing here.
 
 ## The file
 
-`/Okapia_Prefs` at the root of the card, in Basilisk II's own format and read by Basilisk II's own
+`Okapia_Prefs` at the root of the workspace or Pi card, in Basilisk II's own format and read by Basilisk II's own
 parser (`LoadPrefsFromStream`, `SavePrefsToStream`). The same file serves Basilisk II and SheepShaver and
 includes Okapia-specific keywords; its name does not change with the engine. Upstream preferences keep
 their format compatibility when copied into this file.
@@ -22,6 +24,14 @@ to preserve its settings. Only `Okapia_Prefs` is read and written.
   `platform_prefs_items[]` in `src/common/prefs_okapia.cpp`. A value set only with `PrefsReplace*` works at
   runtime and silently vanishes from the file — it cost one whole measurement.
 
+Paths such as `/shared` and `/okapia.rom` are rooted in the workspace, not the desktop computer's filesystem:
+`CardPath()` maps them below the chosen folder (`src/hosts/desktop/okapia_host_desktop.cpp:67`). The tables below
+describe shared settings with Pi defaults unless a host difference is stated. A desktop session preserves the
+card's Pi-specific values; it does not turn a card's HDMI output or Wi-Fi configuration into host settings.
+
+The desktop window size and full-screen mode are stored separately in the application's support folder, not as
+new `Okapia_Prefs` keywords (`src/hosts/desktop/main_desktop.cpp:361-405`). See [Desktop](topics/desktop.md#using-it).
+
 ## Machine and memory
 
 | Keyword | Default | Meaning |
@@ -33,6 +43,7 @@ to preserve its settings. Only `Okapia_Prefs` is read and written.
 | `modelid` | `5` | `5` = Mac IIci, `14` = Quadra 900; used when `modelidauto` is off or detection fails — see [68k engine](topics/engine-68k.md#model-id) |
 | `cpu` | `4` | `0` = 68000 … `4` = 68040 |
 | `fpu` | `true` | FPU emulation |
+| `jit` | build/upstream default | 68k translation when the build includes a translator. The desktop arm64 build includes `OKAPIA_JIT_ARM64` by default; standard Pi kernels do not. The boot menu's JIT control is unavailable without that translator. See [68k engine](topics/engine-68k.md#the-translator-okapia_jit_arm641-experimental) |
 | `engine` | — | multiple: `<path> 68k` or `<path> powerpc`, one per **universal** volume only. Written by the boot menu |
 
 ## Disks
@@ -61,7 +72,7 @@ to preserve its settings. Only `Okapia_Prefs` is read and written.
 
 | Keyword | Default | Meaning |
 |---|---|---|
-| `soundoutput` | `jack` | `off`, `hdmi`, `jack` or `usb` (Pi 4 and 5 only). `discard` pulls sound from the Mac and throws it away, for tests |
+| `soundoutput` | `jack` on Pi | Pi: `off`, `hdmi`, `jack` or `usb` (Pi 4 and 5 only). Desktop: `off` or `builtin`, the host's default output; a card's Pi output selects host audio without rewriting the card's value. `discard` pulls sound from the Mac and throws it away, for tests |
 | `nosound` | `false` | the older switch; wins over `soundoutput` when they disagree. On under QEMU, which models no sound output |
 
 ## Input
@@ -80,6 +91,10 @@ to preserve its settings. Only `Okapia_Prefs` is read and written.
 | `extfsname` | `Okapia` | its volume name on the desktop, 27 characters at most |
 
 ## Clock
+
+These time-source and zone controls belong to the Pi host. Desktop follows the computer's clock and zone and does
+not run the Pi's NTP client; its Date & Time group reports the host's time. A desktop zone override remains open
+([Desktop](topics/desktop.md#status)).
 
 | Keyword | Default | Meaning |
 |---|---|---|
@@ -100,13 +115,16 @@ to preserve its settings. Only `Okapia_Prefs` is read and written.
 
 ## Network
 
-See [Network](topics/network.md). The boot menu's Network page writes all four; by hand, each value runs to the end
+See [Network](topics/network.md). On Pi, the boot menu's Network page writes all four; by hand, each value runs to the end
 of the line: spaces, `#` and `;` need no quotes. The page removes a key it would leave empty rather than writing a
 blank line.
 
+On desktop, Settings offers **Shared with this computer** (`ether eth`), implemented by slirp. There is no desktop
+Wi-Fi join page; the host OS manages that connection. Board Wi-Fi values are kept for a card's next Pi session.
+
 | Keyword | Default | Meaning |
 |---|---|---|
-| `ether` | — | `eth`: the Pi 4's port or a USB Ethernet adapter; `wlan`: the on-board Wi-Fi. Anything else, or nothing, is no network and no device claimed |
+| `ether` | — | Pi: `eth` is the wired port or a USB adapter; `wlan` is on-board Wi-Fi. Desktop: `eth` shares the computer's connection through slirp. Other values or absence mean no usable interface on that host |
 | `wifissid` | — | the Wi-Fi network's name, 1 to 32 bytes |
 | `wifipassword` | — | its WPA2 passphrase, 8 to 63 printable ASCII characters, or the key as 64 hex digits; empty for an open network. Kept in clear on the card. WPA3-only networks cannot be joined |
 | `wificountry` | `US` when absent (the boot menu offers `FR` in French, `US` otherwise) | two letters for the radio's channels (`FR`, `DE`, …); without it channels 12 and 13 are out of reach |
@@ -120,14 +138,13 @@ They are written back unchanged, so a value that seems ignored is ignored on pur
 | Keywords | Why |
 |---|---|
 | `displaycolordepth`, `title`, `init_grab`, `hotkey`, `scale_*`, `mag_rate`, `gammaramp`, `sdlrender`, `nogui` | they configure a window on a host desktop; the Mac owns the frame buffer and Monitors picks the depth |
-| `jit*` | the interpreter is the only CPU in a standard kernel. `jit true` is read by the experimental kernels only (`OKAPIA_JIT_ARM64=1`, `OKAPIA_JIT=1`). The boot menu's *JIT* box sets `jit`, and is grey in an image without the `OKAPIA_JIT_ARM64` translator |
-| `etherconfig`, `redir`, `host_domain` | host network scripts and slirp's forwarding; the Mac is a node on the real network |
+| `etherconfig`, `redir`, `host_domain` | upstream host scripts and forwarding preferences are not wired into Okapia; the Pi uses its board interface, the desktop uses its own slirp host implementation |
 | `udptunnel`, `udpport` | no UDP tunnel: `udptunnel true` means no network |
 | `seriala`, `serialb` | the Pi's usable UART carries Okapia's log |
-| `dsp`, `mixer`, `sound_buffer` | OSS device paths and host buffers; sound goes through Circle's device |
-| `scsi0`…`scsi6` | host SCSI pass-through; there is no host |
+| `dsp`, `mixer`, `sound_buffer` | OSS device paths and host buffers; Okapia uses Circle sound on Pi or SDL3 audio on desktop |
+| `scsi0`…`scsi6` | host SCSI pass-through is not implemented |
 | `keycodes`, `mousewheel*`, `swap_opt_cmd` | X11 and SDL keyboard translation; Okapia feeds ADB from raw HID reports |
 | `noclipconversion`, `name_encoding` | host clipboard and host file name conversion |
-| `ignoresegv` | installs a POSIX `SIGSEGV` handler; bare metal has no signals |
+| `ignoresegv` | upstream's POSIX signal-handling preference is not implemented by Okapia's hosts; the Pi has no signals |
 | `xpram` | the PRAM file names are fixed, one per engine |
 | `delay`, `fbdevicefile` | host-specific tuning |

@@ -1,9 +1,23 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Decisions
 
 > What is settled. Each entry gives the decision, why, the evidence, and what would reopen it. Do not
 > reopen one without new evidence of that kind.
 
 ## Platform
+
+### Two hosts, one Macintosh experience
+
+- **Decision** (implemented 2026-11-21–24): the same 68k and PowerPC engines, shared `src/common/` layer and
+  `src/firmware/` pages run on Circle and in a desktop application. macOS is the first validated desktop host;
+  Linux and Windows remain future validation/porting work.
+- **Evidence**: `src/common/okapia_host.h`, `src/hosts/desktop/Makefile:95` (shared sources),
+  `src/hosts/desktop/Makefile:190` (PowerPC platform sources), [Desktop](../topics/desktop.md#status).
+- **Workspace**: retain the card's file layout on desktop. The desktop application also prepares Pi cards using
+  the release manifest; the earlier standalone installer is a migration source, not a second user download.
+  Signing, public distribution and standalone-installer retirement remain tracked in [Releases](../contributing/release.md).
+- **Scope**: bare metal remains the Pi host's implementation. It no longer describes the only way to run Okapia.
 
 ### Circle through circle-stdlib, `STDLIB_SUPPORT=3`
 
@@ -78,6 +92,10 @@
 - **Kept**: `OKAPIA_FPU=ieee` builds the binary128 core (`patches/macemu/0008`) for comparison.
 
 ### No JIT by default; two experimental ones
+
+This default applies to the **Pi kernel**. The desktop arm64 Makefile includes the in-tree translator by default
+(`src/hosts/desktop/Makefile:62-70`); `jit true` still chooses runtime use. This does not make the Pi translator a
+validated default, and it does not change the interpreted PowerPC engine.
 
 - **Why not by default**: the translator has paid on the Pi (below), but what makes it safe to leave on is not all
   proved yet: System 7.1, restarts in a row, the durability test on hardware. The interpreter already outruns a
@@ -189,7 +207,7 @@
 ## Goals that are not decisions yet
 
 - **Multicore.** The plan was "S1": the emulation loop on a secondary core, core 0 for interrupts and I/O.
-  It is **not implemented** — both engines run on core 0 today. It is a goal, measured against the
+  It is **not implemented** — both Pi engines run on core 0 today. Desktop uses host threads. S1 remains a goal, measured against the
   bottleneck study, not a settled fact. See [Architecture](architecture.md#multicore).
 - **Clock chain NTP → RTC → card.** Only the card floor exists. See
   [Clock and PRAM](../topics/clock-and-pram.md).

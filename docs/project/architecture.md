@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Architecture
 
 > How Okapia is put together: the layers, the one image that carries two Macintosh, what exists exactly
@@ -5,28 +7,43 @@
 
 ## Layers
 
+```mermaid
+flowchart BT
+    subgraph Engines["Macintosh engines — included in both hosts"]
+        B["Basilisk II · 68K / 68040<br/>uae_cpu_2021 · 80-bit softfloat FPU"]
+        S["SheepShaver · PowerPC<br/>kpx_cpu · nanokernel ROM"]
+    end
+    B --> Common["Shared Okapia platform<br/>src/common/ + src/common/sheepshaver/"]
+    S --> Common
+    Common --> Firmware["Shared firmware and host interfaces<br/>src/firmware/ · okapia_menu.cpp<br/>okapia_host.h + board-compatible APIs"]
+    Firmware --> Circle["Circle host<br/>src/hosts/circle/<br/>circle-stdlib + Circle drivers"]
+    Firmware --> Desktop["Desktop host<br/>src/hosts/desktop/<br/>SDL3 + host services / POSIX today"]
+    Circle --> Pi["Raspberry Pi 4<br/>Bare metal · no Linux or host OS"]
+    Desktop --> Mac["macOS<br/>Current desktop host · Apple silicon"]
+    Desktop -.-> Linux["Linux<br/>Coming soon · build not validated"]
+    Desktop -.-> Windows["Windows<br/>Coming soon · host work required"]
+    classDef available fill:#e6eee2,stroke:#6c8662,color:#172e23;
+    classDef host fill:#294a35,stroke:#294a35,color:#ffffff;
+    classDef planned fill:#eff0ee,stroke:#bdc1bc,color:#6a706a,stroke-dasharray:5 5;
+    class Pi,Mac available;
+    class Circle,Desktop host;
+    class Linux,Windows planned;
 ```
-            Basilisk II core                      SheepShaver core
-  uae_cpu_2021 · ROM patches · ADB · disk    kpx_cpu · nanokernel ROM · the same
-  SCSI · video · audio · ether · timer       ADB, disk, audio, extfs (symlinked)
-                 │                                     │
-   src/common/*_okapia (platform layer)   src/common/ + src/common/sheepshaver/
-   main · video · input · audio · tick    (the PowerPC platform layer)
-                 │                                     │
-                 └──────────────┬──────────────────────┘
-                                ▼
-     shared half: src/hosts/circle (the board: hal, board_sound, board_net…) · rom_chime
-                  okapia_boot (main) · src/firmware + src/common/okapia_menu (boot menu)
-                                ▼
-                 circle-stdlib (newlib + libstdc++) → Circle      (or src/hosts/desktop → SDL3)
-                                ▼
-                           Raspberry Pi                            (or a desktop)
-```
+
+Read upward from the engines to their destination. This is a view of shared layers and host implementations,
+not a literal call graph. Grey, dashed platforms are future work. The [public architecture guide](../using/architecture.md)
+uses the same layers in a responsive illustration; keep it and `site/src/components/ArchitectureStack.astro` aligned
+when the host split changes.
 
 **Two hosts.** The same Okapia also runs on a desktop (macOS, SDL3): what the boot menu needs of the machine goes
 through `src/common/okapia_host.h`, answered on the Pi by `src/hosts/circle/firmware/okapia_host_circle.cpp` and on a
 desktop by `src/hosts/desktop/`, where both engines and all of `src/common/` build unchanged behind a shim of the
 Circle classes. See [Desktop](../topics/desktop.md).
+
+The desktop welcome page opens or creates a workspace, selects ROMs and disks, and prepares or updates Pi cards.
+Release downloads and installation run in the desktop host (`src/hosts/desktop/install*.cpp`), not in the guest
+or the Circle kernel. The same workspace layout serves a desktop folder and a Pi card. The Pi-specific boot,
+memory and multicore details below describe the Circle host unless stated otherwise.
 
 Upstream shares its platform code between the two engines by **129 symbolic links** from
 `SheepShaver/` into `BasiliskII/` (`adb.cpp`, `audio.cpp`, `disk.cpp`, `extfs.cpp`, `prefs.cpp`, `timer.cpp`,
@@ -127,7 +144,8 @@ constructor runs before the serial port and fails silently.
   `MEMBaseDiff`. The Mac's frame buffer is allocated separately on the heap (16 MB).
 - **PowerPC layout**: RAM at guest `0x10000000`, ROM right after it, then the interrupt stack, SheepMem and a
   16 MB frame buffer — see [PowerPC engine](../topics/engine-powerpc.md#memory-layout).
-- **The heap is not executable**: `PXN=1` past `_etext`.
+- **The general Pi heap is not executable**: `PXN=1` past `_etext`. Experimental translator builds separately claim
+  and remap an executable arena (`src/hosts/circle/execmem_circle.cpp`); desktop uses its host executable-memory path.
 - **Kernel member constructors run before serial**, so any object whose construction can fail belongs after
   the log (the USB host, the console's two devices).
 
@@ -201,4 +219,5 @@ tests/smoke/         the Phase 1 Circle smoke kernel (C++ exceptions, frame buff
 tests/core-probe/, tests/link-probe/   compile and link probes of the Basilisk core
 qemu/                development card contents (sd-contents/, ignored) and default preferences
 docs/                this documentation
+site/                static public website; user guides imported from docs/using/, GitHub Pages deployment
 ```

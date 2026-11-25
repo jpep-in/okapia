@@ -1,12 +1,23 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Storage
 
-> Disk and CD images on the SD card, what an interrupted session does to them, how Okapia repairs a volume,
-> the inventory of the card, and provisioning. Data safety outranks every other constraint in this project.
+> Disk and CD images in a workspace or on an SD card, interrupted sessions, repair, inventory and guest
+> provisioning. Data safety outranks every other constraint in this project.
 > Main files: `src/common/hfs_volume_okapia.{h,cpp}`, `src/common/card_okapia.cpp` (`CardPrepareVolumes`),
 > `src/hosts/circle/trace_disk_circle.cpp`, `external/hfsutils` (libhfs), `patches/circle-stdlib/0002`,
 > `scripts/run-test.sh`, `scripts/check-large-volume.sh`, `scripts/make-sd-image.sh`.
 
 ## Using it
+
+**Two file hosts.** A desktop workspace has the card's layout, including images, preferences and `shared/`.
+The welcome page copies ROMs and images into it; it can also install Okapia's release files on a Pi card. That
+installer is implemented, while the online guest-software catalogue under [Provisioning](#provisioning) remains
+a proposal. See [Desktop](desktop.md#using-it) for atomic copies, workspace locking and card update rules.
+
+The sector-write and abrupt-power-loss measurements below describe the **Circle/FatFs host**. Desktop uses the
+host OS's POSIX file layer, which has its own caching; its measured flush policy remains open
+([Desktop status](desktop.md#status)). Repair after a killed process does not prove survival of a host power cut.
 
 - **Disk images** are plain files at the card's root, listed by `disk` lines ([Preferences](../preferences.md));
   **the order is the setting** and the [boot menu](boot-menu.md) writes it. A `*` prefix mounts read-only, and the
@@ -16,7 +27,7 @@
   between leaves the new file alone, and `LoadPrefs()` reads it, as it does when `Okapia_Prefs` is empty.
 - **CD images** (Toast images work) are `cdrom` lines; a disc can be the startup volume through `bootdriver -62`.
 - **New volume**: the boot menu makes an empty HFS volume of a chosen name and size.
-- **Shut down from Mac OS.** Pulling the plug keeps your data but marks the volume in use; Okapia repairs it at the
+- **Shut down from Mac OS.** An interrupted session leaves a mounted volume marked in use; Okapia repairs it at the
   next power-on (`hfsrepair true`, the default) and Mac OS then shows its period "not shut down properly" message.
   With `hfsrepair false`, or a `*` volume, the volume is handed over as it is, unscavenged, and Mac OS starts from it
   with the same message.
@@ -27,6 +38,8 @@
 ## How it works
 
 ### The file layer: no cache
+
+This is the Pi/Circle path. Do not apply its durability measurements to the desktop host's OS cache.
 
 The Mac's disk driver (Basilisk's `sys_unix.cpp` over circle-stdlib's `open`/`read`/`write`/`lseek`, over FatFs)
 writes whole 512-byte sectors at sector boundaries, which FatFs passes straight through to the card. **There is no
@@ -176,7 +189,9 @@ Verified on System 7.1 and 7.6: flag `0100` and `fsck_hfs` clean after repair.
 
 ### Provisioning
 
-Goal: **try Okapia without preparing anything**. Nothing built yet.
+Goal: **try Okapia without preparing a guest disk**. The catalogue and automatic guest provisioning below are not
+built. This is distinct from the desktop application's implemented workspace creation, ROM/image import and
+installation of Okapia releases onto Pi cards (`src/hosts/desktop/install.h`, [Releases](../contributing/release.md)).
 
 - [ ] An empty persistent disk created at first power-on when the card has none (Infinite Mac's "Saved HD")
 - [ ] Online catalogue as a tree (System 6 / System 7 / Mac OS 8 / Mac OS 9, then versions): Circle's `CHTTPClient`

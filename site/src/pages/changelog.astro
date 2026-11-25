@@ -1,0 +1,20 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+import Layout from '../layouts/Layout.astro';
+import { link, repository } from '../lib/links';
+import { readHistory, renderReleaseNotes } from '../lib/history.mjs';
+const releases = await Promise.all(readHistory().map(async release => ({...release,html:await renderReleaseNotes(release.notes)})));
+const format = new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+---
+<Layout title="Changelog" description="Published Okapia releases: changes, fixes and release notes for Mac and Raspberry Pi.">
+  <div class="wrap page-heading"><p class="eyebrow">Release history</p><h1>What’s new in Okapia.</h1><p class="lead">Changes and fixes for Mac and Raspberry Pi, one release at a time.</p></div>
+  <div class="wrap guide-layout"><div class="prose">
+    <p class="release-links"><a href={link('downloads/')}>Downloads</a><a href={repository + '/releases'}>All releases on GitHub</a></p>
+    {releases.length ? releases.map(release => <article class="release-entry">
+      <p class="eyebrow"><time datetime={release.date}>{format.format(new Date(release.date))}</time>{release.prerelease && <span class="release-badge">Pre-release</span>}</p>
+      <h2><a href={release.page}>{release.title}</a></h2><p class="release-tag">{release.tag}</p>
+      {release.notes ? <div class="release-notes" set:html={release.html} /> : <p><a href={release.page}>Read the release on GitHub</a>.</p>}
+    </article>) : <div class="download-state"><h2>The first public release is still ahead.</h2><p>Published release notes will appear here when they are available. For now, explore <a href={link('advanced/making/')}>how Okapia is being made</a> or follow the project on <a href={repository}>GitHub</a>.</p></div>}
+  </div></div>
+</Layout>

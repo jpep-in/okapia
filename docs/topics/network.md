@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Network
 
 > Putting the Macintosh on the local network, by cable or Wi-Fi. The Mac shares the Pi's MAC address and is a node
@@ -8,6 +10,13 @@
 > supplicant), `src/firmware/okapia_network.cpp` (the boot menu's Network page).
 
 ## Using it
+
+**On desktop**, Settings offers **Shared with this computer** (`ether eth`). The host implementation uses slirp
+(`src/hosts/desktop/board_net_desktop.cpp:56`), with guest address 10.0.2.15 rather than the Pi's MAC on the physical
+LAN. The host OS manages Wi-Fi, so there is no separate Network tab. The backend is implemented; validating actual
+guest TCP/IP traffic remains open in [Desktop status](desktop.md#status).
+
+The cable, Wi-Fi, MAC-sharing and join instructions below concern the **Pi host**.
 
 **From the boot menu**: the **Network** page ([Boot menu](boot-menu.md#using-it)) chooses the connection — none, the
 Ethernet cable or the Wi-Fi — lists the Wi-Fi networks in range with a lock and four signal bars, and takes the

@@ -1,0 +1,50 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+import Layout from '../layouts/Layout.astro';
+import { link } from '../lib/links';
+import { Content as Mac, compiledContent as macHtml } from '../../../docs/using/mac.md';
+import { Content as Pi, compiledContent as piHtml } from '../../../docs/using/pi.md';
+import { Content as Help, compiledContent as helpHtml } from '../../../docs/using/help.md';
+import { Content as Advanced } from '../../../docs/using/advanced.md';
+import { Content as Architecture } from '../../../docs/using/architecture.md';
+import { Content as Benchmarks } from '../../../docs/using/benchmarks.md';
+import { Content as About } from '../../../docs/using/about.md';
+import { Content as Making } from '../../../docs/using/making.md';
+import { Content as Extensions } from '../../../docs/using/extensions.md';
+import ArchitectureStack from '../components/ArchitectureStack.astro';
+import BootMenuPreview from '../components/BootMenuPreview.astro';
+import { readRelease } from '../lib/releases.mjs';
+export function getStaticPaths() {
+  return [
+    { params:{guide:'start/mac'}, props:{title:'Get started on Mac', eyebrow:'Your Macintosh, on your Mac', lead:'A folder, your ROM, your favourite System. Let’s bring them together.', Content:Mac} },
+    { params:{guide:'start/pi'}, props:{title:'Get started on Raspberry Pi', eyebrow:'Your 68K Macintosh, reborn', lead:'Power on and boot straight into classic Mac OS. Okapia runs directly on Pi 4 hardware, without Linux or any host operating system.', Content:Pi} },
+    { params:{guide:'help'}, props:{title:'A little help.', eyebrow:'Find your way', lead:'The files you need, the systems that work, and what to do when startup stops.', Content:Help} },
+    { params:{guide:'advanced'}, props:{title:'A new chapter for classic Mac emulation.', eyebrow:'Basilisk II + SheepShaver, reimagined', lead:'Two proven engines, one modern experience. Retina-aware display, a shared boot menu, workspaces and a Macintosh that also boots directly on Raspberry Pi.', Content:Advanced} },
+    { params:{guide:'advanced/architecture'}, props:{title:'How Okapia fits together.', eyebrow:'Architecture', lead:'Two Macintosh engines. One shared foundation. Circle for Raspberry Pi, Desktop for macOS — with Linux and Windows to come.', Content:Architecture} },
+    { params:{guide:'about'}, props:{title:'Why I imagined Okapia.', eyebrow:'A note from Jonathan Pepin', lead:'The Macs in my collection, a Raspberry Pi, and the wish to make classic Mac OS easier to come back to.', Content:About} },
+    { params:{guide:'advanced/making'}, props:{title:'Making Of.', eyebrow:'People, process & open source', lead:'Months of research, design and testing. Built with AI assistance, on the work of a remarkable emulation community.', Content:Making} },
+    { params:{guide:'advanced/benchmarks'}, props:{title:'Benchmarks', eyebrow:'Coming soon', lead:'A fresh look at Okapia’s performance, including the FPU.', Content:Benchmarks} },
+  ];
+}
+const {title, eyebrow, lead, Content} = Astro.props;
+const path = Astro.params.guide;
+const hostFreeClaim = 'without Linux or any host operating system';
+const isStart = path.startsWith('start/');
+const isAdvanced = path.startsWith('advanced');
+const extensionMarker = '<!-- system-extensions -->';
+const guideParts = isStart ? (await (path === 'start/mac' ? macHtml() : piHtml())).split(extensionMarker) : null;
+if (guideParts && guideParts.length !== 2) throw new Error('Startup guide must contain one system-extensions marker');
+const helpParts = path === 'help' ? (await helpHtml()).split('<!-- boot-menu-preview -->') : null;
+if (helpParts && helpParts.length !== 2) throw new Error('Help must contain one boot-menu-preview marker');
+const advancedTabs = [{name:'Overview',path:'advanced'}, {name:'Architecture',path:'advanced/architecture'}, {name:'Benchmarks',path:'advanced/benchmarks',soon:true}, {name:'Making Of',path:'advanced/making'}];
+const release = readRelease();
+const macDownload = release.downloads.find(item => item.platform === 'macos-arm64');
+---
+<Layout title={title} description={lead}>
+  {isAdvanced && <div class="wrap advanced-section"><nav class="advanced-tabs" aria-label="Advanced sections">{advancedTabs.map(tab => <a href={link(tab.path + '/')} aria-current={path === tab.path ? 'page' : undefined}><span>{tab.name}</span>{tab.soon && <small>Coming soon</small>}</a>)}</nav></div>}
+  <div class="wrap page-heading"><p class="eyebrow">{eyebrow}</p><h1>{title}</h1><p class="lead">{lead.split(hostFreeClaim).map((part,index) => <>{index > 0 && <strong class="host-free-emphasis">{hostFreeClaim}</strong>}{part}</>)}</p>{isAdvanced && <p class="shared-guide">Shared guide · Mac &amp; Raspberry Pi</p>}</div>
+  <div class="wrap guide-layout">
+    <article class="prose">{isStart && <div class="guide-download"><p>{path === 'start/pi' ? 'Prepare your card with the Mac application, or choose Manual setup below.' : 'Start with the Okapia application for macOS.'}</p><a class="button primary" href={path === 'start/mac' && macDownload ? macDownload.url : link('downloads/')}>{path === 'start/mac' && macDownload ? 'Download for macOS' : 'Downloads & release status'}</a></div>}{path === 'advanced/architecture' && <ArchitectureStack />}{helpParts ? <><Fragment set:html={helpParts[0]} /><BootMenuPreview /><Fragment set:html={helpParts[1]} /><section class="extensions-note"><Extensions /></section></> : guideParts ? <><Fragment set:html={guideParts[0]} /><section class="extensions-note"><Extensions /></section><Fragment set:html={guideParts[1]} /></> : <Content />}<p class="guide-tip">These guides are maintained with the <a href="https://github.com/jpep-in/okapia/tree/main/docs">project documentation</a>.</p></article>
+  </div>
+</Layout>

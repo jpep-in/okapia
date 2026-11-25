@@ -57,6 +57,7 @@ tests/host/check_prefs_file
 tests/host/make_large_volume
 tests/host/render_chooser
 tests/host/render_pages
+tests/host/render_website
 tests/host/*.ppm
 
 # Kernel build intermediates

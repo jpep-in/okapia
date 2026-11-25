@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Input
 
 > USB keyboard and mouse presented to the Macintosh as ADB: the generated key table, the cross-core hand-over,
@@ -6,6 +8,11 @@
 > `src/common/sheepshaver/cpu_ticks_okapia.cpp`, `scripts/gen-keycodes.py`, `patches/macemu/0004`.
 
 ## Using it
+
+**On desktop**, SDL3 events feed the same input drain and ADB mapping (`src/hosts/desktop/board_desktop.cpp`). The
+macOS application's own shortcuts use Control for menu actions; Command-Q asks to quit while a guest is running.
+Full-screen pointer/menu-bar controls are described in [Desktop](desktop.md#using-it). USB interrupt handling below
+belongs to the Pi, where both engines still execute on core 0; it prepares for S1 rather than proving S1 exists.
 
 - **Keyboard and mouse**: any USB HID keyboard and mouse, directly or through a hub. The keypad is mapped.
 - **Mouse speed**: the Mac's own **Mouse** control panel works on both engines.
@@ -32,9 +39,10 @@ are dropped rather than sent as something else. `KeycodesLoad()` overrides it fr
 `RegisterEventHandler()` reports absolute coordinates, and drops every report until `Setup()` is given screen
 dimensions.
 
-### From core 0 to the emulation core
+### From the input handler to the engine
 
-Circle's USB handlers run on core 0 (IRQ context), while `adb.cpp`'s key ring — `key_buffer[]`, `key_write_ptr`, the
+Circle's USB handlers run on core 0 (IRQ context). The engine currently runs on that core too, but outside the IRQ;
+the proposed S1 split would move it. `adb.cpp`'s key ring — `key_buffer[]`, `key_write_ptr`, the
 key matrix — carries no lock (`adb.cpp:302`). Upstream survives because x86 publishes stores in order; AArch64 does
 not, so the Mac could read a key code not yet written. The handlers therefore **only record**: a ring for keys and
 buttons, an accumulator for motion, published with a release store. `InputDrain()` hands everything to `adb.cpp`

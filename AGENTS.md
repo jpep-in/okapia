@@ -1,7 +1,10 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Okapia — agent instructions
 
-Bare-metal classic Macintosh on Raspberry Pi: Basilisk II (68k) and SheepShaver (PowerPC) ported to Circle, both in
-one kernel image.
+Classic Macintosh on macOS and directly on Raspberry Pi: Basilisk II (68k) and SheepShaver (PowerPC) in one
+application or one Circle kernel image. The desktop application also prepares Pi cards. The public-facing site
+is in `site/`; guides in `docs/using/` are imported into it at build time.
 
 **The documentation in [`docs/`](docs/README.md) is the single source of truth**: decisions, architecture, every
 subsystem with its status, pitfalls and verified facts with `file:line` references. Read
@@ -52,9 +55,10 @@ Outranks performance and features: when in doubt, lose speed, never data. Detail
 
 Don't reopen without new evidence ([Decisions](docs/project/decisions.md)): 256 MB Mac RAM · `DIRECT_ADDRESSING` ·
 `uae_cpu_2021` · the 68881 in 80-bit softfloat (`fpu_softfloat`) · circle-stdlib `STDLIB_SUPPORT=3` · the `F1ACAD13` Quadra ROM for the
-68k engine · a fixed output frame buffer and a compositor · network by sharing the Pi's MAC · no JIT by default (the
-experimental translator: `OKAPIA_JIT_ARM64=1`) · GPLv3.
-Multicore (S1) is a goal, not implemented: everything runs on core 0 today.
+68k engine · a fixed output frame buffer and a compositor · network by sharing the Pi's MAC on Pi · no JIT by
+default on the Pi (the experimental translator: `OKAPIA_JIT_ARM64=1`; the desktop arm64 build includes it, `jit`
+still controls runtime use) · GPLv3.
+Multicore S1 is not implemented: the Pi's engines run on core 0. Desktop hosts use OS threads.
 
 ## Cross-cutting pitfalls
 
@@ -122,4 +126,6 @@ make -C tests/host                    # host tests and the firmware specimen
 make -C src/hosts/desktop             # build/desktop/okapia: Okapia on macOS (SDL3), docs/topics/desktop.md
 ./scripts/make-desktop-app.sh         # build/desktop/Okapia.app, SDL3 inside, signed ad hoc
 build/desktop/okapia --headless --work-dir DIR --screenshot F --seconds N <folder>  # native test run
+cd site && npm ci && npm run dev     # website preview at /okapia/; docs/contributing/website.md
+cd site && npm run build             # static GitHub Pages output in site/dist/
 ```

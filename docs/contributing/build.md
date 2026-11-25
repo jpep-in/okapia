@@ -1,10 +1,31 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Build
 
-> From a fresh macOS machine to `kernel8.img`: tools, dependencies, targets, the merged image, and the patches
+> Building the desktop application, Pi/QEMU kernels and public website: tools, dependencies, targets and the patches
 > Okapia applies to its upstreams. Main files: `scripts/install-tools.sh`, `scripts/bootstrap.sh`,
 > `scripts/build-libs.sh`, `scripts/target.sh`, `scripts/env.sh`, `scripts/apply-patches.sh`, `src/kernel/Makefile`.
 
 ## Using it
+
+### Desktop application (macOS)
+
+Prepare the pinned submodules and patches with `scripts/bootstrap.sh`. The desktop build needs Xcode Command Line
+Tools, `make`, `pkg-config`, SDL3 and libcurl; the Makefile gets SDL3 flags from `pkg-config` and links `-lcurl`
+(`src/hosts/desktop/Makefile:41-42,212`). `install-tools.sh` sets up the Pi cross-build tools; it does not install SDL3.
+
+```bash
+./scripts/gen-cpu.sh
+make -C src/hosts/desktop
+./scripts/make-desktop-app.sh
+```
+
+The results are `build/desktop/okapia` and `build/desktop/Okapia.app`, with both engines. The bundle includes SDL3
+and is currently signed ad hoc (`scripts/make-desktop-app.sh:85-88`); Developer ID signing and notarisation are
+still [release work](release.md#signing-and-notarisation-macos). No Circle library build is needed for desktop.
+See [Desktop](../topics/desktop.md) for compiler/SDK details, the workspace, runtime settings and headless tests.
+
+### Pi and QEMU kernels
 
 ```bash
 ./scripts/install-tools.sh      # Homebrew packages and the ARM toolchain
@@ -13,13 +34,28 @@
 . scripts/env.sh && $MAKE -C src/kernel
 ```
 
-The result is `src/kernel/kernel8.img`, about 2,840 KB, carrying both Macintosh. Then:
+The result is `src/kernel/kernel8.img`, carrying both Macintosh. Its size depends on the options; the kernel budget
+is under 4 MB for the standard image. Then:
 
 - **QEMU**: `./scripts/make-sd-image.sh` and `./scripts/run-live.sh` — see
   [Testing and debugging](testing-and-debugging.md).
 - **A Pi 4**: `./scripts/build-libs.sh pi4`, build, then `./scripts/make-pi-sd.sh` stages the firmware, device tree,
   ARM stub, `config.txt` and the kernel in `rpi4-sd-contents/` — see [Getting started](../getting-started.md).
 - **Host tests**: `make -C tests/host`.
+
+### Website
+
+The static website builds independently of the emulators and ARM toolchain:
+
+```bash
+cd site
+npm ci
+npm run build
+npm run check-links
+```
+
+See [Website](website.md) for the supported Node.js version, local preview, release downloads and GitHub Pages.
+Its guides are imported from `docs/using/`, so content corrections belong in those Markdown files.
 
 ## How it works
 
@@ -39,6 +75,9 @@ which `env.sh` exports as `$MAKE`), `dtc` and `gnu-getopt` with Homebrew, and th
 | `external/circle-stdlib` | `github.com/smuehlst/circle-stdlib` (back from Codeberg since August 2026; circle-newlib too) | a **tag** (`v21`, Circle Step51.1.1) | newlib and libstdc++; **Circle lives in `libs/circle/`**, pinned by circle-stdlib, with its docs in `libs/circle/doc/` |
 | `external/macemu` | `github.com/kanjitalk755/macemu` | a **SHA** (upstream's last tags date from 2017) | Basilisk II and SheepShaver. Not `emaculation/macemu`, dormant since April 2022 |
 | `external/hfsutils` | `github.com/JotaRandom/hfsutils` | a SHA | libhfs, GPL v2 or later. See below |
+| `external/stb` | `github.com/nothings/stb` | a SHA | `stb_truetype`, used for firmware outline fonts |
+| `external/miniz` | `github.com/richgel999/miniz` | a SHA | ZIP reading for desktop card preparation |
+| `external/macemu-jit` | `github.com/rcarmo/macemu-jit` | a SHA | alternate experimental 68k core, selected by `OKAPIA_JIT=1` |
 
 **Why this fork of hfsutils.** Robert Leslie's last release is 3.2.6 (`mars.org/home/rob/proj/hfs/`); the other
 GitHub copies are frozen imports of it, and no other maintained libhfs exists. JotaRandom's is the only active fork —
@@ -111,11 +150,17 @@ the shared ones and the merge intermediates.
 
 ### Build options
 
+These are the Pi kernel's options. The desktop Makefile has its own defaults: `-O3`, softfloat, and the in-tree
+68k translator compiled on arm64 (`src/hosts/desktop/Makefile:47-70`). Compiling a translator does not force `jit`
+on in a workspace. Clean the relevant target's objects after changing compiler flags or defines.
+
 | Option | Effect |
 |---|---|
 | `OKAPIA_TRACE=1` | trace build: disk read/write wraps with short-read detection, exception and trap traces, FPU instruction counts and times, `DIRECT_ADDRESSING_GUARD`, `FPU_SELFTEST`, `SOUND_SELFTEST`, `NET_SELFTEST` |
 | `OKAPIA_NETBENCH=1` | the network bench, run at power-on when the card names a machine with `netbench` ([Network](../topics/network.md#the-bench)); absent from a normal kernel |
 | `OKAPIA_FPU` | `softfloat` (default): the 68881 in 80-bit softfloat; `ieee`: the binary128 core, to compare against. `okapia-clean` when switching ([68k engine](../topics/engine-68k.md#fpu-the-68881-in-80-bit-softfloat)) |
+| `OKAPIA_JIT_ARM64=1` | compile the in-tree experimental 68k translator beside `uae_cpu_2021`; runtime use still requires `jit true` |
+| `OKAPIA_JIT=1` | use the alternate core in `external/macemu-jit`; distinct from the in-tree translator |
 | `OPTIMIZE` | `-O2` by default. `-O3` measured no faster, and vectorised `GfxBlit()` into an alignment fault on Device memory ([Display](../topics/display.md)) |
 | `OKAPIA_BUILD_TIME` | the clock's fallback, `date +%s` by default ([Clock and PRAM](../topics/clock-and-pram.md)) |
 

@@ -1,6 +1,12 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Getting started
 
-> From an empty SD card to the Finder, on a Raspberry Pi 4 or under QEMU.
+> Manual SD card setup for a Raspberry Pi 4, and kernel testing under QEMU.
+
+For the application-led path, start [on a Mac](using/mac.md) or [prepare a Pi card with the desktop app](using/pi.md).
+Those guides cover the welcome page, workspaces, ROM and disk selection. This page remains the reference for manual
+card formatting, boot files and QEMU; building Okapia is not required once a suitable public release exists.
 
 Okapia ships no ROM, no System and no disk image: you supply them. Building the kernel itself is described
 in [Building](contributing/build.md).

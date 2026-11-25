@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # 68k engine
 
 > Basilisk II on Circle: the CPU and FPU cores, the ROM and the model it announces, the core's build, and

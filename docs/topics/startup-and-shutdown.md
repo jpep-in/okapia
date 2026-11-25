@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Startup and shutdown
 
 > Power-on to Mac OS, switching between the two Macintosh, restarting, and shutting down without losing
@@ -7,17 +9,30 @@
 
 ## Using it
 
+**On desktop**, launching the application selects a workspace or opens the welcome page. Continue enters the same
+boot menu; Shift at application launch returns to welcome. Use Special → Shut Down before closing the application.
+Closing the window while the guest runs asks for confirmation; it is not a guest shutdown. Desktop engine changes
+and some restarts start a new process, unlike the Circle board's hand-over below
+(`src/hosts/desktop/main_desktop.cpp:590,710`, [Desktop](desktop.md#using-it)). Its manual restart validation remains
+listed in [Desktop status](desktop.md#status).
+
+**On a Pi**, the power-on sequence is:
+
 - **Power on**: the startup chime, two seconds of plain grey, then the Macintosh. Hold **Option** during
   the grey to open the [boot menu](boot-menu.md); **Command-Option-P-R** forgets the parameter RAM.
 - **Restart** from Mac OS (Special → Restart): the chime plays again and the grey window comes back, so the
   boot menu is reachable after every restart, not only at power-on.
 - **Shut down** from Mac OS (Special → Shut Down) or from the boot menu: the disk image is closed, the screen
   goes black and the display is blanked. A Raspberry Pi 4 cannot switch itself off — cut the power then.
-- **Never pull the plug on a running Mac.** It costs the boot, not the data: see [Storage](storage.md).
+- **Never pull the plug on a running Mac.** It leaves the volume in use and requires repair; see the measured
+  limits in [Storage](storage.md).
 
 ## How it works
 
 ### Power-on
+
+The steps in this section describe the Circle host. Desktop entry and workspace selection are documented in
+[Desktop](desktop.md#how-it-works).
 
 `okapia_boot.cpp` owns `main()` and enters the 68k engine first. `CKernel::Initialize()` runs once per
 power-on:

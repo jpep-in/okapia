@@ -1,0 +1,63 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+---
+<figure class="architecture-stack" aria-label="Okapia’s stacked architecture, from the two Macintosh engines to Circle and Desktop hosts and their platforms">
+  <p class="layer-label">Where it runs</p>
+  <div class="host-columns platforms">
+    <div class="platform available"><strong>Raspberry Pi 4</strong><span>Directly on hardware</span><small>No Linux · No host OS</small></div>
+    <div class="desktop-platforms">
+      <div class="platform available"><strong>macOS</strong><span>Apple silicon</span></div>
+      <div class="platform planned"><strong>Linux</strong><span>Coming soon</span></div>
+      <div class="platform planned"><strong>Windows</strong><span>Coming soon</span></div>
+    </div>
+  </div>
+  <div class="host-connectors" aria-hidden="true"><span></span><span></span></div>
+  <p class="layer-label">Host implementations</p>
+  <div class="host-columns">
+    <div class="host"><strong>Circle</strong><span>circle-stdlib · board drivers</span><code>src/hosts/circle/</code></div>
+    <div class="host"><strong>Desktop</strong><span>SDL3 · host services · POSIX today</span><code>src/hosts/desktop/</code></div>
+  </div>
+  <div class="host-merge" aria-hidden="true"><span></span><span></span></div>
+  <div class="interface"><strong>Host interfaces</strong><span>Firmware: <code>okapia_host.h</code> · shared platform: board interfaces</span></div>
+  <div class="stack-connector" aria-hidden="true"></div>
+  <div class="shared-layer"><p class="layer-label">The shared Okapia experience</p><strong>Common platform + firmware</strong><span>Boot menu · workspace UI · display · input · audio · disks · timing</span><code>src/common/ + src/firmware/</code></div>
+  <div class="stack-connector" aria-hidden="true"></div>
+  <p class="layer-label">The Macintosh foundations</p>
+  <div class="engine-columns"><div class="engine"><strong>Basilisk II</strong><span>68K Macintosh</span><small>68040 · 80-bit softfloat FPU</small></div><div class="engine"><strong>SheepShaver</strong><span>PowerPC Macintosh</span><small>kpx_cpu</small></div></div>
+  <figcaption>Both engines and the shared interface are included on both hosts. Grey platforms are coming soon; macOS is the current desktop host.</figcaption>
+</figure>
+<style>
+  .architecture-stack { margin:0 0 45px; color:#172e23; font-size:.9375rem; line-height:1.4; }
+  .architecture-stack p { margin:0; }
+  .architecture-stack .layer-label { font-size:.6875rem; text-transform:uppercase; letter-spacing:.1em; color:#5d6a62; margin-bottom:10px; }
+  .host-columns { display:grid; grid-template-columns:1fr 2fr; gap:14px; }
+  .desktop-platforms { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; position:relative; }
+  .desktop-platforms::after { content:''; position:absolute; left:16.6667%; right:16.6667%; bottom:-9px; height:1px; background:#97a692; }
+  .desktop-platforms .platform { position:relative; }
+  .desktop-platforms .platform::after { content:''; position:absolute; left:50%; width:1px; height:9px; bottom:-9px; background:#97a692; }
+  .platform,.host,.engine,.shared-layer,.interface { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; min-width:0; gap:7px; padding:20px 12px; border:1px solid #c3cfc2; border-radius:6px; background:#fff; }
+  .architecture-stack strong { font-size:1rem; line-height:1.25; }
+  .architecture-stack span { font-size:.8125rem; }
+  .architecture-stack small { font-size:.75rem; }
+  .architecture-stack code { font-size:.6875rem; padding:0; background:none; overflow-wrap:anywhere; }
+  .platform.available { background:#e6eee2; border-color:#aabd9f; }
+  .platform.planned { background:#eff0ee; border:1px dashed #bdc1bc; color:#6a706a; }
+  .platform.planned span { font-size:.75rem; }
+  .host { background:#294a35; color:#f8faf4; border-color:#294a35; }
+  .host code { color:#cedfc9; }
+  .interface { border-style:dashed; padding-block:14px; }
+  .shared-layer { background:#eef3e9; padding:24px 18px; }
+  .shared-layer .layer-label { margin:0 0 3px; }
+  .shared-layer strong { font-size:1.2rem; }
+  .engine-columns { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .host-connectors { display:grid; grid-template-columns:1fr 2fr; gap:14px; height:19px; }
+  .host-connectors span,.stack-connector { width:1px; height:19px; background:#97a692; margin:auto; }
+  .stack-connector { margin-block:0; }
+  .host-merge { position:relative; display:grid; grid-template-columns:1fr 2fr; gap:14px; height:20px; }
+  .host-merge span { margin-inline:auto; width:1px; height:10px; background:#97a692; }
+  .host-merge::before { content:''; position:absolute; top:9px; height:1px; left:calc(16.6667% - 2.3333px); right:calc(33.3333% - 4.6667px); background:#97a692; }
+  .host-merge::after { content:''; position:absolute; top:9px; bottom:0; left:50%; width:1px; background:#97a692; }
+  .architecture-stack figcaption { margin-top:17px; font-size:.75rem; line-height:1.6; color:#5d6a62; }
+  @media(max-width:600px) { .host-columns { grid-template-columns:1fr 1.5fr; gap:10px; } .desktop-platforms { grid-template-columns:1fr; gap:7px; } .desktop-platforms::after,.desktop-platforms .platform::after { display:none; } .platform { padding:12px 8px; } .platform.available small { max-width:10ch; } .host-connectors,.host-merge { grid-template-columns:1fr 1.5fr; gap:10px; } .host-merge::before { left:calc(20% - 2px); right:calc(30% - 3px); } .host { padding:18px 8px; } .engine { padding:18px 9px; } }
+</style>

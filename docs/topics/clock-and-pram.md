@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Clock and PRAM
 
 > Where the Macintosh's time comes from — the network, the Macintosh's own Date & Time, the card, the build — how
@@ -10,6 +12,11 @@
 > `src/common/okapia_menu.cpp` (`ForgetPram`).
 
 ## Using it
+
+**On desktop**, the Macintosh follows the computer's clock and zone; Date & Time reports that host time. Okapia
+does not run the Pi's NTP client there (`src/hosts/desktop/okapia_host_desktop.cpp:2074`). Parameter RAM still lives
+per engine in the workspace. Desktop zone override is not implemented ([Desktop status](desktop.md#status)).
+The network time, saved board clock and zone controls below describe **Pi** operation.
 
 - **The Date & Time group of the boot menu's Settings** shows the time, where it came from and the offset in
   force, and sets the two things a Macintosh of this era cannot be told ([Boot menu](boot-menu.md#using-it)).

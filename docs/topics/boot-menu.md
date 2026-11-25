@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Boot menu
 
 > The Okapia firmware: a configuration utility in a plausible Apple style that opens before any emulator
@@ -6,6 +8,11 @@
 > bridge), `okapia_output.cpp` (frame buffer claim), `assets/strings.tsv`, `assets/fonts/`, `assets/icons/`.
 
 ## Using it
+
+**Desktop entry.** The application first opens or creates an Okapia Workspace on its welcome page. Continue opens
+this boot menu. The footer's Okapia button and File → Change Okapia Workspace return to welcome. The same page also
+prepares and updates Pi cards; see [Desktop](desktop.md#using-it). An available app release opens its release page;
+an older Pi card has an Update action that returns to card preparation. Neither is a guest-system catalogue.
 
 **Opening it.** At every start the screen shows about two seconds of plain grey (`#BCBCBC`). Hold
 **Option** alone to open the menu; set `bootmenu true` to always open it. It also opens by itself when the
@@ -85,6 +92,10 @@ Space activates the focused control, Return the default button, Escape cancels. 
 selection, Shift-arrows and Command-A/C/X/V. The pointer appears on the first mouse movement.
 
 ## How it works
+
+The website's menu preview uses these same drawing functions through `tests/host/render_website.cpp`, with
+example workspace and network data. `site/scripts/menu-preview.mjs` rebuilds it and exports six PNG pages and their tab hit rectangles before each site build; the [website guide](../contributing/website.md#content-and-interaction) records
+the generation and playback contract. It never boots a guest or reads a user's card.
 
 ### What earns a place here
 

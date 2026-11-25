@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Desktop
 
 > Okapia as a desktop application: one executable opens a folder laid out like an Okapia card, shows the same boot
@@ -13,6 +15,11 @@
 > The study behind it is [Okapia on a desktop](../notes/research/desktop-host.md).
 
 ## Using it
+
+For the short user paths, see [Start on Mac](../using/mac.md) and [Start on Raspberry Pi](../using/pi.md). The same
+application is the emulator and card installer. It creates no bundled Apple system: a workspace still needs the
+user's ROM and bootable image. There is no public package yet; [Releases](../contributing/release.md) separates the
+implemented installer/update announcement from planned signing and app self-replacement.
 
 ```bash
 make -C src/hosts/desktop                  # build/desktop/okapia (scripts/gen-cpu.sh once before)
@@ -355,6 +362,10 @@ the host and the menu stay undefined and meet the shared objects at the final li
 - [x] The shared files in `src/common/` (`*_okapia`), the Circle host's in `src/hosts/circle/` (2026-11-21)
 - [x] Okapia Workspace: File menu, path shown; Shift asks at launch (2026-11-22)
 - [x] Welcome page: open or create a workspace, add a ROM and a disk, copied in; footer button (2026-11-22)
+- [x] Card preparation from a release manifest, archives checked and installed by the welcome page; folder-based
+      host tests pass, with a real removable card still to validate ([Releases](../contributing/release.md), 2026-11-22)
+- [x] App update announcements open the release page; an older Pi card offers Update in welcome and the boot menu
+      (2026-11-23–24). App self-replacement is still planned, not part of this announcement.
 - [x] Sound: *Off* and *Built-in (this Mac)* only; network on the Settings page, no Network tab; Date & Time help for a desktop (2026-11-22)
 - [x] Window size from the Display page: sizes, Fill the screen, full screen, typed; no mouse resizing (2026-11-22)
 - [x] Full screen's menu bar shown by Control-Command, hidden by a click (2026-11-22)

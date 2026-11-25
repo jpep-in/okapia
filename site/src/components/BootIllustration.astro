@@ -1,0 +1,41 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+import '../styles/boot.css';
+---
+<div id="okapia-boot-study">
+  <div class="ok-machines">
+    <figure data-target="mac">
+      <div class="ok-scene">
+        <button type="button" class="ok-animation-toggle" aria-label="Play the System 7 startup animation on your Mac"></button>
+        <div class="ok-laptop" aria-hidden="true">
+          <div class="ok-lid"><div class="ok-camera"></div><div class="ok-laptop-panel"><div class="ok-screen" data-stage="happy"></div></div></div>
+          <div class="ok-deck"><div class="ok-keyboard"></div><div class="ok-trackpad"></div><div class="ok-front"></div></div>
+        </div>
+      </div>
+    </figure>
+    <figure data-target="pi" hidden>
+      <div class="ok-scene">
+        <button type="button" class="ok-animation-toggle" aria-label="Play the System 7 startup animation on Raspberry Pi 4"></button>
+        <svg class="ok-cable" viewBox="0 0 480 361" preserveAspectRatio="none" aria-hidden="true"><path d="M101 327 C122 356 196 349 190 315 C185 289 164 293 171 270 C175 258 208 264 236 253"/></svg>
+        <div class="ok-monitor" aria-hidden="true"><div class="ok-monitor-body"><div class="ok-screen" data-stage="happy"></div><div class="ok-monitor-led"></div></div><div class="ok-neck"></div><div class="ok-foot"></div></div>
+        <div class="ok-board" aria-hidden="true"><div class="ok-gpio"></div><div class="ok-traces"></div><div class="ok-chip"></div><div class="ok-port"></div><div class="ok-port second"></div><div class="ok-hdmi"></div><div class="ok-hdmi second"></div><div class="ok-power"></div></div>
+      </div>
+    </figure>
+  </div>
+  <template class="ok-screen-template">
+    <div class="ok-layer ok-happy-layer"><div class="ok-happy-holder"><div class="ok-happy"><div class="ok-face"></div></div></div></div>
+    <div class="ok-layer ok-welcome-layer"><div class="ok-welcome-panel"><div class="ok-welcome-title">Welcome to Macintosh.</div><div class="ok-boot-track"><div class="ok-boot-fill"></div></div></div><div class="ok-extensions"><span class="ok-extension"></span><span class="ok-extension"></span><span class="ok-extension"></span><span class="ok-extension"></span></div></div>
+    <div class="ok-layer ok-finder-layer">
+      <div class="ok-menubar"><span class="ok-finder-mark"></span><span>File</span><span>Edit</span><span>View</span><span class="ok-label-menu">Label</span><span>Special</span></div>
+      <div class="ok-drive"><div class="ok-disk-icon"></div><span class="ok-icon-label">Macintosh HD</span></div>
+      <div class="ok-trash"><div class="ok-trash-icon"></div><span class="ok-icon-label">Trash</span></div>
+      <div class="ok-window"><div class="ok-titlebar"><i class="ok-closebox"></i><span>Macintosh HD</span></div><div class="ok-window-info">3 items</div><div class="ok-folders"><div><div class="ok-folder system"></div><span class="ok-folder-name">System Folder</span></div><div><div class="ok-folder"></div><span class="ok-folder-name">Applications</span></div><div class="ok-folder-extra"><div class="ok-folder"></div><span class="ok-folder-name">Documents</span></div></div><div class="ok-scrollbar"></div></div>
+      <div class="ok-cursor"></div>
+    </div>
+  </template>
+
+</div>
+<script>
+import '../scripts/boot.js';
+</script>

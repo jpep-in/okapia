@@ -1,7 +1,9 @@
+<!-- Copyright (C) 2026 Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # The Okapia documentation
 
-Okapia is a classic Macintosh on bare metal: Basilisk II (68k) and SheepShaver (PowerPC) ported onto
-Circle, so a Raspberry Pi boots straight into Mac OS with no Linux underneath. This tree is the single
+Okapia runs a classic Macintosh on macOS and directly on Raspberry Pi hardware. Basilisk II (68k) and
+SheepShaver (PowerPC) share the boot menu and platform layer; Circle lets a Pi boot straight into Mac OS. This tree is the single
 reference for how it works, what is done, what is left, and what it cost to learn.
 
 Every page on a subject covers both how to use it and how it is built. A fact carries its evidence — a
@@ -9,7 +11,8 @@ Every page on a subject covers both how to use it and how it is built. A fact ca
 
 ## Reading paths
 
-**You want to run it.** [Getting started](getting-started.md), then [Preferences](preferences.md). The
+**You want to run it.** Start [on a Mac](using/mac.md) or [on a Raspberry Pi](using/pi.md). [Help](using/help.md)
+covers the common questions; [Getting started](getting-started.md) covers manual Pi setup, then [Preferences](preferences.md). The
 "Using it" section of any topic page covers the rest.
 
 **You want to contribute.** [Vision](project/vision.md) → [Architecture](project/architecture.md) →
@@ -37,6 +40,15 @@ the "Pitfalls" section there is what previous sessions paid for.
 
 | Page | What it answers |
 |---|---|
+| [Start on Mac](using/mac.md) | Workspace, ROM, disk and the first Finder |
+| [Start on Raspberry Pi](using/pi.md) | Prepare a card with the desktop app, connect and boot |
+| [Help](using/help.md) | ROMs, disk formats, compatible systems and troubleshooting |
+| [Advanced](using/advanced.md) | Manual setup, preferences and paths into the technical documentation |
+| [Architecture overview](using/architecture.md) | Shared engines and layers, Circle/Desktop hosts, available and planned platforms |
+| [Public benchmarks](using/benchmarks.md) | Coming soon: updated measurements, including the FPU |
+| [Making Of](using/making.md) | Research, testing, AI assistance, upstream contributors and licences |
+| [About Okapia](using/about.md) | Jonathan Pepin’s account of why he started the project |
+| [System extensions](using/extensions.md) | Sound Manager and File System Manager requirements, shared by both startup guides |
 | [Getting started](getting-started.md) | Hardware, the SD card, ROMs, the first boot |
 | [Preferences](preferences.md) | Every keyword of `Okapia_Prefs`, including those that do nothing here |
 
@@ -66,6 +78,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | [Testing and debugging](contributing/testing-and-debugging.md) | Host tests, QEMU scripts, crash testing, traces, logs |
 | [Benchmarks](contributing/benchmarks.md) | Method and results |
 | [Releases](contributing/release.md) | Versions, the manifest, signing, the release procedure, updates (a plan) |
+| [Website](contributing/website.md) | Public site, content, animation, downloads and GitHub Pages deployment |
 
 ### Notes
 

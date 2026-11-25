@@ -1,11 +1,18 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Shared folder
 
-> A folder on the FAT card that appears on the Macintosh's desktop as a volume: the easiest way to get software
-> in and files out, from any computer that can read an SD card. Main files: upstream `extfs.cpp` and
+> A folder in the workspace or on the FAT card that appears on the Macintosh's desktop as a volume: a way to move
+> software in and files out. Main files: upstream `extfs.cpp` and
 > `Unix/extfs_unix.cpp` (reused unchanged), `src/common/extfs_sync_okapia.cpp`, `src/common/mac_encoding_okapia.cpp`,
 > `scripts/gen-macroman.py`, `src/kernel/kernel.cpp` (`PrepareSharedFolder`).
 
 ## Using it
+
+On a desktop host, `/shared` is relative to the chosen workspace; **File → Show Okapia Workspace in Finder** opens
+the containing folder. The same ExtFS implementation and early-System FSM requirement apply on both hosts.
+FAT-specific names, card-removal advice and newlib details below describe the Pi/card case; a desktop folder uses
+the host filesystem ([Desktop](desktop.md#using-it)).
 
 - **Where**: `extfs` (default `/shared`, created at startup if missing; empty for none) and `extfsname` (the volume
   name, default `Okapia`, 27 characters at most) — [Preferences](../preferences.md), or Settings in the

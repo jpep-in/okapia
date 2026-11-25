@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Testing and debugging
 
 > How to check a change: host tests, QEMU scripts, the durability test, logs on the card, traces and GDB. Main
@@ -9,6 +11,8 @@
 | Question | Command |
 |---|---|
 | Does the logic still hold, with no board? | `make -C tests/host` |
+| Does the desktop Macintosh boot? | native headless run on a copied workspace; see [Desktop](../topics/desktop.md#using-it) |
+| Does the public site build and link correctly? | `cd site`, then `npm test`, `npm run build`, `npm run check-links` |
 | Does the Mac boot, and what is on its screen? | `./scripts/screenshot.sh [seconds] [width height]` |
 | Does a session damage the volume? | `./scripts/run-test.sh [seconds] [image]` |
 | Is an image read past 2 GiB? | `./scripts/check-large-volume.sh [seconds]` |
@@ -37,11 +41,13 @@ measurements are part of the build.
 | `check_platform` | unknown preference lines kept, System flavour, the PowerPC memory layout, the resolution lists, the ROM chime (fabricated ROMs, plus the local ROMs when present), compositor output writes at odd origins and pitches |
 | `check_blit` | upstream's pixel expanders at every depth |
 | `check_encoding` | MacRoman ↔ UTF-8 file names |
+| `check_rom`, `check_card` | ROM identification/compatibility and Pi card diagnosis, without installing onto a real card |
+| `check_install` | release JSON, SHA-256, archive checks and installation across releases into temporary folders; a real removable-card test remains separate |
 | `check_fpu_core` | `fpu_softfloat.cpp` itself, built for the host with the few symbols of the 68k core it reaches: a million random FPU instructions (every operation and operand format, packed decimal, `FMOVECR`, every FPCR mode and precision, zeros, infinities, NaNs, denormals, unnormals), the FPU state hashed after each and the hash pinned; each instruction under a five-second watchdog; the `FSIN` of an unnormal that once never returned |
 | `check_fpu` | the 68K softfloat under `fpu_softfloat.cpp`: sixteen answers computed independently (FPCR precision, directed rounding to integers, ties, overflow, exponents a double cannot hold), the fast paths against softfloat over six million operations, and the digest of 60,000 operations that the traced kernel must reproduce on the board. `./check_fpu digest` prints it, to pin a deliberate change |
 
 The firmware's screens are pure (handed values, answering values; everything knowing about files or frame buffers
-stays in `src/hosts/circle/firmware/`), which is what makes them measurable here. A fixed reproducible bug comes with a test,
+stays behind `okapia_host.h` in each host), which is what makes them measurable here. A fixed reproducible bug comes with a test,
 on the host where possible.
 
 `tests/smoke`, `core-probe`, `link-probe` and `trace-build` are historical probes from the port's first days (a bare
@@ -49,13 +55,46 @@ Circle kernel, a compile probe of the core, the list of undefined symbols).
 
 ### Native test runs
 
-The desktop build runs the boot menu and the 68k Macintosh without a window, on a copy of a card folder, with
+The desktop build runs the boot menu and either Macintosh engine without a window, on a copy of a workspace, with
 scripted keys and clicks and PNG screenshots ([Desktop](../topics/desktop.md#using-it)). It covers everything
 above `okapia_host.h` in seconds, and a `SIGKILL` of the process followed by a second run checks the repair of the
 volumes left in use. It is **not** a durability check: the host's page cache outlives the process, so nothing written
 is ever lost to a `SIGKILL`. What the desktop owes against a power cut is its flush policy
 ([Desktop](../topics/desktop.md#status)), which only a host that loses its power can test. It says nothing of what lies below the interface on the board —
 USB, HDMI, the card, Wi-Fi — which QEMU and the Pi still judge.
+
+The 68k idle message is a useful milestone, but inspect the screenshot. PowerPC has no equivalent idle patch, so
+its screen is the boot verdict. The application's `--work-dir` test mode keeps the original workspace untouched;
+never point two running processes at one writable workspace or card. Current desktop audio, network and restart
+validation gaps are recorded in [Desktop status](../topics/desktop.md#status).
+
+### Website checks
+
+The website has a separate Node.js build and manifest tests in `site/`. Its Markdown guides are imported from
+`docs/using/`, so documentation edits to those pages require a site build and link check. For changes to the
+Mac/Pi selector or animation, check both routes in a browser, mobile layout, full laptop-screen coverage, and the
+Finder information row's text above its bottom rule. Reduced-motion visitors should see a still Finder.
+Click the illustration to pause, click again to resume, and click after completion to restart. The same control
+must work from the keyboard, without a visible Pause/Replay button or legend.
+Check the floating Mac/Pi selector on the homepage and a startup guide. It should preserve the section,
+show the route's host on direct links, and remain visible on mobile without covering text. It must be absent
+from the header and shared Help/Advanced/Architecture/Downloads pages. There is no sidebar, breadcrumb or second
+selector beside the animation. The legacy `/help/mac/` and `/help/pi/` routes must reach common Help. Check that
+welcome-page and Retina advice is in Get started Mac, card checks in Get started Pi, and boot-menu/log advice in Help.
+
+The shared extension requirements must appear in both startup guides and Help, as short Sound and Shared Folder lists with brief installation advice. Check About's author signature, Making Of's fourth Advanced tab and horizontally contained
+credit tables, plus Changelog's empty state. History tests cover draft filtering, date ordering, pre-release labels
+and safe Markdown notes; real publication remains the source of changelog entries.
+
+The menu preview is regenerated from current firmware by `npm run menu-preview` (also part of `dev` and `build`).
+Check all six generated PNG pages and their highlighted tab hit zones. Select Network and Logs, verify the
+matching picture and pressed state, then verify automatic advancement resumes after twelve idle seconds.
+Keyboard focus and reduced motion must hold the selected page. Check responsive alignment on mobile.
+Its data is fictional and it never opens a workspace or disk image.
+
+`.github/workflows/website.yml` checks this site without ROMs or emulator builds; only `external/stb` is fetched
+for the real boot-menu renderer. It is not CI for the full C++ host tests,
+guest boot or durability; those remain separate work. See [Website](website.md).
 
 ### QEMU scripts
 

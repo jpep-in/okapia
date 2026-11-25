@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Sound
 
 > The Macintosh's sound on the jack, HDMI or USB: the board-owned device, the pull from the Mac's mixer,
@@ -7,6 +9,11 @@
 > `src/common/okapia_menu.cpp` (the setting).
 
 ## Using it
+
+**On desktop**, Sound offers **Off** or **Built-in (this Mac)** (`soundoutput builtin`). The shared audio pump
+feeds SDL3's default host output (`src/hosts/desktop/sound_desktop.cpp:214`). A Pi card's jack/HDMI/USB setting is
+kept, while desktop uses its own output. The chime path was checked; guest audio, including the known Mac OS 8.6
+case, still needs the checks listed in [Desktop status](desktop.md#status). The device/DMA details below are Circle's.
 
 - **Output**: Settings → Sound in the [boot menu](boot-menu.md), stored as `soundoutput`
   ([Preferences](../preferences.md)): `jack`, `hdmi`, `usb` (Pi 4 and 5) or `off`. The change applies at the next

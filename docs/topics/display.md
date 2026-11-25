@@ -1,3 +1,5 @@
+<!-- Copyright (C) 2026  Jonathan Pepin -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Display
 
 > From the Macintosh's frame buffer to the HDMI output: the output mode, the resolutions offered, the
@@ -7,6 +9,12 @@
 > (PowerPC), `src/hosts/circle/firmware/okapia_output.cpp`, `patches/macemu/0003`, `0011`.
 
 ## Using it
+
+**On desktop**, the compositor and guest resolution rules are shared, but the output is an SDL3 surface, not Pi
+Device memory. The Display page's Window choice sets a window size, Fill the screen or full screen; the welcome
+window is separately resizable. Changing the host window is distinct from a guest Monitors mode change, and live
+guest resizing remains unimplemented. See [Desktop](desktop.md#using-it) for density, scaling and menu-bar controls.
+The firmware/EDID/`config.txt` advice below applies to the **Pi host**.
 
 - **The output frame buffer** comes from the Pi firmware, which normally chooses the display mode from the
   monitor's EDID. `okapia_output.cpp` logs the frame buffer size and the EDID's preferred size. If they differ,
