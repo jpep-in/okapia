@@ -24,6 +24,8 @@ build/desktop/okapia qemu/sd-contents      # a card folder, or a card mounted on
 `allow-jit` entitlement. It opens by double-click on the Mac that built it. Gatekeeper rejects it elsewhere
 (`spctl -a` says *rejected*), so another Mac needs a right-click > Open the first time, until it is notarised.
 Copied next to a card folder's contents, or into one, it opens that folder by itself.
+Finder's copyright field shows `Copyright © 2026 Jonathan Pepin`, set by the packaging script's
+`NSHumanReadableCopyright` entry.
 
 **The Okapia Workspace.** The folder laid out like a card, which the application opens, is called the Okapia
 Workspace. The first of these that applies is opened:

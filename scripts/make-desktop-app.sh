@@ -67,7 +67,7 @@ cat > "${APP}/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key>              <string>${VERSION}</string>
     <key>LSApplicationCategoryType</key>    <string>public.app-category.utilities</string>
     <key>NSHighResolutionCapable</key>      <true/>
-    <key>NSHumanReadableCopyright</key>     <string>GPLv3+. Basilisk II and SheepShaver: GPLv2+, Christian Bauer et al.</string>
+    <key>NSHumanReadableCopyright</key>     <string>Copyright © 2026 Jonathan Pepin</string>
 </dict>
 </plist>
 PLIST
