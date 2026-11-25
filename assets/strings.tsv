@@ -123,7 +123,6 @@ sound	Sound	Son
 sound_off	Off	Coupé
 language	Language	Langue
 jit	JIT	JIT
-qd_accel	QuickDraw acceleration	Accélération QuickDraw
 only_68k	(68K only)	(68K seulement)
 boot_menu	Show this menu at startup	Afficher ce menu au démarrage
 boot_menu_hint	Press Alt during startup to show this menu	Appuyez sur Alt pendant le démarrage pour afficher ce menu

@@ -262,7 +262,6 @@ SHARED_SRCS = $(OKAPIA)/hal_circle.cpp $(OKAPIA)/board_sound_circle.cpp \
               $(COMMON)/net_config_okapia.cpp \
               $(OKAPIA)/clock_circle.cpp $(OKAPIA)/net_clock.cpp \
               $(OKAPIA)/net_bench_circle.cpp $(OKAPIA)/execmem_circle.cpp \
-              $(OKAPIA)/quickdraw_worker.cpp $(COMMON)/quickdraw_blit.cpp \
               $(OKAPIA)/mac_ram_circle.cpp $(COMMON)/rom_chime.cpp \
               okapia_boot.cpp $(FIRMWARE_SRCS)
 SHARED_OBJ  = obj-shared

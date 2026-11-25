@@ -26,7 +26,7 @@
 #include <sys/types.h>
 
 #ifndef SHEEPSHAVER
-// EmulOp: the Macintosh going round, and QuickDraw (emul_op_hook_okapia.cpp).
+// EmulOp: the Macintosh going round (emul_op_hook_okapia.cpp).
 // The 68k engine's only, as on the board: the PowerPC one has no hook on it.
 void OkapiaRealEmulOp (uint16 opcode, M68kRegisters *r);
 extern "C" void __wrap__Z6EmulOptP13M68kRegisters (uint16 opcode, M68kRegisters *r);

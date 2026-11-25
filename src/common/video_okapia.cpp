@@ -23,7 +23,6 @@
 #include <string.h>
 
 #include "video_shared_okapia.h"
-#include "quickdraw_okapia.h"
 
 #include "cpu_emulation.h"
 #include "main.h"
@@ -130,7 +129,6 @@ void Circle_monitor_desc::switch_to_current_mode (void)
 
     memset (s_pMacPixels, 0, (size_t) mode.bytes_per_row * mode.y);
     set_mac_frame_base (Host2MacAddr (s_pMacPixels));
-    QDSetScreen (s_pMacPixels, mode.bytes_per_row * mode.y);
 
     if (!VideoScreenApply (s_pMacPixels, mode.x, mode.y,
                            mode.bytes_per_row, DepthBits (mode.depth)))
@@ -240,7 +238,6 @@ bool VideoInit (bool classic)
 
 void VideoExit (void)
 {
-    QDSetScreen (nullptr, 0);
     // VideoInit() added a monitor to the list and upstream never takes one out
     // again — it exits the process next and has no reason to. Okapia goes round
     // instead, and a second entry is a second screen: InitAll() reads
@@ -272,7 +269,6 @@ void VideoInterrupt (void)
     if (s_pMonitor != 0)
     {
         VideoScreenVBL ();
-        QDReport ();
     }
 }
 

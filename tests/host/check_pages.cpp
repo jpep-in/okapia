@@ -615,17 +615,10 @@ int main (void)
                 "and the headphone jack is not");
     }
 
-    // The 68k engine's two speed-ups. Both are read at every start of the
-    // Macintosh, so neither asks for the board to restart.
+    // The 68k engine's translator, read at every start of the Macintosh.
     {
-        const int nQuickDraw = Find (WidgetCheckbox, Str (StrQdAccel));
-        Expect (nQuickDraw >= 0, "QuickDraw acceleration has its tick box");
-        Expect (SettingsOperate (&s_Settings, nQuickDraw) == SettingsNothing
-                && s_Settings.V.bQuickDraw, "it can be turned on");
-        Expect (!SettingsNeedsRestart (&s_Settings), "and that owes no restart");
         TWidget *pW = 0;
         SettingsWidgets (&pW);
-        Expect ((pW[nQuickDraw].nState & StateChecked) != 0, "the box shows it");
 
         // An image without the translator shows the box grey, still saying what
         // the file holds, and the loop cannot change it.

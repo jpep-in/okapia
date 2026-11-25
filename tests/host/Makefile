@@ -244,9 +244,6 @@ make_large_volume: make_large_volume.o $(HFS_OBJS)
 # asymmetry of one pixel is invisible on a screenshot and obvious at three. The
 # behaviour joins them: what the focus does under a sequence of keys is decidable
 # on a machine with no keyboard, so there is no reason to go and look.
-check_quickdraw: check_quickdraw.cpp ../../src/common/quickdraw_blit.cpp ../../src/common/quickdraw_blit.h
-	$(CXX) $(CXXFLAGS) -I../../src/common -o $@ $(filter %.cpp,$^)
-
 # The 68881: the 68K softfloat under fpu_softfloat.cpp, as the kernel compiles
 # it, with the known answers and the digest the board is compared against
 # (src/common/fpu_selftest.h). It is plain C and needs no shim.
@@ -278,7 +275,7 @@ check_fpu_core: check_fpu_core.o fc_fpu_softfloat.o $(SOFTFLOAT_OBJS)
 	$(CXX) -o $@ $^
 
 check: check_geometry check_screen check_chooser check_pages check_platform check_rom check_card check_install check_blit \
-       check_encoding check_net check_clock check_quickdraw check_fpu check_fpu_core
+       check_encoding check_net check_clock check_fpu check_fpu_core
 	./check_geometry
 	./check_screen
 	./check_chooser
@@ -291,7 +288,6 @@ check: check_geometry check_screen check_chooser check_pages check_platform chec
 	./check_encoding
 	./check_net
 	./check_clock
-	./check_quickdraw
 	./check_fpu
 	./check_fpu_core
 
@@ -309,7 +305,7 @@ view: render_specimen
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
 	      check_chooser check_pages check_platform check_platform.tmp check_rom check_card check_install check_blit \
-	      check_encoding check_quickdraw check_fpu check_fpu_core make_large_volume \
+	      check_encoding check_fpu check_fpu_core make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
 .PHONY: all view check clean

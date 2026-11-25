@@ -7,6 +7,9 @@
 > (`MacOSX/PrefsEditor.mm`, `Unix/prefs_editor_gtk.cpp`, BasiliskIIGUI). Which code stays, which is rewritten, and what
 > becomes a build variant? **Read, not built, not run, not measured.** The line counts are `wc -l` of the tree
 > at `004882e`. Every effort figure is an estimate, and is called one.
+>
+> *(Since 2026-11-26: the QuickDraw hooks it counts — `quickdraw_*`, `qdaccel`, `OKAPIA_QD_MULTICORE` — are on the
+> `wip-quickdraw` branch, see [Decisions](../../project/decisions.md#quickdraw-acceleration-set-aside).)*
 
 ## Verdict
 
@@ -116,7 +119,7 @@ The test mode needs no SDL driver after all: headless means no window, and the s
   - `-O3 -mcpu=apple-m1` (or `native`) and LTO. `-O2` is imposed by the Pi's Device memory only.
   - The `softfloat` FPU stays: same results as the Pi, and already exercised on the host.
   - The translator (`OKAPIA_JIT_ARM64`) runs a twenty-test benchmark ten times faster than the interpreter on macOS
-    ([Decisions](../../project/decisions.md#no-jit-by-default-an-experimental-one-behind-okapia_jit1)). It stays
+    ([Decisions](../../project/decisions.md#no-jit-by-default-two-experimental-ones)). It stays
     behind the `jit` preference until the durability tests pass with it on the desktop.
 - **Existing flags**: `OKAPIA_TRACE`, `OKAPIA_FPU` and `OKAPIA_JIT_ARM64` keep their meaning. `OKAPIA_NETBENCH` and
   `OKAPIA_QD_MULTICORE` have none on a desktop.

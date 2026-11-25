@@ -20,7 +20,6 @@ static int s_nSound    = -1;
 static int s_nLanguage = -1;
 static int s_nNetwork  = -1;
 static int s_nJit      = -1;
-static int s_nQuickDraw = -1;
 static int s_nShared   = -1;
 static int s_nPath     = -1;
 static int s_nName     = -1;
@@ -213,8 +212,6 @@ void SettingsSync (TSettings *pSettings)
         nJit |= StateDisabled;
     }
     WidgetSetState (&s_Widgets[s_nJit], nJit);
-    WidgetSetState (&s_Widgets[s_nQuickDraw],
-                    pSettings->V.bQuickDraw ? StateChecked : StateNormal);
 
     WidgetSetState (&s_Widgets[s_nShared],
                     pSettings->V.bShared ? StateChecked : StateNormal);
@@ -274,26 +271,21 @@ static TWidget *Popup (TPage *pPage, const TRect &rRect, int *pnIndex,
     return p;
 }
 
-// The 68k engine's two speed-ups, in the half the language leaves free: a row
-// of their own cost the date its room at 640x480. Two tick boxes and one note
-// that says whom they are for, said once rather than after each.
+// The 68k engine's translator, in the half the language leaves free: a row of
+// its own cost the date its room at 640x480. A tick box and a note that says
+// whom it is for.
 static void Speedups (TPage *pPage, const TRect &rBand)
 {
     const TTheme *pTheme = &pPage->Theme;
     const int nY = rBand.nY + (int) (rBand.nHeight - pTheme->M.nCheckSize) / 2;
     TRow R;
     RowBegin (&R, pTheme, rBand);
-    const TStringId Ticks[2] = { StrJit, StrQdAccel };
-    int *const pIndex[2] = { &s_nJit, &s_nQuickDraw };
-    for (unsigned i = 0; i < 2; i++)
-    {
-        const unsigned nTick = pTheme->M.nCheckSize + pTheme->M.nGap
-                             + GfxTextWidth (pTheme->pBodyFont, Str (Ticks[i]));
-        TRect T = RowNext (&R, nTick, StateNormal);
-        T = Rect (T.nX, nY, T.nWidth, pTheme->M.nCheckSize);
-        *pIndex[i] = (int) pPage->nCount;
-        PageAdd (pPage, WidgetCheckbox, T, Str (Ticks[i]), StateNormal);
-    }
+    const unsigned nTick = pTheme->M.nCheckSize + pTheme->M.nGap
+                         + GfxTextWidth (pTheme->pBodyFont, Str (StrJit));
+    TRect T = RowNext (&R, nTick, StateNormal);
+    T = Rect (T.nX, nY, T.nWidth, pTheme->M.nCheckSize);
+    s_nJit = (int) pPage->nCount;
+    PageAdd (pPage, WidgetCheckbox, T, Str (StrJit), StateNormal);
     TRect L = RowNext (&R, GfxTextWidth (pTheme->pBodyFont, Str (StrOnly68k)), StateNormal);
     L = Rect (L.nX, rBand.nY + (int) (rBand.nHeight - pTheme->M.nLineHeight) / 2,
               L.nWidth, pTheme->M.nLineHeight);
@@ -490,10 +482,6 @@ TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex)
         {
             pSettings->V.bJit = !pSettings->V.bJit;
         }
-    }
-    else if (nIndex == s_nQuickDraw)
-    {
-        pSettings->V.bQuickDraw = !pSettings->V.bQuickDraw;
     }
     else if (nIndex == s_nShared)
     {

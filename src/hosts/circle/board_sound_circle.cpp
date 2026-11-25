@@ -31,7 +31,6 @@
 
 #include "hal_circle.h"
 #include "clock_okapia.h"
-#include "quickdraw_worker.h"
 
 #include <circle/bcmpropertytags.h>
 #include <circle/logger.h>
@@ -488,5 +487,4 @@ void BoardPowerOff (void)
                             "Stopped: the power can be switched off (display %s)",
                             bBlanked ? "blanked" : "cleared to black");
     BoardLogFlush ();
-    QDStopWorker ();
 }

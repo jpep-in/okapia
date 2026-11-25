@@ -21,7 +21,6 @@
 #include "okapia_circle.h"
 #include "okapia_card.h"
 #include "mac_ram_okapia.h"
-#include "quickdraw_okapia.h"
 #include <stdio.h>
 
 #include "cpu_emulation.h"
@@ -426,7 +425,6 @@ void idle_wait (void)
     // Does its work once and returns immediately ever after.
     extern void TellMacTheMouseResolution (void);
     TellMacTheMouseResolution ();
-    QDInstall ();
 #if SOUND_SELFTEST
     extern void AudioSelfTest (void);
     AudioSelfTest ();

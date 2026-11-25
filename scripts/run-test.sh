@@ -9,7 +9,7 @@
 # as the boot disk, so a second System can be regression-tested without
 # disturbing the card you actually use.
 #
-# OKAPIA_EXTRA_PREFS='qdaccel sync' adds those lines (\n separates them) to
+# OKAPIA_EXTRA_PREFS='jit true' adds those lines (\n separates them) to
 # the throwaway card's preferences, creating the file for a standalone image.
 #
 # The run works on a copy of qemu/sd.img — not to look away from corruption, but

@@ -110,7 +110,8 @@ constructor runs before the serial port and fails silently.
 6. **Firmware window**: two seconds of plain grey; Option, the `bootmenu` preference, or nothing bootable
    opens the boot menu ([Boot menu](../topics/boot-menu.md)).
 7. **Engine**: the startup volume's System decides 68k or PowerPC; the other engine is entered by a call.
-8. **Macintosh**: `InitAll()`, input, tick, then the interpreter until the Mac stops.
+8. **Macintosh**: `InitAll()`, input, tick, then the interpreter (or, with `jit true` in a translator build, the
+   68k translator) until the Mac stops.
 9. **Restart, switch or shut down** — see [Startup and shutdown](../topics/startup-and-shutdown.md).
 
 ## Memory
@@ -159,7 +160,6 @@ Time Manager, cursor blink and application delays all rest on it.
 ## Multicore
 
 **Status: the S1 split below is pending.** Both engines run on core 0 with the interrupts.
-The optional [QuickDraw worker](../topics/display.md#68k-quickdraw) uses core 2 in the multicore Pi 4 build.
 With Wi-Fi on, Circle's cooperative scheduler exists too and the emulation
 thread is its main task: the Wi-Fi's tasks run when the 1 kHz seam yields ([Network](../topics/network.md#wi-fi)).
 

@@ -56,8 +56,6 @@ to preserve its settings. Only `Okapia_Prefs` is read and written.
 | `macmode` | — | repeatable `<slot> <width>x<height>`, such as `0 960x600`. Slots 0–5 have persistent driver IDs. Keep a slot assigned to the same size because Mac OS saves its choice by ID |
 | `machidemode` | — | repeatable `<width>x<height>`, such as `1280x720`. Removes that size from Monitors on both engines. The 640×480 recovery mode is kept when it fits |
 | `frameskip` | `0` | `0` = dynamic (default), `1` = every VBL, `2` = 30 Hz, `4` = 15 Hz, `6` = 10 Hz. The Mac draws its own cursor, so a low rate reads as a laggy mouse — see [Display](topics/display.md) |
-| `qdaccel` | `off` | Experimental 68k QuickDraw. `sync` accelerates boolean copies and fills at every depth, and some shapes and conversions at 8 bits; `parallel` also uses core 2 for large transfers with a multicore Pi 4 build; `probe` logs eligibility and executes the original guest code; `verify` lets the guest draw, draws each `BitBlt` and `RgnBlt` again natively and logs any difference. See [QuickDraw](topics/display.md#68k-quickdraw). The boot menu's *QuickDraw acceleration* box writes `sync` or `off`, and only when it is changed. |
-| `qdaccelmin` | `4096` | With `jit true` only: a rectangular or region transfer whose clipped area holds fewer bytes of pixels than this stays in the guest (4096 is 4096 pixels at 8 bits, 1024 at 32); 1 and 2 bits always do, where the translator already runs QuickDraw as ARM64 code. Tested in 68k by the trampoline, so a refused transfer never leaves translated code. See [QuickDraw](topics/display.md#68k-quickdraw). |
 
 ## Sound
 

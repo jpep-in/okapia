@@ -3,8 +3,8 @@
 > Basilisk II on Circle: the CPU and FPU cores, the ROM and the model it announces, the core's build, and
 > what it costs. Main files: `src/kernel/kernel.cpp`, `src/common/main_okapia.cpp`,
 > `src/common/cpu_ticks_okapia.cpp`, `src/common/emul_op_hook_okapia.cpp`, `src/common/config.h`,
-> `src/hosts/circle/compat/`, `src/common/fpu_selftest.h`, `patches/macemu/0003`, `0005`–`0010`, `0013`–`0015`,
-> `scripts/gen-cpu.sh`, `scripts/check-rom.py`.
+> `src/hosts/circle/compat/`, `src/common/fpu_selftest.h`, `src/hosts/circle/jit_arm64_circle.cpp`,
+> `patches/macemu/0003`, `0005`–`0010`, `0012`–`0015`, `scripts/gen-cpu.sh`, `scripts/check-rom.py`.
 
 ## Using it
 
@@ -14,6 +14,8 @@
   work with the right `modelid`.
 - **Model**: leave `modelidauto true` — Okapia reads the System on the startup volume and picks the model.
 - **CPU and FPU**: `cpu 4` (68040) and `fpu true`.
+- **Translator** (experimental): a kernel built with `OKAPIA_JIT_ARM64=1` and `jit true`, or the boot menu's *JIT*
+  box. On a Pi 4 it gives 5.4× the interpreter's Speedometer CPU score ([below](#the-translator-okapia_jit_arm641-experimental)).
 
 ## How it works
 
@@ -134,7 +136,7 @@ of the FPU state. `trace_fpu_circle.cpp` counts and times the instructions.
 
 `patches/macemu/0012` adds a 68k to AArch64 translator beside the interpreter, in `uae_cpu_2021/jit_arm64/`.
 It is compiled with `make -C src/kernel OKAPIA_JIT_ARM64=1` (after `okapia-clean`) and used when the card says
-`jit true`; the interpreter, its tables and the binary128 FPU are the ones described above, and are what runs
+`jit true`; the interpreter, its tables and the softfloat FPU are the ones described above, and are what runs
 every instruction the translator does not know.
 
 - **Registers**: D0–D7 in `w19`–`w26`, A0–A7 in `w8`–`w15`, for as long as translated code runs. Condition
@@ -155,7 +157,8 @@ every instruction the translator does not know.
   translated code, and the block ends there. An emulator opcode is one of those, so every `EmulOp` is a
   journey: the sixteen registers and the flags written out, the handler, everything read back, and a jump
   through the return table. `MOVE CCR,<ea>` and `MOVE <ea>,CCR` are translated for that reason alone — the
-  QuickDraw trampolines open and close with them, and each call used to make that journey three times.
+  QuickDraw trampolines (now on `wip-quickdraw`) opened and closed with them, and each call used to make that
+  journey three times.
 - **Coherence**: a `CPUSHA`, or a `FlushCodeCache()` over translated code, raises an epoch. A block of an
   older epoch leaves at its first instruction and is compared, byte for byte, with its source before it runs
   again; nothing is rewritten in translated code for that, and no checksum stands in for the comparison.
@@ -168,8 +171,10 @@ runs a benchmark of twenty tests in a tenth of the interpreter's time, with iden
 On Circle (2026-11-15): the kernel builds for QEMU (3,406 KB) and for the Pi 4 (3,455 KB). Under QEMU, System
 7.5.5 reaches the Finder with `jit true` in 14 s, the screen is the interpreter's, and
 `OKAPIA_EXTRA_PREFS='jit true' ./scripts/run-test.sh 40` gives its usual verdict (killed, scavenged, clean).
-On a Pi 4 it was seen running from the serial port only, 160 s into a session with `qdaccel sync` on as well;
-its boot lines were not captured and **nothing has been measured there**.
+On a Pi 4 (2026-11-15 and 16, System 7.6.1, sessions ended with Shut Down), Speedometer 4 gives 5.4× the
+interpreter on CPU, 10 to 16× on the integer tests, 7× on Graf, and the Mac's tick count stays within 0.2 % of the
+clock; with the FPU instructions translated, the FPU average goes from 3.81 to 6.26
+([Benchmarks](../contributing/benchmarks.md#raspberry-pi-4-with-the-68k-translator-2026-11-15)).
 
 With the translator the `k opcodes` figure of the five-second line is not a speed: the seam is reached by the
 clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh does).
@@ -207,8 +212,12 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [x] `FMOVEM` and the control registers translated, and declined F-line instructions no longer marked by their
       opcode word (2026-11-16): on the Pi, the trace had shown ~270,000 `FDIV`, `FSUB`, `FMOVE.D` a second run by the
       interpreter after an `FMOVEM` sharing their opcode word
-- [ ] Speedometer on the Pi with that; `trace_fpu_circle.cpp` to time the translator's calls (`fpu_jit_*`), which
-      it does not see; code generated inline for `FADD` and `FMUL` only if that profile says the call is what costs
+- [x] Immediate FPU operands translated; on the Pi, Speedometer with that (2026-11-16): FFT 4.64, Matrix 5.87,
+      FPU K'Whet 8.1 then 10.7, and no FPU instruction left to the interpreter after the boot; `jit: declined` names
+      only `CPUSHA`, `FSAVE`, `FRESTORE` and `FE05`
+- [ ] `trace_fpu_circle.cpp` to time the translator's calls (`fpu_jit_*`), which it does not see; code generated
+      inline for `FADD` and `FMUL` only if that profile says the call is what costs
+- [ ] The first pass of a Speedometer test under the translator: K'Whet 85 then 97, a deficit no longer the FPU's
 - [x] Seam recalibrated to 1 kHz (2026-09-08)
 - [x] Bottleneck ranks 1–7 and the `pc_p` fetch (2026-09-13)
 - [ ] Log the initial PC and SP at 68040 initialisation
@@ -221,10 +230,13 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [ ] 68k JIT of `macemu-jit` — experimental behind `OKAPIA_JIT=1`; boots System 7.1 under QEMU, at best parity
       with the interpreter on a Pi 4. Superseded by the translator below, kept for reference
       ([study](../notes/research/jit-68k.md#first-boot-2026-11-14))
-- [ ] 68k translator (`OKAPIA_JIT_ARM64=1`, `patches/macemu/0012`) — boots System 7.5.5 under QEMU and passes
-      `run-test.sh` with `jit true`; runs on a Pi 4 (2026-11-15). Open, in order: System 7.1 and 7.6.1, five
-      restarts and Shut Down, a timed benchmark on the Pi 4 (Speedometer, MacBench), the Mac's tick count
-      against the clock under load; then the allocations it makes while the Macintosh runs
+- [x] 68k translator (`OKAPIA_JIT_ARM64=1`, `patches/macemu/0012`): boots System 7.5.5 under QEMU and passes
+      `run-test.sh` with `jit true` (2026-11-15)
+- [x] The translator on a Pi 4: System 7.6.1, Speedometer and MacBench timed, sessions ended with Shut Down, the
+      tick count within 0.2 % of the clock (2026-11-15)
+- [ ] The translator, before it can be the default ([Decisions](../project/decisions.md#no-jit-by-default-two-experimental-ones)):
+      System 7.1, five restarts in a row, `run-test.sh` on the Pi's card, then the allocations it makes while the
+      Macintosh runs
 
 ## Pitfalls
 
@@ -235,9 +247,12 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - **A translator makes 68040-clean code a requirement.** Code modified without a cache flush runs stale until
   the next one, as it would on a real 68040 with a larger cache than any ever built. The interpreter forgives
   it; `jit true` does not.
-- **`qdaccel` and the translator are on together** (2026-11-15), and the translator changes what a hook is
-  worth: QuickDraw's own loops are ARM64 code now, and the call to the host is what costs. See
-  [Display](display.md#68k-quickdraw) for the gate this led to and the measurements.
+- **Leaving translated code is the unit of cost under the translator**, and QEMU overstates it: every indirect
+  branch leaves TCG's chained code. On the QuickDraw hooks (`wip-quickdraw`), a call the host declined cost 1.3 µs
+  under QEMU with three journeys, 0.5 µs with one, and a hook declined 21.8 million times in one MacBench turned
+  126 ticks of lines into 1,063. A call into the host has to save more than the guest's own loop costs, which is
+  why native stand-ins for guest code pay less once that code is translated
+  ([Decisions](../project/decisions.md#quickdraw-acceleration-set-aside)).
 - **A fault that moves with timing is not yet a fault of the translator.** One drawing check of MacBench
   differed by nine pixels between two configurations, stably, and only with `jit true`. A long run of
   suspicion went to the carry shortcut between blocks; the cause was the Font Manager failing to reallocate a
@@ -304,6 +319,11 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   (19.5), sin 104 (208); through `fpuop_arithmetic`: `FMOVE` 4.8 ns (8.7), `FTST` 4.6 (6.4), `FADD` 8.4, `FMUL`
   7.2, `FSIN` 118. A sine is some thirty FPSP additions and multiplications; staying the Quadra's bits keeps
   it there. The traced kernel under QEMU: same digest, fast paths identical, Finder.
+- **2026-11-15** — The translator (`0012`) on a Pi 4: Speedometer CPU 35.01 against 6.53 interpreted, Dhry 15.9×,
+  Towers 12.6×; FPU 1.3× only, which set off the softfloat work above.
+- **2026-11-16** — On the Pi, after `FMOVEM` was translated, the first pass of K'Whet fell to 2.4 (10.2 after): the
+  trace showed ~250,000 `FDIV`, `FSUB`, `FMOVE.D` a second sent to the interpreter, each ending its block. Declined
+  F-line forms are no longer chained by opcode word, and immediates are translated: first pass 8.1, then 10.7.
 - **2026-09-13** — Pi 4 performance: frequency, libraries and loop taxes before any architectural work; see the
   bottleneck study.
 

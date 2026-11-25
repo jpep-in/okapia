@@ -89,14 +89,14 @@ COMMON_SRCS   = $(COMMON)/okapia_menu.cpp $(COMMON)/okapia_rom.cpp $(COMMON)/oka
 # src/common's platform files, all of which build here. Left out: the Circle host's
 # own (src/hosts/circle:
 # (hal, board_sound, board_net, wlan, clock, net_clock, net_bench, execmem,
-# mac_ram, quickdraw_worker: board_desktop.cpp plays them; board_sound's device
+# mac_ram: board_desktop.cpp plays them; board_sound's device
 # and chime: sound_desktop.cpp; board_net: board_net_desktop.cpp), the JIT glue
 # and the trace files.
 PLATFORM_SRCS = $(addprefix $(CIRCLE)/,audio_okapia.cpp card_okapia.cpp ether_okapia.cpp compositor_okapia.cpp \
                 cpu_ticks_okapia.cpp emul_op_hook_okapia.cpp extfs_sync_okapia.cpp \
                 hfs_volume_okapia.cpp input_okapia.cpp main_okapia.cpp \
                 mac_encoding_okapia.cpp net_config_okapia.cpp prefs_okapia.cpp \
-                quickdraw_blit.cpp quickdraw_okapia.cpp rom_chime.cpp tick_okapia.cpp \
+                rom_chime.cpp tick_okapia.cpp \
                 timer_okapia.cpp user_strings_okapia.cpp video_okapia.cpp \
                 video_shared_okapia.cpp video_sizes_okapia.cpp xpram_okapia.cpp)
 KERNEL_SRCS   = $(KERNEL)/kernel.cpp $(KERNEL)/okapia_main.cpp

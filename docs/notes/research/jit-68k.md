@@ -9,6 +9,15 @@
 > question is **reopened for measurement**. The August verdict rested on one fork's strict-mode figure, which says
 > nothing about the backend that fork imported. The decision page is unchanged until the
 > [gate](#the-measurement-that-decides) is run.
+>
+> **Outcome (2026-11-15).** Route A was built (`OKAPIA_JIT=1`) and measured on the Pi 4: parity with the interpreter
+> at best ([below](#after-the-escalation-fix-2026-11-14-parity-not-a-gain)). A translator of our own was written
+> instead, on the design read in [Emu68](emu68.md#route-g-an-emu68-shaped-jit-for-okapia): `patches/macemu/0012`,
+> `OKAPIA_JIT_ARM64=1`, registers pinned, beside `uae_cpu_2021`'s interpreter. On the Pi 4 it gives 5.4× the
+> interpreter's Speedometer CPU score and 10 to 16× on the integer tests; it stays experimental
+> ([Decisions](../../project/decisions.md#no-jit-by-default-two-experimental-ones),
+> [68k engine](../../topics/engine-68k.md#the-translator-okapia_jit_arm641-experimental)). This page is the record of how
+> the question was settled; its routes and obstacles are not reworked to match.
 
 ## Verdict
 
@@ -628,11 +637,12 @@ fall back to the interpreter when recovery is unsafe.
 | **B** — graft Amiberry's backend under our x86-generation generator | backend, `compemu.h`, support and tables | **tried upstream and failed**: "generator/backend API mismatch … now the primary blocker" (`AMIBERRY_ARM_JIT_PORT_PLAN.md:35-45`) |
 | **C** — don't port | executable-memory spot check and hardware measurements | chosen in August; under review |
 | **D** — rebuild the family tree on our core *(2026-11-13)* | ARAnyM's JIT2 generator and glue, which `uae_cpu_2021` still has the sockets for, over **`macemu-jit`'s audited** AArch64 midfuncs and emitter | the smallest diff to a core we already ship, no strict-mode machinery; **unproven** — 32-bit assumptions in ARAnyM's ARM path, 21 midfuncs to write, and the proof does not carry over: `macemu-jit`'s gates would have to be rerun on our assembly |
+| **G** — a translator of our own shaped like Emu68 *(2026-11-14)* | registers pinned, blocks chained directly, `EMUL_OP` and the FPU as calls, coherence by epoch and source compare ([Emu68](emu68.md#route-g-an-emu68-shaped-jit-for-okapia)) | **taken**: `patches/macemu/0012`, 5.4× the interpreter on CPU on a Pi 4 (2026-11-15) |
 | **F** — a small tiered JIT of our own *(2026-11-13)* | blocks recorded as lists of interpreter handlers, hot ones compiled for the commonest integer instructions, the rest — FPU included — still calling the interpreter's handlers | fits the budgets by construction (tables sized at startup in the first allocation, no allocation in the loop, binary128 FPU untouched); gain unknown; PreviousTurbo is the worked example, Emu68 the reading |
 
 Before any route: (1) the executable-memory spot check — clear `PXN` on a page, write a few AArch64 instructions,
-`__builtin___clear_cache`, jump — passed under QEMU ([above](#executable-memory-is-reachable)), still owed on
-hardware, where it counts: QEMU does not need the cache flush a Pi needs; (2) [the gate](#the-measurement-that-decides); (3) never compiled in by default nor enabled by
+`__builtin___clear_cache`, jump — passed under QEMU ([above](#executable-memory-is-reachable)), and on a Pi 4
+since both route A and the translator run there *(since)*; (2) [the gate](#the-measurement-that-decides); (3) never compiled in by default nor enabled by
 default.
 
 What a JIT costs Okapia whatever the route:

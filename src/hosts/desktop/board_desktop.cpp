@@ -16,7 +16,6 @@
 #include "hal_circle.h"
 #include "clock_okapia.h"
 #include "mac_ram_okapia.h"
-#include "quickdraw_worker.h"
 #include "okapia_input.h"
 #include "okapia_output.h"
 #include "okapia_desktop.h"
@@ -300,13 +299,6 @@ void ClockRecordForget (const char *)       {}
 void ClockNoteSource (TClockSource, const char *) {}
 TClockSource ClockSource (const char **ppDetail) { *ppDetail = ""; return ClockFromNetwork; }
 void ClockSessionEnd (void)                 {}
-
-/*
- *  QuickDraw's second core: inline here, the host's threads being for later
- */
-void QDStartWorker ()                       {}
-void QDStopWorker ()                        {}
-bool QDParallelBlit (const QDBlit &)        { return false; }
 
 /*
  *  The firmware's output bridge: the window's surface

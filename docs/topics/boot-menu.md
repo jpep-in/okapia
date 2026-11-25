@@ -35,8 +35,7 @@ a System cannot become the startup disk. **+ New volume…** makes an empty HFS 
 Macintosh volume name (27 characters) and a size that fits the card; the firmware picks the file name.
 
 **Settings**: memory, screen refresh (frameskip), mouse resolution, sound output and language, two to a row; beside
-the language, the 68k engine's two experimental speed-ups, **JIT** (`jit`) and **QuickDraw acceleration** (`qdaccel`),
-followed by "(68K only)" once for both; then
+the language, the 68k engine's experimental translator, **JIT** (`jit`), followed by "(68K only)"; then
 two groups, framed and named as the Views control panel of System 7 frames its own: **Folder sharing** (share, the
 folder on the card, the volume's name on the Mac) and **Date & Time** (below). A setting that needs an Okapia restart
 (only memory) is marked `*` and Start becomes **Save and restart**, with "* Restart required" beside it. There is deliberately no resolution: Mac OS owns the screen
@@ -100,11 +99,9 @@ as the network: a Macintosh of this era has no notion of either — its clock *i
 clock that needs both to turn the network's UTC into that local time. The date itself still fails the first test,
 which is why the page shows it and does not set it: Date & Time sets it, and Okapia now keeps what it sets.
 
-The two speed-ups pass all four: each is an experimental mode that can hang a Macintosh at startup, and turning it
-back off is exactly what must not need another computer. Both are read at every start of the Macintosh
-(`basilisk_glue.cpp` for `jit`, `quickdraw_okapia.cpp` for `qdaccel`), so neither asks for a restart. QuickDraw's box
-is ticked for any value but `off` and writes `sync` or `off` only when it is changed, so a card set to `parallel`,
-`probe` or `verify` keeps it. The JIT box is grey, still showing the file's value, in an image built without the
+The translator passes all four: it is an experimental mode that can hang a Macintosh at startup, and turning it
+back off is exactly what must not need another computer. It is read at every start of the Macintosh
+(`basilisk_glue.cpp`), so it asks for no restart. The JIT box is grey, still showing the file's value, in an image built without the
 translator: the shared half learns that from `-DOKAPIA_TRANSLATOR`, which `src/kernel/Makefile` sets from
 `OKAPIA_JIT_ARM64` for the shared objects alone, so the PowerPC window says the same as the 68k one.
 
@@ -271,7 +268,8 @@ levels — note, caution, stop — because they are a promise about consequences
 - [x] Settings in two columns and two named groups (`WidgetGroup`, `PageGroupBegin()`/`End()`), the Date & Time page
       folded back into it; "Show this menu at startup" moved to the footer, beside Start; the tabs behind a lighter grey
       (`ColorPale`, `#EEEEEE`) (2026-11-12)
-- [x] JIT and QuickDraw acceleration tick boxes beside the language, "(68K only)" (2026-11-15)
+- [x] JIT and QuickDraw acceleration tick boxes beside the language, "(68K only)" (2026-11-15); the QuickDraw box
+      left with the hooks for `wip-quickdraw` (2026-11-26)
 - [x] Logs page: the log on the card in a list, the previous session, serial output and counters (2026-11-18)
 - [ ] Logs page tried under QEMU and on the Pi 4; the serial gate measured on hardware
 - [ ] Tabs and the Network page tried on the Pi 4 and under QEMU

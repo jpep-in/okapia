@@ -77,20 +77,27 @@
 - **Verdict instrument**: those checks, never a boot — System 7.1 reaches the Finder in four FPU instructions.
 - **Kept**: `OKAPIA_FPU=ieee` builds the binary128 core (`patches/macemu/0008`) for comparison.
 
-### No JIT by default; an experimental one behind `OKAPIA_JIT=1`
+### No JIT by default; two experimental ones
 
-- **Why not by default**: the interpreter already outruns a Quadra (5.22× a Quadra 650 on CPU, [Benchmarks](../contributing/benchmarks.md)),
-  and the JIT's speed in ordinary mode has never been measured on a Pi. The original reason, that Circle sets
-  `PXN=1` past `_etext`, does not hold: Okapia clears it for one arena (`execmem_circle.cpp`, proved under QEMU).
+- **Why not by default**: the translator has paid on the Pi (below), but what makes it safe to leave on is not all
+  proved yet: System 7.1, restarts in a row, the durability test on hardware. The interpreter already outruns a
+  Quadra (5.22× a Quadra 650 on CPU, [Benchmarks](../contributing/benchmarks.md)). The original reason, that Circle
+  sets `PXN=1` past `_etext`, does not hold: Okapia clears it for one arena (`execmem_circle.cpp`, proved under QEMU
+  and on a Pi 4).
 - **What exists** (2026-11-14): `OKAPIA_JIT=1` builds the 68k core of `rcarmo/macemu-jit` (`external/macemu-jit`,
   pinned) in place of `uae_cpu_2021`; with `jit true` in the preferences System 7.1 reaches the Finder under QEMU and
-  a hard kill is repaired as without it. See [68k JIT study](../notes/research/jit-68k.md#first-boot-2026-11-14).
+  a hard kill is repaired as without it. On a Pi 4 it reached parity with the interpreter at best, so it is kept for
+  reference only. See [68k JIT study](../notes/research/jit-68k.md#first-boot-2026-11-14).
 - **A second one** (2026-11-15): `OKAPIA_JIT_ARM64=1` builds a translator of our own beside `uae_cpu_2021`
   (`patches/macemu/0012`), with the registers pinned and an exact source compare after every cache flush. On
   macOS it runs a twenty-test benchmark ten times faster than the interpreter; on Circle it boots System 7.5.5
-  under QEMU, passes the durability test, and runs on a Pi 4 where nothing has been measured yet. See [68k engine](../topics/engine-68k.md#the-translator-okapia_jit_arm641-experimental).
-- **Would become the default**: a Speedometer gain on the Pi 4 at least 2× the interpreter's CPU score, the
-  [durability tests](../contributing/testing-and-debugging.md) green with it on, and a clean Shut Down and restart.
+  under QEMU and passes the durability test. On a Pi 4 (2026-11-15 and 16) Speedometer gives 5.4× the
+  interpreter's CPU score, 10 to 16× on the integer tests; its FPU instructions are calls into the softfloat core
+  from inside the block, and no FPU instruction reaches the interpreter after the boot. See
+  [68k engine](../topics/engine-68k.md#the-translator-okapia_jit_arm641-experimental).
+- **Would become the default**: a Speedometer gain on the Pi 4 at least 2× the interpreter's CPU score (**met**,
+  5.4×), the [durability tests](../contributing/testing-and-debugging.md) green with it on, and a clean Shut Down
+  and restart (open: System 7.1, five restarts, `run-test.sh` on the Pi's card).
 
 ### ROM: the 1993 Quadra/Centris ROM for the 68k engine
 
@@ -117,6 +124,21 @@
 - **Evidence**: see [Display](../topics/display.md).
 
 ## Storage and data
+
+### QuickDraw acceleration set aside
+
+- **Decision** (2026-11-26, the owner): the 68k QuickDraw hooks (`qdaccel`: native `BitBlt` and `RgnBlt` loops, a
+  worker on core 2, the boot menu's box) leave this branch for `wip-quickdraw`, with their study, their host test
+  and their measurements. The branch is the last state of that work, uncommitted parts included.
+- **Why**: the translator already runs QuickDraw's own loops as ARM64 code, so a hook saves less than it did over
+  the interpreter, and every call into the host is a journey out of translated code. Speedometer does not see the
+  hooks, with or without the translator. Their code and their modes (`sync`, `parallel`, `probe`, `verify`) were a
+  maintenance cost on every start path.
+- **Evidence for, kept on record**: MacBench on a Pi 4 with the translator, 152.0 s → 132.2 s, from whole-window
+  copies (4.8×), scrolling (3.2×) and regions (−31 %); nothing else moves
+  ([Benchmarks](../contributing/benchmarks.md#raspberry-pi-4-the-night-of-2026-11-15)).
+- **Would reopen**: a real application (the Finder's windows, a game, a scrolling editor) measured faster by a margin
+  that matters with the translator on, against what it costs to keep the hooks right at every depth.
 
 ### No write-back cache between the guest and the card
 
