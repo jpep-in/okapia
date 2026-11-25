@@ -1,12 +1,16 @@
 # Preferences
 
-> Every keyword of `BasiliskII_Prefs`, what it does on Okapia, and which upstream keywords do nothing here.
+> Every keyword of `Okapia_Prefs`, what it does on Okapia, and which upstream keywords do nothing here.
 
 ## The file
 
-`/BasiliskII_Prefs` at the root of the card, in Basilisk II's own format and read by Basilisk II's own
-parser (`LoadPrefsFromStream`, `SavePrefsToStream`): a prefs file from a desktop Basilisk II works here, and
-the other way round. The same file serves both Macintosh; its name does not change with the engine.
+`/Okapia_Prefs` at the root of the card, in Basilisk II's own format and read by Basilisk II's own
+parser (`LoadPrefsFromStream`, `SavePrefsToStream`). The same file serves Basilisk II and SheepShaver and
+includes Okapia-specific keywords; its name does not change with the engine. Upstream preferences keep
+their format compatibility when copied into this file.
+
+For an existing workspace or Pi card, rename `BasiliskII_Prefs` to `Okapia_Prefs` before starting Okapia
+to preserve its settings. Only `Okapia_Prefs` is read and written.
 
 - One `keyword value` per line. A `#` or `;` **in the first column** starts a comment; there is no trailing
   comment syntax, so `ramsize 268435456 # 256 MB` sets the value to `268435456 # 256 MB`.

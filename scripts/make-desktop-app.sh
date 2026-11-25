@@ -14,7 +14,7 @@
 # for a right-click > Open the first time, as for any unnotarised application.
 #
 # Opened from the Finder, Okapia looks for its card folder in this order: the
-# folder holding Okapia.app when that is a card folder (BasiliskII_Prefs in it),
+# folder holding Okapia.app when that is a card folder (Okapia_Prefs in it),
 # the last folder opened, otherwise it asks (docs/topics/desktop.md).
 set -euo pipefail
 

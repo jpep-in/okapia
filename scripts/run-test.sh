@@ -56,7 +56,7 @@ trap cleanup EXIT
 
 if [ -n "$IMAGE" ]; then
     [ -f "$IMAGE" ] || { echo "No such image: $IMAGE" >&2; exit 1; }
-    # A card with no BasiliskII_Prefs falls back to /machd76.image, so the image
+    # A card with no Okapia_Prefs falls back to /machd76.image, so the image
     # under test takes that name on the throwaway card. Renaming here rather
     # than writing preferences keeps the test from changing what it is testing.
     command -v mformat >/dev/null || { echo "mtools missing: brew install mtools" >&2; exit 1; }
@@ -72,10 +72,10 @@ else
 fi
 if [ -n "${OKAPIA_EXTRA_PREFS:-}" ]; then
     if [ -z "$IMAGE" ]; then
-        mcopy -i "$CARD" ::BasiliskII_Prefs "${WORK}/prefs"
+        mcopy -i "$CARD" ::Okapia_Prefs "${WORK}/prefs"
     fi
     printf '\n%b\n' "$OKAPIA_EXTRA_PREFS" >> "${WORK}/prefs"
-    mcopy -i "$CARD" -o "${WORK}/prefs" ::BasiliskII_Prefs
+    mcopy -i "$CARD" -o "${WORK}/prefs" ::Okapia_Prefs
     printf 'preferences added to the card: %s\n' "$OKAPIA_EXTRA_PREFS"
 fi
 

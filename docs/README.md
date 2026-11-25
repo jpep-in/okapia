@@ -38,7 +38,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | Page | What it answers |
 |---|---|
 | [Getting started](getting-started.md) | Hardware, the SD card, ROMs, the first boot |
-| [Preferences](preferences.md) | Every keyword of `BasiliskII_Prefs`, including those that do nothing here |
+| [Preferences](preferences.md) | Every keyword of `Okapia_Prefs`, including those that do nothing here |
 
 ### Topics
 

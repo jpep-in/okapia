@@ -29,7 +29,7 @@ Copied next to a card folder's contents, or into one, it opens that folder by it
 Workspace. The first of these that applies is opened:
 
 1. the folder named on the command line;
-2. the folder holding the executable, when it is a card folder (one with `BasiliskII_Prefs`);
+2. the folder holding the executable, when it is a card folder (one with `Okapia_Prefs`);
 3. the last folder opened in a window (a headless test run is never remembered);
 4. otherwise, the **welcome page**. Holding Shift while the application opens shows it whatever the above would have
    chosen.
@@ -141,7 +141,7 @@ Change Okapia Workspace…** (Control-O) does the same from anywhere; while the 
 quitting does. **File > Show Okapia Workspace in Finder** (Control-R) shows it. The window's title names
 it, and *Information* gives its path.
 
-The layout is the card's: `BasiliskII_Prefs`, the ROMs, the disk images, `BasiliskII_XPRAM`, `shared/`.
+The layout is the card's: `Okapia_Prefs`, the ROMs, the disk images, `BasiliskII_XPRAM`, `shared/`.
 `okapia-desktop.log` and `okapia-desktop-previous.log` are written there, beside the board's `okapia.log` rather than over it: a card used here and in a Pi keeps the Pi's log, which the welcome page reads. The Pi's own files (`kernel8*.img`,
 `config.txt`, its firmware) are ignored. The folder is locked while Okapia runs, so a second Okapia on the same
 folder is refused.

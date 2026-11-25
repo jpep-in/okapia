@@ -76,7 +76,7 @@ The user's card is **`/Volumes/OKAPIA`** (FAT32, 59 GB). It holds their working 
 `boot71.img` (written by the Mac, never replace them), `BasiliskII_XPRAM`, `okapia.log`, and **their own `config.txt`** (a
 custom HDMI mode 87 for a 2560×1440 monitor, active). Never reformat or `cp -R` over it. The procedure that worked, each time:
 
-1. Back up what you will touch: `cp /Volumes/OKAPIA/BasiliskII_Prefs <backup>`; for any run that can write wrong data, a copy of
+1. Back up what you will touch: `cp /Volumes/OKAPIA/Okapia_Prefs <backup>`; for any run that can write wrong data, a copy of
    `machd76.image` (500 MB; it took 6 s).
 2. Copy kernels with `COPYFILE_DISABLE=1 cp` (no `._` files), `sync`, `cmp` against the source.
 3. **Edit existing lines in place** (a Python `str.replace` with an `assert count == 1`): the kernel wrote a full preferences file
@@ -88,7 +88,7 @@ custom HDMI mode 87 for a 2560×1440 monitor, active). Never reformat or `cp -R`
    Special → Shut Down, and tells you the figures.
 
 **Card state at the end of this session** (verify, do not assume): `config.txt` has `#kernel=…` or `kernel=kernel8-jitcj.img`
-(the last test was the constant-jump kernel; to return to the interpreter comment the line out); `BasiliskII_Prefs` has
+(the last test was the constant-jump kernel; to return to the interpreter comment the line out); `Okapia_Prefs` has
 `jit true`, `jitfpu false`, `jitcachesize 65536`, `jitlazyflush true`, `jitinline true`; the card carries
 `kernel8-rpi4.img` (interpreter), `kernel8-jit.img` (0003, no 0004), `kernel8-jitfpu.img`, `kernel8-jitcj.img`.
 

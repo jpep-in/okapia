@@ -156,7 +156,7 @@ The firmware is handed the engine as data (`FirmwareRun (TFirmwareEngine)`) and 
 
 ### Writing the preferences
 
-Everything the menu changes goes to `BasiliskII_Prefs` through one `SavePrefs()` when the window closes, which keeps lines it does not
+Everything the menu changes goes to `Okapia_Prefs` through one `SavePrefs()` when the window closes, which keeps lines it does not
 recognise. `disk`, `cdrom` and `engine` lines are **replaced**, not edited: the order is the setting.
 
 ### Four layers, one seam

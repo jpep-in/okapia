@@ -148,12 +148,12 @@ fi
 
 # The JIT kernel reads these and the interpreter kernel ignores them, so one set
 # of preferences serves both and the choice is config.txt's alone.
-if [ -n "$JIT_KERNEL" ] && [ -f "${OUT}/BasiliskII_Prefs" ]; then
+if [ -n "$JIT_KERNEL" ] && [ -f "${OUT}/Okapia_Prefs" ]; then
     {
         printf '\n# The 68k JIT (kernel8-jit.img only; ignored by the interpreter kernel).\n'
         printf '# Lazy invalidation stays off whatever is written here.\n'
         printf 'jit true\njitcachesize 16384\n'
-    } >> "${OUT}/BasiliskII_Prefs"
+    } >> "${OUT}/Okapia_Prefs"
 fi
 
 # The Wi-Fi's firmware, for "ether wlan": the Broadcom files Circle's own

@@ -37,7 +37,7 @@ Files at the root:
 | `okapia.rom` | the 68k ROM (any name, set by `rom`) |
 | `powermac9600v1.rom` | a PowerPC ROM, if you want the PowerPC Macintosh (set by `romppc`) |
 | `*.image`, `*.img` | disk images; any name works |
-| `BasiliskII_Prefs` | [preferences](preferences.md), written with commented examples on the first boot if absent |
+| `Okapia_Prefs` | [preferences](preferences.md), written with commented examples on the first boot if absent |
 | `BasiliskII_XPRAM`, `SheepShaver_XPRAM` | each Macintosh's parameter RAM, written by Okapia |
 | `okapia.log`, `okapia-previous.log` | the log of this session and the previous one, written by Okapia |
 | `shared/` | the [shared folder](topics/shared-folder.md) |

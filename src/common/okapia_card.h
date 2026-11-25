@@ -2,7 +2,7 @@
 // okapia_card.h — a path on the card, as the host's file system names it.
 //
 // Every path Okapia writes in the preferences or builds for itself is the
-// card's own, rooted at "/": "/BasiliskII_Prefs", "/machd76.image". On the Pi
+// card's own, rooted at "/": "/Okapia_Prefs", "/machd76.image". On the Pi
 // that is the file system's root, and CardPath() is the identity. A desktop
 // opens a folder laid out like a card, so there the same path has to be found
 // under that folder: the desktop host maps it (src/hosts/desktop/). The

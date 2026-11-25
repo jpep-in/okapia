@@ -156,7 +156,7 @@ bool CKernel::Initialize (void)
  *  Preferences
  *
  *  Nothing is decided here any more: PrefsInit() applies the defaults from
- *  src/common/prefs_okapia.cpp and then lets the card's BasiliskII_Prefs
+ *  src/common/prefs_okapia.cpp and then lets the card's Okapia_Prefs
  *  override them, in upstream's own format with upstream's own parser.
  */
 

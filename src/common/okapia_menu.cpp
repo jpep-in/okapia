@@ -2225,7 +2225,7 @@ static bool PrefsFileSet (const char *pName, const char *pValue, bool bAdd)
 {
     static char Old[64 * 1024];
     size_t nOld = 0;
-    FILE *pIn = fopen (CardPath ("/BasiliskII_Prefs"), "r");
+    FILE *pIn = fopen (CardPath ("/Okapia_Prefs"), "r");
     if (pIn != 0)
     {
         nOld = fread (Old, 1, sizeof Old - 1, pIn);
@@ -2233,7 +2233,7 @@ static bool PrefsFileSet (const char *pName, const char *pValue, bool bAdd)
     }
     Old[nOld] = '\0';
 
-    char Temp[] = "/BasiliskII_Prefs.new";
+    char Temp[] = "/Okapia_Prefs.new";
     FILE *pOut = fopen (CardPath (Temp), "w");
     if (pOut == 0)
     {
@@ -2265,10 +2265,10 @@ static bool PrefsFileSet (const char *pName, const char *pValue, bool bAdd)
     const bool bWritten = fflush (pOut) == 0 && fsync (fileno (pOut)) == 0;
     fclose (pOut);
     char Final[PATH_MAX_OKAPIA];
-    snprintf (Final, sizeof Final, "%s", CardPath ("/BasiliskII_Prefs"));
+    snprintf (Final, sizeof Final, "%s", CardPath ("/Okapia_Prefs"));
     const bool bRenamed = bWritten && rename (CardPath (Temp), Final) == 0;
-    HostTidy ("/BasiliskII_Prefs.new");
-    HostTidy ("/BasiliskII_Prefs");
+    HostTidy ("/Okapia_Prefs.new");
+    HostTidy ("/Okapia_Prefs");
     return bRenamed;
 }
 
@@ -2440,7 +2440,7 @@ static void WelcomeGather (void)
 static bool PrefsFileGet (const char *pName, char *pOut, unsigned nSize)
 {
     pOut[0] = '\0';
-    FILE *pIn = fopen (CardPath ("/BasiliskII_Prefs"), "r");
+    FILE *pIn = fopen (CardPath ("/Okapia_Prefs"), "r");
     if (pIn == 0)
     {
         return false;

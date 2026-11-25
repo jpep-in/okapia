@@ -2,9 +2,9 @@
  * prefs_okapia.cpp — preferences, read from the SD card.
  *
  * The format, the keywords and the parser are upstream's: LoadPrefsFromStream()
- * and SavePrefsToStream() do all the work, so a BasiliskII_Prefs file written
- * by Basilisk II on a desktop is readable here, and the file this writes is
- * readable there. Three things are ours and nothing else: where the file lives
+ * and SavePrefsToStream() do all the work, so upstream preferences copied to
+ * Okapia_Prefs are readable here, and the file this writes uses the same
+ * format. Three things are ours and nothing else: where the file lives
  * (the root of the card), what the defaults are, and a header comment written
  * into a file we create.
  *
@@ -31,7 +31,7 @@
 
 // FatFs mounts the card as the root of the filesystem, so this is the card's
 // top-level directory next to the ROM and the disk images.
-static const char PREFS_FILE_NAME[] = "/BasiliskII_Prefs";
+static const char PREFS_FILE_NAME[] = "/Okapia_Prefs";
 
 // Only reached when the card carries no preferences file. They name the files
 // scripts/make-sd-image.sh puts on the card.

@@ -102,7 +102,7 @@ constructor runs before the serial port and fails silently.
 
 1. **Board**: serial, logger, interrupts, timer and clock, console, card, log file on the card
    (`COkapiaBoard::Start`, `StartCard`).
-2. **Preferences** from `/BasiliskII_Prefs`; time zone applied.
+2. **Preferences** from `/Okapia_Prefs`; time zone applied.
 3. **Mac RAM block**, before any driver allocates (below).
 4. **Startup chime** starts from a kernel timer ([Sound](../topics/sound.md#startup-chime)).
 5. **USB**, and the firmware starts latching the keyboard at once (`FwInputWatch`): a key held from power-on

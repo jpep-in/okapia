@@ -57,7 +57,7 @@ part of this: the docs `boot-menu`, `clock-and-pram`, `sound`, `guide`, `prefere
 | `OKAPIA_JIT_FPU=1` | compiles `USE_JIT_FPU` and `compemu_fpp.cpp` (run `OKAPIA_JIT_FPU=1 scripts/gen-cpu.sh jit` too). **Unvalidated**: the JIT keeps FP registers as host doubles |
 | `OKAPIA_JIT_CONSTJUMP=1` | `setenv("B2_JIT_ENABLE_CONSTJUMP","1")`: follow constant jumps (blocks 3.5 → 4.5 insns); the fork disables it on AArch64 for a known divergence |
 
-Preferences read by the JIT kernel (in `BasiliskII_Prefs`): `jit true`, `jitcachesize <KB>`, `jitlazyflush`, `jitfpu`,
+Preferences read by the JIT kernel (in `Okapia_Prefs`): `jit true`, `jitcachesize <KB>`, `jitlazyflush`, `jitfpu`,
 `jitinline` (**inert on AArch64**, see 03). The arena is `jitcachesize` + 256 MB of margin for block descriptors.
 
 ## What works (verified)

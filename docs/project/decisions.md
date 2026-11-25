@@ -135,7 +135,7 @@
 
 ### Preferences stay in Basilisk II's own format, in one file
 
-- **Decision**: `BasiliskII_Prefs` at the card root, parsed by upstream's parser, engine-agnostic: `rom` for
+- **Decision**: `Okapia_Prefs` at the card root, parsed by upstream's parser, engine-agnostic: `rom` for
   the 68k engine, `romppc` for the PowerPC one, one `engine` line per universal volume.
 - **Why not TOML**: the C TOML libraries only read, and the boot menu writes; upstream's format already has
   multi-valued keys (`prefs.cpp:405-413`).

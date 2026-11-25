@@ -16,7 +16,7 @@ point took the key, before the Macintosh starts. Choosing a connection starts it
 one is running, changing it needs Okapia to restart (Start reads **Save and restart**), since Circle cannot give a
 network device back. What the page changes is written when the Macintosh starts or the board shuts down.
 
-**Or by hand**, three lines in `/BasiliskII_Prefs` ([Preferences](../preferences.md#network)), in the spirit of a
+**Or by hand**, three lines in `/Okapia_Prefs` ([Preferences](../preferences.md#network)), in the spirit of a
 BlueSCSI's `WiFiSSID` and `WiFiPassword`:
 
 ```

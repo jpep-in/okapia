@@ -6,7 +6,7 @@
 //
 // The folder, first match wins: the one named, the one holding the
 // application (a card folder carried with its program), the last one opened,
-// otherwise a picker. Its layout is the card's: BasiliskII_Prefs, the ROMs, the
+// otherwise a picker. Its layout is the card's: Okapia_Prefs, the ROMs, the
 // disk images, BasiliskII_XPRAM, shared/; the desktop's own log, okapia-desktop.log.
 //
 // The test mode drives the same binary without a window, on the model of the
@@ -281,7 +281,7 @@ static bool IsCardFolder (const char *pPath)
     {
         return false;
     }
-    snprintf (Prefs, sizeof Prefs, "%s/BasiliskII_Prefs", pPath);
+    snprintf (Prefs, sizeof Prefs, "%s/Okapia_Prefs", pPath);
     return stat (Prefs, &Info) == 0;
 }
 

@@ -6,7 +6,7 @@
 #   usage: jitshot.sh [seconds] [width height]
 #
 #   EXTRA_PREFS='jit true\njitcachesize 65536\njitlazyflush true'
-#       lines appended to BasiliskII_Prefs on the throwaway card (mtools, \n separates lines).
+#       lines appended to Okapia_Prefs on the throwaway card (mtools, \n separates lines).
 #       The QEMU card's own preferences are never touched.
 #   POST_IDLE=15
 #       seconds to wait after "Macintosh idle" before the screen is captured (default 1).
@@ -47,9 +47,9 @@ WORK="$(mktemp -d -t okapiashot)"
 trap 'cp "$WORK/serial.log" ${OKAPIA_SERIAL_OUT:-/tmp/okapia-jit-serial.log}; rm -rf "$WORK"' EXIT
 cp "$SD" "${WORK}/card.img"
 if [ -n "${EXTRA_PREFS:-}" ]; then
-    mcopy -i "${WORK}/card.img" ::BasiliskII_Prefs "${WORK}/prefs"
+    mcopy -i "${WORK}/card.img" ::Okapia_Prefs "${WORK}/prefs"
     printf '\n%b\n' "$EXTRA_PREFS" >> "${WORK}/prefs"
-    mcopy -i "${WORK}/card.img" -o "${WORK}/prefs" ::BasiliskII_Prefs
+    mcopy -i "${WORK}/card.img" -o "${WORK}/prefs" ::Okapia_Prefs
 fi
 
 okapia_qemu_net_args

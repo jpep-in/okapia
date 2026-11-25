@@ -1,3 +1,5 @@
+# Copyright (C) 2026  Jonathan Pepin
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Okapia preferences — the defaults scripts/make-sd-image.sh puts on a test card.
 #
 # Basilisk II format: one "keyword value" per line, and a line whose first
