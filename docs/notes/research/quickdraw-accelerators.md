@@ -29,7 +29,10 @@ SPDX-License-Identifier: GPL-3.0-or-later
    GC), and a hook the system calls with a parameter block and a right to decline (Power Macintosh, from 1994). The
    first broke when Apple rewrote QuickDraw and stopped calling the vectors; the second never followed the 68040 or
    System 7.5; the third is the one SheepShaver still uses.
-4. **A systematic study of QuickDraw versions is worth doing only in one form**: a census, per System release, of which
+4. **From System 7.1 to Mac OS 8.1 the QuickDraw patch for this ROM family is one file, unchanged**, and the
+   `StretchBits` seam `qdaccel` relies on is at the same offset in all of them; 7.0 and 7.0.1 have an older one. What
+   moves from 7.5 on is a second layer of patches whose effect on the hook vectors was not determined.
+5. **A systematic study of QuickDraw versions is worth doing only in one form**: a census, per System release, of which
    private vector is the ROM's and which is the System's. That is what a vendor's per-release software revision
    amounted to, and it is the part Gestalt does not give.
 
@@ -107,11 +110,57 @@ Okapia read in running guests (Display, call map):
 | 7.1 | `StretchBits` rewritten to send indexed and direct transfers through `ScaleBlt`, new `ScaleBlt` loops, the meaning of `multColor` changed (June 1992, bug 1031825) | `QDciPatchROM.a` entry `<132>`; `SM:QuickDraw/QuickDraw Release Notes`. That this is the 7.1 build is my reading of the dates and of the "Cube-E" tags; the same `StretchBits` was fingerprinted on 7.1 and 7.6.1 (Display) |
 | 7.5.5 | The pattern-copy loops replaced for alpha, the forward copy `bSetup0` (`$AB58`, the entry at `$1B60`) replaced by a `MOVE16` version | read from a guest (Display). The source shows the `MOVE16` patch removed for "Cube-E" in February 1992 (`QDciPatchROM.a` entries `<127>`, `<128>`) and a "working fast bSetup0 patch for 68040 machines" moved to `QuickDrawPatches.a` in April 1992 (`:22`, `:1833`) |
 | 7.6.1 | Same `StretchBits` routine as 7.1, at another address | read from a guest (Display) |
-| 8.0, 8.1 | *Not confirmed.* No source read, no guest dumped | |
+| 8.0, 8.1 | The `QDci` patch of 7.1, unchanged; a `gpch` layer that differs from 7.6.1's | the System files (next section). No guest dumped |
 
 On Power Macintosh the System 7.5 updates also changed the native QuickDraw ("changes to native QuickDraw which speed
 up operations such as scrolling", a Type 11 crash fixed: [System 7.5 Update 2.0 notes][sys753]); that is the other
 engine's QuickDraw, not the 68k one.
+
+### The System files compared, 7.0 to 8.1
+
+Read on 2026-11-15 from twelve System files: the installed disks that the infinite-mac project publishes for 7.0,
+7.0.1, 7.1, 7.1.1, 7.5, 7.5.1, 7.5.3 and 7.5.5, and the System Folder of the Mac OS 7.6, 7.6.1, 8.0 and 8.1 CDs at the
+archive.org addresses its catalogue gives. The files, the pieces kept from each and the tools are in `systems/`
+(ignored by git; `systems/README.txt` says what is where): one HFS volume for each version,
+`systems/quickdraw/QuickDraw <version>.dsk`, holds its System file, enablers, updates and display extensions with both
+forks. Static reading again: the patch resources (`ptch`, `lpch`, `PTCH`, `gpch`) were expanded where they are stored
+compressed and compared byte for byte. A resource is counted as QuickDraw code when it calls through the hook vectors
+(`JSR ([$1Axx])` and the like); a patch that replaces a loop without calling a hook escapes that test.
+
+The letter is the content (same letter, same bytes), the figure the number of calls through hook vectors:
+
+| Resource | 7.0 | 7.0.1 | 7.1 | 7.1.1 | 7.5 | 7.5.1 | 7.5.3 | 7.5.5 | 7.6 | 7.6.1 | 8.0 | 8.1 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `ptch` 26, the `QDci` patch, 34,322 bytes from 7.1 | A:89 | A:89 | B:92 | B:92 | B:92 | B:92 | B:92 | B:92 | *same length* | B:92 | B:92 | B:92 |
+| `ptch` 32, 99,124 bytes from 7.1 | A:202 | A:202 | B:202 | B:202 | B:202 | B:202 | B:202 | B:202 | *same length* | B:202 | B:202 | B:202 |
+| `lpch` 20 | – | A:11 | B:11 | B:11 | B:11 | B:11 | B:11 | B:11 | *same length* | B:11 | B:11 | B:11 |
+| `gpch` 88 | – | – | – | – | A:10 | A:10 | A:10 | A:10 | B:10 | C:10 | D:10 | E:10 |
+| `gpch` 199 | – | – | – | – | A:13 | A:13 | A:13 | B:13 | C:13 | D:13 | E:13 | E:13 |
+| `gpch` 750 | – | – | – | – | A:0 | A:0 | A:0 | B:1 | C:9 | D:9 | E:9 | F:9 |
+
+- **The QuickDraw patch for the IIci family changed once.** `ptch` 26 carries the `QDci` signature and `StretchBits`
+  (the one call to `BitBlt`, to `RgnBlt`, to `ScaleBlt` and to `stScanLoop` are in it). It has two states in six
+  years: 7.0 and 7.0.1, then the same 34,322 bytes from 7.1 to 8.1. `ptch` 32 and `lpch` 20 move at the same moment
+  and never again. On the 7.6 CD the three are stored with a compression (`dcmp` 3) this study does not expand; their
+  expanded lengths are those of every other version from 7.1. *Presumed identical, not read.*
+- **The seam Okapia fingerprints is in it, at the same place.** From 7.1 to 8.1 `StretchBits` begins with
+  `LINK A6,#-$308` and its call to `BitBlt` returns at entry `+$6DE`, which is `SYSTEM_RETURN_OFFSET` in
+  `src/circle/quickdraw_circle.cpp:36`. In 7.0 and 7.0.1 the frame is `-$304` and the return is at `+$620`: an older
+  `StretchBits`, before the rewrite of June 1992. The bytes in the file are not the bytes in memory (the patch binds
+  ROM addresses when it installs, so Okapia's hash is not that of the resource), but equal resources on one ROM
+  install equal code.
+- **What moved after 7.1 is in other resources.** Three `gpch` resources that call QuickDraw hooks appear with 7.5: 88
+  calls `stNoStack`, `MakeScaleTbl` and `GetSeek`, 199 calls `StretchBits`, `BitsToMap` and `PatConvert`, and 750
+  gains nine such calls in 7.6. They are the same from 7.5 to 7.5.3 and change at 7.5.5, 7.6, 7.6.1, 8.0 and 8.1 (by a
+  few hundred bytes for 88 and 199, by tens of kilobytes for 750). `lpch` 31, the large set of linked patches, differs
+  by 42 bytes between 7.1.1 and 7.5 and changes again at 7.5.5, 7.6 and 8.0. *Which machines load each `gpch`, and
+  whether any of these changes replaces a vector `qdaccel` hooks, was not determined: the tables that say so were not
+  decoded.*
+- **The System 7.5 updates ship as a second file.** "System 7.5 Update" carries its own `lpch` 31 and `gpch` resources
+  in 7.5.1 and 7.5.3; 7.5.5's System file holds the `lpch` 31 of the 7.5.3 update, byte for byte.
+
+So the QuickDraw a hook meets on a `$067C` ROM has three ages: 7.0 and 7.0.1; 7.1 and 7.1.1; and 7.5 to 8.1, where the
+7.1 patch is unchanged and a second layer of `gpch` patches moves at almost every release.
 
 ### Telling them apart, then
 
@@ -454,11 +503,17 @@ hook put a defined contract at the cheap level, and it exists only in the PowerP
 is no third choice; for the PowerPC engine the hook is already linked, and verifying that it engages is an open item
 in [PowerPC engine](../../topics/engine-powerpc.md).
 
-**Study versions as a census, not as a history.** The useful object is a table, per System release Okapia supports, of
-every vector from `$AB00` to `$ABA8`: ROM address or RAM address, and for RAM a fingerprint. It would say at once
-which hooks are safe on 7.1, 7.5.5, 7.6.1, and would settle 8.0 and 8.1, about which nothing is known here. It can be
-dumped from a guest with the existing probe machinery. Reading more of QuickDraw's general history would not add to
-that. *This recommendation is mine; it was not asked for and nothing has been built.*
+**Coverage, from the System files.** `qdaccel`'s `StretchBits` fingerprints were verified on 7.1, 7.5.5 and 7.6.1. The
+files say the same routine is in 7.1.1, 7.5, 7.5.1, 7.5.3, 8.0 and 8.1, and almost certainly in 7.6, so the
+System-side paths should engage on all of them; on 7.0 and 7.0.1 the routine is another one and those paths fall back
+to the guest, as designed, leaving the ROM caller alone. None of that has been run on the versions not already tested.
+
+**The census is still owed, and it is now smaller.** What the files cannot say is which hook vectors are the ROM's and
+which the System's once everything has loaded, because the `gpch` layer moves at 7.5.5, 7.6, 7.6.1, 8.0 and 8.1 and
+its load tables were not decoded. A dump of the vectors `$AB00` to `$ABA8` from a running guest settles it, and five
+guests are enough: 7.1, 7.5.3, 7.5.5, 7.6.1 and 8.1, one for each state of that layer that Basilisk can run, with 7.6
+and 8.0 if the first five differ. The archive volumes in `systems/quickdraw/` are there to read the code a dump points
+to. *This recommendation is mine; nothing has been built.*
 
 ## Not confirmed
 
@@ -468,7 +523,10 @@ that. *This recommendation is mine; it was not asked for and nothing has been bu
   and the contents of the Thunder 3D installer.
 - *Byte*, December 1989, "The QuickColor Option" and the *Macworld* and *MacUser* reviews of accelerated boards: not
   read.
-- What System 8.0 and 8.1 patch on a `$067C` ROM, and what Gestalt `'qd  '` returns on 7.5.5, 7.6.1 and 8.x.
+- What Gestalt `'qd  '` returns on 7.5.5, 7.6.1 and 8.x.
+- Which `gpch` resources a Quadra-class machine loads from 7.5 on, what they replace, and what the changes in `lpch`
+  31 are; the expanded content of the 7.6 CD's `ptch` 26 (`dcmp` 3). The System files of the CDs are the ones the CDs
+  boot from; an installed System was not compared with them.
 - Whether Radius distributed QuickerDraw; which System release first contained it (6.0 per the interview, 6.0.3 per
   the source file's first line).
 - The licence status of the `NQDMisc` acceleration interface and the release that introduced it; the QuickDraw

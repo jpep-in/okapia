@@ -259,7 +259,7 @@ Read off two screenshots; the reference values of Bubble Sort, 2 Bit, 4 Bit and 
   each, and the cause of that gap is not known. The column stays as a second run of the translator: its lines
   differ from the first by 1 to 3 %, the colour lines by up to 11 %, Graf by 26 %.
 - **Owed**: both columns again with a kernel that carries the fix, MacBench beside Speedometer, the System
-  version, depth and `frameskip` written down.
+  version, depth and `frameskip` written down. Done in part the same night: next section.
 
 ### Raspberry Pi 4, the FPU translated (2026-11-16)
 
@@ -322,12 +322,80 @@ Desktop Basilisk II built from the translator's clone, System 7.5.5, 8-bit 640×
   translator's FPU, its five `fpu_*` checks are the M4's to the bit (and so are the `cpu_*` ones). Its times under
   QEMU mean nothing.
 
+### Raspberry Pi 4, the QuickDraw hooks on hardware (night of 2026-11-15)
+
+Run by the owner: `jit true`, System 7.6.1, Mac at 1280×720 in thousands of colours (16 bits), a kernel built
+after the softfloat FPU and the boot-menu commits (`80cb577`, `f47f91e`; the exact revision was not noted, nor
+`frameskip` or the clock). One run of each. The result files and screenshots stayed with the owner.
+
+**MacBench**, `qdaccel` off then on, in ticks. The twenty checks are the same in both files; those of the
+drawing tests are not QEMU's, as another System and depth would have it.
+
+| Test | Off | On | |
+|---|---:|---:|---|
+| `cpu_sieve` … `tb_strings` (eight tests) | 785 | 794 | untouched |
+| `qd_rects` | 1205 | 1132 | −6 % |
+| `qd_ovals` | 588 | 591 | |
+| `qd_lines` | 138 | 135 | |
+| `qd_text` | 331 | 330 | |
+| `qd_regions` | 421 | 289 | −31 % |
+| `qd_copybits` | 222 | 46 | 4.8× |
+| `qd_stretch` | 183 | 183 | |
+| `qd_mono` | 644 | 654 | |
+| `qd_scroll` | 881 | 274 | 3.2× |
+| `qd_pictures` | 316 | 270 | −15 % |
+| `qd_windows` | 1315 | 1268 | −4 % |
+| `qd_textedit` | 2091 | 1965 | −6 % |
+| **all twenty** | **152.0 s** | **132.2 s** | **−13 %** |
+
+- **The hooks pay on hardware where QEMU showed parity.** At the same depth QEMU gave 2× on copies and a
+  quarter on scrolling ([Display](../topics/display.md#68k-quickdraw)); the Pi gives 4.8× and 3.2×. The tests
+  that do not move are the ones no hook serves: shapes (`DrawSlab`), text and 1-bit images (`stScanLoop`),
+  stretching.
+- **Drawing weighs far more on the Pi than under QEMU, computing does not.** Against a QEMU run at 16 bits
+  the eight computing tests are within a third, `qd_text` and `qd_mono` too, but copies and regions cost 2.3×
+  more, ovals and `qd_textedit` 4×, scrolling 5×. Memory speed, and the compositor that shares the core and
+  shows 1280×720 at ×2, are the suspects; neither was measured. `perfreport true` on the board would say what
+  share of the time the compositor takes.
+
+**Speedometer 3**, top lines read off three screenshots (several lower lines lose their first digit to the
+column width and are not copied here):
+
+| | CPU | Graf | Disk | Math | FPU Ave. | Color Ave. |
+|---|---:|---:|---:|---:|---:|---:|
+| Interpreter, `qdaccel` off | 101.76 | 66.62 | 26.33 | 662.06 | 27.83 | 28.51 |
+| Interpreter, `qdaccel` on | 108.12 | 63.44 | 24.69 | 661.65 | 27.24 | 28.20 |
+| Translator, `qdaccel` off | 576.67 | 285.50 | 27.84 | 595.97 | 40.66 | 131.86 |
+
+- **Speedometer does not see the hooks**: Graf and the colour average are within the 6 % by which CPU, which
+  they do not touch, differs between the first two runs. Its drawing tests are small objects; MacBench's are
+  whole windows.
+- **Translator**: 5.3× on CPU, 4.5× on Graf, 4.7× on the colour average. `Int. Matrix` reads 0.00 in that
+  run, which is not a score, and Math is 10 % lower than with the interpreter: neither is explained.
+
+**Speedometer 4.0.2**, translator (whether `qdaccel` was on was not noted), against the run of the afternoon
+above:
+
+| | CPU | Graf | Disk | Math | FPU Ave. | B&W | 2 Bit | 4 Bit | 8 Bit | 16 Bit | Color Ave. |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Afternoon, `a6e93db` | 35.01 | 28.08 | 3.53 | 177.67 | 3.81 | 23.18 | 24.07 | 29.16 | 34.51 | 58.81 | 33.94 |
+| Night | 34.53 | 27.14 | 2.31 | 241.45 | 3.79 | 22.84 | 18.02 | 18.15 | 18.91 | 25.92 | 20.77 |
+
+- **Math is up by a third** (K'Whet 36.09 → 44.97), with the 68881 now in softfloat.
+- **The colour tests from 2 bits up are 25 to 56 % lower, and Disk a third lower.** One run each, different
+  kernels, a state of `qdaccel` that was not written down: nothing can be attributed yet. It is the first
+  thing to reproduce, with `qdaccel off` and `sync` on the same kernel.
+
 ## Status
 
 - [x] First QEMU baseline (2026-08-27)
 - [x] First Pi 4 runs, both engines (2026-09-12)
 - [x] rev2 after seven changes: 68k Quadra-class with margin (2026-09-13)
 - [x] First Speedometer runs with the 68k translator on a Pi 4 (2026-11-15)
+- [x] MacBench on a Pi 4 with the QuickDraw hooks off and on: 152.0 s → 132.2 s (2026-11-15)
+- [ ] Speedometer 4's colour tests fell by 25 to 56 % between two kernels of 2026-11-15: reproduce with
+      `qdaccel off` and `sync` on one kernel before reading anything into it
+- [ ] `Int. Matrix` at 0.00 in Speedometer 3 under the translator
 - [ ] Five runs per configuration with revision, frequency, temperature, System, mode and preferences recorded
 - [ ] Measure the seven changes separately, or by family (frequency, libraries, CPU loop, video, I/O)
 - [ ] Reproduce SheepShaver's `Disk` regression (4.72 → 3.08) noting cluster size, fragmentation and file position

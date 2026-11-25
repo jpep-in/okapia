@@ -22,6 +22,62 @@ uint8_t *QDMemory::Pixels (uint64_t address, size_t length) const
     return ptr ? ptr : screen.Map (address, length);
 }
 
+// The fingerprints are of the code as it lies in a running guest, after the
+// System has loaded and relocated it: read from Mac RAM under QEMU with the
+// F1ACAD13 ROM (2026-11-15), never from the resource file, whose bytes differ.
+//
+// Both are the StretchBits of the System's 'ptch' 26. The second is the one
+// from before Apple's rewrite of June 1992 (QDciPatchROM.a, change <132>).
+// Its frame is four bytes smaller because the newer routine added one local
+// at its bottom (-$304, the saved StkLowPt); every other local, and every
+// field the native paths read, lies at the same offset and is written by the
+// same instructions, and both call the same ROM BitBlt and RgnBlt, whose
+// frame offsets are fixed. The two differ in which transfers they send to
+// ScaleBlt, BitBlt and RgnBlt, not in what those receive. Their stScanLoop
+// and its cleanup are the same instructions, the RgnBlt head they install
+// is the same code (the 4096 bytes fingerprinted cover neighbouring patches
+// that changed). System 7.0 and 7.0.1 load the second at different
+// addresses with the same fingerprints.
+const QDStretchVariant QDStretchVariants[] = {
+    {"System 7.1 to 8.1", 0x308, 0x6de, 0x712, 0x680, 0x1084, 0x140a,
+     0xf86789bb, 0x69fc08f9, 0xa145471c, 0x93858458, 0x5f2221f7, 0xde7cb520},
+    {"System 7.0 and 7.0.1", 0x304, 0x620, 0x654, 0x5d2, 0xfc4, 0x134a,
+     0x52415510, 0x9db2f80c, 0xeaeefe40, 0x5b616e35, 0xbfe880cd, 0x3e2dd2f6},
+};
+const unsigned QDStretchVariantCount = sizeof QDStretchVariants / sizeof *QDStretchVariants;
+
+uint32_t QDFingerprint (const uint8_t *code, size_t length)
+{
+    uint32_t signature = 2166136261u;
+    for (size_t i = 0; i < length; ++i)
+        signature = (signature ^ code[i]) * 16777619u;
+    return signature;
+}
+
+bool QDMatchesCode (const QDMemoryRange &ram, uint64_t address, size_t length, uint32_t expected)
+{
+    const uint8_t *code = !(address & 1) ? ram.Map (address, length) : nullptr;
+    return code && QDFingerprint (code, length) == expected;
+}
+
+QDStretchMatch QDMatchStretch (const QDMemoryRange &ram, uint32_t entry,
+                               const QDStretchVariant *variants, unsigned count)
+{
+    for (unsigned n = 0; n < count; ++n)
+    {
+        const QDStretchVariant &v = variants[n];
+        QDStretchMatch match = {&v,
+            QDMatchesCode (ram, entry, v.blitReturn + 4, v.blitCode),
+            QDMatchesCode (ram, entry, v.regionReturn + 4, v.regionCode),
+            QDMatchesCode (ram, entry, v.scaleReturn + 4, v.scaleCode),
+            QDMatchesCode (ram, entry, v.scanEntry + 4, v.scanCode) &&
+                QDMatchesCode (ram, uint64_t (entry) + v.finish, QD_FINISH_BYTES, v.finishCode)};
+        if (match.blit || match.region || match.scale || match.scan)
+            return match;
+    }
+    return {nullptr, false, false, false, false};
+}
+
 namespace
 {
 unsigned Word (const uint8_t *p)
@@ -796,6 +852,9 @@ static const uint8_t *InverseTable (const QDMemory &memory, uint32_t palette,
 bool QDPrepareScanBlit (const QDMemory &memory, uint32_t frame, bool direct, bool systemScan,
                            QDBlit &blit, QDRegion (&regions)[3], int &top, int &left)
 {
+    // The System's frame: 0x308 bytes for the routine of 7.1 and later, 0x304
+    // for that of 7.0, whose four bytes below then belong to the caller's
+    // stack. Only mapped, never read: the lowest field read is at -0x2d4.
     const unsigned frameBytes = systemScan ? 0x308 : 0x2c8;
     const auto *body = frame >= frameBytes ? memory.ram.Map (frame - frameBytes, frameBytes + 52) : nullptr;
     if (!body)

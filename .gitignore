@@ -7,6 +7,10 @@ roms/
 *.hfv
 # Local SD contents: disk images, ROMs and kernel images staged for QEMU
 qemu/sd-contents/
+# Period driver disks and card ROMs kept for study (docs/notes/research/quickdraw-accelerators.md)
+drivers/
+# Apple system images fetched for study, and the per-version QuickDraw archives made from them
+systems/
 
 # Reference clones, fetched by script
 reference/

@@ -133,14 +133,32 @@ partly. The default is `off`. This experiment uses the
 `uae_cpu_2021` core, interpreter or translator, and ROM `F1ACAD13`. At first guest idle,
 `quickdraw_circle.cpp` installs a system-heap trampoline for the private
 `BitBlt` Toolbox trap (`$AB00`) if it still points to the ROM original.
+System 7.0 never idles (no `SynchIdleTime` for Basilisk to patch), so nothing is installed there.
 The vector is written into the Toolbox trap table (`$E00`) itself: see the
 Process Manager pitfall below.
 The ROM caller returns to `ROMBaseMac + $36e40`. For the RAM caller,
 Okapia resolves the live `StretchBits` trap (`$AB27`) and fingerprints the
-code from entry through the return branch. The System 7.1 and 7.6.1 images
-used for testing load the same routine at different addresses. Both use its
-relative return offset `$6de`. Systems with a different patch signature
-fall back to the guest handler for their RAM calls.
+code from entry through each call it accepts (FNV-1a, `QDStretchVariants`
+in `quickdraw_blit.cpp`), as the guest has loaded and relocated it: the
+bytes of the resource file differ. The System's `ptch` 26 holds one of two
+routines, which each System loads at an address of its own:
+
+| Routine | Systems | Frame | `ScaleBlt` | `BitBlt` | `RgnBlt` | `stScanLoop` | cleanup |
+|---|---|---|---|---|---|---|---|
+| after Apple's rewrite of June 1992 | 7.1 to 8.1 | `LINK A6,#-$308` | `+$680` | `+$6de` | `+$712` | `+$1084` | `+$140a` |
+| before it | 7.0 and 7.0.1 | `LINK A6,#-$304` | `+$5d2` | `+$620` | `+$654` | `+$fc4` | `+$134a` |
+
+The offsets are where each call through the trap table returns, from the entry. The older frame is four
+bytes smaller because the newer routine added one local at its bottom (`-$304`, the saved `StkLowPt` of
+change `<133>`): every field the native paths read lies at the same offset in both and is written by the
+same instructions, and both call the same ROM `BitBlt` and `RgnBlt`, whose frame offsets are fixed. The
+two differ in which transfers they send to `ScaleBlt`, `BitBlt` and `RgnBlt` (`<132>` sends more to
+`ScaleBlt`, `<134>` checks alpha before it), not in what those receive; their scan loop and cleanup are the
+same instructions, and the `RgnBlt` head they install is the same code. Read from running 7.0, 7.0.1 and
+7.1.1 guests and disassembled (2026-11-15). The match picks one routine, the first of which any call
+site matches, so that the accepted return addresses never come from two routines. The installation log
+names it, and says for each hook that is not installed why not. Other callers fall back to the guest
+handler.
 Both callers do palette selection, clipping and cursor protection before
 the call and finish it afterwards. Unknown callers and unsupported transfers
 tail-jump to the original handler with the saved registers and flags.
@@ -263,7 +281,10 @@ Large copies gain a factor of two, text a tenth; rectangles of about 3,000 pixel
 4096, which is where the default comes from. Scrolling loses a tenth at every threshold and the reason is
 not known. The other tests do not move by more than the runs differ among themselves (several lines are
 bimodal under QEMU). These are QEMU figures: a journey out of translated code is dearer there than on a Pi,
-so the right threshold on hardware is probably lower. **Nothing of this has been timed on a Pi 4.**
+so the right threshold on hardware is probably lower. On a Pi 4 (System 7.6.1, 1280×720 at 16 bits, one run
+each) the same benchmark went from 152.0 s to 132.2 s with the hooks, copies 4.8× and scrolling 3.2× faster,
+the twenty checks unchanged: [Benchmarks](../contributing/benchmarks.md#raspberry-pi-4-the-quickdraw-hooks-on-hardware-night-of-2026-11-15).
+No threshold other than the default has been tried there.
 
 MacBench by depth (same machine and day; ticks; `off` twice, then `sync` with the default threshold).
 The twenty checks of a depth are the same with and without the hooks, and with `qdaccelmin 1`.
@@ -372,8 +393,9 @@ For QEMU durability use
 - [x] Same resolution list for both engines, 16 MB frame buffers, stable identifiers (2026-09-14)
 - [x] QuickDraw hooks reach every application; gated in 68k under the translator; span writers free of the
       C library, checked against their byte-by-byte definition on the host (2026-11-15)
-- [ ] QuickDraw hooks on a Pi 4: MacBench and Speedometer with `qdaccel off` and `sync`, and `qdaccelmin`
-      at 1024, 4096 and 16384
+- [x] QuickDraw hooks on a Pi 4: MacBench 13 % shorter with them at 16 bits, Speedometer unmoved (2026-11-15)
+- [ ] On a Pi 4: `qdaccelmin` at 1024, 4096 and 16384; the other depths; `qdaccel verify` on real software;
+      and why Speedometer 4's colour tests fell that night (Benchmarks)
 - [x] The colour loops of `BitBlt` and `RgnBlt`, and `BGnotWhite` ignored where the ROM ignores it: every
       `BitBlt` of a MacBench pass is eligible, 98 % of `RgnBlt` (2026-11-15)
 - [ ] QuickDraw coverage, by what the probe counts: the
@@ -389,6 +411,15 @@ For QEMU durability use
       benchmark was at fault and is corrected (2026-11-15)
 - [x] Why `qd_scroll` lost a tenth with the hooks on: the region runner walked the region's edges again
       for every row. It keeps the row's spans now (110 → 86 ticks at 8 bits, 84 to 90 without the hooks)
+- [x] System 7.0.1's own `StretchBits`, the routine from before June 1992, recognised by a second row of
+      fingerprints: every `BitBlt` of a MacBench pass eligible there (0 before), 98 % of `RgnBlt` (not
+      installed before), as on 7.1.1 and later; under `qdaccel verify` 373,637 `BitBlt` and 21,876
+      `RgnBlt` drawn natively, none different from the guest; the twenty checks the same with `off`,
+      `probe`, `sync` and `verify`. 7.1.1 and 7.5.5 unchanged (2026-11-15)
+- [ ] System 8.0 and 8.1: `stScanLoop` not installed; the log now says why: the code from the entry to
+      the scan loop, or the cleanup, is not the 7.1 routine's (a later patch, not looked at)
+- [ ] System 7.0 loads the same routine, but never idles (Basilisk's `patch_idle_time` finds no
+      `SynchIdleTime` to patch in it), so `QDInstall` never runs and no hook is installed there
 - [ ] Below 8 bits the native row writer costs more for each row than the guest's loop: shifted rows go
       through the scratch and two passes. Left to the guest under the translator at 1 and 2 bits; worth
       a single-pass writer only if a Pi shows the interpreter case matters
@@ -417,6 +448,13 @@ For QEMU durability use
   inverted sources too, and ignored by both dispatchers for patterns and XOR, which were most of those
   refusals. Before standing in for a loop, disassemble the ROM's dispatcher, and check the table entry
   it would jump through. Apple's later source (`reference/supermario`) names things; the ROM says what runs.
+- **A fingerprint vouches for every byte it covers, and only those decide.** The `RgnBlt` head that System
+  7.0.1 installs is the same code as 7.1's, but the 4096 bytes fingerprinted from it run into neighbouring
+  patches of the same resource that changed at 7.1: the hook was refused there, silently, for code it
+  never runs. The `StretchBits` fingerprints were right for 7.1 and simply had no row for the older
+  routine. Take a fingerprint from the guest's RAM (the QEMU monitor's `pmemsave` at the logged
+  `Mac base diff`), never from the resource file, which the System relocates as it loads it; and log,
+  for every hook not installed, why.
 - **Circle's `memcpy` copies byte by byte** unless both pointers are aligned on eight *and* the length reaches
   128; its `memmove` does whenever it must run backwards; its `memset` until the address is a multiple of 32.
   A row of pixels meets none of these. The native copy of a 300×200 rectangle measured slower than the

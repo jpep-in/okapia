@@ -27,8 +27,102 @@ static void Rect (uint8_t *p, int top, int left, int bottom, int right)
     Word (p + 6, right);
 }
 
+// The recognition of the System's StretchBits. Apple's code cannot be in
+// the repository, so the routines here are made-up bytes and the table is
+// built from them; what is checked is how a match is chosen. The real
+// table is checked for the shape every row must have.
+static void CheckStretchVariants ()
+{
+    // FNV-1a, 32 bits: the published test vectors.
+    assert (QDFingerprint (nullptr, 0) == 0x811c9dc5);
+    assert (QDFingerprint (reinterpret_cast<const uint8_t *> ("a"), 1) == 0xe40c292c);
+    assert (QDFingerprint (reinterpret_cast<const uint8_t *> ("foobar"), 6) == 0xbf9cf968);
+
+    assert (QDStretchVariantCount == 2);
+    for (unsigned n = 0; n < QDStretchVariantCount; ++n)
+    {
+        const QDStretchVariant &v = QDStretchVariants[n];
+        // A return follows a six-byte JSR through the trap table, in the order
+        // the routine makes its calls, and the scan loop and the cleanup
+        // come after all of them.
+        assert (v.name && v.frameBytes >= 0x2c8 && !(v.frameBytes & 3));
+        for (unsigned offset : {v.blitReturn, v.regionReturn, v.scaleReturn, v.scanEntry, v.finish})
+            assert (!(offset & 1) && offset >= 6);
+        assert (v.scaleReturn < v.blitReturn && v.blitReturn < v.regionReturn &&
+                v.regionReturn < v.scanEntry && v.scanEntry < v.finish);
+        for (unsigned m = 0; m < n; ++m)
+        {
+            // Two rows of one routine would make the first one win at random.
+            assert (QDStretchVariants[m].blitCode != v.blitCode);
+            assert (QDStretchVariants[m].regionHandler != v.regionHandler);
+        }
+    }
+    // The routine of 7.1 and later is tried first, and keeps its offsets.
+    assert (QDStretchVariants[0].blitReturn == 0x6de && QDStretchVariants[0].regionReturn == 0x712 &&
+            QDStretchVariants[0].scaleReturn == 0x680 && QDStretchVariants[0].scanEntry == 0x1084 &&
+            QDStretchVariants[0].finish == 0x140a && QDStretchVariants[0].frameBytes == 0x308);
+    assert (QDStretchVariants[1].blitReturn == 0x620 && QDStretchVariants[1].regionReturn == 0x654 &&
+            QDStretchVariants[1].scaleReturn == 0x5d2 && QDStretchVariants[1].scanEntry == 0xfc4 &&
+            QDStretchVariants[1].finish == 0x134a && QDStretchVariants[1].frameBytes == 0x304);
+
+    static uint8_t ram[0x3000];
+    const QDMemoryRange range = {0x40000, sizeof ram, ram};
+    constexpr uint32_t entry = 0x40100;
+    uint8_t *const code = ram + (entry - range.base);
+    for (unsigned i = 0; i < 0x2000; ++i)
+        code[i] = uint8_t (i * 29 + (i >> 8));
+    const auto sum = [&] (unsigned offset, unsigned length) {
+        return QDFingerprint (code + offset, length);
+    };
+    // Two routines laid over the same bytes with different offsets, the
+    // second as the real table orders them. Only the second matches the
+    // bytes until the first's fingerprints are taken from them too.
+    QDStretchVariant table[2] = {
+        {"new", 0x308, 0x6de, 0x712, 0x680, 0x1084, 0x140a, 1, 2, 3, 4, 5, 6},
+        {"old", 0x304, 0x620, 0x654, 0x5d2, 0xfc4, 0x134a,
+         sum (0, 0x624), sum (0, 0x658), sum (0, 0x5d6), sum (0, 0xfc8), sum (0x134a, QD_FINISH_BYTES), 7},
+    };
+    QDStretchMatch match = QDMatchStretch (range, entry, table, 2);
+    assert (match.variant == &table[1] && match.blit && match.region && match.scale && match.scan);
+
+    // The first variant whose code matches anywhere wins, and the second is
+    // then not looked at: a call site never comes from another routine.
+    table[0].scaleCode = sum (0, 0x684);
+    match = QDMatchStretch (range, entry, table, 2);
+    assert (match.variant == &table[0] && match.scale && !match.blit && !match.region && !match.scan);
+
+    // stScanLoop needs its cleanup too.
+    table[0].scaleCode = 3;
+    table[1].finishCode ^= 1;
+    match = QDMatchStretch (range, entry, table, 2);
+    assert (match.variant == &table[1] && match.blit && !match.scan);
+    table[1].finishCode ^= 1;
+
+    // One changed byte between the entry and a return refuses that call
+    // and every later one, and leaves the earlier ones.
+    code[0x600] ^= 0x80;
+    match = QDMatchStretch (range, entry, table, 2);
+    assert (match.variant == &table[1] && match.scale && !match.blit && !match.region && !match.scan);
+    code[0x600] ^= 0x80;
+
+    // No code at an odd address, none outside the range, and no call site
+    // past its end.
+    assert (!QDMatchStretch (range, entry + 1, table, 2).variant);
+    assert (!QDMatchStretch (range, 0x100, table, 2).variant);
+    const QDMemoryRange shorter = {range.base, entry - range.base + 0x600, ram};
+    match = QDMatchStretch (shorter, entry, table, 2);
+    assert (match.variant == &table[1] && match.scale && !match.blit && !match.region && !match.scan);
+    assert (!QDMatchesCode (range, entry + 1, 4, sum (1, 4)));
+    assert (QDMatchesCode (range, entry + 2, 4, sum (2, 4)));
+
+    // Neither real routine is a made-up one.
+    assert (!QDMatchStretch (range, entry, QDStretchVariants, QDStretchVariantCount).variant);
+}
+
 int main ()
 {
+    CheckStretchVariants ();
+
     uint8_t ram[4096] = {}, pixels[512] = {}, expected[sizeof pixels];
     const QDMemory memory = {{0, sizeof ram, ram}, {0x10000, sizeof pixels, pixels}};
     constexpr unsigned frame = 0x400;

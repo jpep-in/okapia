@@ -67,6 +67,42 @@ struct QDBlitDiagnostic
     unsigned colorize = 0;      // The frame's BGnotWhite word.
 };
 
+// A StretchBits the System installs in place of the ROM's, recognised by
+// FNV-1a fingerprints of its code from the entry through each call to a
+// private transfer, so that the hooks can accept that call. Offsets are
+// from the entry; a return offset is where the JSR through the trap table
+// comes back, the fingerprint covering the entry up to it plus the four
+// bytes that follow (the branch to the common exit).
+struct QDStretchVariant
+{
+    const char *name;
+    unsigned frameBytes;        // the LINK size: where the frame ends
+    unsigned blitReturn, regionReturn, scaleReturn, scanEntry, finish;
+    uint32_t blitCode, regionCode, scaleCode, scanCode;     // of entry .. return + 4
+    uint32_t finishCode;        // of finish .. finish + QD_FINISH_BYTES
+    uint32_t regionHandler;     // of the RgnBlt head the same System patch installs
+};
+constexpr unsigned QD_FINISH_BYTES = 0x50;
+constexpr unsigned QD_REGION_HANDLER_BYTES = 4096;
+extern const QDStretchVariant QDStretchVariants[];
+extern const unsigned QDStretchVariantCount;
+
+uint32_t QDFingerprint (const uint8_t *code, size_t length);
+// Whether the bytes at the guest address have this fingerprint. Code is
+// never at an odd address; an address outside the range does not match.
+bool QDMatchesCode (const QDMemoryRange &ram, uint64_t address, size_t length, uint32_t expected);
+
+// Which of the variants the StretchBits at this entry is, and which of its
+// call sites the code verifies. One variant only: the first of which any
+// call site matches, so that the sites never come from two routines.
+struct QDStretchMatch
+{
+    const QDStretchVariant *variant;
+    bool blit, region, scale, scan;
+};
+QDStretchMatch QDMatchStretch (const QDMemoryRange &ram, uint32_t entry,
+                               const QDStretchVariant *variants, unsigned count);
+
 // Decode the F1ACAD13 StretchBits frame at the rectangular BitBlt call.
 bool QDPrepareBlit (const QDMemory &memory, const uint32_t *a, const uint32_t *d,
                     QDBlit &blit, QDBlitDiagnostic *diagnostic = nullptr);

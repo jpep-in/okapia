@@ -33,11 +33,6 @@ static constexpr uint32 SCALEBLT_RETURN = 0x36e0e;
 static constexpr uint32 ST_SCAN_LOOP = 0xab99;
 static constexpr uint32 SCAN_ROM = 0x374d0;
 static constexpr uint32 STRETCH_FINISH = 0x37934;
-static constexpr unsigned SYSTEM_RETURN_OFFSET = 0x6de;
-static constexpr unsigned SYSTEM_REGION_RETURN_OFFSET = 0x712;
-static constexpr unsigned SYSTEM_SCALE_RETURN_OFFSET = 0x680;
-static constexpr unsigned SYSTEM_SCAN_OFFSET = 0x1084;
-static constexpr unsigned SYSTEM_FINISH_OFFSET = 0x140a;
 static constexpr uint32 TOOL_TABLE = 0xe00;  // Toolbox trap table, 1024 vectors, Macintosh II and later
 static constexpr unsigned THUNK_SAVED_BYTES = 6;
 static constexpr unsigned GATE_OPCODE_OFFSET = 60;  // of the emulator opcode in a gated trampoline
@@ -78,6 +73,9 @@ static QDPendingVerify s_pending;
 // For BitBlt, then for RgnBlt.
 static unsigned s_verified[2], s_differed[2], s_outside[2], s_uncompared[2];
 static unsigned s_differencesLogged;
+// The System's StretchBits, when it is one of QDStretchVariants, and the
+// return addresses of the calls of it that the hooks accept.
+static const QDStretchVariant *s_variant;
 static uint32 s_systemReturn;
 static uint32 s_systemRegionReturn;
 static uint32 s_systemScaleReturn;
@@ -144,6 +142,7 @@ void QDReset ()
     s_differencesLogged = 0;
     for (unsigned hook = 0; hook < 2; ++hook)
         s_verified[hook] = s_differed[hook] = s_outside[hook] = s_uncompared[hook] = 0;
+    s_variant = nullptr;
     s_systemReturn = 0;
     s_systemRegionReturn = 0;
     s_systemScaleReturn = 0;
@@ -157,17 +156,6 @@ void QDReset ()
     s_lastReport = 0;
     s_bytes = 0;
     memset (s_rejected, 0, sizeof s_rejected);
-}
-
-static bool MatchesCode (uint32 address, unsigned length, uint32 expected)
-{
-    const auto *code = !(address & 1) ? s_memory.ram.Map (address, length) : nullptr;
-    if (!code)
-        return false;
-    uint32 signature = 2166136261u;
-    for (unsigned i = 0; i < length; ++i)
-        signature = (signature ^ code[i]) * 16777619u;
-    return signature == expected;
 }
 
 static uint32 AllocateThunk (const uint16 *code, unsigned words)
@@ -371,18 +359,22 @@ void QDInstall ()
     }
 
     s_memory.ram = {RAMBaseMac, RAMSize, RAMBaseHost};
-    // System 7.1 and 7.6.1 install the same StretchBits patch at different
-    // heap addresses. Fingerprint the entry through the BitBlt return branch,
-    // including the frame setup. Guest code with another ABI falls back.
+    // The System replaces StretchBits, and loads it at an address of its
+    // heap that changes with the System and its extensions. Its calls to the
+    // private transfers are accepted only when its code is one of the known
+    // routines, fingerprinted from the entry through each call
+    // (QDStretchVariants). Any other caller falls back to the guest.
     regs.d[0] = STRETCHBITS;
     Execute68kTrap (0xa746, &regs);
     const uint32 stretch = regs.a[0];
-    if (MatchesCode (stretch, SYSTEM_RETURN_OFFSET + 4, 0xf86789bb))
-        s_systemReturn = stretch + SYSTEM_RETURN_OFFSET;
-    if (MatchesCode (stretch, SYSTEM_REGION_RETURN_OFFSET + 4, 0x69fc08f9))
-        s_systemRegionReturn = stretch + SYSTEM_REGION_RETURN_OFFSET;
-    if (MatchesCode (stretch, SYSTEM_SCALE_RETURN_OFFSET + 4, 0xa145471c))
-        s_systemScaleReturn = stretch + SYSTEM_SCALE_RETURN_OFFSET;
+    const QDStretchMatch match = QDMatchStretch (s_memory.ram, stretch, QDStretchVariants, QDStretchVariantCount);
+    s_variant = match.variant;
+    if (match.blit)
+        s_systemReturn = stretch + s_variant->blitReturn;
+    if (match.region)
+        s_systemRegionReturn = stretch + s_variant->regionReturn;
+    if (match.scale)
+        s_systemScaleReturn = stretch + s_variant->scaleReturn;
 
     const uint32 romReturn = ROMBaseMac + BITBLT_RETURN;
     const QDGate blitGate = {romReturn, s_systemReturn ? s_systemReturn : romReturn, minimum};
@@ -395,6 +387,14 @@ void QDInstall ()
     CLogger::Get ()->Write (FROM, LogNotice,
                             "BitBlt installed (%s, StretchBits %08x, verified RAM return %08x)",
                             mode, stretch, s_systemReturn);
+    if (s_variant)
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "StretchBits is the routine of %s: calls verified for%s%s%s%s",
+                                s_variant->name, match.blit ? " BitBlt" : "", match.region ? " RgnBlt" : "",
+                                match.scale ? " ScaleBlt" : "", match.scan ? " stScanLoop" : "");
+    else
+        CLogger::Get ()->Write (FROM, LogNotice,
+                                "StretchBits %08x is no known routine: only the ROM's calls are served", stretch);
     if (gated)
         CLogger::Get ()->Write (FROM, LogNotice,
                                 "translator: transfers under %u bytes or 4 bits a pixel, and DrawSlab, stay in the guest",
@@ -403,44 +403,80 @@ void QDInstall ()
     if (!s_colorLoops)
         CLogger::Get ()->Write (FROM, LogNotice, "colour loops patched: colorized transfers stay in the guest");
 
+    // Each hook below logs why when it is not installed: the reasons are not
+    // otherwise visible, and a System that silently loses one looked, in the
+    // counters, like a benchmark that never drew that way.
+    const auto notInstalled = [] (const char *hook, const char *why, uint32 handler) {
+        CLogger::Get ()->Write (FROM, LogNotice, "%s not installed: %s (handler %08x)", hook, why, handler);
+    };
+
     regs.d[0] = RGNBLT;
     Execute68kTrap (0xa746, &regs);
     const uint32 region = regs.a[0];
     const uint32 regionReturn = ROMBaseMac + RGNBLT_RETURN;
     const QDGate regionGate = {regionReturn, s_systemRegionReturn ? s_systemRegionReturn : regionReturn,
                                minimum};
-    if (region == ROMBaseMac + RGNBLT_ROM || MatchesCode (region, 4096, 0xde7cb520))
-        s_regionThunk = InstallThunk (RGNBLT, region, 0, false, gated ? &regionGate : nullptr);
-    if (s_regionThunk)
+    // The System patches the head of RgnBlt; its code is fingerprinted with
+    // the bytes that follow it, whichever System's they are.
+    bool regionKnown = region == ROMBaseMac + RGNBLT_ROM;
+    for (unsigned n = 0; !regionKnown && n < QDStretchVariantCount; ++n)
+        regionKnown = QDMatchesCode (s_memory.ram, region, QD_REGION_HANDLER_BYTES,
+                                     QDStretchVariants[n].regionHandler);
+    if (!regionKnown)
+        notInstalled ("RgnBlt", "neither the ROM's nor a known System patch", region);
+    else if (!(s_regionThunk = InstallThunk (RGNBLT, region, 0, false, gated ? &regionGate : nullptr)))
+        notInstalled ("RgnBlt", "no system heap for the trampoline", region);
+    else
         CLogger::Get ()->Write (FROM, LogNotice, "RgnBlt installed (%s, handler %08x)", mode, region);
 
     regs.d[0] = DRAWSLAB;
     Execute68kTrap (0xa746, &regs);
-    if (regs.a[0] == ROMBaseMac + DRAWSLAB_ROM && !gated && !s_verify)
+    if (gated || s_verify)
+        notInstalled ("DrawSlab", "not wanted with the translator or in verify mode", regs.a[0]);
+    else if (regs.a[0] != ROMBaseMac + DRAWSLAB_ROM)
+        notInstalled ("DrawSlab", "not the ROM's", regs.a[0]);
+    else
     {
         s_slabOriginal = regs.a[0];
-        s_slabThunk = InstallThunk (DRAWSLAB, s_slabOriginal);
+        if (!(s_slabThunk = InstallThunk (DRAWSLAB, s_slabOriginal)))
+            notInstalled ("DrawSlab", "no system heap for the trampoline", regs.a[0]);
     }
 
     regs.d[0] = SCALEBLT;
     Execute68kTrap (0xa746, &regs);
-    if (regs.a[0] == ROMBaseMac + SCALEBLT_ROM)
-        s_scaleThunk = InstallThunk (SCALEBLT, regs.a[0], 0, true);
-    if (s_scaleThunk)
+    if (regs.a[0] != ROMBaseMac + SCALEBLT_ROM)
+        notInstalled ("ScaleBlt", "not the ROM's", regs.a[0]);
+    else if (!(s_scaleThunk = InstallThunk (SCALEBLT, regs.a[0], 0, true)))
+        notInstalled ("ScaleBlt", "no system heap for the trampoline", regs.a[0]);
+    else
         CLogger::Get ()->Write (FROM, LogNotice, "ScaleBlt installed (%s)", mode);
 
+    // stScanLoop returns through the cleanup of the StretchBits it belongs
+    // to: the ROM's own, or the one inside the known System routine.
     regs.d[0] = ST_SCAN_LOOP;
     Execute68kTrap (0xa746, &regs);
     const uint32 scan = regs.a[0];
-    if (scan == ROMBaseMac + SCAN_ROM &&
-        ReadMacInt32 (scan - 6) == 0x4eb081e1 && ReadMacInt16 (scan - 2) == 0x1c64 &&
-        ReadMacInt32 (ROMBaseMac + STRETCH_FINISH) == 0x42780d6e)
-        s_scanThunk = InstallThunk (ST_SCAN_LOOP, scan, ROMBaseMac + STRETCH_FINISH);
-    else if (scan == stretch + SYSTEM_SCAN_OFFSET &&
-             MatchesCode (stretch, SYSTEM_SCAN_OFFSET + 4, 0x93858458) &&
-             MatchesCode (stretch + SYSTEM_FINISH_OFFSET, 0x50, 0x5f2221f7))
-        s_scanThunk = InstallThunk (ST_SCAN_LOOP, scan, stretch + SYSTEM_FINISH_OFFSET);
-    if (s_scanThunk)
+    uint32 finish = 0;
+    const char *why = nullptr;
+    if (scan == ROMBaseMac + SCAN_ROM)
+    {
+        if (ReadMacInt32 (scan - 6) == 0x4eb081e1 && ReadMacInt16 (scan - 2) == 0x1c64 &&
+            ReadMacInt32 (ROMBaseMac + STRETCH_FINISH) == 0x42780d6e)
+            finish = ROMBaseMac + STRETCH_FINISH;
+        else
+            why = "the ROM's, with other code around it";
+    }
+    else if (!s_variant || scan != stretch + s_variant->scanEntry)
+        why = "neither the ROM's nor inside a known StretchBits";
+    else if (!match.scan)
+        why = "inside StretchBits, whose code up to it or whose cleanup differs";
+    else
+        finish = stretch + s_variant->finish;
+    if (why)
+        notInstalled ("stScanLoop", why, scan);
+    else if (!(s_scanThunk = InstallThunk (ST_SCAN_LOOP, scan, finish)))
+        notInstalled ("stScanLoop", "no system heap for the trampoline", scan);
+    else
     {
         s_scanCaller = scan;
         CLogger::Get ()->Write (FROM, LogNotice, "stScanLoop installed (%s)", mode);
