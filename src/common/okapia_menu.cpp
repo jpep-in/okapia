@@ -995,16 +995,46 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
  */
 static TChooser  s_Chooser;
 
+// FNV-1a over every line of one multi-valued keyword, each ended by a 0 byte.
+static unsigned long long StartupHashLines (unsigned long long nHash, const char *pName)
+{
+    for (int i = 0; ; i++)
+    {
+        const char *pLine = PrefsFindString (pName, i);
+        if (pLine == 0)
+        {
+            return nHash;
+        }
+        for (const char *p = pLine; ; p++)
+        {
+            nHash = (nHash ^ (unsigned char) *p) * 1099511628211ULL;
+            if (*p == '\0')
+            {
+                break;
+            }
+        }
+    }
+}
+
 void FirmwareStartupRead (TFirmwareStartup *pOut)
 {
-    const char *pDisk  = PrefsFindString ("disk", 0);
-    const char *pCdrom = PrefsFindString ("cdrom", 0);
+    // Every volume and its read-only mark: a volume mounted, unmounted or made
+    // read-only at a restart is one the running engine cannot take in place,
+    // its drives having been opened at its start.
+    unsigned long long nHash = 14695981039346656037ULL;
+    nHash = StartupHashLines (nHash, "disk");
+    nHash = (nHash ^ 0xff) * 1099511628211ULL;
+    pOut->nVolumes = StartupHashLines (nHash, "cdrom");
     const char *pSound = PrefsFindString ("soundoutput");
-    snprintf (pOut->Disk,  sizeof pOut->Disk,  "%s", pDisk  != 0 ? pDisk  : "");
-    snprintf (pOut->Cdrom, sizeof pOut->Cdrom, "%s", pCdrom != 0 ? pCdrom : "");
     snprintf (pOut->Sound, sizeof pOut->Sound, "%s", pSound != 0 ? pSound : "");
     pOut->bNoSound    = PrefsFindBool ("nosound");
     pOut->nBootDriver = (int) PrefsFindInt32 ("bootdriver");
+}
+
+bool FirmwareStartupSame (const TFirmwareStartup &A, const TFirmwareStartup &B)
+{
+    return A.nVolumes == B.nVolumes && strcmp (A.Sound, B.Sound) == 0
+        && A.bNoSound == B.bNoSound && A.nBootDriver == B.nBootDriver;
 }
 
 TFirmwareEngine FirmwareWantedEngine (void)

@@ -130,21 +130,6 @@ extern void InputRelease (void);
 extern void InputInit (void);
 extern void VideoReclaim (void);
 
-// The startup this engine was started with, from its own preferences: the
-// firmware never writes them (FirmwareStartupRead() reads what it wrote).
-// Everything the firmware's answer can change that this engine could not take
-// in place.
-static void StartupRead (TFirmwareStartup *pOut)
-{
-    const char *pDisk  = PrefsFindString ("disk", 0);
-    const char *pCdrom = PrefsFindString ("cdrom", 0);
-    const char *pSound = PrefsFindString ("soundoutput");
-    snprintf (pOut->Disk,  sizeof pOut->Disk,  "%s", pDisk  != 0 ? pDisk  : "");
-    snprintf (pOut->Cdrom, sizeof pOut->Cdrom, "%s", pCdrom != 0 ? pCdrom : "");
-    snprintf (pOut->Sound, sizeof pOut->Sound, "%s", pSound != 0 ? pSound : "");
-    pOut->bNoSound    = PrefsFindBool ("nosound");
-    pOut->nBootDriver = (int) PrefsFindInt32 ("bootdriver");
-}
 
 void ether_reset (void)
 {
@@ -158,8 +143,12 @@ void ether_reset (void)
     CLogger::Get ()->Write (FROM, LogNotice,
                             "The Macintosh restarted itself (reset #%u)", s_nResets);
 
+    // Before and after, from the firmware's list: what this engine was started
+    // with is what the firmware's list held then (the card it loaded was
+    // written from it), and the two reads are normalised alike. This engine's
+    // own list is never written by the firmware.
     TFirmwareStartup Before, After;
-    StartupRead (&Before);
+    FirmwareStartupRead (&Before);
 
     InputRelease ();
     FwInputReclaim ();
@@ -172,11 +161,7 @@ void ether_reset (void)
 
     if (   Result == FirmwareBoot
         && FirmwareWantedEngine () == FirmwareEnginePowerPC
-        && strcmp (Before.Disk, After.Disk) == 0
-        && strcmp (Before.Cdrom, After.Cdrom) == 0
-        && Before.nBootDriver == After.nBootDriver
-        && strcmp (Before.Sound, After.Sound) == 0
-        && Before.bNoSound == After.bNoSound)
+        && FirmwareStartupSame (Before, After))
     {
         CLogger::Get ()->Write (FROM, LogNotice, "Same startup: restarting in place");
         InputInit ();
