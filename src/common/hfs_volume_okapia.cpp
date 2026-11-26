@@ -380,6 +380,15 @@ bool HfsRepair (const char *pPath)
         return false;
     }
 
+#ifdef OKAPIA_HOSTED
+    // libhfs wrote through the host's cache: the repair is only done once it
+    // is on the medium, before the Macintosh writes on top of it.
+    if (!CardSync (pPath))
+    {
+        CLogger::Get ()->Write (FROM, LogError, "%s: the repair did not reach the disk", pPath);
+        return false;
+    }
+#endif
     CLogger::Get ()->Write (FROM, LogNotice, "%s: repaired and marked clean", pPath);
     return true;
 }

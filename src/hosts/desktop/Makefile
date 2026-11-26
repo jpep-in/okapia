@@ -116,7 +116,7 @@ REUSED_SRCS   = $(MACEMU)/Unix/sys_unix.cpp $(MACEMU)/Unix/extfs_unix.cpp \
 # Sparse bundles declined, as on the card: the plain-image factory takes over.
 COMPAT_SRCS   = $(CHOST)/compat/disk_stubs.cpp
 DESKTOP_SRCS  = okapia_host_desktop.cpp main_desktop.cpp board_desktop.cpp wraps_desktop.cpp \
-                cards_desktop.cpp install_manifest.cpp install_card.cpp install_release.cpp \
+                sync_desktop.cpp cards_desktop.cpp install_manifest.cpp install_card.cpp install_release.cpp \
                 install_fetch.cpp install_host.cpp \
                 sound_desktop.cpp board_net_desktop.cpp
 ifeq ($(shell uname),Darwin)
@@ -222,6 +222,10 @@ $(PPCOBJ)/up_extfs.o: PPCDEFS = -DPrefsFindString=OkapiaCardPrefsString
 $(PPCOBJ)/re_extfs_unix.o: PPCDEFS = -Dextfs_write=OkapiaRealExtfsWrite \
     -Dhost_encoding_to_macroman=OkapiaUnixHostToMac -Dmacroman_to_host_encoding=OkapiaUnixMacToHost
 $(PPCOBJ)/re_sys_unix.o: PPCDEFS = -DSys_open=OkapiaUnixSysOpen
+# Upstream's sys_unix.cpp under the disk images' flush policy (sys_unix_desktop.cpp,
+# which includes it): this rule wins over the pattern for the one object.
+$(PPCOBJ)/re_sys_unix.o: sys_unix_desktop.cpp | $(PPCOBJ) $(MACROMAN_H)
+	$(ppccompile)
 # vm_alloc.cpp's macOS branch (a CrashReporter fix for 10.4) wants the Mach
 # headers its configure would have pulled in.
 $(PPCOBJ)/cpu_vm_alloc.o: PPCDEFS = -include mach/mach.h -include sys/utsname.h
@@ -300,6 +304,8 @@ $(OBJ)/up_extfs.o: UPDEFS = -DPrefsFindString=OkapiaCardPrefsString
 $(OBJ)/re_extfs_unix.o: UPDEFS = -Dextfs_write=OkapiaRealExtfsWrite \
     -Dhost_encoding_to_macroman=OkapiaUnixHostToMac -Dmacroman_to_host_encoding=OkapiaUnixMacToHost
 $(OBJ)/re_sys_unix.o: UPDEFS = -DSys_open=OkapiaUnixSysOpen
+$(OBJ)/re_sys_unix.o: sys_unix_desktop.cpp | $(OBJ) $(MACROMAN_H)
+	$(upcompile)
 
 define upcompile
 	@printf '  CXX   upstream/%s\n' "$(notdir $<)"

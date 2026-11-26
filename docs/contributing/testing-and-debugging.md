@@ -51,8 +51,10 @@ Circle kernel, a compile probe of the core, the list of undefined symbols).
 
 The desktop build runs the boot menu and the 68k Macintosh without a window, on a copy of a card folder, with
 scripted keys and clicks and PNG screenshots ([Desktop](../topics/desktop.md#using-it)). It covers everything
-above `okapia_host.h` in seconds, and a `SIGKILL` of the process followed by a second run is the durability
-check (the volumes left in use are repaired). It says nothing of what lies below the interface on the board —
+above `okapia_host.h` in seconds, and a `SIGKILL` of the process followed by a second run checks the repair of the
+volumes left in use. It is **not** a durability check: the host's page cache outlives the process, so nothing written
+is ever lost to a `SIGKILL`. What the desktop owes against a power cut is its flush policy
+([Desktop](../topics/desktop.md#status)), which only a host that loses its power can test. It says nothing of what lies below the interface on the board —
 USB, HDMI, the card, Wi-Fi — which QEMU and the Pi still judge.
 
 ### QEMU scripts

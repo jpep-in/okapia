@@ -23,6 +23,9 @@
 // answer lives in a small ring of buffers, enough for the two or three a call
 // site holds at once.
 const char *CardPath (const char *pPath);
+// The card file's last writes on the medium, not in the host's cache. On the
+// board every write is already there when FatFs returns.
+bool CardSync (const char *pPath);
 #else
 static inline const char *CardPath (const char *pPath)
 {

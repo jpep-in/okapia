@@ -22,6 +22,7 @@
 #include "okapia_settings.h"
 #include "okapia_desktop.h"
 #include "install.h"
+#include "sync_desktop.h"
 #include "board_net_okapia.h"
 
 #include <SDL3/SDL.h>
@@ -1411,10 +1412,22 @@ bool HostCopyToCard (const char *pHostPath, char *pCardPath, unsigned nSize)
     bool bCopied = false;
 #ifdef __APPLE__
     // A clone on APFS: instant, and no space taken until either side changes.
-    bCopied = copyfile (Real, Temp, 0, COPYFILE_CLONE | COPYFILE_DATA) == 0;
+    // CLONE_FORCE, not CLONE: CLONE falls back to a plain copy of its own,
+    // which it never syncs, wherever a clone is impossible (a FAT card,
+    // another volume); the copy below is the one that syncs.
+    if (copyfile (Real, Temp, 0, COPYFILE_CLONE_FORCE | COPYFILE_DATA) == 0)
+    {
+        const int nFD = open (Temp, O_RDONLY);
+        bCopied = nFD >= 0 && HostSyncFile (nFD);
+        if (nFD >= 0)
+        {
+            close (nFD);
+        }
+    }
 #endif
     if (!bCopied)
     {
+        unlink (Temp);
         FILE *pIn = fopen (Real, "rb");
         FILE *pOut = pIn != 0 ? fopen (Temp, "wb") : 0;
         bCopied = pOut != 0;
@@ -1427,8 +1440,8 @@ bool HostCopyToCard (const char *pHostPath, char *pCardPath, unsigned nSize)
         bCopied = bCopied && !ferror (pIn) && fflush (pOut) == 0;
         if (pOut != 0)
         {
-            bCopied = bCopied && fsync (fileno (pOut)) == 0;
-            fclose (pOut);
+            bCopied = bCopied && HostSyncFile (fileno (pOut));
+            bCopied = fclose (pOut) == 0 && bCopied;
         }
         if (pIn != 0)
         {
@@ -1441,6 +1454,9 @@ bool HostCopyToCard (const char *pHostPath, char *pCardPath, unsigned nSize)
         unlink (Temp);
         return false;
     }
+    // The rename is the directory's: synced too, or a stop could leave the
+    // image's blocks on the card and no name pointing at them.
+    HostSyncDirectory (s_Root);
     HostLog ("desktop", HostLogNotice, "Copied %s to %s", Real, pCardPath);
     return true;
 }

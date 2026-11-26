@@ -127,9 +127,11 @@ releases, okapia-installer's demonstration release installed whole).
 The rules are the installer's (okapia-installer), ported and tested on the host (`tests/host/check_rom.cpp`,
 with the ROMs of `qemu/sd-contents` when the tree has them; `tests/host/check_card.cpp` for the card).
 
-Files are **copied** into the workspace, cloned on APFS (`copyfile(COPYFILE_CLONE)`: instant, no space until either
-side changes), elsewhere read and written then `fsync`ed. The copy goes to a hidden `.okapia-copy` renamed when
-whole, and the preferences file is written beside and renamed, so an abrupt stop leaves the old state or the new one.
+Files are **copied** into the workspace, cloned on APFS (`copyfile(COPYFILE_CLONE_FORCE)`: instant, no space until
+either side changes), elsewhere read and written; either way synced with `F_FULLFSYNC` (`sync_desktop.cpp`). Not
+`COPYFILE_CLONE`: where a clone is impossible (a FAT card, another volume) it falls back to a copy of its own and
+never syncs it. The copy goes to a hidden `.okapia-copy` renamed when whole, the directory synced after the rename,
+and the preferences file is written beside and renamed, so an abrupt stop leaves the old state or the new one.
 A file already in the workspace is named, not copied again. *Continue*, once there is a workspace, goes on in the same
 process and window, as a board goes on from power-on: the log moves into the workspace, the preferences are read
 then (the engine reads them, after the welcome page), and the boot menu opens at once (`HostMenuReopen`). Going the
@@ -361,7 +363,11 @@ the host and the menu stay undefined and meet the shared objects at the final li
 - [ ] Mac OS 8.6's sound: no source ever opened (`0 sources`) while 7.6.1 on the PowerPC plays
 - [ ] The Mac's resolution following the window live: a guest-side extension (Display Manager), a study
 - [ ] The Macintosh's own sound heard (only the chime was checked), and traffic through slirp from a Mac OS with TCP/IP
-- [ ] A flush policy for the disk images (`F_FULLFSYNC` or `F_BARRIERFSYNC` in the seam), measured
+- [x] A flush policy for the disk images (2026-11-26): `sys_unix_desktop.cpp` compiles upstream's `sys_unix.cpp`
+      with `Sys_write` and `Sys_close` renamed, a barrier (`F_BARRIERFSYNC`) after every write to a writable image
+      and `F_FULLFSYNC` at its close; a write the host does not confirm is a failed write for the guest. A volume
+      repaired at startup is synced before the Mac writes on it
+- [ ] The cost of that policy measured (Speedometer's Disk, a Finder copy), and a power-cut test on a FAT card
 - [ ] The zone override; Linux build
 - [ ] ThreadSanitizer over the tick, input and picture threads
 
