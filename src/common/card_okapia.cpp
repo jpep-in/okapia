@@ -192,12 +192,11 @@ void CardRefineClock (void)
 /*
  *  Get the configured volumes into a state the Mac will accept
  *
- *  A Mac refuses to start from a volume whose MDB still says "in use", and that
- *  is exactly what an interrupted session leaves behind — on real hardware too.
- *  Repairing it is what a second bootable System would do; doing it ourselves
- *  is why a hard stop here costs the boot and not the data. It writes to the
- *  user's volume, so "hfsrepair false" turns it off and the Mac is then left to
- *  show the question-mark floppy, which is the honest alternative.
+ *  An interrupted session leaves the volume's MDB saying "in use" — on real
+ *  hardware too. The repair runs the HFS scavenge a second bootable System
+ *  would run on mounting it, so a hard stop costs nothing the scavenge cannot
+ *  undo. It writes to the user's volume, so "hfsrepair false" turns it off and
+ *  the volume is then handed to the Mac as it is.
  */
 
 // Does the inventory list this path as carrying a System folder? Unknown paths
@@ -311,18 +310,14 @@ bool CardPrepareVolumes (void)
             continue;
         }
         // Left marked in use when no repair is wanted (hfsrepair false), or when
-        // read-only was asked of the volume, which a repair would write. The Mac
-        // does not start from a volume marked in use (storage.md), so it is no
-        // longer the startup volume the model id and run-test.sh go by.
+        // read-only was asked of the volume, which a repair would write. It is
+        // handed to the Mac as it is, and stays the startup volume if it
+        // carries a System.
         if (!bRepair || bReadOnly)
         {
             CLogger::Get ()->Write (FROM, LogWarning,
-                            "%s: left as it is (%s), still marked in use: the Mac will not start from it",
+                            "%s: left as it is (%s), still marked in use and not scavenged",
                             pPath, bReadOnly ? "read-only" : "hfsrepair false");
-            if (strcmp (FirstBootable, pPath) == 0)
-            {
-                FirstBootable[0] = '\0';
-            }
             continue;
         }
         HfsRepair (pPath);

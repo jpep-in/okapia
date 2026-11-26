@@ -286,8 +286,8 @@ ICONDIR       = ../../assets/icons
 OTF           = $(FONTDIR)/texgyreheros-regular.otf $(FONTDIR)/texgyreheros-bold.otf
 
 # libhfs (Robert Leslie, GPLv2-or-later) reads and repairs HFS volumes. It is
-# what lets Okapia scavenge a volume left dirty by an interrupted session,
-# which is otherwise refused by MountVol. Its C files include no system headers
+# what lets Okapia scavenge a volume left dirty by an interrupted session.
+# Its C files include no system headers
 # of their own — everything is behind os_open/os_read/... in os.h — so os.c
 # compiles unchanged against newlib.
 HFS         = ../../external/hfsutils/libhfs

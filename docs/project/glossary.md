@@ -13,7 +13,7 @@
 | **Compositor** | `compositor_okapia.cpp`: converts the Mac's frame buffer to the output, scales by an integer, centres, and redraws only changed tiles. |
 | **DBDMA** | Descriptor-Based DMA, the Power Macintosh's DMA command lists; the 9500-family boot chime is stored with one. |
 | **Device memory** | Pages Circle maps with `ATTRINDX_DEVICE` (the GPU frame buffer among them): every access must be naturally aligned, so vectorised copies fault. |
-| **Dirty volume** | An HFS volume whose MDB `drAtrb` bit 8 is clear — "in use" — as any interrupted session leaves it. Mac OS refuses to boot from it. |
+| **Dirty volume** | An HFS volume whose MDB `drAtrb` bit 8 is clear — "in use" — as any interrupted session leaves it. Mac OS starts from it and says it was not shut down properly. See [Storage](../topics/storage.md). |
 | **`DIRECT_ADDRESSING`** | Basilisk's memory model: host address = Mac address + `MEMBaseDiff`. |
 | **`drAtrb`, `drLsMod`** | MDB fields: volume attributes (bit 8 = unmounted cleanly, image offset 1034) and last modification date. |
 | **EmulOp** | An illegal 68k opcode Basilisk uses to call into the emulator from patched ROM code (`M68K_EMUL_OP_*`). |

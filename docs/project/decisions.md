@@ -149,9 +149,9 @@
 
 ### Repair a dirty volume at boot with libhfs; never mark it clean ourselves
 
-- **Why**: a volume left "in use" is refused at boot by Mac OS (`badMDBErr`), not damaged. Mounting it
-  read-write with libhfs runs the HFS scavenge and remounts it clean. Setting the flag by hand would hide
-  real corruption.
+- **Why**: a volume left "in use" is not damaged; a kill leaves at most "MDB needs minor repair". Mounting it
+  read-write with libhfs runs the HFS scavenge and remounts it clean. Setting the flag by hand would hide real
+  corruption.
 
 ## Configuration
 

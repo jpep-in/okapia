@@ -8,9 +8,8 @@
  * referenced from cpufunctbl.o — so that is where the hook goes. Its argument is the opcode, which for an A-line trap *is* the trap
  * word — so this is the cheapest full view of what the guest asks the Toolbox.
  *
- * Written to find out what the Mac examines before refusing to start from a
- * volume marked in use: the answer should show up as the last few file-system
- * traps before it gives up.
+ * Written to watch the file-system traps the Mac issues on a volume marked in
+ * use: what MountVol answers shows up among the last of them.
  *
  * Off unless src/kernel/Makefile passes OKAPIA_TRACE=1.
  *

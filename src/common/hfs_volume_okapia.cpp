@@ -1,11 +1,9 @@
 /*
  * hfs_volume_okapia.cpp — look at the volume before handing it to the Mac.
  *
- * A Mac refuses to start from a volume whose Master Directory Block says it is
- * still in use: MountVol returns badMDBErr (-60) and the ROM falls through to
- * the question-mark floppy. That is a deliberate File Manager policy, and from
- * the outside it looks like an unexplained failure. Reading the MDB ourselves
- * costs two sector reads and turns it into a diagnosis.
+ * An interrupted session leaves a volume whose Master Directory Block says it
+ * is still in use. Reading the MDB ourselves costs two sector reads and puts
+ * that in the log before the Mac finds it.
  *
  * The same two mount modes cover the rest of this file. Read-only, libhfs
  * writes nothing at all — not even the scavenge (volume.c:1059) — so it can
@@ -122,7 +120,7 @@ static bool InspectHandle (void *fh, const char *pName, bool bQuiet)
     {
         CLogger::Get ()->Write (FROM, LogWarning,
                                 "%s: marked in use (drAtrb %04X) — the last session did not "
-                                "shut down, and MountVol would answer badMDBErr",
+                                "shut down",
                                 pName, (unsigned) nAtrb);
     }
     return false;

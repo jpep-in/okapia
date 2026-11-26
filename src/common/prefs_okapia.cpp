@@ -287,11 +287,11 @@ void AddPlatformPrefsDefaults(void)
 	// people who never asked for it is a bug, however correct its arithmetic.
 	PrefsReplaceInt32("mousedpi", 200);
 
-	// A Mac refuses to start from a volume whose MDB still says "in use", which
-	// is exactly what an interrupted session leaves behind — on real hardware
-	// too. Repairing it is what a second bootable System would do; doing it
-	// ourselves is why a hard stop costs the boot and not the data. It writes
-	// to the volume, so it is a preference and not a hard-coded policy.
+	// An interrupted session leaves the volume's MDB saying "in use" — on real
+	// hardware too. Repairing it is what a second bootable System would do;
+	// doing it ourselves is why a hard stop costs nothing the scavenge cannot
+	// undo. It writes to the volume, so it is a preference and not a
+	// hard-coded policy.
 	PrefsReplaceBool("hfsrepair", true);
 	PrefsReplaceBool("hfsinventory", true);
 
