@@ -45,7 +45,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | [Help](using/help.md) | ROMs, disk formats, compatible systems and troubleshooting |
 | [Advanced](using/advanced.md) | Manual setup, preferences and paths into the technical documentation |
 | [Architecture overview](using/architecture.md) | Shared engines and layers, Circle/Desktop hosts, available and planned platforms |
-| [Public benchmarks](using/benchmarks.md) | Coming soon: updated measurements, including the FPU |
+| [Public benchmarks](using/benchmarks.md) | Recorded Pi CPU/FPU and M4 FPU comparisons, configurations and limitations |
 | [Making Of](using/making.md) | Research, testing, AI assistance, upstream contributors and licences |
 | [About Okapia](using/about.md) | Jonathan Pepin’s account of why he started the project |
 | [System extensions](using/extensions.md) | Sound Manager and File System Manager requirements, shared by both startup guides |

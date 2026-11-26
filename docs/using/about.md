@@ -52,8 +52,8 @@ long investigations and attempts I put aside before returning to them months lat
 home-built benchmark tool eventually made the difficult failures visible. Claude helped me work through a
 breakthrough in that process.
 
-The gains deserve a proper explanation, with the machines, tests and limits recorded alongside them. I am
-preparing that for the [benchmarks page](benchmarks.md).
+The gains deserve a proper explanation, with the machines, tests and limits recorded alongside them. The
+[benchmarks page](benchmarks.md) now records the available CPU and FPU measurements with their configurations and limits.
 
 The technical challenge is enjoyable in itself, but I also like what it might enable: writing new applications
 for old systems, and perhaps giving them a few small everyday jobs again.

@@ -1,0 +1,57 @@
+---
+// Copyright (C) 2026 Jonathan Pepin
+// SPDX-License-Identifier: GPL-3.0-or-later
+const {data,index,tableHtml} = Astro.props;
+const titles = ['PI 4 / 68K TRANSLATOR','PI 4 / FLOATING POINT','APPLE M4 / FLOATING POINT'];
+const units = data.lower ? 'Guest ticks · shorter is faster' : 'Speedometer score · longer is faster';
+const headline = index === 0 ? data.gain.toFixed(1) + '× CPU' : index === 1 ? data.gain.toFixed(2) + '× average' : '−' + data.reduction + '% total time';
+---
+<figure class="bench-chart" style={`--grid-step:${100 / data.steps}%`}>
+  <header class="bench-top"><span class="bench-title">{titles[index]}</span><strong class="bench-gain">{headline}</strong></header>
+  <p class="bench-unit">{units}</p>
+  <div class="bench-legend"><span><i class="bench-before"></i>{data.labels[0]}</span><span><i class="bench-after"></i>{data.labels[1]}</span></div>
+  <div class="bench-axis" aria-hidden="true">{Array.from({length:data.steps+1},(_,i) => <span>{data.ceiling * i / data.steps}</span>)}</div>
+  <div class="bench-rows">
+    {data.rows.map(row => <div class="bench-row">
+      <div class="bench-row-heading"><strong>{row.name}</strong><span>{(data.lower ? row.before / row.after : row.after / row.before).toFixed(2)}×{data.lower ? ' faster' : ''}</span></div>
+      <div class="bench-pair" aria-label={`${row.name}: ${data.labels[0]} ${row.beforeLabel}; ${data.labels[1]} ${row.afterLabel}`}>
+        <div class="bench-series"><div class="bench-track"><span class="bench-bar bench-before" style={`width:${row.before / data.ceiling * 100}%`}></span></div><span class="bench-number">{row.beforeLabel}</span></div>
+        <div class="bench-series"><div class="bench-track"><span class="bench-bar bench-after" style={`width:${row.after / data.ceiling * 100}%`}></span></div><span class="bench-number">{row.afterLabel}</span></div>
+      </div>
+    </div>)}
+  </div>
+  {index > 0 && <p class="bench-total"><span>{index === 1 ? 'COMPUTED AVERAGE' : 'TOTAL · FIVE TESTS'}</span><strong>{data.summary.beforeLabel} <span>→</span> {data.summary.afterLabel}{data.lower ? ' ticks' : ''}</strong></p>}
+  <figcaption>Zero-based scale, shared across the plotted tests. Compare the paired bars within each test.</figcaption>
+  <details class="bench-raw"><summary>Raw numbers</summary><div set:html={tableHtml} /></details>
+</figure>
+<style>
+  .bench-chart { margin:28px 0 32px; padding:26px; border:1px solid #355a48; border-radius:12px; background:#12271f; color:#e2eee5; box-shadow:0 8px 25px #142e2010; font-variant-numeric:tabular-nums; }
+  .bench-top { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; }
+  .bench-title { font:700 .8125rem ui-monospace,SFMono-Regular,Consolas,monospace; letter-spacing:.05em; color:#a4bcac; }
+  .bench-gain { font-size:1.625rem; letter-spacing:-.03em; color:#b6f38d; }
+  .bench-chart .bench-unit { margin:8px 0 22px; font:400 .875rem ui-monospace,SFMono-Regular,Consolas,monospace; color:#b6cabc; }
+  .bench-legend { display:flex; flex-wrap:wrap; gap:9px 22px; font-size:.875rem; margin-bottom:26px; }
+  .bench-legend > span { display:flex; gap:8px; align-items:center; }
+  .bench-legend i { width:14px; height:10px; border-radius:2px; flex-shrink:0; }
+  .bench-before { background:repeating-linear-gradient(135deg,#839c92 0 3px,#697e75 3px 5px); }
+  .bench-after { background:#b6f38d; }
+  .bench-axis { display:flex; justify-content:space-between; padding-right:58px; color:#9bb6a6; font:400 .75rem ui-monospace,SFMono-Regular,Consolas,monospace; margin-bottom:10px; }
+  .bench-row { margin-bottom:20px; }
+  .bench-row-heading { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:8px; font-size:.9375rem; }
+  .bench-row-heading > span { color:#b6f38d; font:400 .8125rem ui-monospace,SFMono-Regular,Consolas,monospace; }
+  .bench-series { display:grid; grid-template-columns:minmax(0,1fr) 50px; gap:8px; align-items:center; }
+  .bench-track { height:23px; border-left:1px solid #72917f; background:repeating-linear-gradient(to right,transparent 0,transparent calc(var(--grid-step) - 1px),#73908130 calc(var(--grid-step) - 1px),#73908130 var(--grid-step)); display:flex; align-items:center; }
+  .bench-bar { display:block; height:14px; border-radius:0 2px 2px 0; }
+  .bench-number { text-align:right; font:400 .875rem ui-monospace,SFMono-Regular,Consolas,monospace; }
+  .bench-chart .bench-total { border-top:1px solid #355a48; padding-top:18px; margin:8px 0 20px; display:flex; gap:8px 20px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+  .bench-total > span { font:400 .75rem ui-monospace,SFMono-Regular,Consolas,monospace; color:#a4bcac; }
+  .bench-total strong { font-size:1.25rem; color:#b6f38d; }
+  .bench-total strong span { color:#a4bcac; }
+  .bench-chart figcaption { color:#b6cabc; font-size:.8125rem; line-height:1.5; }
+  .bench-raw { margin-top:18px; padding-top:14px; border-top:1px solid #355a48; font-size:.875rem; }
+  .bench-raw summary { cursor:pointer; color:#c9dfcd; }
+  .bench-raw div { overflow-x:auto; }
+  .bench-raw :global(table) { margin-top:16px; }
+  .bench-raw :global(th),.bench-raw :global(td) { border-color:#355a48; }
+  @media(max-width:420px) { .bench-chart { padding:18px 14px; } .bench-gain { font-size:1.45rem; } }
+</style>

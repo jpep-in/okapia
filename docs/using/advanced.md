@@ -17,6 +17,24 @@ The emulators’ authors and upstream projects remain the foundation; Okapia add
 Linux and Windows remain future desktop targets. The [desktop comparison](../topics/desktop.md#against-upstream-basilisk-ii-on-a-mac)
 records the implementation details and current validation limits.
 
+## The 68K translator and FPU
+
+The in-tree translator turns blocks of 68K instructions into AArch64 code, while retaining the interpreter for
+instructions it does not translate. It includes floating-point instruction handling through the shared
+**80-bit softfloat FPU**, including floating-point branches, register transfers and immediate operands.
+
+On **Apple silicon desktop builds**, the translator is compiled in; the workspace’s `jit` preference controls
+its use. On **Raspberry Pi**, the interpreter remains the default. The translator needs a build with
+`OKAPIA_JIT_ARM64=1` and `jit true` in `Okapia_Prefs`. It remains experimental while the System 7.1, restart and
+hardware durability checks are completed. SheepShaver’s **PowerPC engine remains interpreted**.
+
+The [benchmarks page](benchmarks.md) now presents the recorded Pi CPU/FPU results and an M4 FPU comparison,
+with the configuration and limits of each test. The older `macemu-jit` backend is kept for reference; it is a
+separate experiment from Okapia’s in-tree translator.
+
+**QuickDraw acceleration is set aside on `wip-quickdraw`.** It is not a current feature or an explanation for
+the published translator graphics scores. The translator can still speed up the original Macintosh drawing code.
+
 ## One foundation, two hosts
 
 The [architecture illustration](architecture.md) shows the layers: the two emulators, Okapia’s shared code, Circle

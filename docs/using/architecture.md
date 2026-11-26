@@ -9,6 +9,16 @@ desktop application and the Pi kernel. The selected startup disk determines whic
 Okapia’s shared layer handles Macintosh-facing video, sound, input, disks and timing. The common firmware supplies
 the welcome and boot-menu pages. Hardware-specific work stays in the host implementations.
 
+## Interpreting and translating
+
+The 68K engine can interpret instructions or translate blocks to AArch64. Translation belongs to the engine,
+above the Circle/Desktop host boundary, and calls the shared 80-bit softfloat FPU for floating-point work.
+Apple silicon desktop builds include the translator; the Pi interpreter remains the default and its translator
+is an experimental build option. PowerPC stays interpreted.
+
+The Pi engines run on core 0. Moving display work to another core remains a goal; the former QuickDraw worker
+has been set aside with the QuickDraw experiment. See [Advanced](advanced.md#the-68k-translator-and-fpu).
+
 ## Circle and Desktop
 
 **Circle** runs on the Raspberry Pi, with circle-stdlib supplying the C and C++ runtime. It gives Okapia access to

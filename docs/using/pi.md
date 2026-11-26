@@ -9,7 +9,8 @@ application prepares the card; it is not an operating system running on the Pi.
 
 The Pi 4 interpreter baseline measured over **five times a Quadra 650’s CPU performance** in Speedometer. This is
 the 68K CPU test, not a claim that every application or disk operation runs five times faster. See the
-[benchmark and method](../contributing/benchmarks.md#raspberry-pi-4-rev2).
+[benchmark and method](benchmarks.md). Experimental translator results are documented separately there;
+translation is not the default Pi configuration.
 
 - A **Raspberry Pi 4**, a suitable power supply, an HDMI screen, a USB keyboard and a USB mouse.
 - A microSD card and a reader connected to a computer.

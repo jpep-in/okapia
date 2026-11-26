@@ -86,10 +86,9 @@ are part of the Advanced content, not a mixed sidebar of guides and platforms.
 
 Advanced has a consistent tab strip above its page heading: **Overview · Architecture · Benchmarks · Making Of**. Overview is
 the existing introduction and setup reference, Architecture contains the stacked illustration, and Benchmarks
-currently has a Coming soon page awaiting updated measurements including the FPU. These are page links with
+presents the dated development CPU/FPU records, with explicit configurations and limitations. These are page links with
 `aria-current`, so normal keyboard navigation, direct URLs and browser history work. The tab strip stays at the
-same position across these shared pages; none has a Mac/Pi picker. Do not fill the new benchmark page with old or
-illustrative results while waiting for the updated data.
+same position across these shared pages; none has a Mac/Pi picker. Keep historical development runs distinct from packaged-release performance, and cite the technical benchmark record for every table.
 
 Making Of documents the work, AI assistance and upstream credits/licences in `docs/using/making.md`.
 About (`/about/`, linked at the right end of the primary menu and from the footer) is Jonathan Pepin's first-person account, sourced from
@@ -181,3 +180,19 @@ configuration. Preliminary translator results do not describe every public build
 - [Astro on GitHub Pages](https://docs.astro.build/en/guides/deploy/github/)
 - [GitHub Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
 - [Releases](release.md)
+
+## JIT documentation alignment (2026-11-26)
+
+The `wip-jit-qdgfx` changes through `1912420` are already ancestors of website merge `627897d`.
+This content update reflects those technical records without merging emulator code again. Advanced and Architecture
+now distinguish the in-tree translator, the reference macemu-jit backend and the interpreted PowerPC engine.
+Benchmarks replaces its placeholder with the dated Pi CPU comparison (6.53 → 35.01), the Pi FPU comparison
+(3.81 → 6.26) and M4 softfloat FPU timings (188 → 106 ticks). Each has its own configuration and sample count.
+The public homepage retains the interpreter’s >5× Quadra CPU baseline. The author’s preliminary ×20/×200 and GHz
+extrapolations stay withheld. QuickDraw and its worker are described as set aside on `wip-quickdraw`.
+
+The public benchmark page renders its three Markdown tables as retro-styled paired bar diagrams through
+`BenchmarkChart.astro`. `benchmark-charts.mjs` reads values directly from `docs/using/benchmarks.md`, so the charts
+and their expandable raw tables cannot acquire different numbers. Each plot starts at zero and uses one shared
+scale for its test rows. Derived FPU averages and summed M4 times are summary callouts, not additional test bars.
+Scores use longer-is-better; ticks use shorter-is-better. No animation or chart library is required.
