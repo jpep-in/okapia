@@ -142,6 +142,17 @@ check_platform.o: check_platform.cpp
 check_platform: check_platform.o $(PLATFORM_OBJS) $(HFS_OBJS)
 	$(CXX) -o $@ $^
 
+# Okapia_Prefs written beside and renamed: prefs_okapia.cpp compiled as the
+# desktop compiles it, with CardPath() pointing into a temporary folder.
+ph_prefs_okapia.o: $(CIRCLE)/prefs_okapia.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -DOKAPIA_HOSTED -MMD -MP -c -o $@ $<
+
+check_prefs_file.o: check_prefs_file.cpp
+	$(CXX) $(PLATFORM_CXXFLAGS) -DOKAPIA_HOSTED -MMD -MP -c -o $@ $<
+
+check_prefs_file: check_prefs_file.o ph_prefs_okapia.o p_prefs.o p_prefs_items.o p_video_sizes_okapia.o
+	$(CXX) -o $@ $^
+
 # The ROM rules and the disk verdicts (src/common/okapia_rom.cpp), pure.
 p_okapia_rom.o: $(ROOT)/src/common/okapia_rom.cpp
 	$(CXX) $(CXXFLAGS) -I$(ROOT)/src/common -MMD -MP -c -o $@ $<
@@ -274,13 +285,15 @@ check_fpu_core.o: check_fpu_core.cpp
 check_fpu_core: check_fpu_core.o fc_fpu_softfloat.o $(SOFTFLOAT_OBJS)
 	$(CXX) -o $@ $^
 
-check: check_geometry check_screen check_chooser check_pages check_platform check_rom check_card check_install check_blit \
+check: check_geometry check_screen check_chooser check_pages check_platform check_prefs_file check_rom check_card \
+       check_install check_blit \
        check_encoding check_net check_clock check_fpu check_fpu_core
 	./check_geometry
 	./check_screen
 	./check_chooser
 	./check_pages
 	./check_platform
+	./check_prefs_file
 	./check_rom
 	./check_card
 	./check_install
@@ -304,7 +317,7 @@ view: render_specimen
 
 clean:
 	rm -f *.o *.d render_specimen render_chooser render_pages check_geometry check_screen \
-	      check_chooser check_pages check_platform check_platform.tmp check_rom check_card check_install check_blit \
+	      check_chooser check_pages check_platform check_platform.tmp check_prefs_file check_rom check_card check_install check_blit \
 	      check_encoding check_fpu check_fpu_core make_large_volume \
 	      specimen*.ppm chooser*.ppm var*.ppm
 
