@@ -232,6 +232,8 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
       ([study](../notes/research/jit-68k.md#first-boot-2026-11-14))
 - [x] 68k translator (`OKAPIA_JIT_ARM64=1`, `patches/macemu/0012`): boots System 7.5.5 under QEMU and passes
       `run-test.sh` with `jit true` (2026-11-15)
+- [x] The code buffer bounded instruction by instruction: a block of sixty-four `MOVEM.W` near the end of the
+      buffer could be written past it (found in review, 2026-11-26); MacBench identical with a 128 KB buffer
 - [x] The translator on a Pi 4: System 7.6.1, Speedometer and MacBench timed, sessions ended with Shut Down, the
       tick count within 0.2 % of the clock (2026-11-15)
 - [ ] The translator, before it can be the default ([Decisions](../project/decisions.md#no-jit-by-default-two-experimental-ones)):
