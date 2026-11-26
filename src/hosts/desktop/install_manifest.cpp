@@ -409,6 +409,24 @@ bool VersionLess (const std::string &A, const std::string &B)
     }
 }
 
+// One name, for the parts of the manifest that become a folder or a file name
+// on the host (the release's version, a board's id, a zip): letters, digits,
+// '.', '-', '_' and '+' (a build of a modified tree), not starting with '.'. A manifest is downloaded, so
+// "../../LaunchAgents" must not reach a path.
+bool SafeComponent (const std::string &Name)
+{
+    if (Name.empty () || Name.size () > 64 || Name[0] == '.')
+        return false;
+    for (char c : Name)
+    {
+        const bool bOK = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                      || c == '.' || c == '-' || c == '_' || c == '+';
+        if (!bOK)
+            return false;
+    }
+    return true;
+}
+
 bool SafeCardName (const std::string &Name)
 {
     if (Name.empty () || Name[0] == '/' || Name[0] == '.' || Name.find ('\\') != std::string::npos
@@ -501,6 +519,11 @@ bool ManifestParse (const std::string &Text, TManifest *pOut, std::string *pErro
         *pError = "a manifest with no okapia.version";
         return false;
     }
+    if (!SafeComponent (pOut->Version))
+    {
+        *pError = "unsafe version in the manifest: " + pOut->Version;
+        return false;
+    }
     if (pOut->bNewerSchema)
     {
         // The rest may mean something else in that format: not read, and no
@@ -517,6 +540,12 @@ bool ManifestParse (const std::string &Text, TManifest *pOut, std::string *pErro
         pOut->Notes     = pOkapia->Text ("notes");
     }
     pOut->Archive = J.Text ("archive");
+    if ((!pOut->Board.empty () && !SafeComponent (pOut->Board))
+        || (!pOut->Archive.empty () && !SafeComponent (pOut->Archive)))
+    {
+        *pError = "unsafe board or archive name in the manifest";
+        return false;
+    }
     if (!Entries (J.Get ("files"), &pOut->Files, pError))
         return false;
     if (const TJson *pBoards = J.Get ("boards"))
@@ -528,6 +557,11 @@ bool ManifestParse (const std::string &Text, TManifest *pOut, std::string *pErro
             Board.Name = B.Text ("name", Board.Id.c_str ());
             Board.Archive = B.Text ("archive");
             Board.InstallerMin = B.Text ("installer_min");
+            if (!SafeComponent (Board.Id) || (!Board.Archive.empty () && !SafeComponent (Board.Archive)))
+            {
+                *pError = "unsafe board id or archive name in the manifest: " + Board.Id;
+                return false;
+            }
             if (!Entries (B.Get ("files"), &Board.Files, pError))
                 return false;
             pOut->Boards.push_back (Board);

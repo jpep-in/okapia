@@ -115,6 +115,20 @@ int main ()
         Expect (ManifestForBoard (M, "pi5", &R) && ManifestRefusal (R) == "installer:9.0",
                 "a board needing a newer Okapia is refused for that reason");
         Expect (!ManifestForBoard (M, "pi3", &R), "a board the release lacks is not offered");
+        // The version, a board's id and a zip's name become host paths
+        // (ReleaseFetch's cache): a manifest that climbs out of it is refused.
+        Expect (SafeComponent ("26.11.1") && SafeComponent ("261121-8b8bf89+ab12") && SafeComponent ("okapia-rpi4.zip") && !SafeComponent ("../x")
+                && !SafeComponent ("x/..") && !SafeComponent (".") && !SafeComponent ("") && !SafeComponent ("a/b"),
+                "a name the manifest gives is one safe component");
+        Expect (!ManifestParse ("{\"schema\":1,\"okapia\":{\"version\":\"../../../../LaunchAgents\"},\"boards\":[]}",
+                                &R, &Why),
+                "a version that climbs out of the cache is refused");
+        Expect (!ManifestParse ("{\"schema\":1,\"okapia\":{\"version\":\"26.11.1\"},"
+                                "\"boards\":[{\"id\":\"x/..\",\"files\":[]}]}", &R, &Why),
+                "a board id that climbs out of the cache is refused");
+        Expect (!ManifestParse ("{\"schema\":1,\"okapia\":{\"version\":\"26.11.1\"},"
+                                "\"boards\":[{\"id\":\"pi4\",\"archive\":\"../a.zip\",\"files\":[]}]}", &R, &Why),
+                "a board's zip outside the cache is refused");
         // The frozen core: whatever a later schema changes, an Okapia of today
         // still learns that the release exists and which app to update to.
         TManifest Later;

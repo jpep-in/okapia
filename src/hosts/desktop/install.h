@@ -138,6 +138,7 @@ std::string ManifestWrite (const TManifest &M);
 
 bool VersionLess (const std::string &A, const std::string &B);   // "0.9.1" < "0.10.0"
 bool SafeCardName (const std::string &Name);   // relative, no "..", no '\\', no leading '.'
+bool SafeComponent (const std::string &Name);  // one name: [A-Za-z0-9._+-], no leading '.'
 
 /*
  *  What installing would do, and doing it
