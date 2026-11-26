@@ -74,7 +74,9 @@ read-write runs `v_scavenge()` when `HFS_ATRB_UMOUNTED` is clear (`volume.c:440`
 
 1. `HfsInspect()` reads the unmount bit **before** any mount (mounting repairs), locating the volume as Basilisk
    does (`find_hfs_partition`), not as libhfs does.
-2. If it is clear and `hfsrepair` is on, `HfsRepair()` mounts read-write and unmounts:
+2. If it is clear, `hfsrepair` is on and the `disk` line has no `*` prefix, `HfsRepair()` mounts read-write and
+   unmounts. A volume left marked in use (read-only, or `hfsrepair false`) is logged and is no longer taken for the
+   startup volume, since the Mac will not start from it:
 
    ```
    okapia-hfs: marked in use (drAtrb 0000) — the last session did not shut down

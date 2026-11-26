@@ -310,20 +310,19 @@ bool CardPrepareVolumes (void)
         {
             continue;
         }
-        if (!bRepair)
+        // Left marked in use when no repair is wanted (hfsrepair false), or when
+        // read-only was asked of the volume, which a repair would write. The Mac
+        // does not start from a volume marked in use (storage.md), so it is no
+        // longer the startup volume the model id and run-test.sh go by.
+        if (!bRepair || bReadOnly)
         {
             CLogger::Get ()->Write (FROM, LogWarning,
-                            "%s: left as it is (hfsrepair false); the Mac will refuse it",
-                            pPath);
-            continue;
-        }
-        // Read-only was asked of the volume, and a repair writes it: it is
-        // left exactly as it is, and said so.
-        if (bReadOnly)
-        {
-            CLogger::Get ()->Write (FROM, LogWarning,
-                            "%s: left as it is (read-only); the Mac will refuse it",
-                            pPath);
+                            "%s: left as it is (%s), still marked in use: the Mac will not start from it",
+                            pPath, bReadOnly ? "read-only" : "hfsrepair false");
+            if (strcmp (FirstBootable, pPath) == 0)
+            {
+                FirstBootable[0] = '\0';
+            }
             continue;
         }
         HfsRepair (pPath);
