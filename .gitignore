@@ -7,6 +7,10 @@ roms/
 *.hfv
 # Local SD contents: disk images, ROMs and kernel images staged for QEMU
 qemu/sd-contents/
+# Apple system software fetched for study and the per-version images made from it,
+# and period driver disks: never committed (AGENTS.md, "no Apple system")
+systems/
+drivers/
 
 # Reference clones, fetched by script
 reference/

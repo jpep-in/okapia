@@ -17,6 +17,12 @@ compare, not a checksum, and no translated instruction is rewritten for it.
 flush_internals(), which every CINV and CPUSH handler already calls, is
 where the core tells the translator; FlushCodeCache() is the host's side.
 
+Nothing is checked while an instruction is emitted, so before each one
+compile_block keeps room for the largest a translated instruction emits
+and for the exits still to come; a block that would not fit ends early.
+A block found past the buffer anyway stops the emulator rather than run.
+JIT_ARM64_CODE_SIZE shrinks the buffer for a test that makes it fill.
+
 With the softfloat FPU (FPU_SOFTFLOAT), FPU instructions are translated
 too, against fpu/fpu_jit.h: a general operation, an FMOVE to or from
 memory or a data register is a call into the FPU core from inside the
@@ -612,10 +618,10 @@ index 00000000..f3886f05
 +#define LDAR_wX(Wt,Xbase,offset)  do { ADD_xxi(REG_WORK4,(Xbase),(offset)); _W(0x88DFFC00u | (REG_WORK4 << 5) | (Wt)); } while(0)
 diff --git a/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
 new file mode 100644
-index 00000000..37b20172
+index 00000000..bbadd455
 --- /dev/null
 +++ b/BasiliskII/src/uae_cpu_2021/jit_arm64/jit_arm64.cpp
-@@ -0,0 +1,2605 @@
+@@ -0,0 +1,2646 @@
 +/*
 + *  jit_arm64.cpp - 68k to AArch64 translator for the uae_cpu_2021 core
 + *
@@ -689,7 +695,12 @@ index 00000000..37b20172
 + */
 +
 +static uae_u32 *code_base, *code_ptr, *code_end;
-+static const size_t CODE_SIZE = 16 * 1024 * 1024;
++// A test build may shrink it (-DJIT_ARM64_CODE_SIZE=...) so that the buffer
++// fills, and blocks end early for want of room, many times in one run
++#ifndef JIT_ARM64_CODE_SIZE
++#define JIT_ARM64_CODE_SIZE (16 * 1024 * 1024)
++#endif
++static const size_t CODE_SIZE = JIT_ARM64_CODE_SIZE;
 +
 +static inline void emit_long(uae_u32 w) { *code_ptr++ = w; }
 +
@@ -2868,6 +2879,23 @@ index 00000000..37b20172
 +		}
 +}
 +
++// Room in the code buffer, in words. Nothing is checked while an instruction
++// is emitted, so before each one the block must still have room for the
++// largest any translated instruction emits (a MOVEM of sixteen registers
++// through a memory-indirect address is about 80 words) and for everything
++// that follows the last one: the block's own exit, one exit per stub, and
++// the stale-epoch exits. A block that would not fit ends early, at the
++// instruction it has not translated yet.
++static const size_t INSN_MAX_WORDS = 512;
++static const size_t EXIT_MAX_WORDS = 16;
++static const size_t TAIL_WORDS = 96;
++
++static size_t room_needed(size_t n_stubs)
++{
++	// The instruction about to be translated may add stubs of its own
++	return INSN_MAX_WORDS + TAIL_WORDS + (n_stubs + 8) * EXIT_MAX_WORDS;
++}
++
 +static Block *compile_block(uae_u32 pc)
 +{
 +	if ((size_t)(code_end - code_ptr) < 4096 || next_slot >= MAX_SLOTS)
@@ -2888,12 +2916,24 @@ index 00000000..37b20172
 +	unsigned n = 0;
 +	bool ended = false;
 +	while (n < MAX_BLOCK_INSNS) {
++		if ((size_t)(code_end - code_ptr) < room_needed(stubs.size()))
++			break;		// the block ends here, at cx.next, with room for its exits
 +		const Ctx saved = cx;
 +		uae_u32 * const saved_ptr = code_ptr;
 +		const size_t saved_stubs = stubs.size();
 +		const size_t saved_sites = sites.size();
 +		cx.pc = cx.next;
 +		const int r = translate_one(head);
++		if ((size_t)(code_ptr - saved_ptr) > INSN_MAX_WORDS) {
++			// A translator defect: the room kept for one instruction is too
++			// small. Said once; the tail's margin still holds it this time.
++			static bool said;
++			if (!said) {
++				said = true;
++				fprintf(stderr, "jit: %04x at %08x emitted %u words, more than %u\n",
++				        get_word(cx.pc), cx.pc, (unsigned)(code_ptr - saved_ptr), (unsigned)INSN_MAX_WORDS);
++			}
++		}
 +		if (r == 0) {
 +			// Not an instruction the translator knows: the interpreter's handler
 +			// runs it, from inside the block, and the block ends there because
@@ -2966,6 +3006,13 @@ index 00000000..37b20172
 +			B_i(head - code_ptr);
 +			patch_here(stale);
 +			emit_exit_hard(pc, true, EXIT_STALE);		// C goes back to the 68k form on the way out
++		}
++		if (code_ptr > code_end) {
++			// The room kept above was not enough: memory past the buffer is
++			// already written. Never carry on from there.
++			fprintf(stderr, "jit: block at %08x ran %u words past the code buffer\n",
++			        pc, (unsigned)(code_ptr - code_end));
++			abort();
 +		}
 +		jit_state.slot[slot] = jit_epoch;
 +		jit_stats.blocks++;
