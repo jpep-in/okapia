@@ -37,7 +37,7 @@ Files at the root:
 | `okapia.rom` | the 68k ROM (any name, set by `rom`) |
 | `powermac9600v1.rom` | a PowerPC ROM, if you want the PowerPC Macintosh (set by `romppc`) |
 | `*.image`, `*.img` | disk images; any name works |
-| `BasiliskII_Prefs` | [preferences](preferences.md), written with commented examples on the first boot if absent |
+| `Okapia_Prefs` | [preferences](preferences.md), written with commented examples on the first boot if absent |
 | `BasiliskII_XPRAM`, `SheepShaver_XPRAM` | each Macintosh's parameter RAM, written by Okapia |
 | `okapia.log`, `okapia-previous.log` | the log of this session and the previous one, written by Okapia |
 | `shared/` | the [shared folder](topics/shared-folder.md) |
@@ -89,7 +89,9 @@ firmware for its preferred mode instead.
 
 If something goes wrong, mount the card on another computer and read `okapia.log` (or
 `okapia-previous.log` after a restart): the kernel logs what the firmware granted, what it chose and why.
-Set `perfreport true` for counters every five seconds.
+The boot menu's **Logs** tab shows the same log without taking the card out. Tick *Performance counters* there
+(or set `perfreport true`) for counters every five seconds, and *Serial output* (`serial true`) to have the lines on the
+serial port too: it is off by default on a board.
 
 ## Under QEMU, without a board
 
@@ -110,7 +112,7 @@ no RTC, and accepts video modes a real Pi refuses: validate on hardware.
 
 | Symptom | Cause |
 |---|---|
-| Question-mark floppy | no bootable volume, or a volume left in use with `hfsrepair false` — see [Storage](topics/storage.md) |
+| Question-mark floppy | no bootable volume — see [Storage](topics/storage.md) |
 | A blank "Welcome to Macintosh" box on System 7.1 | the wrong `modelid` for that System; leave `modelidauto true` — see [68k engine](topics/engine-68k.md#model-id) |
 | "System 6.0.8 does not work with 32-bit addressing" after forgetting the PRAM | the startup disk fell back to the first `disk` line; pick the volume again in the boot menu |
 | No shared volume on the desktop under System 7.0 or 7.1 | install the File System Manager 1.2 extension — see [Shared folder](topics/shared-folder.md) |

@@ -8,7 +8,7 @@ that uses them cannot drift out of step with it: the identifiers are generated
 from the same rows as the text, so a key that is renamed or removed stops the
 build rather than showing an empty label at run time.
 
-Same habit as scripts/gen-keycodes.py and gen-font.py — nothing about the
+Same habit as scripts/gen-keycodes.py and gen-blob.py — nothing about the
 interface is typed twice.
 
     usage: gen-strings.py <out.cpp> <out-ids.h> <strings.tsv>
@@ -21,12 +21,17 @@ def identifier(key):
 
 
 def escape(text):
+    # In the table, the two characters \n are a line break: a cell holds one
+    # line, and a note that is one block of text cannot be read as paragraphs.
     out = []
-    for ch in text:
-        if ch == "\\" or ch == '"':
-            out.append("\\" + ch)
-        else:
-            out.append(ch)
+    for part_index, part in enumerate(text.split("\\n")):
+        if part_index:
+            out.append("\\n")
+        for ch in part:
+            if ch == "\\" or ch == '"':
+                out.append("\\" + ch)
+            else:
+                out.append(ch)
     return "".join(out)
 
 

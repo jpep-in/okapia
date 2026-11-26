@@ -18,9 +18,10 @@ Three changes, none of which alters what an existing port sees:
   and refresh rates. cscGetModeTiming already had a default, timingUnknown and
   valid, so the Monitors control panel shows the new sizes as it shows the
   custom one.
-- VModes grows from 64 entries to VIDEO_MODES_MAX, 128, and says so in the
-  header: fifteen sizes at six depths is 90 entries, and a port has to know
-  the capacity to stay inside it.
+- VModes grows from 64 entries to VIDEO_MODES_MAX, 139, and says so in the
+  header: twenty-three sizes at six depths (thirteen fixed, four of the
+  display's, six of the user's) is 138 entries and the end marker, and a
+  port has to know the capacity to stay inside it.
 
 Okapia offers both of its Macintosh the same list of sizes, and this is what
 lets the PowerPC one carry it.
@@ -34,7 +35,7 @@ index 678e5777..6ea6beba 100644
  };
  
 +// Room for every size a port offers at every depth, and the end marker.
-+enum { VIDEO_MODES_MAX = 128 };
++enum { VIDEO_MODES_MAX = 139 };
 +
  extern struct VideoInfo VModes[];	// List of available video modes
  

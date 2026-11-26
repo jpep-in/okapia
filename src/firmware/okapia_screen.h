@@ -167,4 +167,9 @@ TScreenReply ScreenEvent (TScreen *pScreen, const TEvent *pEvent);
 // itself — a default that must be shown as chosen before anyone has touched it.
 void ScreenOperate (TScreen *pScreen, int nIndex);
 
+// Puts the keyboard on a control, taking it from wherever it was — the page
+// laid out again keeps the control the hand was on rather than the one the
+// layout declared.
+void ScreenFocus (TScreen *pScreen, int nIndex);
+
 #endif

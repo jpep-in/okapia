@@ -41,6 +41,14 @@ case "$TARGET" in
     *) echo "usage: $(basename "$0") qemu|pi3|pi4|pi5" >&2; exit 1 ;;
 esac
 
+# The hole Circle reserves between the load address and the stacks, in MB. Not a
+# hardware limit (memorymap.h); circle-stdlib's default is 4 and Circle's own is
+# 2. The check is on _end, bss included, and it is a halt before any log exists
+# (sysinit.cpp), so it is set with room to spare: the 68k JIT alone adds 1.6 MB
+# of text and 4.9 MB of tables (docs/notes/research/jit-68k.md).
+KERNEL_MAX_SIZE_MB=16
+CONFIGURE_ARGS+=(--kernel-max-size "$KERNEL_MAX_SIZE_MB")
+
 # macOS ships Bash 3.2 (no mapfile) and BSD getopt (no --long): circle-stdlib's
 # configure needs GNU versions of both. install-tools.sh puts GNU getopt on PATH.
 BASH5="$(brew --prefix bash)/bin/bash"
@@ -66,11 +74,11 @@ STATE_PATHS=(
     src/kernel/engine-68k.o
     src/kernel/engine-ppc.o
     src/kernel/engine-ppc-renamed.o
-    src/firmware/circle/obj
-    src/firmware/circle/kernel8.img
-    src/firmware/circle/kernel8.elf
-    src/firmware/circle/kernel8.lst
-    src/firmware/circle/kernel8.map
+    src/hosts/circle/firmware/obj
+    src/hosts/circle/firmware/kernel8.img
+    src/hosts/circle/firmware/kernel8.elf
+    src/hosts/circle/firmware/kernel8.lst
+    src/hosts/circle/firmware/kernel8.map
 )
 
 # These two exist in git — each carries a .gitignore — so the directory has to
@@ -184,6 +192,8 @@ build_stamp ()
 {
     local tree
     cat "${REPO_ROOT}"/patches/circle-stdlib/*.patch 2>/dev/null | shasum | cut -d' ' -f1
+    # The reservation is compiled into newlib and Circle alike.
+    printf 'kernel-max-size %s\n' "$KERNEL_MAX_SIZE_MB"
     for tree in . libs/circle libs/circle-newlib libs/circle/addon/wlan/hostap; do
         printf '%s %s\n' "$(git -C "${STDLIB}/${tree}" rev-parse HEAD 2>/dev/null)" "$tree"
     done

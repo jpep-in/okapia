@@ -1,9 +1,9 @@
 # Input
 
 > USB keyboard and mouse presented to the Macintosh as ADB: the generated key table, the cross-core hand-over,
-> the 1 kHz drain, mouse resolution and acceleration on both engines. Main files: `src/circle/input_circle.cpp`,
-> `src/firmware/circle/okapia_input.cpp`, `src/circle/cpu_ticks_circle.cpp`,
-> `src/circle/sheepshaver/cpu_ticks_circle.cpp`, `scripts/gen-keycodes.py`, `patches/macemu/0004`.
+> the 1 kHz drain, mouse resolution and acceleration on both engines. Main files: `src/common/input_okapia.cpp`,
+> `src/hosts/circle/firmware/okapia_input.cpp`, `src/common/cpu_ticks_okapia.cpp`,
+> `src/common/sheepshaver/cpu_ticks_okapia.cpp`, `scripts/gen-keycodes.py`, `patches/macemu/0004`.
 
 ## Using it
 
@@ -131,7 +131,7 @@ from the emulation core every 512 drains and publishes it to the handler, which 
 - **The Toolbox is not called from the drain.** A stub that allocates re-enters the Memory Manager between two
   arbitrary instructions; a heap corrupted there surfaced once as a data abort in `DiskInterrupt()` a second and a
   half later. Call it from `idle_wait()`.
-- **A preference key missing from `prefs_circle.cpp`'s table is read and silently dropped.** A whole mouse
+- **A preference key missing from `prefs_okapia.cpp`'s table is read and silently dropped.** A whole mouse
   measurement was once made against a `mousedpi` that was never read.
 - **A new setting must not change what people who did not ask for it feel.** `mousedpi` briefly defaulted to 1000
   and made the mouse five times slower on 7.1; the default is 200, the Mac's own assumption.

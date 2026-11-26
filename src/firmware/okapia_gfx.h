@@ -34,6 +34,7 @@ enum TOkapiaColor
     ColorLtGray  = 3,           // separators and the scroller track
     ColorDim     = 4,           // disabled ink
     ColorDark    = 5,           // filled meters, where black would be too heavy
+    ColorPale    = 6,           // the tabs behind the one in front
     ColorCount
 };
 
@@ -114,9 +115,9 @@ void GfxTaper (TSurface *pSurface, float fX, float fY, float fLength, float fThi
 void GfxInvert (TSurface *pSurface, const TRect &rRect);
 
 // No synthetic styles. Bold was smeared and italic sheared while the face was
-// fixed pitch and single weight; the X11 family carries a real bold, and a real
-// oblique (helvO) if one is ever wanted. Faking either now would be worse than
-// the thing it imitates, and the theme picks the face anyway.
+// fixed pitch and single weight; TeX Gyre Heros carries a real bold, and a real
+// italic if one is ever wanted. Faking either would be worse than the thing it
+// imitates, and the theme picks the face anyway.
 unsigned GfxTextWidth (const TOkapiaFont *pFont, const char *pText);
 
 // How wide the ink actually is, side bearings left out. The advance is what

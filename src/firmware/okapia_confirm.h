@@ -39,6 +39,10 @@ struct TConfirm
     const char *pBody;
     const char *pYes;                   // the default button, on the right
     const char *pNo;                    // or 0 for a message with nothing to refuse
+    // A third answer, between the refusal and the assent, or 0. The shut down
+    // alert's Restart: one question about how the session ends, answered in
+    // one place.
+    const char *pOther;
 
     // One row of radio buttons under the sentence, or none when nChoices is 0.
     // nChoice is the one marked when the alert opens. They take clicks and
@@ -54,7 +58,8 @@ enum TConfirmAnswer
 {
     ConfirmWaiting,
     ConfirmYes,
-    ConfirmNo
+    ConfirmNo,
+    ConfirmOther
 };
 
 void ConfirmDraw (TSurface *pSurface, const TConfirm *pConfirm);

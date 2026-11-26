@@ -2,14 +2,22 @@
 
 > Putting the Macintosh on the local network, by cable or Wi-Fi. The Mac shares the Pi's MAC address and is a node
 > of its own: MacTCP or Open Transport, AppleTalk, a native SMB client such as Mamba, period browsers. Main files:
-> `src/circle/ether_circle.cpp` (the Mac's driver, per engine), `src/circle/board_net_circle.cpp` (the interface,
-> once for the board), `src/circle/wlan_circle.cpp` (Wi-Fi and its WPA supplicant),
-> `src/circle/net_config_circle.cpp` (the preferences, pure).
+> `src/common/ether_okapia.cpp` (the Mac's driver, per engine), `src/hosts/circle/board_net_circle.cpp` (the interface,
+> once for the board), `src/hosts/circle/wlan_circle.cpp` (Wi-Fi and its WPA supplicant),
+> `src/common/net_config_okapia.cpp` (the preferences, pure), `src/hosts/circle/wlan_hostap.c` (what the boot menu asks the
+> supplicant), `src/firmware/okapia_network.cpp` (the boot menu's Network page).
 
 ## Using it
 
-Three lines in `/BasiliskII_Prefs` ([Preferences](../preferences.md#network)), in the spirit of a BlueSCSI's
-`WiFiSSID` and `WiFiPassword`:
+**From the boot menu**: the **Network** page ([Boot menu](boot-menu.md#using-it)) chooses the connection — none, the
+Ethernet cable or the Wi-Fi — lists the Wi-Fi networks in range with a lock and four signal bars, and takes the
+password and the country. **Join** tries it there and then, and the line under the page says whether the access
+point took the key, before the Macintosh starts. Choosing a connection starts it at once if the board has none; once
+one is running, changing it needs Okapia to restart (Start reads **Save and restart**), since Circle cannot give a
+network device back. What the page changes is written when the Macintosh starts or the board shuts down.
+
+**Or by hand**, three lines in `/Okapia_Prefs` ([Preferences](../preferences.md#network)), in the spirit of a
+BlueSCSI's `WiFiSSID` and `WiFiPassword`:
 
 ```
 ether wlan
@@ -43,17 +51,21 @@ handshake completes; `Ethernet: link up (<speed>)` on a cable.
 
 The Mac's frames go out as they are through `CNetDevice::SendFrame()`, and every frame the interface receives is
 the Mac's, with the Pi's address as its own. A layer-2 bridge with a foreign address would need promiscuous mode,
-which `CNetDevice` does not have and Wi-Fi does not allow. Okapia runs no network stack of its own: anything it
-would want before the Mac starts (NTP, provisioning) must finish and hand the interface over.
+which `CNetDevice` does not have and Wi-Fi does not allow. Okapia runs no network stack of its own. What it asks
+itself goes beside the Mac's frames on the same address, told apart by a transaction number or a port of its own:
+today the time ([Clock and PRAM](clock-and-pram.md#time-from-the-network)), whose answers `BoardNetPoll()` takes
+out before the Mac's ring.
 
 ### The board's half, claimed once
 
 `board_net_circle.cpp` is in `SHARED_SRCS`: the device, the receive ring and, for Wi-Fi, the scheduler exist once for
-the life of the board, and both engines' `ether_circle.cpp` call into that one copy
+the life of the board, and both engines' `ether_okapia.cpp` call into that one copy
 ([Architecture](../project/architecture.md#resources-taken-once-for-the-life-of-the-board)).
 
-- **`BoardNetStart()`** (`board_net_circle.cpp:195`) reads the preferences on the first start of either Macintosh and
-  answers the same thereafter. Wired: the Pi 4's GENET (`CBcm54213Device`), else the first USB Ethernet device
+- **`BoardNetStart()`** (`board_net_circle.cpp:195`) reads the preferences on the first start of either Macintosh —
+  or earlier, when the boot menu's Network page asks — and answers the same thereafter. A start that found no
+  `ether` to obey is not spent (`BoardNetTried()`): the menu may choose a connection after a Macintosh ran without
+  one. A device that failed is final. Wired: the Pi 4's GENET (`CBcm54213Device`), else the first USB Ethernet device
   Circle registered — USB is attached before the Mac starts and not again, so it is there or not. Either way
   `UpdatePHY()` is called at once.
 - **The ring**: 64 slots of 1514 bytes, allocated at the first start (`board_net_circle.cpp:52`).
@@ -70,11 +82,11 @@ the life of the board, and both engines' `ether_circle.cpp` call into that one c
 
 ### The Mac's half, per engine
 
-`ether_circle.cpp` replaces `dummy/ether_dummy.cpp` in both engines. It is adapted from upstream's
+`ether_okapia.cpp` replaces `dummy/ether_dummy.cpp` in both engines. It is adapted from upstream's
 `Unix/ether_unix.cpp`, with the reception thread replaced by polling.
 
-- **`EtherPoll()`** (`ether_circle.cpp:413`) runs in each engine's 1 kHz seam, after `InputDrain()`
-  (`cpu_ticks_circle.cpp:141`, `sheepshaver/cpu_ticks_circle.cpp:134`). It polls the board and, when a frame waits,
+- **`EtherPoll()`** (`ether_okapia.cpp:413`) runs in each engine's 1 kHz seam, after `InputDrain()`
+  (`cpu_ticks_okapia.cpp:141`, `sheepshaver/cpu_ticks_okapia.cpp:134`). It polls the board and, when a frame waits,
   raises `INTFLAG_ETHER`; the Mac's interrupt empties the ring straight into a Mac-side packet
   (`EtherInterrupt()`, `:211`; `EtherIRQ()` on the PowerPC side, `:380`).
 - **No interrupt before the System asks for frames.** Basilisk's `EthernetPacket` allocates its buffer with
@@ -83,7 +95,7 @@ the life of the board, and both engines' `ether_circle.cpp` call into that one c
 - **68k**: upstream's dispatch to protocol handlers, in a fixed table of 16 rather than a `std::map`; 802.3 frames go
   to the handler for type 0 (AppleTalk Phase 2).
 - **PowerPC**: upstream's glue (`EtherInit`, `AO_*`, `EtherIRQ`). `ether_reset()` stays in
-  `sheepshaver/platform_bits_circle.cpp`, where it is the PowerPC Macintosh's restart signal
+  `sheepshaver/platform_bits_okapia.cpp`, where it is the PowerPC Macintosh's restart signal
   ([Startup and shutdown](startup-and-shutdown.md#restart-from-mac-os)).
 - **Every frame sent carries the interface's address as its source**, set again at send time.
 - **No UDP tunnel**: `ether_start_udp_thread()` refuses, so `udptunnel true` means no network.
@@ -96,7 +108,7 @@ Circle's own sample are supplied by `wlan_circle.cpp`:
 - **A scheduler.** The driver runs `wifireader` and `wifitimer` as Circle tasks (`ether4330.c:2616`), and the
   supplicant is a third. `WlanStart()` (`wlan_circle.cpp:279`) creates the `CScheduler` the first time Wi-Fi is asked
   for; the emulation thread becomes its main task, and the tasks run only when it yields: `WlanYield()` from
-  `BoardNetPoll()`, so from the engine seams and from the boot menu's loop (`okapia_firmware.cpp:697`, `:1234`).
+  `BoardNetPoll()`, so from the engine seams and from the boot menu's loop (`HostPoll()`, `okapia_menu.cpp:828`, `:1818`).
 - **A link layer for the handshake.** Upstream's `l2_packet_circle.cpp` reaches EAPOL frames through
   `CNetSubSystem`'s link layer (`l2_packet_circle.cpp:66-72`), which would take every IP and ARP frame meant for the
   Mac. `wlan_circle.cpp` defines every `l2_packet_*` symbol itself (`:227` on), so the linker never pulls upstream's
@@ -109,20 +121,57 @@ Circle's own sample are supplied by `wlan_circle.cpp`:
   `src/kernel/Makefile:271`): one name opens a file object read from memory (`wlan_circle.cpp:81`), every other file
   goes to FatFs.
 
-The configuration (`NetWpaConfigBuild()`, `net_config_circle.cpp`) gives the SSID in hex and the **key**, derived
+The configuration (`NetWpaConfigBuild()`, `net_config_okapia.cpp`) gives the SSID in hex and the **key**, derived
 from the passphrase with hostap's own `pbkdf2_sha1()`, never the passphrase: the supplicant's line reader cuts at a
-`#` that an earlier `"` fooled (`hostap/src/utils/config.c:66-84`). `tests/host/check_net.cpp` checks it.
+`#` that an earlier `"` fooled (`hostap/src/utils/config.c:66-84`). With no SSID it is the country alone
+(`NetWpaConfigNoNetwork()`): the supplicant runs, joins nothing and answers scans, which is how the boot menu lists
+networks before one is chosen. `tests/host/check_net.cpp` checks both.
+
+### What the boot menu asks the supplicant
+
+The networks in range, the state of the join and a new network without a restart all live in
+`struct wpa_supplicant`, whose layout depends on the `CONFIG_*` switches the library was built with. So
+`wlan_hostap.c` is C, compiled with `Makefile.circle`'s switches copied into `WLAN_HOSTAP_FLAGS`
+(`src/kernel/Makefile`), and exposes no hostap type (`wlan_hostap.h`):
+
+- **The interface pointer** is kept static in Circle's `main_okapia.c`, so `wpa_supplicant_add_iface()` is wrapped on
+  the final link and the wrap keeps what it returns.
+- **Scan**: a `MANUAL_SCAN_REQ`, which the supplicant honours with no network enabled. The page asks again every ten
+  seconds while nothing is joined. **Results**: the BSS table, signal in dBm, the privacy bit for the lock; the page
+  keeps one line per name at its strongest, drops hidden networks and sorts by signal (`NetworkSortSeen()`).
+- **Join**: `WlanApply()` rebuilds the configuration in memory and calls `wpa_supplicant_reload_configuration()`,
+  which reads it again through the same `f_open` wrap. **State**: `WPA_COMPLETED` is joined; a configured network
+  with `auth_failures` is a refused key.
+- **The menu lets the tasks run**: it waits in `CScheduler::MsSleep()` once a scheduler exists (`FwSleep()`,
+  `HostSleep()`, `okapia_host_circle.cpp`), not in `CTimer::MsDelay()`, which held them still.
 
 ### Resources
 
-The Pi 4 kernel with Wi-Fi is 3336 KB, under the 4 MB `KERNEL_MAX_SIZE`. The QEMU build compiles the Wi-Fi out
+The Pi 4 kernel with Wi-Fi is 3336 KB, under the 16 MB `KERNEL_MAX_SIZE`. The QEMU build compiles the Wi-Fi out
 (below), 2862 KB. Polling costs about 3% of guest speed under QEMU at idle with a USB adapter (24.7 against
 25.4 M opcodes/s, 2026-11-10), mostly QEMU's own USB: each poll submits a USB request. On the Pi 4's port a poll is
 a register read.
 
+### The bench
+
+`net_bench_circle.cpp` measures what the interface carries with no Macintosh in the way, against
+`scripts/netbench.py` on another machine. It is a measuring tool, so a normal kernel does not carry it: build with
+`$MAKE -C src/kernel OKAPIA_NETBENCH=1` (after `okapia-clean`); without it a `netbench` line only earns one line in
+the log saying it is ignored. `netbench <address>` in the preferences runs it once per power-on, before the
+window: the board takes the clock's DHCP lease (so `ntp` must name a server), finds the other machine by ARP, says
+`HELLO` on UDP 9000 until the script answers, then sends 1472-byte datagrams for the seconds asked and receives them
+for as long. Both ends print frames, Mbit/s and losses; the board's lines start `Network bench:`. `--rate` caps what
+the script sends, to find where the board starts to lose frames. The board paces its own sending: each frame its
+ring refuses spaces the next ones by an eighth more, so a handful of refusals find the rate the interface keeps. The datagrams carry no UDP checksum (RFC 768 allows
+it), so the frame is built once and only its sequence number changes.
+
+The bench for the Pi 4 by cable: the Pi straight into a Mac's USB Ethernet adapter, set by hand to `192.168.2.1`
+with no Internet Sharing, and `netbench 192.168.2.1 192.168.2.2` — the second address because nothing then serves
+DHCP. Internet Sharing works too, but only switched on **after** the link is up (Pitfalls).
+
 ## Status
 
-- [x] `ether_circle.cpp` with the Pi's MAC address shared, both engines (2026-11-10)
+- [x] `ether_okapia.cpp` with the Pi's MAC address shared, both engines (2026-11-10)
 - [x] `ether eth|wlan` decides; `nonet` ignored, with a line in the log (2026-11-10)
 - [x] Wired: Pi 4 GENET, USB Ethernet adapters; sending verified under QEMU — System 7.6 EtherTalk probes and NBP
       lookups on the wire, padded to 60 bytes (2026-11-10)
@@ -136,32 +185,72 @@ a register read.
       Freebox reports 1.2 Mbit/s; 103 frames a second reach the Mac, none dropped. The SE/30 with a BlueSCSI does
       115 KB/s (2026-11-11)
 - [x] Network counters every five seconds with `perfreport` (2026-11-11)
-- [ ] Trials on the Pi 4: DHCP by cable; a group rekey (an hour or more connected); reconnection after the access
+- [x] Pi 4 by cable to a Mac's USB Ethernet adapter (ASIX AX88179, which macOS 27 needs ASIX's driver for):
+      DHCP from Internet Sharing, NTP, and Mamba on System 7.6.1 at **2.2 to 2.5 MB/s** (40 MB in 18 s, 80 MB in
+      32 s) — sixteen times the Wi-Fi's. No frame dropped; the 68k interpreter ran at 27 to 32 M instructions a
+      second during the copy, against 35 M the most seen in the log (2026-11-12)
+- [x] The bench on the Pi 4 by cable (1000BASE-T, AX88179 on a Mac set by hand), datagrams of 1472 bytes for 10 s:
+      **sent 709 Mbit/s**, none lost, paced at last to one frame every 20.3 µs after 16 refusals by the ring
+      (1 Gbit/s is one every 12.3 µs); **received 936 Mbit/s**, 0.3 % lost. A first run without pacing read
+      104 Mbit/s: Circle logs every refused frame (`TX frame dropped`) on a 115,200-baud line, and 2,611 of them
+      measured the log. Either way the Macintosh's own 2.2 MB/s (18 Mbit/s) is far below both: the limit is the
+      emulated machine, not the network (2026-11-13)
+- [ ] The bench by Wi-Fi
+- [ ] Trials on the Pi 4: a group rekey (an hour or more connected); reconnection after the access
       point restarts
 - [ ] Wi-Fi drops a few seconds after joining while the Macintosh starts (below), then rejoins: understand it
 - [ ] Trials: Mamba under System 7.1 with MacTCP, against Samba; AppleTalk over Wi-Fi (802.3 frames through the
       Broadcom firmware)
 - [ ] PowerPC engine with Open Transport on Mac OS 8.6: compiled, never run
 - [ ] Restart from Mac OS five times and switch engines with the network on, free heap logged per round
-- [ ] The boot menu's Info page shows the network: interface, SSID, link
-- [ ] An extension to choose the network and type the password from the Mac, as BlueSCSI's Wi-Fi DA does; or a
-      Wi-Fi page in the boot menu
+- [x] The boot menu's Network page: connection, networks in range with lock and signal, password, country, Join
+      with the answer on the page; host checks and renders (2026-11-12)
+- [ ] The Network page tried on the Pi 4: scan, Join, a refused password, the cable's status
+- [ ] An extension to choose the network and type the password from the Mac, as BlueSCSI's Wi-Fi DA does
 - [ ] WPA3: Circle's supplicant is built without `CONFIG_SAE` (`Makefile.circle:77-85`)
-- [ ] Network brought up before the Mac only for bounded, optional work (NTP, provisioning), then handed to the Mac —
-      see [Clock and PRAM](clock-and-pram.md) and [Storage](storage.md#provisioning)
+- [x] Okapia's own question on the shared MAC: the time, in raw frames (DHCP, ARP, DNS, SNTP), told apart from the
+      Mac's by transaction number and port, in the background (`ClockNetTake()`, `net_clock.cpp`; [Clock and
+      PRAM](clock-and-pram.md#time-from-the-network)) (2026-11-12)
+- [ ] Network brought up before the Mac for provisioning, then handed to the Mac — see
+      [Storage](storage.md#provisioning)
 - [ ] slirp as an option, if isolation or NAT turns out to be wanted
 - [ ] AppleTalk enabled in the default PRAM, as Infinite Mac does (`ether_helpers.h`), so a System finds the network
       with no setting — see the [Infinite Mac study](../notes/research/infinite-mac.md)
 
 ## Pitfalls
 
+- **`netbench` holds up every start for as long as it waits**, before the window: the link (Wi-Fi associates in
+  about seven seconds), the lease, the other machine's ARP, the script. A card left with the line after the bench
+  measured a 22-second boot on 2026-11-15 — Wi-Fi joined, NTP answered, then ten seconds of ARP for a Mac no longer
+  on the cable. The waits are now 20 s for the lease, 15 s for the link and 2 s for ARP; the line belongs on the
+  card only while measuring, and a normal kernel no longer carries the bench at all (`OKAPIA_NETBENCH`). Without it
+  nothing on the network blocks the start but the Wi-Fi firmware's download
+  (about 0.7 s, in `BoardNetStart()`): association, DHCP and NTP run in the background.
+- **Internet Sharing on a Mac with an ASIX AX88179 adapter stops hearing the Pi when the link goes down and up.**
+  Sharing bridges the adapter (`bridge100`, its own MAC) and asks the adapter to take frames for the bridge; with
+  ASIX's DriverKit driver (2.4.0, macOS 27) that holds only if Sharing starts after the link is up. Every restart of
+  the Pi drops the link, and from then on the adapter hands macOS nothing addressed to the bridge — broadcasts pass,
+  so DHCP still works and the failure looks like everything else: DNS unanswered, the Macintosh's replies lost, no
+  error anywhere (`netstat -I en9`: a handful received against hundreds sent). Measured on 2026-11-12 by elimination:
+  the kernel of the evening before failed the same way, and switching Sharing on after the Pi was up made it work.
+
 - **Stock QEMU's `usb-net` never hands Circle a frame.** Circle's `doc/qemu.txt` says networking needs a patched QEMU;
   measured with QEMU 11.1: 40,000 polls, 20 frames sent from the host, none received. Sending works. The receive path
-  is proved instead by `NET_SELFTEST` in the trace build (`ether_circle.cpp`, [Testing](../contributing/testing-and-debugging.md#qemu-network)).
+  is proved instead by `NET_SELFTEST` in the trace build (`ether_okapia.cpp`, [Testing](../contributing/testing-and-debugging.md#qemu-network)).
 - **No Wi-Fi in the QEMU build**: with `NO_SDHOST` on a Pi 3 target the Wi-Fi's controller is the card's, and starting
   the chip would take the card away from the Mac. `WlanStart()` refuses at compile time.
 - **The Wi-Fi tasks run only when the emulation thread yields.** A loop that waits without calling `BoardNetPoll()`
   starves the supplicant and can lose the connection; the boot menu's two loops call it.
+- **The page writes the preferences in memory before it starts a connection** (`BoardNetStart()` reads them), so
+  what it compares against when saving must follow: comparing with the card's values, a cable started from the page
+  and the Wi-Fi chosen again looked unchanged, and the file was written with `ether eth` (Pi 4, 2026-11-12). And the
+  connection the card already names is started when the page is first turned to, not on a click: the list stayed
+  empty until a radio was changed.
+- **`wlan_hostap.c` must be compiled with the library's switches.** Read with others — or from C++ — every field of
+  `struct wpa_supplicant` after the first conditional one is read from the wrong place. A change to
+  `Makefile.circle`'s `DEFINE` owes the same change to `WLAN_HOSTAP_FLAGS`.
+- **`src/common` has a `config.h` of its own**, and a quoted include is looked for beside the including file first:
+  `wlan_hostap.c` names hostap's headers by their directory (`"wpa_supplicant/config.h"`).
 - **The supplicant must run for the whole session**, not only to join: routers renew the group key, typically every
   hour.
 - **Circle's driver refuses to join without a country** (`driver_circle.cpp:563`, "Country code not set").
@@ -171,7 +260,7 @@ a register read.
   `ReceiveFrame()` no longer submits a blocking bulk-IN with the cable out, which used to stall the caller — our
   1 kHz seam. The link state is now only what the last `UpdatePHY()` read, hence the call at start and every two
   seconds.
-- **Hidden Wi-Fi networks need Circle 51.1 or later**: `scan_ssid=1` (`net_config_circle.cpp`) was always written,
+- **Hidden Wi-Fi networks need Circle 51.1 or later**: `scan_ssid=1` (`net_config_okapia.cpp`) was always written,
   but Circle's supplicant driver made no directed scan before hostap `966cab4a`.
 - **Circle's supplicant reads its configuration through FatFs, not stdio** (`config_file.c:336`, `utils/config.h`): a
   `--wrap=fopen` linked, and the supplicant logged `Failed to open config file …, error: 11` on the board. The QEMU
@@ -203,6 +292,9 @@ a register read.
   supplicant could not read its configuration (the FatFs pitfall above); fixed by wrapping `f_open`, `f_gets` and
   `f_close`. Then: WPA2 joined on 5 GHz, DHCP after a restart of the Mac, ping 10/10 (14 to 379 ms), Wi-Fi held 48
   minutes until the next power-on and from it through the copy, and Mamba copied 37 MB at about 140 KB/s.
+- **2026-11-12** — The Network page of the boot menu, with the window turned into tabs. Starting the network from the
+  menu needed `BoardNetStart()` not to spend its one attempt on an absent `ether`, a supplicant that runs with no
+  network, and a menu loop that sleeps through the scheduler.
 
 ## References
 

@@ -33,14 +33,14 @@ mkdir -p "$(dirname "$IMAGE")" "$CONTENTS"
 # the next rebuild; this one lives in sd-contents/ and survives, which is what
 # makes a test card reproducible. An existing file is never touched — it is the
 # user's configuration by then.
-# The file is called BasiliskII_Prefs whichever Macintosh reads it: the
-# preferences are engine-agnostic by design (docs/preferences.md) and prefs_circle.cpp
+# The file is called Okapia_Prefs whichever Macintosh reads it: the
+# preferences are engine-agnostic by design (docs/preferences.md) and prefs_okapia.cpp
 # reads that one path from both.
-PREFS="${CONTENTS}/BasiliskII_Prefs"
+PREFS="${CONTENTS}/Okapia_Prefs"
 if [ ! -f "$PREFS" ]; then
-    cp "${REPO_ROOT}/qemu/BasiliskII_Prefs.default" "$PREFS"
+    cp "${REPO_ROOT}/qemu/Okapia_Prefs.default" "$PREFS"
     printf 'preferences: seeded %s from %s\n' "$PREFS" \
-        "qemu/BasiliskII_Prefs.default"
+        "qemu/Okapia_Prefs.default"
 fi
 
 # What has to fit, plus room for FAT structures and rounding.

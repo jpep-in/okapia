@@ -9,7 +9,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REF_DIR="${REPO_ROOT}/reference"
 
-# name | url | sparse-exclude | why you would want it
+# name | url | sparse-exclude (space-separated top-level directories) | why you would want it
 CATALOG='
 bmc64|https://github.com/randyrossi/bmc64.git||Full emulator on bare-metal Circle. The closest architectural model: emulation loop, timing, audio, framebuffer, USB, SD config.
 M5Tab-Macintosh|https://github.com/amcchord/M5Tab-Macintosh.git||Basilisk II on ESP32-P4. Dirty-tile video and SD flush strategy. READ ONLY: no declared licence, do not copy code.
@@ -21,7 +21,10 @@ infinite-mac|https://github.com/mihaip/infinite-mac.git|Images|Basilisk II and S
 BlueSCSI-v2|https://github.com/BlueSCSI/BlueSCSI-v2.git||SCSI device emulation from disk images on an RP2040. The durability model Okapia targets, and a Macintosh image sanity check worth copying. GPLv3, same as us.
 hfsutils|https://github.com/JotaRandom/hfsutils.git||HFS volume access (libhfs) and repair (hfsck), Robert Leslie 1996-1998, fork maintained by Pablo Lezaeta. GPLv2-or-later, so usable. libhfs scavenges a volume that was not unmounted cleanly, which is exactly the repair Okapia needs.
 supermario|https://github.com/elliotnunn/supermario.git||Macintosh ROM sources (the SuperMario dump of 1994-02-09) plus Elliot Nunn'"'"'s buildable patchsets. What the Mac actually does, in StartMgr, HFS, ADB, ShutDownMgr and Color QuickDraw. NO LICENCE DECLARED, Apple code: read it to understand behaviour, never copy a line of it into Okapia.
+quickdraw-1984|https://github.com/computerhistory/Historical-Source-Code-Quick-Draw-Repository.git||The original 1-bit QuickDraw (Bill Atkinson), as released by Apple through the Computer History Museum in 2010. The ancestor of supermario QuickDraw/Classic and of every name the Color QuickDraw hooks carry (BitBlt, RgnBlt, DrawSlab, StretchBits): read it for the design, not for what the Quadra ROM runs. Copyright Apple, non-commercial use only: never copy a line of it into Okapia.
 executor|https://github.com/autc04/executor.git||Executor (ARDI), a clean-room reimplementation of the Macintosh Toolbox in C++, MIT licensed and so GPLv3-compatible. src/quickdraw/ is where code may legitimately come from when a routine is moved to native ARM.
+pom68k|https://github.com/habib256/pom68k.git|scratchpad build-wasm|Hosted low-level 68k Macintosh emulator (Moira core, unpatched ROMs, real chips). Not an engine for us: read docs/BASILISK_ROM_NOTES.md (what the $067C ROM expects), its 80-bit softfloat FPU as an oracle for fpu_ieee, oracle/ (WinUAE differential fuzzing), its in-process AppleTalk. GPLv3; Moira MIT, softfloat GPLv2+. Cloned without scratchpad/ and build-wasm/.
+emu68|https://github.com/michalsc/Emu68.git||The 68k to AArch64 JIT built for AArch64 from the start (Michal Schulz, MPL-2.0), bare metal on a Raspberry Pi. Read for how it pins 68k registers in AArch64 registers across blocks, its block cache and its interrupts: see docs/notes/research/emu68.md. Not an engine for us as it stands (big-endian, guest address is host address, doubles for the FPU).
 '
 
 list() {
@@ -53,7 +56,10 @@ printf 'Cloning %s\n  %s\n' "$name" "$why"
 
 if [ -n "$exclude" ]; then
     git clone --depth 1 --filter=blob:none --sparse "$url" "$dest"
-    git -C "$dest" sparse-checkout set --no-cone '/*' "!/${exclude}/"
+    # exclude is a space-separated list of top-level directories.
+    patterns=('/*')
+    for dir in $exclude; do patterns+=("!/${dir}/"); done
+    git -C "$dest" sparse-checkout set --no-cone "${patterns[@]}"
 else
     git clone --depth 1 "$url" "$dest"
 fi

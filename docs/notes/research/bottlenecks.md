@@ -52,7 +52,7 @@ transcendental functions (`sinl`, `logl`, `expl`, `sqrtl`, `powl`… 20 imports 
 built at `-O0`** — `configure` gave the release branch no `-O` (`configure:356-361`); `sinl` stored and reloaded its
 argument on the stack. *Fixed by `patches/circle-stdlib/0001`; `fpu_selftest_extended()` must stay bit-identical.* The
 PowerPC half imports nothing from libm. A faster exact core (softfloat `floatx80`, which would also round at 64 bits
-between operations as a real 68881 does) remains a 5/5 project, only if real applications ask. Note the M4 native
+between operations as a real 68881 does) remains a 5/5 project, only if real applications ask. *(Since: done, rank 17; binary128 replaced on 2026-11-15.)* Note the M4 native
 Basilisk computes its FPU with MPFR (`MacOSX/config.h:834`), so the FPU line of the M4/Pi comparison compares
 libraries, not processors.
 
@@ -125,11 +125,11 @@ for S2. `spcflags` sharing a cache line with the PC is negligible at ≤ 1 kHz.
 | 14 | `SD_HIGH_SPEED` | sequential ×1.5–2 | 1 code, 3 validation | open |
 | 15 | Tail-call dispatch (`[[gnu::musttail]]`) | 5–25% | 4 | only if branch mispredictions exceed ~10% of cycles |
 | 16 | ExtFS listing cache | Finder O(N) | 3 | open |
-| 17 | Exact `floatx80` FPU core | FPU ×1.5–3 | 5 | only on demand; check the source's licence |
+| 17 | Exact `floatx80` FPU core | FPU ×1.5–3 | 5 | **done** (2026-11-15, `fpu_softfloat`, licences checked); on the Pi with the translator, FPU average 3.81 → 6.26 (2026-11-16) |
 | 18 | 2 MB blocks for Mac RAM (64 KB pages today) | 0–5% | 3 | only if TLB refills are high |
 | 19 | Handler layout, compact table, `-O3` on the engine only | ±5–10% | 2–3 | never `-O3` on frame buffer writers |
 | 20 | Pre-decoded blocks | ×1.2–1.8 | 5 | after 10 and 15; must hook `FlushCodeCache()` |
-| 21 | JIT (the `macemu-jit` backend) | ×2–8 | 5 | reopens "no JIT" and the non-executable heap — see [68k JIT](jit-68k.md) |
+| 21 | JIT | ×2–8 | 5 | the `macemu-jit` backend: parity at best (2026-11-14); our translator (`0012`, experimental): CPU ×5.4, integer ×10–16 (2026-11-15) — see [68k JIT](jit-68k.md) |
 
 ## Measurement protocol
 

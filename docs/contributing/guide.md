@@ -78,6 +78,9 @@ The target is Quadra-class on a small board, not a workstation.
 
 - Circle is GPL-3.0; Basilisk II and SheepShaver are GPL v2 **or later**; libhfs is GPL v2 or later. The combined work
   is distributed under **GPLv3** (`LICENSE`).
+- **One exception, not part of the kernel**: `tools/macbench/`, a guest application, is **MIT**
+  (`SPDX-License-Identifier: MIT`, its own `LICENSE`), so that any emulator or period machine can take it. MIT code
+  may enter the GPLv3 work; GPL code may not enter it.
 - **Apple ROMs and Systems** were never released and remain Apple's copyright; their status outside ownership of the
   original hardware is uncertain and depends on jurisdiction. Some neighbouring projects ship ROMs in their
   repository; **Okapia does not**: nothing is committed, nothing is rehosted, the user supplies their ROM, and a
@@ -85,7 +88,9 @@ The target is Quadra-class on a small board, not a workstation.
   startup chime.
 - Reference projects' licences decide what may be reused: BlueSCSI (GPLv3) and Snow (MIT) code may be; Infinite
   Mac's site (Apache-2.0) gives ideas, and its macemu fork (GPL, like ours) may be reused, rewritten to our
-  conventions; M5Tab (no licence) and Mini vMac (GPL v2 only) are read only.
+  conventions; M5Tab (no licence) and Mini vMac (GPL v2 only) are read only. pom68k (GPLv3; its Moira core MIT,
+  its softfloat GPLv2-or-later) may be reused, but it is a hosted, multithreaded, low-level emulator: what it offers
+  is ROM knowledge and test oracles, not code for our loop.
 
 ## Documentation
 

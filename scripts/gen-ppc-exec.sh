@@ -39,7 +39,7 @@ mkdir -p "${GEN}"
     -DAARCH=64 -mcpu=cortex-a53 -fsigned-char \
     -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L -DRASPPI=3 -DSTDLIB_SUPPORT=3 \
     -U__unix__ -U__linux__ -std=c++17 -w \
-    -I"${REPO_ROOT}/src/circle/sheepshaver" \
+    -I"${REPO_ROOT}/src/common/sheepshaver" \
     -I"${SS}/include" -I"${SS}/Unix" -I"${SS}/CrossPlatform" \
     -I"${SS}/kpx_cpu/include" -I"${SS}/kpx_cpu/src" \
     -I"${STDLIB}/include" -I"${STDLIB}/libs/circle/addon" \

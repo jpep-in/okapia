@@ -6,10 +6,14 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 
 #include "okapia_confirm.h"
+#include "okapia_datetime.h"
 #include "okapia_info.h"
+#include "okapia_journal.h"
+#include "okapia_network.h"
 #include "okapia_newvolume.h"
 #include "okapia_screen.h"
 #include "okapia_settings.h"
@@ -17,7 +21,9 @@
 
 void SettingsSample (TSettings *p);
 void InfoSample (TInfo *p);
+void NetworkSample (TNetwork *p);
 void ConfirmSample (TConfirm *p);
+void ShutDownSample (TConfirm *p);
 void NewVolumeSample (TNewVolume *p);
 
 static bool WritePPM (const char *pPath, const unsigned *pPixels, unsigned w, unsigned h)
@@ -74,6 +80,16 @@ int main (int argc, char **argv)
     if (!WritePPM (Path, px, w, h)) return 1;
     printf ("%s\n", Path);
 
+    TNetwork Network;
+    NetworkSample (&Network);
+    NetworkDraw (&s, &Network);
+    Settle (&s, NetworkWidgets);
+    NetworkRepaint (&s);
+    nAt = StrAppend (Path, sizeof Path, 0, pStem);
+    StrAppend (Path, sizeof Path, nAt, "-network.ppm");
+    if (!WritePPM (Path, px, w, h)) return 1;
+    printf ("%s\n", Path);
+
     TInfo Info;
     InfoSample (&Info);
     InfoDraw (&s, &Info);
@@ -81,6 +97,37 @@ int main (int argc, char **argv)
     InfoRepaint (&s);
     nAt = StrAppend (Path, sizeof Path, 0, pStem);
     StrAppend (Path, sizeof Path, nAt, "-info.ppm");
+    if (!WritePPM (Path, px, w, h)) return 1;
+    printf ("%s\n", Path);
+
+    // The log as the board writes it: the lines of a short boot.
+    static TJournal Journal;
+    JournalClear (&Journal);
+    static const char *const Lines[] =
+    {
+        "Sep 15 02:36:33.24 okapia-board: ARM clock: 1500 MHz, SoC at 41 C",
+        "Sep 15 02:36:33.27 emmc: Found a valid version 3.0x SD card",
+        "Sep 15 02:36:33.58 okapia-board: Logging to /okapia.log every few seconds",
+        "Sep 15 02:36:33.58 okapia: 256 MB RAM, model 5, CPU 68040, FPU yes, sound on",
+        "Sep 15 02:36:34.82 usbdev0-1: Using device/interface int3-1-1",
+        "Sep 15 02:36:35.17 okapia-output: Display 1920x1200, 32 bpp, pitch 7680",
+        "Sep 15 02:36:38.13 card: Boot volume: /machd76.image",
+        "Sep 15 02:36:38.14 okapia: /machd76.image: \"System\" says System 7.6.1, 68k",
+        "Sep 15 02:36:39.18 okapia: Macintosh idle: it has finished starting (6400 ms)"
+    };
+    for (unsigned i = 0; i < 3; i++)
+        for (const char *pLine : Lines)
+        {
+            JournalAppend (&Journal, pLine, (unsigned) strlen (pLine));
+            JournalAppend (&Journal, "\n", 1);
+        }
+    Journal.bSerial = false;
+    Journal.bCounters = true;
+    JournalDraw (&s, &Journal);
+    Settle (&s, JournalWidgets);
+    JournalRepaint (&s);
+    nAt = StrAppend (Path, sizeof Path, 0, pStem);
+    StrAppend (Path, sizeof Path, nAt, "-journal.ppm");
     if (!WritePPM (Path, px, w, h)) return 1;
     printf ("%s\n", Path);
 
@@ -104,11 +151,33 @@ int main (int argc, char **argv)
         {
             Confirm.nChoices = 0;
         }
+        // The note is the shut down alert, with its Restart.
+        if (Confirm.Level == ConfirmNote)
+        {
+            ShutDownSample (&Confirm);
+        }
         ConfirmDraw (&s, &Confirm);
         Settle (&s, ConfirmWidgets);
         ConfirmRepaint (&s);
         nAt = StrAppend (Path, sizeof Path, 0, pStem);
         StrAppend (Path, sizeof Path, nAt, Levels[i].pSuffix);
+        if (!WritePPM (Path, px, w, h)) return 1;
+        printf ("%s\n", Path);
+    }
+
+    // The date's (i): a note in paragraphs, with one answer.
+    {
+        TConfirm Help;
+        memset (&Help, 0, sizeof Help);
+        Help.Level  = ConfirmNote;
+        Help.pTitle = Str (StrClockGroup);
+        Help.pBody  = Str (StrClockHelp);
+        Help.pYes   = Str (StrOk);
+        ConfirmDraw (&s, &Help);
+        Settle (&s, ConfirmWidgets);
+        ConfirmRepaint (&s);
+        nAt = StrAppend (Path, sizeof Path, 0, pStem);
+        StrAppend (Path, sizeof Path, nAt, "-clock-note.ppm");
         if (!WritePPM (Path, px, w, h)) return 1;
         printf ("%s\n", Path);
     }

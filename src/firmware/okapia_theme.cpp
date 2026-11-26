@@ -449,6 +449,153 @@ static void DrawSeparator (TSurface *pSurface, const TRect &rRect, const TTheme 
     GfxHLine (pSurface, rRect.nX, rRect.nY, rRect.nWidth, ColorLtGray);
 }
 
+// A dotted line of squares one stroke wide, one stroke apart: the Finder's
+// Views control panel draws its groups so, in System 7, and on a black and
+// white screen a dotted black line is how a grey line was drawn.
+static void Dots (TSurface *pSurface, int nX, int nY, unsigned nLength, bool bAcross,
+                  unsigned nStroke)
+{
+    for (unsigned i = 0; i < nLength; i += 2 * nStroke)
+    {
+        const unsigned n = i + nStroke <= nLength ? nStroke : nLength - i;
+        GfxFill (pSurface, bAcross ? Rect (nX + (int) i, nY, n, nStroke)
+                                   : Rect (nX, nY + (int) i, nStroke, n), ColorBlack);
+    }
+}
+
+// A group: a dotted frame, and its name breaking the top line near the left,
+// as in the Views control panel ("Icon Views", "List Views"). The rectangle is
+// the group's whole band; the frame's top runs through the middle of the name.
+static void DrawGroup (TSurface *pSurface, const TRect &rRect, const char *pTitle,
+                       const TTheme *pTheme)
+{
+    const unsigned nStroke = pTheme->M.nStroke;
+    const unsigned nLine = pTheme->M.nLineHeight;
+    const int nTop = rRect.nY + (int) (nLine / 2);
+    const int nBottom = rRect.nY + (int) rRect.nHeight - (int) nStroke;
+    const int nRight = rRect.nX + (int) rRect.nWidth - (int) nStroke;
+    const unsigned nHigh = (unsigned) (nBottom - nTop) + nStroke;
+
+    Dots (pSurface, rRect.nX, nTop, rRect.nWidth, true, nStroke);
+    Dots (pSurface, rRect.nX, nBottom, rRect.nWidth, true, nStroke);
+    Dots (pSurface, rRect.nX, nTop, nHigh, false, nStroke);
+    Dots (pSurface, nRight, nTop, nHigh, false, nStroke);
+
+    if (pTitle != 0 && pTitle[0] != '\0')
+    {
+        const unsigned nPad = pTheme->M.nGap / 2;
+        const unsigned nText = GfxTextWidth (pTheme->pBodyFont, pTitle);
+        const unsigned nRoom = rRect.nWidth > 4 * pTheme->M.nGap
+                             ? rRect.nWidth - 4 * pTheme->M.nGap : rRect.nWidth;
+        const unsigned nWide = nText + 2 * nPad < nRoom ? nText + 2 * nPad : nRoom;
+        const TRect Name = Rect (rRect.nX + (int) pTheme->M.nGap, rRect.nY, nWide, nLine);
+        GfxFill (pSurface, Name, ColorWhite);
+        GfxTextBox (pSurface, pTheme->pBodyFont,
+                    Rect (Name.nX + (int) nPad, Name.nY, nWide - 2 * nPad, nLine),
+                    pTitle, ColorBlack, TextAlignLeft);
+    }
+}
+
+// The tabs stand on a rule and the chosen one opens onto the page under it —
+// the grammar of Mac OS 8's tab control, without its bevels: an outline, a
+// rounded top, and for the tabs behind a light fill and one step less height.
+// Grey is the only depth this theme allows itself, and it already means
+// "further away" on the desktop.
+//
+// Each tab is drawn as a rounded rectangle reaching a radius below the rule,
+// and that part is then wiped: the strip owns the band under the rule for
+// exactly that, so nothing is ever drawn outside the component's rectangle and
+// it can be redrawn on its own like any other.
+static void DrawTabs (TSurface *pSurface, const TRect &rStrip, const char *const *pLabels,
+                      unsigned nCount, int nChoice, unsigned nState, const TTheme *pTheme)
+{
+    const unsigned nRadius = pTheme->M.nButtonRadius;
+    const unsigned nStroke = pTheme->M.nStroke;
+    const int nBase = rStrip.nY + (int) pTheme->M.nTabHeight;
+    unsigned nStep = pTheme->M.nGap / 2;
+    if (nStep < 2 * nStroke)
+    {
+        nStep = 2 * nStroke;
+    }
+
+    // Above the rule, only as far as the tabs reach: what stands right of them
+    // in the strip (a desktop's update button) is drawn by itself, and a tab
+    // repainted alone must not wipe it.
+    {
+        const TRect Last = nCount != 0 ? ThemeTabRect (pTheme, rStrip, pLabels, nCount, nCount - 1)
+                                       : Rect (rStrip.nX, rStrip.nY, 0, 0);
+        const int nRight = Last.nX + (int) Last.nWidth + (int) nStroke;
+        GfxFill (pSurface, Rect (rStrip.nX, rStrip.nY, (unsigned) (nRight - rStrip.nX),
+                                 (unsigned) (nBase - rStrip.nY)), ColorWhite);
+    }
+
+    for (unsigned i = 0; i < nCount; i++)
+    {
+        if ((int) i == nChoice)
+        {
+            continue;
+        }
+        const TRect Full = ThemeTabRect (pTheme, rStrip, pLabels, nCount, i);
+        const TRect Shape = Rect (Full.nX, Full.nY + (int) nStep, Full.nWidth,
+                                  Full.nHeight - nStep + nRadius + nStroke);
+        GfxRoundFill (pSurface, Shape, nRadius, ColorPale);
+        GfxRoundFrame (pSurface, Shape, nRadius, Ink (nState), nStroke);
+        GfxTextBox (pSurface, pTheme->pBodyFont,
+                    Rect (Full.nX + (int) pTheme->M.nButtonPadX, Full.nY + (int) nStep,
+                          Full.nWidth - 2 * pTheme->M.nButtonPadX, Full.nHeight - nStep),
+                    pLabels[i], Ink (nState), TextAlignCenter);
+    }
+
+    TRect Front = Rect (0, 0, 0, 0);
+    if (nChoice >= 0 && (unsigned) nChoice < nCount)
+    {
+        Front = ThemeTabRect (pTheme, rStrip, pLabels, nCount, (unsigned) nChoice);
+        const TRect Shape = Rect (Front.nX, Front.nY, Front.nWidth,
+                                  Front.nHeight + nRadius + nStroke);
+        GfxRoundFill (pSurface, Shape, nRadius, ColorWhite);
+        GfxRoundFrame (pSurface, Shape, nRadius, Ink (nState), nStroke);
+        const TRect Label = Rect (Front.nX + (int) pTheme->M.nButtonPadX, Front.nY,
+                                  Front.nWidth - 2 * pTheme->M.nButtonPadX, Front.nHeight);
+        GfxTextBox (pSurface, pTheme->pBodyFont, Label, pLabels[nChoice], Ink (nState),
+                    TextAlignCenter);
+        if (nState & StateFocused)
+        {
+            // Round the words rather than round the tab: a ring outside the
+            // tab would cross the rule and run into the page below.
+            const unsigned nText = GfxTextWidth (pTheme->pBodyFont, pLabels[nChoice]);
+            const unsigned nWide = nText + pTheme->M.nGap < Label.nWidth
+                                 ? nText + pTheme->M.nGap : Label.nWidth;
+            const unsigned nHigh = pTheme->M.nLineHeight < Front.nHeight
+                                 ? pTheme->M.nLineHeight : Front.nHeight;
+            DrawFocusRing (pSurface,
+                           Rect (Label.nX + (int) (Label.nWidth - nWide) / 2,
+                                 Front.nY + (int) (Front.nHeight - nHigh) / 2, nWide, nHigh),
+                           0, 0, pTheme);
+        }
+    }
+
+    // Wipe what reached below the rule, then the rule itself — broken under the
+    // front tab, whose sides come down to meet it.
+    const int nUnder = nBase + (int) nStroke;
+    GfxFill (pSurface, Rect (rStrip.nX, nUnder, rStrip.nWidth,
+                             (unsigned) (rStrip.nY + (int) rStrip.nHeight - nUnder)),
+             ColorWhite);
+    if (Front.nWidth == 0)
+    {
+        GfxFill (pSurface, Rect (rStrip.nX, nBase, rStrip.nWidth, nStroke), ColorBlack);
+    }
+    else
+    {
+        const int nLeftEnd   = Front.nX + (int) nStroke;
+        const int nRightFrom = Front.nX + (int) Front.nWidth - (int) nStroke;
+        GfxFill (pSurface, Rect (rStrip.nX, nBase, (unsigned) (nLeftEnd - rStrip.nX), nStroke),
+                 ColorBlack);
+        GfxFill (pSurface, Rect (nRightFrom, nBase,
+                                 (unsigned) (rStrip.nX + (int) rStrip.nWidth - nRightFrom),
+                                 nStroke), ColorBlack);
+    }
+}
+
 /*
  *  The theme itself
  */
@@ -479,7 +626,8 @@ static const TThemeMetrics s_Base =
     20,     // nFieldHeight
     12,     // nProgressHeight
     14,     // nBodyHeight
-    16      // nTitleHeight
+    16,     // nTitleHeight
+    24      // nTabHeight — a little taller than a button: it carries a page
 };
 
 const TTheme OkapiaThemeBase =
@@ -506,8 +654,37 @@ const TTheme OkapiaThemeBase =
     DrawField,
     DrawProgress,
     DrawSeparator,
-    DrawFocusRing
+    DrawTabs,
+    DrawFocusRing,
+    DrawGroup
 };
+
+unsigned ThemeTabsHeight (const TTheme *pTheme)
+{
+    // The tabs, the rule, and the band under the rule their shapes reach into
+    // before it is wiped.
+    return pTheme->M.nTabHeight + pTheme->M.nStroke + pTheme->M.nButtonRadius;
+}
+
+TRect ThemeTabRect (const TTheme *pTheme, const TRect &rStrip, const char *const *pLabels,
+                    unsigned nCount, unsigned nIndex)
+{
+    // Set in from the edge by a gap, as Mac OS 8 did, and each sharing its
+    // outline with the next one: two tabs side by side have one line between
+    // them, not two.
+    int nX = rStrip.nX + (int) pTheme->M.nGap;
+    for (unsigned i = 0; i < nCount && i < THEME_TABS_MAX; i++)
+    {
+        const unsigned nWide = GfxTextWidth (pTheme->pBodyFont, pLabels[i])
+                             + 2 * pTheme->M.nButtonPadX;
+        if (i == nIndex)
+        {
+            return Rect (nX, rStrip.nY, nWide, pTheme->M.nTabHeight);
+        }
+        nX += (int) nWide - (int) pTheme->M.nStroke;
+    }
+    return Rect (0, 0, 0, 0);
+}
 
 /*
  *  Scaling
@@ -650,9 +827,10 @@ void ThemeMake (unsigned nScale16, TTheme *pOut)
     M.nProgressHeight = Scaled (B.nProgressHeight, nScale16, 4);
     M.nBodyHeight     = Scaled (B.nBodyHeight,     nScale16, 8);
     M.nTitleHeight    = Scaled (B.nTitleHeight,    nScale16, 8);
+    M.nTabHeight      = Scaled (B.nTabHeight,      nScale16, 10);
 
-    // The faces are picked from the ladder rather than magnified, which is the
-    // whole point of compiling several sizes in.
+    // The faces are drawn at these heights from their outlines, never
+    // magnified: text is the size the scale asks for at any scale.
     const TOkapiaFontSet *pBody  = FontNearest (M.nBodyHeight);
     const TOkapiaFontSet *pTitle = FontNearest (M.nTitleHeight);
     pOut->pBodyFont      = pBody->pRegular;
@@ -668,6 +846,10 @@ void ThemeMake (unsigned nScale16, TTheme *pOut)
     {
         M.nButtonHeight = nLine + 8;
     }
+    if (M.nTabHeight < nLine + 10)
+    {
+        M.nTabHeight = nLine + 10;
+    }
     if (M.nFieldHeight < nLine + 6)
     {
         M.nFieldHeight = nLine + 6;
@@ -676,6 +858,24 @@ void ThemeMake (unsigned nScale16, TTheme *pOut)
     {
         M.nLineHeight = nLine + 2;
     }
+    // A label is centred on its capitals (GfxTextTop), and a whole pixel
+    // either side is only possible when the band and the capitals have the
+    // same parity: otherwise one side gets a row more. The bitmap faces
+    // happened to agree; faces drawn at any height do not, so the bands do.
+    // A row less where the floor above allows it, a row more where it does
+    // not: at 640x480 the pages are laid out to the row.
+    const unsigned nCap = pOut->pBodyFont->nCapHeight;
+    unsigned *const Bands[] = { &M.nButtonHeight, &M.nTabHeight, &M.nFieldHeight,
+                                &M.nLineHeight };
+    const unsigned Floors[] = { nLine + 8, nLine + 10, nLine + 6, nLine + 2 };
+    for (unsigned i = 0; i < sizeof Floors / sizeof Floors[0]; i++)
+    {
+        if ((*Bands[i] - nCap) % 2 != 0)
+        {
+            *Bands[i] = *Bands[i] > Floors[i] ? *Bands[i] - 1 : *Bands[i] + 1;
+        }
+    }
+
     // After the line height's own floor, not before it: a menu item measured
     // against a value that is about to change is measured against nothing.
     if (M.nMenuRow < M.nLineHeight + 4)

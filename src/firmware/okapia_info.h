@@ -60,8 +60,7 @@ unsigned InfoWidgets (TWidget **ppList);
 // until the numbers were asked for.
 TRect InfoDialog (void);
 
-// The only thing this screen can be asked: to go away. It answers true for the
-// button that does it, so the caller has nothing to remember.
-bool InfoIsBack (int nIndex);
+// Whether the last InfoDraw ran out of room.
+bool InfoOverflowed (void);
 
 #endif

@@ -7,6 +7,8 @@
 #include "kernel.h"
 #include "okapia_firmware.h"
 #include "okapia_input.h"
+#include "okapia_circle.h"
+#include "okapia_card.h"
 #include <circle_glue.h>
 #include <circle/memory.h>
 #include <stdio.h>
@@ -19,39 +21,49 @@
 #include "prefs.h"
 #include "xpram.h"
 #include "spcflags.h"
-#include "hfs_volume_circle.h"
-#include "card_circle.h"
+#include "hfs_volume_okapia.h"
+#include "card_okapia.h"
+#include "clock_okapia.h"
 
 #define FROM "okapia"
 
-// From src/circle/main_circle.cpp
+// From src/common/main_okapia.cpp
 extern bool MacMemoryAllocate (uint32 nRAMSize);
 extern bool MacROMLoad (const char *pFileName);
 extern bool QuitRequested (void);
 
-// emul_op_hook_circle.cpp — the Macintosh going round again.
+// emul_op_hook_okapia.cpp — the Macintosh going round again.
 extern void MacRestartArm (void);
 extern bool MacRestarted (void);
 
-// input_circle.cpp — let go of the devices so the next InputInit() takes them.
+// input_okapia.cpp — let go of the devices so the next InputInit() takes them.
 extern void InputRelease (void);
 
-// From src/circle/tick_circle.cpp
+// From src/common/tick_okapia.cpp
 extern void TickInit (void);
 extern void TickStart (void);
 extern void TickStop (void);
 
-// From src/circle/input_circle.cpp
+// From src/common/input_okapia.cpp
 extern void InputInit (void);
 
+#ifdef EXECMEM_SELFTEST
+#include "execmem_circle.h"
+#endif
+
 #ifdef FPU_SELFTEST
+#ifdef FPU_SOFTFLOAT
+// The 68881's known answers and the digest tests/host/check_fpu pins.
+#include "fpu_selftest.h"
+#else
 // fpu_ieee.cpp (patches/macemu/0008). Declared here rather than in a header:
 // it exists only in a traced build and has exactly one caller.
 extern "C" int fpu_selftest_extended (uint32 *first);
 #endif
+#endif
 
 // Everything that used to be a constant here now comes from the preferences
-// file on the card (see src/circle/prefs_circle.cpp and README.md). What is
+// file on the card (see src/common/prefs_okapia.cpp and README.md). What is
 // left is the floor below which a Mac cannot start at all, so that a typo in
 // "ramsize" produces a message instead of a failed allocation.
 static const uint32 MIN_MAC_RAM = 4 * 1024 * 1024;
@@ -87,7 +99,9 @@ bool CKernel::Initialize (void)
     }
 
     LoadPreferences ();
-    ApplyTimeZone ();
+    // The zone, then the build time (clock_circle.cpp). The card raises it
+    // later, the network sets it once the interface is up.
+    ClockInitialize ();
 
     // 4. The Mac memory block, before any other driver allocates: Circle serves
     //    large blocks by walking forward through free space. The card driver is
@@ -108,6 +122,11 @@ bool CKernel::Initialize (void)
     {
         return false;
     }
+
+#ifdef EXECMEM_SELFTEST
+    // Mac RAM first, as everywhere; then before any other driver or the chime.
+    ExecMemSelfTest ();
+#endif
 
     // The chime, as early as it can know which ROM to take it from: it plays
     // from a timer while USB and the boot menu come up. Not again when the
@@ -135,7 +154,7 @@ bool CKernel::Initialize (void)
  *  Preferences
  *
  *  Nothing is decided here any more: PrefsInit() applies the defaults from
- *  src/circle/prefs_circle.cpp and then lets the card's BasiliskII_Prefs
+ *  src/common/prefs_okapia.cpp and then lets the card's Okapia_Prefs
  *  override them, in upstream's own format with upstream's own parser.
  */
 
@@ -154,46 +173,10 @@ void CKernel::LoadPreferences (void)
                     PrefsFindBool ("fpu") ? "yes" : "no",
                     PrefsFindBool ("nosound") ? "off" : "on",
                     (int) PrefsFindInt32 ("frameskip"));
-}
 
-/*
- *  Which hour to show
- *
- *  The build time is a UTC instant and Circle's clock reports UTC by default,
- *  but a Mac of this era has no notion of a time zone at all: its clock is
- *  local time and that is the end of it. So a Pi in Paris shows an hour or two
- *  behind, which looks like a stale build and is not.
- *
- *  The offset has to be applied before the time, because SetTime stores local
- *  seconds — setting the zone afterwards would move the log's idea of the hour
- *  and leave the Mac's untouched.
- */
-
-void CKernel::ApplyTimeZone (void)
-{
-    int nMinutes = (int) PrefsFindInt32 ("timezone");
-    if (nMinutes != 0)
-    {
-        if (   !CTimer::Get ()->SetTimeZone (nMinutes)
-            || !CTimer::Get ()->SetTime (OKAPIA_BUILD_TIME, FALSE))
-        {
-            CLogger::Get ()->Write (FROM, LogWarning, "timezone %d is out of range, staying on UTC",
-                            nMinutes);
-            nMinutes = 0;
-            // Back to UTC in the timer too, whichever of the two calls refused:
-            // CardRefineClock() reads the zone from the timer, and an offset
-            // accepted there and then abandoned here would put the two frames
-            // it compares an hour or two apart.
-            CTimer::Get ()->SetTimeZone (0);
-        }
-    }
-
-    // Circle's formatter has no %+d, so the sign is spelled out.
-    const unsigned nAbs = (unsigned) (nMinutes < 0 ? -nMinutes : nMinutes);
-    CLogger::Get ()->Write (FROM, LogNotice,
-                    "Clock: %s (UTC%s%u:%02u), from the build time — no RTC and no NTP yet",
-                    (const char *) *CTimer::Get ()->GetTimeString (),
-                    nMinutes < 0 ? "-" : "+", nAbs / 60, nAbs % 60);
+    // As soon as the card has said: what came before (the banner, the card)
+    // went out on the port, and a failure before this point is heard.
+    BoardSerialLog (SerialLogWanted ());
 }
 
 /*
@@ -279,9 +262,9 @@ void CKernel::PrepareSharedFolder (void)
     // ExtFSInit gives up silently on a path that is not a directory, so create
     // it rather than leave the Mac without a volume and no reason given.
     struct stat Stat;
-    if (stat (pPath, &Stat) != 0)
+    if (stat (CardPath (pPath), &Stat) != 0)
     {
-        if (mkdir (pPath, 0777) != 0)
+        if (mkdir (CardPath (pPath), 0777) != 0)
         {
             CLogger::Get ()->Write (FROM, LogWarning, "Shared folder %s: cannot create it", pPath);
             return;
@@ -353,14 +336,53 @@ bool CKernel::StartMacintosh (void)
     // Before InitAll: rom_patches.cpp reads modelid while patching the ROM.
     ApplyModelId ();
 
-    // Before InitAll, after the repair: see card_circle.h.
+    // Before InitAll, after the repair: see card_okapia.h.
     if (CardRepairOnly ())
     {
         return false;
     }
 
     CLogger::Get ()->Write (FROM, LogNotice, "Initialising the emulator");
-#ifdef FPU_SELFTEST
+#if defined(FPU_SELFTEST) && defined(FPU_SOFTFLOAT)
+    // The same checks as tests/host/check_fpu, on this board's compiler and
+    // processor: the answers known independently, then the digest of a fixed
+    // stream of operations, which must be the development machine's to the bit.
+    // Off unless OKAPIA_TRACE=1, because it is a fact about the build and not
+    // about this boot.
+    {
+        unsigned nFirst = 0;
+        floatx80 Got;
+        Got.high = 0;
+        Got.low = 0;
+        uint8_t nFlags = 0;
+        const unsigned nFailed = FpuCheckKnownAnswers (&nFirst, &Got, &nFlags);
+        const unsigned nStart = CTimer::Get ()->GetClockTicks ();
+        const uint64_t nDigest = FpuDigest (kFpuDigestCount);
+        const unsigned nMicros = CTimer::Get ()->GetClockTicks () - nStart;
+        if (nFailed == 0)
+        {
+            CLogger::Get ()->Write (FROM, LogNotice, "FPU: %u known answers right",
+                                    (unsigned) (sizeof s_FpuKnownAnswers / sizeof s_FpuKnownAnswers[0]));
+        }
+        else
+        {
+            CLogger::Get ()->Write (FROM, LogWarning,
+                                    "FPU: %u known answer(s) wrong, first \"%s\": %04x %016lx flags %02x",
+                                    nFailed, s_FpuKnownAnswers[nFirst].pWhat, Got.high,
+                                    (unsigned long) Got.low, nFlags);
+        }
+        unsigned nTaken = 0;
+        const unsigned nDiffer = FpuCheckFastPaths (200000, &nTaken);
+        CLogger::Get ()->Write (FROM, nDiffer == 0 ? LogNotice : LogWarning,
+                                "FPU: fast paths took %u of 600000 operations, %u differ from softfloat",
+                                nTaken, nDiffer);
+        CLogger::Get ()->Write (FROM, nDigest == kFpuDigestExpected ? LogNotice : LogWarning,
+                                "FPU: digest of %u operations %016lx in %u us, %s",
+                                kFpuDigestCount, (unsigned long) nDigest, nMicros,
+                                nDigest == kFpuDigestExpected ? "the same bits as the host"
+                                                               : "NOT the host's bits");
+    }
+#elif defined(FPU_SELFTEST)
     // Does a 68881 extended value survive a trip through an fpu_register?
     // The FPU's one property decidable without a Macintosh, and the one that
     // fails when the register is a double: eleven bits of mantissa go missing
@@ -385,6 +407,9 @@ bool CKernel::StartMacintosh (void)
     }
 #endif
 
+#ifdef OKAPIA_JIT
+    JitPrefsApply ();
+#endif
     if (!InitAll (0))
     {
         CLogger::Get ()->Write (FROM, LogError, "InitAll failed");
@@ -420,7 +445,7 @@ TOkapiaExit CKernel::Run (bool bSwitched)
 {
     // The Macintosh may go round more than once. A restart from Mac OS is a
     // reset of the 68000, and Basilisk's own opcode sits on that path
-    // (emul_op_hook_circle.cpp), so the emulator can be unwound and set up
+    // (emul_op_hook_okapia.cpp), so the emulator can be unwound and set up
     // again — which puts the firmware's window in front of every restart,
     // exactly where it is on a cold boot. That is the whole point: without it
     // the menu is reachable once per power-on and never again.
@@ -450,9 +475,12 @@ TOkapiaExit CKernel::Run (bool bSwitched)
         // window is the one that answered, and the firmware is shared, so it
         // still holds that answer. Cleared straight away, so a restart from
         // Mac OS opens the window as it always did.
+        FirmwareSetLogFlush (BoardLogFlush);
         const TFirmwareResult Result = bSwitched ? FirmwareBoot
                                                  : FirmwareRun (FirmwareEngine68k);
         bSwitched = false;
+        // The Journal page may have changed it.
+        BoardSerialLog (SerialLogWanted ());
 
         switch (Result)
         {
@@ -506,6 +534,11 @@ TOkapiaExit CKernel::Run (bool bSwitched)
         // Init680x0() takes a fresh one every time and nothing ever gives it
         // back (basilisk_glue.cpp:73). It is a few bytes, but an appliance is
         // meant to run for months and a few bytes per restart is still a leak.
+#ifdef OKAPIA_JIT
+        // uae_cpu_2026 sets its flags atomically on AArch64 and no longer
+        // declares the mutex it still creates.
+        extern B2_mutex *spcflags_lock;
+#endif
         B2_delete_mutex (spcflags_lock);
         spcflags_lock = 0;
 

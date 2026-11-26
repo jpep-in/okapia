@@ -4,13 +4,13 @@
 # Makefile — spike: link the whole Basilisk II core against Circle.
 #
 # The point is not a working kernel. It is the list of undefined symbols: exactly
-# what src/circle/ has to provide, measured rather than guessed.
+# what src/common/ and src/hosts/circle/ have to provide, measured rather than guessed.
 #
 include ../../external/circle-stdlib/Config.mk
 
 MACEMU  = ../../external/macemu/BasiliskII/src
 GEN     = ../../build/generated
-OKAPIA  = ../../src/circle
+OKAPIA  = ../../src/common
 CIRCLEH = ../../external/circle-stdlib/libs/circle
 
 # bincue.cpp needs SDL; it is an upstream option, off by default.

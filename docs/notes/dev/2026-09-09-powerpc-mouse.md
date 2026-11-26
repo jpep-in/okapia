@@ -16,7 +16,7 @@ unchanged. Measured after: **~950 Hz**, quantum settling near 7,000 and falling 
 intended behaviour.
 
 **Where the symbol must live.** `ppc_check_ticks_quantum` is declared in `ppc-cpu.hpp` (patched) and defined in
-`sheepshaver/cpu_ticks_circle.cpp`, both in the PowerPC half, so definition and reference are renamed together by the
+`sheepshaver/cpu_ticks_okapia.cpp`, both in the PowerPC half, so definition and reference are renamed together by the
 `ppc__` prefix and the link binds. **Defining it in a shared file would have broken**: the reference would have become
 `ppc__ppc_check_ticks_quantum` while the definition kept its bare name.
 
@@ -111,7 +111,7 @@ setting it to 1000 and making the mouse five times slower under 7.1.
 
 ### An undeclared preference key is read, then dropped, silently
 
-`mousedpi` had its default but no entry in `prefs_circle.cpp`'s table. The card's line was read, did nothing, and said
+`mousedpi` had its default but no entry in `prefs_okapia.cpp`'s table. The card's line was read, did nothing, and said
 nothing. **A whole measurement was made against it**: the pointer was judged at a tenth of the expected speed, described as
 "an extremely dirty ball mouse", and the same curve became "turbo" the moment the figure was actually read. Nothing in the
 curve had changed.
@@ -128,7 +128,7 @@ System fully up, nothing of ours half done. Four twenty-second runs, clean.
 
 `CUserTimer` connects `ARM_IRQ_TIMER1`, and `interrupt.cpp:145` asserts `m_apIRQHandler[nIRQ] == 0`. A Circle assertion
 halts the board — which under QEMU looks like the emulator quitting on its own, and that is exactly how it was reported:
-"it crashes, maybe just QEMU quitting". The guard existed, but in `tick_circle.cpp`, which is in `PLATFORM_SRCS` and so
+"it crashes, maybe just QEMU quitting". The guard existed, but in `tick_okapia.cpp`, which is in `PLATFORM_SRCS` and so
 **compiled once per engine**: each Macintosh had its own "already armed" and neither saw the other's. The claim now lives in
 `hal_circle.cpp` (`SHARED_SRCS`), the timer and its interrupt taken once for the life of the board and the handler swapped —
 the pattern of the single mouse registration and the single frame buffer. Confirmed after a full 68k → restart → PowerPC

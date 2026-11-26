@@ -9,6 +9,9 @@
 # as the boot disk, so a second System can be regression-tested without
 # disturbing the card you actually use.
 #
+# OKAPIA_EXTRA_PREFS='jit true' adds those lines (\n separates them) to
+# the throwaway card's preferences, creating the file for a standalone image.
+#
 # The run works on a copy of qemu/sd.img — not to look away from corruption, but
 # to be able to see it. On the master image damage accumulates across runs and
 # nothing is attributable; from a known-good copy, whatever fsck_hfs reports was
@@ -53,7 +56,7 @@ trap cleanup EXIT
 
 if [ -n "$IMAGE" ]; then
     [ -f "$IMAGE" ] || { echo "No such image: $IMAGE" >&2; exit 1; }
-    # A card with no BasiliskII_Prefs falls back to /machd76.image, so the image
+    # A card with no Okapia_Prefs falls back to /machd76.image, so the image
     # under test takes that name on the throwaway card. Renaming here rather
     # than writing preferences keeps the test from changing what it is testing.
     command -v mformat >/dev/null || { echo "mtools missing: brew install mtools" >&2; exit 1; }
@@ -66,6 +69,14 @@ if [ -n "$IMAGE" ]; then
     printf 'testing %s on a %s MB card\n' "$(basename "$IMAGE")" "$POW"
 else
     cp "$SD" "$CARD"
+fi
+if [ -n "${OKAPIA_EXTRA_PREFS:-}" ]; then
+    if [ -z "$IMAGE" ]; then
+        mcopy -i "$CARD" ::Okapia_Prefs "${WORK}/prefs"
+    fi
+    printf '\n%b\n' "$OKAPIA_EXTRA_PREFS" >> "${WORK}/prefs"
+    mcopy -i "$CARD" -o "${WORK}/prefs" ::Okapia_Prefs
+    printf 'preferences added to the card: %s\n' "$OKAPIA_EXTRA_PREFS"
 fi
 
 qemu-system-aarch64 -M raspi3b -kernel "$KERNEL" -serial stdio -display none \

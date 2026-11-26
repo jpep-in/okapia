@@ -35,10 +35,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # 0xFE000000, so the wrong build does not fail — it goes quiet. Say so instead.
 okapia_require_target "$REPO_ROOT" qemu "$(basename "$0")" || exit 1
 
-KERNEL="${REPO_ROOT}/src/firmware/circle/kernel8.img"
+KERNEL="${REPO_ROOT}/src/hosts/circle/firmware/kernel8.img"
 OUT="${REPO_ROOT}/build/specimen.ppm"
 
-"$MAKE" -C "${REPO_ROOT}/src/firmware/circle" >/dev/null
+"$MAKE" -C "${REPO_ROOT}/src/hosts/circle/firmware" >/dev/null
 [ -f "$KERNEL" ] || { echo "No specimen kernel." >&2; exit 1; }
 
 WORK="$(mktemp -d -t okapiaspec)"

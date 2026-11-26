@@ -1,0 +1,108 @@
+compemu_support: a guest cache flush revalidates only the translations it can have changed
+
+flush_icache_range(start, size), which the BlockMove and FlushInstructionCache
+traps reach through FlushCodeCache(), threw its range away and called the
+whole-cache flush. Under lazy invalidation that sends every active block back
+to "needs checking", so each of the hundreds of flushes a second System 7.6.1
+asks for makes the next entry of every hot block recompute its checksum — on a
+Raspberry Pi 4, half of the dispatcher's entries after the escalation fix are
+check_checksum calls.
+
+The range is exact and the blocks carry their source spans, so only the blocks
+whose spans overlap it go back to "needs checking" and onto the dormant list,
+the same marking flush_icache_lazy() gives all of them. Blocks without spans
+(ROM) and blocks elsewhere stay active. The hard policy is unchanged, and the
+line and page forms of CINV and CPUSH (scope bits 4:3 = 01, 10), which the
+68040 Mac OS executes with every BlockMove, take the same path with their
+(An) range; CINVA/CPUSHA still flush everything. Counted under QEMU, boot of
+System 7.1: about 8,500 whole-cache flushes in 13 s, each marking about 118
+active blocks, next to 8,000 FlushCodeCache() calls of 670 bytes on average.
+
+Only in a: .git
+diff --git a/BasiliskII/src/uae_cpu_2026/compiler/compemu_support.cpp b/BasiliskII/src/uae_cpu_2026/compiler/compemu_support.cpp
+--- a/BasiliskII/src/uae_cpu_2026/compiler/compemu_support.cpp
++++ b/BasiliskII/src/uae_cpu_2026/compiler/compemu_support.cpp
+@@ -51,9 +51,7 @@
+ 
+ void flush_icache_range(uint8 *start, uint32 size)
+ {
+-	(void)start;
+-	(void)size;
+-	flush_icache_bridge();
++	flush_icache_range_checked(start, size);
+ }
+ 
+ void jit_abort(const char *format, ...)
+diff --git a/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp b/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp
+--- a/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp
++++ b/BasiliskII/src/uae_cpu_2026/compiler/compemu_support_arm.cpp
+@@ -2216,6 +2216,7 @@
+ static void flush_icache_lazy(int);
+ static void flush_icache_none(int);
+ static inline void flush_icache_architectural(int); static inline void reset_lists(void);
++static inline void flush_icache_range_checked(uae_u8*, uae_u32);
+ 
+ #ifdef JIT_DEBUG_MEM_CORRUPTION
+ // JIT Page 0 DMA Guard
+@@ -4628,8 +4629,20 @@
+     /* CINV and CPUSH use one architectural transition contract.  The
+        canonical core invalidates translated code only for instruction-cache
+        forms (bit 7); data-cache-only forms have no additional host state. */
+-    if (opcode & 0x80)
+-        flush_icache_architectural(0);
++    if (opcode & 0x80) {
++        /* Bits 4:3 are the scope: 01 a line (16 bytes), 10 a page, 11 the whole
++           cache. The line and the page are addressed by (An), so only the
++           translations over that range can be stale. A page is taken as 8 KB,
++           the larger of the 68040's two sizes. */
++        const unsigned scope = (opcode >> 3) & 3;
++        if (scope == 1 || scope == 2) {
++            const uae_u32 size = scope == 1 ? 16 : 0x2000;
++            const uae_u32 addr = m68k_areg(regs, opcode & 7) & ~(size - 1);
++            flush_icache_range_checked((uae_u8*)get_real_address(addr, 0, sz_byte), size);
++        } else {
++            flush_icache_architectural(0);
++        }
++    }
+     m68k_incpc(2);
+ }
+ 
+@@ -8950,6 +8963,38 @@
+         flush_icache_lazy(reason);
+     else
+         flush_icache_hard(reason);
++}
++
++/* The guest flushed [start, start + size): FlushCodeCache() from the BlockMove
++   and FlushInstructionCache traps, which name the range they touched. Only the
++   translations whose source overlaps it can be stale, so only those go back to
++   "needs checking" (and to the dormant list, as flush_icache_lazy() does for all
++   of them); the others stay active and are entered without a checksum. Policy
++   unchanged where it was hard: that still discards everything. */
++static inline void flush_icache_range_checked(uae_u8 *start, uae_u32 size)
++{
++    if (!(jit_strict_full_jit_env() || lazy_flush)) {
++        flush_icache_hard(3);
++        return;
++    }
++    if (size == 0)
++        return;
++
++    blockinfo* bi = active;
++    while (bi) {
++        blockinfo* next = bi->next;
++        if (bi->status == BI_ACTIVE && jit_write_overlaps_checksum(bi, start, size)) {
++            const uae_u32 cl = cacheline(bi->pc_p);
++            if (bi == cache_tags[cl + 1].bi)
++                cache_tags[cl].handler = (cpuop_func*)popall_check_checksum;
++            bi->handler_to_use = (cpuop_func*)popall_check_checksum;
++            set_dhtu_validated(bi, bi->direct_pcc);
++            bi->status = BI_NEED_CHECK;
++            remove_from_list(bi);
++            add_to_dormant(bi);
++        }
++        bi = next;
++    }
+ }
+ 
+ #endif /* JIT */

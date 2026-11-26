@@ -38,7 +38,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | Page | What it answers |
 |---|---|
 | [Getting started](getting-started.md) | Hardware, the SD card, ROMs, the first boot |
-| [Preferences](preferences.md) | Every keyword of `BasiliskII_Prefs`, including those that do nothing here |
+| [Preferences](preferences.md) | Every keyword of `Okapia_Prefs`, including those that do nothing here |
 
 ### Topics
 
@@ -46,7 +46,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 |---|---|
 | [Startup and shutdown](topics/startup-and-shutdown.md) | Power-on, engine switch, restart, shut down |
 | [Boot menu](topics/boot-menu.md) | The Okapia firmware: chooser, settings, UI toolkit, translations |
-| [68k engine](topics/engine-68k.md) | Basilisk II: CPU, FPU, ROM, model ID, performance |
+| [68k engine](topics/engine-68k.md) | Basilisk II: CPU, FPU, the experimental translator, ROM, model ID, performance |
 | [PowerPC engine](topics/engine-powerpc.md) | SheepShaver: CPU, memory layout, ROMs, integration |
 | [Display](topics/display.md) | Outputs, EDID, resolutions, the compositor |
 | [Sound](topics/sound.md) | Outputs, volume, the audio pump, the startup chime |
@@ -54,6 +54,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | [Storage](topics/storage.md) | Disk images, data safety, repair, CD-ROM, provisioning |
 | [Shared folder](topics/shared-folder.md) | Exchanging files with the card |
 | [Clock and PRAM](topics/clock-and-pram.md) | Time, and what the Macintosh remembers |
+| [Desktop](topics/desktop.md) | Okapia on macOS: a card folder, the same menu and Macintosh, the test mode |
 | [Network](topics/network.md) | Cable and Wi-Fi: the Mac shares the Pi's MAC address; settings, design, trials left |
 
 ### Contributing
@@ -64,6 +65,7 @@ the "Pitfalls" section there is what previous sessions paid for.
 | [Building](contributing/build.md) | Toolchain, targets, the merged image, dependencies, patches |
 | [Testing and debugging](contributing/testing-and-debugging.md) | Host tests, QEMU scripts, crash testing, traces, logs |
 | [Benchmarks](contributing/benchmarks.md) | Method and results |
+| [Releases](contributing/release.md) | Versions, the manifest, signing, the release procedure, updates (a plan) |
 
 ### Notes
 
@@ -77,5 +79,8 @@ Dated development notes and research studies, kept for the reasoning behind a re
 | [Bottleneck study](notes/research/bottlenecks.md) | Where the 68k engine spends its time on a Pi 4 |
 | [infinite-mac](notes/research/infinite-mac.md) | What the WebAssembly port teaches a bare-metal one |
 | [System 6 in 24-bit mode](notes/research/system6-24bit.md) | A third engine configuration for System 6 |
-| [68k JIT](notes/research/jit-68k.md) | Whether and how to enable a 68k→AArch64 JIT |
+| [68k JIT](notes/research/jit-68k.md) | Whether and how to enable a 68k→AArch64 JIT; `macemu-jit` measured at parity, our own translator taken instead |
+| [pom68k](notes/research/pom68k.md) | Whether a low-level 68k emulator with an AArch64 JIT would beat Basilisk on a Pi |
+| [Emu68](notes/research/emu68.md) | The 68k→AArch64 JIT built for AArch64, and what a JIT shaped like it would ask of Okapia |
 | [AppleTalk and SMB gateways](notes/research/appletalk-smb-gateways.md) | Existing projects bridging classic Macs to modern shares |
+| [Okapia on a desktop](notes/research/desktop-host.md) | A macOS, Linux and Windows variant that opens a card folder: what is kept, the host interface, the test mode |

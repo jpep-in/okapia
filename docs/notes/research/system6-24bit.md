@@ -57,7 +57,7 @@ separately compiled Basilisk instances give the same result without touching the
   although "32-bit clean" does not forbid a IIci from starting System 6 in 24-bit, and `CheckROM()` already accepts that
   ROM in a banked build (`rom_patches.cpp:831-842`). The decision must come from the selected System, set before
   `Init680x0()`/`memory_init()` and constant for the session.
-- **The Circle port assumes direct addressing**: `main_circle.cpp` stops any other build with
+- **The Circle port assumes direct addressing**: `main_okapia.cpp` stops any other build with
   `#error "Okapia builds with DIRECT_ADDRESSING"`; the 68k video publishes `Host2MacAddr(s_pMacPixels)` and does not fill
   `MacFrameBaseHost`, `MacFrameSize`, `MacFrameLayout`, which banks needs; `get_virtual_address()` is absent from the
   banked backend.

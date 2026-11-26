@@ -1,8 +1,8 @@
 # Boot menu
 
 > The Okapia firmware: a configuration utility in a plausible Apple style that opens before any emulator
-> code runs — the Open Firmware a 68k Macintosh never had. Main files: `src/firmware/` (pure: no Circle
-> type), `src/firmware/circle/okapia_firmware.cpp` (preferences and HFS side), `okapia_input.cpp` (USB
+> code runs — the Open Firmware a 68k Macintosh never had. One window with six tabs: System, Settings,
+> Network, Display, Information, Logs (a desktop leaves Network out: its one setting is on Settings). Main files: `src/firmware/` (pure: no Circle type), `src/common/okapia_menu.cpp` (the driver: preferences, card and pages, the same on every host), `src/common/okapia_host.h` (what it asks of the machine), `src/hosts/circle/firmware/okapia_host_circle.cpp` (the Pi's answers), `okapia_input.cpp` (USB
 > bridge), `okapia_output.cpp` (frame buffer claim), `assets/strings.tsv`, `assets/fonts/`, `assets/icons/`.
 
 ## Using it
@@ -13,7 +13,14 @@ configuration is missing or no volume on the card is bootable. Any other combina
 the Macintosh — except **Command-Option-P-R**, which forgets the parameter RAM, as a real Macintosh did in
 its ROM before ADB was alive.
 
-**The chooser** lists every volume on the card with its name, System version and era icon (System 6, 7,
+**One window, six tabs**, with the tab control Mac OS 8's Appearance Manager introduced: **System** (the
+volumes), **Settings**, **Network**, **Display**, **Information** and **Logs**; a host may leave one out of the strip
+(`PageChromeHideTab`), the others keeping their order. The footer is the window's and the same on every page: forget
+the PRAM, shut down, **Show this menu at startup** (`bootmenu`, beside Start because it is about starting; unticked, a grey line under it says *Press Alt during startup to show this menu*, so the way back is never lost), and **Start**, which reads **Save and restart** with a note beside it when a change made on any page needs Okapia to
+restart. What the pages change is written to the card when the Macintosh starts or the board shuts down — as a
+control panel keeps what was set in it; there is no Cancel.
+
+**System** lists every volume on the card with its name, System version and era icon (System 6, 7,
 Mac OS 8, 9), free space, and state (ready or in use). Per line:
 
 | Column / control | Meaning |
@@ -27,21 +34,53 @@ What cannot be done is greyed per line: the startup volume cannot be unmounted u
 a System cannot become the startup disk. **+ New volume…** makes an empty HFS volume: it asks only the
 Macintosh volume name (27 characters) and a size that fits the card; the firmware picks the file name.
 
-**Settings**: memory, screen refresh (frameskip), shared folder and its volume name, sound output, mouse
-resolution, language, and "always show this menu". A setting that needs an Okapia restart (only memory) is
-marked `*` and the button becomes **Save and restart**. There is deliberately no date, no time zone and no
-resolution: Mac OS owns the clock (Date & Time) and the screen mode (Monitors).
+**Settings**: memory, screen refresh (frameskip), mouse resolution, sound output and language, two to a row; beside
+the language, the 68k engine's experimental translator, **JIT** (`jit`), followed by "(68K only)"; then
+two groups, framed and named as the Views control panel of System 7 frames its own: **Folder sharing** (share, the
+folder on the card, the volume's name on the Mac) and **Date & Time** (below). A setting that needs an Okapia restart
+(only memory) is marked `*` and Start becomes **Save and restart**, with "* Restart required" beside it. There is deliberately no resolution: Mac OS owns the screen
+mode (Monitors).
+
+**Network**: the connection the Macintosh shares — none, the Ethernet cable or the Wi-Fi — and for the Wi-Fi, the
+networks in range (strongest first, a lock when it asks for a password, four bars of signal, a bullet on the one
+joined), its name (typed for a hidden network), the password (stars, **Show** to read it; never copied out) and the
+country. **Search** scans again; **Join** tries the network at once and the line under the page says what came of it —
+joined with its signal, the password refused, or why nothing was tried. Choosing a connection starts it if the board
+has none; changing it once one runs needs a restart. Details: [Network](network.md#using-it).
+
+The **Date & Time** group: the date and time Okapia keeps, in bold and to the minute, and after it where they came
+from — the time server, the Macintosh's own Date & Time, the last use of a volume, or the build — with the offset in
+force (`UTC+2` in summer), and at the end of that line an **(i)** whose note says how the clock is kept and how to set
+it by hand. Then the **time zone**, from a list of 22 by their cities (`UTC+1 · Paris, Brussels, Berlin,
+Madrid, Rome`), summer time following on its own, and **Time from the network** with the server beside it
+(`pool.ntp.org`). Both act at once: the hour on the page moves with the zone chosen. Setting the clock by hand stays
+the Macintosh's, and Okapia keeps what it sets. Details:
+[Clock and PRAM](clock-and-pram.md#using-it).
 
 **Information**: ROM and Macintosh model chosen (and whether the model came from the System or the
-preferences), card, startup volume, build date, board, the display mode the firmware actually granted, and
+preferences), card, startup volume, build version (`YYMMDD-sha`, [Build](../contributing/build.md#version)), board, the display mode the firmware actually granted, and
 the components and licences Okapia is made of.
 
-**Shut down** and **Forget the parameter RAM** go through a confirmation alert. Forgetting asks which Macintosh —
+**Logs**: the end of `okapia.log`, the log on the card, in a list that opens on the newest line and scrolls; **Previous
+session**, a tick box under the list, shows `okapia-previous.log` instead. Above the list, a group *Serial telemetry* with two tick boxes: **Serial output**
+(`serial`) sends the log's lines to the serial port as well as to the card, and **Performance counters** (`perfreport`)
+prints the periodic counters ([Testing](../contributing/testing-and-debugging.md#logs)). Both are off on a board: the
+port is polled and each character stops the Macintosh for 87 µs. The card has every line whatever they say, so the counters
+alone, with the serial shut, cost the log some space and the Macintosh nothing. Under QEMU the port is on whatever they say
+(`SerialLogWanted()`, `PerfReportWanted()`): a test arrangement the page does not mention. The page keeps the last 64 KB and 1024 lines of the file, the page
+is read when it is turned to (after the board drained its ring onto the card), and a long log is shown by its end.
+Neither box needs a restart: both are read at every start of the Macintosh.
+
+**Shut down** and **Forget the parameter RAM** go through a confirmation alert. The shut down alert also offers
+**Restart**, between Cancel and Shut down (`TConfirm::pOther`): Okapia starts again and the menu comes back, with what
+the pages changed kept. Forgetting asks which Macintosh —
 68k, PowerPC or both, each keeping its own ([Clock and PRAM](clock-and-pram.md#parameter-ram)) — with the engine of
 the selected startup volume marked first. The choices answer the mouse and never take the keyboard focus, so Return
 stays the assent and Escape the refusal.
 
-**Keyboard**: Tab and Shift-Tab move the focus, arrows move in lists, left and right cross the list's columns,
+**Keyboard**: Tab and Shift-Tab move the focus; **Control-Tab** and Control-Shift-Tab turn the page from anywhere,
+and left and right turn it while the tabs hold the focus (they keep it, so the arrows go on turning). Arrows move in
+lists, left and right cross the list's columns,
 Space activates the focused control, Return the default button, Escape cancels. Text fields support
 selection, Shift-arrows and Command-A/C/X/V. The pointer appears on the first mouse movement.
 
@@ -54,6 +93,51 @@ made, Okapia's code really consumes it, and — decisively — it **unblocks a m
 Everywhere else the alternative is to power off, take the card out and edit it on another computer; that cost
 is what the firmware exists to remove. Screen depth, sound level and keyboard layout fail the first test:
 the Mac has control panels for them.
+
+The time zone and the time server pass the first three and not the last either, and are kept for the same reason
+as the network: a Macintosh of this era has no notion of either — its clock *is* local time — and it is Okapia's
+clock that needs both to turn the network's UTC into that local time. The date itself still fails the first test,
+which is why the page shows it and does not set it: Date & Time sets it, and Okapia now keeps what it sets.
+
+The translator passes all four: it is an experimental mode that can hang a Macintosh at startup, and turning it
+back off is exactly what must not need another computer. It is read at every start of the Macintosh
+(`basilisk_glue.cpp`), so it asks for no restart. The JIT box is grey, still showing the file's value, in an image built without the
+translator: the shared half learns that from `-DOKAPIA_TRANSLATOR`, which `src/kernel/Makefile` sets from
+`OKAPIA_JIT_ARM64` for the shared objects alone, so the PowerPC window says the same as the 68k one.
+
+The network passes the first three and not the last: a Macintosh starts without it. It earns its page on the cost
+alone — a Wi-Fi password is the setting most likely to be wrong, it is found wrong only on the board, and correcting
+it otherwise means taking the card out. Until an extension lets the Mac choose its network itself, nothing in the
+guest can.
+
+The Logs page passes all four: reading the log meant taking the card out and editing it on another computer, and
+a board that will not start is the one whose log is wanted. Its two switches are there because the serial port is
+the one cost the log has, and a Pi with no cable attached was paying it at every boot. It earns no place for the log's
+*content*: the page shows it and changes none of it.
+
+The Display page controls which modes the guest drivers expose and what they open at the next Macintosh start.
+The page also compares the output frame buffer and EDID and reports HDMI directives found on the card. See
+[Display](display.md#using-it).
+
+### The window and its pages
+
+Each page is still its own screen — its own array of components, its own `Draw`, `Operate` and `Sync` — and
+`PageBeginTabbed()` (`okapia_page.cpp`) gives every one the same frame: the strip of tabs in the title's place, and the
+footer with the window's three buttons. `PageChromeAnswer()` says what a press on those means (`TPageAnswer`, numbered
+from 1000 so a page's own answers never meet them); the firmware asks it before the page's own `Operate`.
+`PageChromeSet()` tells the frame, before each layout, whether a restart is owed (Start's words, so its width: a change
+lays the page out again), whether the keyboard starts on the strip, and whether there is anything to start.
+
+The firmware (`RunScreens()`, `okapia_menu.cpp`) keeps one model per page for as long as the window is open, so
+turning pages loses nothing, and `SaveAll()` writes settings and network only if they changed, then the volumes and
+`SavePrefs()` once. A page whose model changes on its own — the networks in range — has a `Tick` in its driver, asked
+four times a second.
+
+The **tabs** are a component (`WidgetTabs`): items for the names, the choice for the page in front. The theme draws
+them (`DrawTabs`) and answers where each stands (`ThemeTabRect`), so drawing and hit-testing share one geometry. The
+front tab is a step taller, white and open onto the page; the others are light grey behind it. Each shape reaches a
+radius below the rule and that band is wiped — it belongs to the strip (`ThemeTabsHeight()`), so the component never
+draws outside itself. Its focus ring circles the front tab's label, inside the tab.
 
 ### Engines
 
@@ -69,7 +153,7 @@ The firmware is handed the engine as data (`FirmwareRun (TFirmwareEngine)`) and 
 
 ### Writing the preferences
 
-Everything the menu changes goes to `BasiliskII_Prefs` through `SavePrefs()`, which keeps lines it does not
+Everything the menu changes goes to `Okapia_Prefs` through one `SavePrefs()` when the window closes, which keeps lines it does not
 recognise. `disk`, `cdrom` and `engine` lines are **replaced**, not edited: the order is the setting.
 
 ### Four layers, one seam
@@ -90,9 +174,16 @@ recognise. `disk`, `cdrom` and `engine` lines are **replaced**, not edited: the 
 its control can draw outside itself *in any state it may reach* (the focus ring included), because layout runs
 before anyone knows where the focus will land.
 
-**Screens are pure**: handed values, answering values. Everything that knows a preferences file, an HFS
-volume or a frame buffer stays in `src/firmware/circle/`. That is what lets `tests/host` drive them with
+**Screens are pure**: handed values, answering values. That is what lets `tests/host` drive them with
 synthetic events and measure them.
+
+**The driver is the same on every host.** `src/common/okapia_menu.cpp` joins the pages to the preferences and the
+card's volumes (`FirmwareRun()`, `RunScreens()`, `RunPage()`, the `Load*`/`Store*` functions). What it needs of the
+machine goes through `src/common/okapia_host.h`: the log, sleeping and polling, the clock, the output surface and
+its facts, input, the card's space and files, the sound outputs offered, the network page's questions. The Pi's
+answers are `src/hosts/circle/firmware/okapia_host_circle.cpp` (FatFs, Circle, the board's network and clock); a
+desktop's are `src/hosts/desktop/`. No POSIX or Circle type crosses the interface, and paths are the card's own,
+rooted at `/`. See [Okapia on a desktop](../notes/research/desktop-host.md#the-okapia-host-interface).
 
 **Only what changed is redrawn**, into the shadow surface first, then the changed rectangle is copied at once —
 drawing straight into the visible buffer made the background flash under each control. Isolated redraw is
@@ -113,15 +204,30 @@ rectangles, the double outline of the default button (reused as the focus ring),
 margins, one clear action at the bottom right), and **flatness** — the constraint of 1984 and the fashion of
 today, avoiding Platinum bevels and Aqua gel. Where the era dithered, a flat grey: the System 7 desktop's
 checkerboard averages in linear light to about `#BCBCBC`, and integer scaling turns a one-pixel checkerboard
-into crawling squares. The era shows in the folder icons, not in the frame. Alerts keep the Macintosh's three
+into crawling squares. The era shows in the folder icons, not in the frame.
+**Tabs** are taken from Mac OS 8 the same way: the grammar (a row of names standing on a rule, the chosen one in
+front and open onto its page) without the Platinum relief — an outline, a rounded top, and grey for the tabs behind,
+the one depth this theme allows itself. Alerts keep the Macintosh's three
 levels — note, caution, stop — because they are a promise about consequences.
 
 ### Text
 
-- **Fonts**: the X11 Adobe Helvetica bitmap faces (`assets/fonts/`), licence read in the files: permission to
-  use, copy, modify, distribute and sell, compatible with GPLv3. Geneva was essentially a Helvetica fitted to a
-  small pixel grid. Six sizes, real bold; `scripts/gen-font.py` reads BDF directly, `fetch-fonts.sh` and
-  `trim-bdf.py` vendor only printable characters (380 KB). **Never Chicago**: it is Apple's, under copyright.
+- **Fonts**: TeX Gyre Heros 2.004, regular and bold (`assets/fonts/`, GUST Font License, compatible with GPLv3),
+  a Helvetica of its own: Geneva was essentially a Helvetica fitted to a small pixel grid. `scripts/fetch-fonts.sh`
+  vendors it trimmed with fontTools to Latin-1, Latin Extended-A, typographic punctuation and a few symbols, with
+  its pair kerning and without hints (31 KB a weight); the build only turns the files into bytes
+  (`gen-blob.py`). **Never Chicago**: it is Apple's, under copyright.
+- **Rasterising** (`okapia_font_vector.cpp`, stb_truetype from `external/stb`, public domain): each face is drawn
+  at the cell height the theme asks for, to the row, with one byte of coverage a pixel, each glyph trimmed to its
+  ink and packed. Built on first use per height and weight and kept, so the board allocates once, before any
+  Macintosh runs; the kerning pairs are read once per weight in the face's units. Advances are in sixteenths of
+  a pixel (`TPen` in `okapia_gfx.cpp`), so measuring and drawing agree. Text blends into the shadow surface
+  (`Blend`), never into the frame buffer itself. Measured on an M-series host: a face in about 1 ms, a weight's
+  kerning (319 × 319 pairs, about 4,000 kept) in about 5 ms; on a Pi 4, to be measured.
+- **Why not the bitmaps any more** (2026-11-22): six sizes and no greys. At a scale between two rungs (26/16)
+  the nearest one was taken, and a desktop's Retina screen doubled it with its stairs. The outline faces are
+  slightly softer at 1x (no hinting) and right at every other scale; the kernel lost 129 KB (3,490,624 to
+  3,358,784 bytes), the faces being 62 KB of outlines and 25 KB of code against 215 KB of bitmaps.
 - **Translations**: `assets/strings.tsv` holds every label in every language; `scripts/gen-strings.py`
   generates both the tables and the `TStringId` enumeration, so a removed key breaks the build. English is the
   default; `language` selects; an unknown code falls back to the first language.
@@ -153,15 +259,29 @@ levels — note, caution, stop — because they are a promise about consequences
 - [x] Forget the parameter RAM asks which Macintosh: an alert may carry a row of radio buttons, `TConfirm::pChoices`
       (2026-09-15)
 - [x] New volume; mount as hard disk, read-only or CD-ROM; a disc as startup volume (2026-09-09)
+- [x] One window with tabs — System, Settings, Network, Information — and a shared footer; Control-Tab and the
+      arrows turn pages; changes kept when the Mac starts or the board shuts down (2026-11-12)
+- [x] Network page: connection, Wi-Fi networks with lock and signal, secret password field, country, Search and Join
+      with the outcome on the page (2026-11-12)
+- [x] Restart in the shut down alert (2026-11-12)
+- [x] Date & Time: the clock and its source, live; time zone with summer time; time server (2026-11-12)
+- [x] Settings in two columns and two named groups (`WidgetGroup`, `PageGroupBegin()`/`End()`), the Date & Time page
+      folded back into it; "Show this menu at startup" moved to the footer, beside Start; the tabs behind a lighter grey
+      (`ColorPale`, `#EEEEEE`) (2026-11-12)
+- [x] JIT and QuickDraw acceleration tick boxes beside the language, "(68K only)" (2026-11-15); the QuickDraw box
+      left with the hooks for `wip-quickdraw` (2026-11-26)
+- [x] Logs page: the log on the card in a list, the previous session, serial output and counters (2026-11-18)
+- [ ] Logs page tried under QEMU and on the Pi 4; the serial gate measured on hardware
+- [ ] Tabs and the Network page tried on the Pi 4 and under QEMU
 - [ ] **Open the menu whenever the Macintosh cannot start**, with the reason on screen, instead of halting. Today
       the menu opens by itself only for a missing configuration or no bootable volume; any other failure of
       `CKernel::StartMacintosh()` — no `rom` line, ROM file missing, wrong size or unreadable, ROM refused by
-      `CheckROM()` (`MacROMLoad`, `src/circle/main_circle.cpp:190` and its SheepShaver twin), Mac RAM not
+      `CheckROM()` (`MacROMLoad`, `src/common/main_okapia.cpp:190` and its SheepShaver twin), Mac RAM not
       allocated — logs to the serial port only and ends in `OkapiaHalt` (`src/kernel/kernel.cpp:485`): a frozen
       screen on a board with no UART attached. Both engines, and every restart, not only power-on
 - [ ] **Repair dialog** — today `HfsRepair` scavenges silently. Three states, not two: repair without asking,
       ask, never repair — through a second boolean `hfsrepairask`, without changing the type of `hfsrepair`
-      (`prefs_circle.cpp`: the parser reads by declared type, an integer would read `0` on every existing card).
+      (`prefs_okapia.cpp`: the parser reads by declared type, an integer would read `0` on every existing card).
       The dialog must time out and repair on expiry, or `run-test.sh` stops on it. Strings and a specimen
       exist; the screen is not wired
 - [ ] System folder icons at non-integer scales (vector or larger sources)
@@ -170,6 +290,21 @@ levels — note, caution, stop — because they are a promise about consequences
 
 ## Pitfalls
 
+- **Inverting black and white alone leaves an antialiased edge grey.** `GfxInvert` swapped the two palette
+  values only, as QuickDraw did: a selected row's text came out fringed and its radio button frayed (the rings
+  were already antialiased with the bitmap faces). A neutral grey now turns inside out with its stroke; colours
+  (icons) are left.
+- **A label centres to the pixel only when its band and its capitals have the same parity.** The bitmap faces
+  happened to agree with the theme; faces drawn at any height do not, so the theme moves each band a row
+  (`ThemeMake`, down where its floor allows). Across, the caller's width decides: an odd remainder is one pixel
+  to a side, and the geometry check allows exactly that.
+- **Pixel boxes round outwards.** The scale that maps the ink to the asked height gave a cell one row taller, and
+  at 640x480 three pages no longer fitted under their tabs. The scale is brought down until the cell is the
+  height asked for.
+- **A field drawn under the footer passes `CheckFrame`**: it is still inside the dialogue. Each page checks its own
+  `…Overflowed()` and that no row came out flat; only that catches a page that ran out of room.
+- **A group's frame overlaps everything it holds**, on purpose: the overlap checks exempt `WidgetGroup` and check
+  containment instead.
 - **Metrics belong to the theme as much as pixels.** Four times a hard-coded value stood where a metric was due
   (checkbox and popup marks at fixed coordinates, a 16 px scrollbar thumb minimum, the focus ring taking the
   button's radius everywhere, a `1` for stroke width); the specimen screen made each visible.
@@ -197,6 +332,15 @@ levels — note, caution, stop — because they are a promise about consequences
 - **Circle tracks no header dependencies** (`Rules.mk:271`): a field added to `TThemeMetrics` sent the kernel into
   the font tables, a field added to `TEvent` turned Down into Escape. Every Makefile compiles with `-MMD -MP` —
   see [Building](../contributing/build.md).
+- **`ScreenInit()` obeys the first component that declares the focus and clears nothing**: a tabbed page declares it
+  on Start *or* on the strip, never both, or two rings are drawn. After a relayout the loop puts the focus back where
+  the hand was (`ScreenFocus()`), not where the layout declared it.
+- **A ring outside the tabs would cross the rule into the page**: it circles the label instead, and the geometry
+  checks give `WidgetTabs` no reach, as they do tick boxes.
+- **The footer reserves the reach of a default button that also has the focus**: Start is both, and its grey ring sits
+  outside the black one — reserving only the default's pushed it into the frame's margin.
+- **A menu waiting in `CTimer::MsDelay()` holds Circle's tasks still**: the Wi-Fi's scan never came back. The menu
+  sleeps through the scheduler once there is one (`FwSleep()`).
 - **A redraw of the whole screen at every event** flickered and, under a QEMU window, cost enough to queue the
   pointer's reports.
 
@@ -215,12 +359,25 @@ levels — note, caution, stop — because they are a promise about consequences
   because Helvetica declares an ascent of 11 and draws É on 12 rows: cells are now sized on the glyphs.
 - **2026-09-02** — The specimen paginates: a document is paginated, and four rounds were lost trimming content
   to fit one page.
+- **2026-11-12** — The chooser, the settings and the information pane became pages of one tabbed window, and a fourth
+  page for the network. Settings lost Save and Cancel to the window's Start; the information pane lost Back.
+- **2026-11-12** — A fifth page, Date & Time. The zone and the time server went into Settings first and pushed the
+  server's field under the footer at 640×480 — `CheckFrame` passed, because the field stayed inside the dialogue;
+  only the render showed it. The new page checks `DateTimeOverflowed()` like the network page does.
+- **2026-11-12** — Tried on the Pi and reworked: the menus two to a row freed the room, so the Date & Time page went
+  back into Settings as a group; the folder sharing became a group too. Settings now checks `SettingsOverflowed()`,
+  that a group holds what it frames, and that the restart note is read whole beside the footer's tick box — which
+  is why the note became "* Restart required". The box first read "Always show this menu", which said too little;
+  "Show this menu at startup" fits. The hint on setting the clock by hand went into an (i) on the date's line.
 - **2026-09-04** — `okapia_page` holds the shared page frame; the chooser folded into it with its twenty checks as
   the refactor's safety net.
 
 ## References
 
-- Tests: `tests/host/check_geometry.cpp`, `check_screen.cpp`, `check_chooser.cpp`, `check_pages.cpp`; renders:
-  `render_specimen`, `render_chooser`, `render_pages`
+- Tests: `tests/host/check_geometry.cpp`, `check_screen.cpp`, `check_chooser.cpp`, `check_pages.cpp` (the network
+  page's behaviour, its password never drawn or copied); renders: `render_specimen`, `render_chooser`, `render_pages`
+  (`-network.ppm`)
+- Mac OS 8's tab control: `kControlTabLargeProc` (128) and `kControlTabSmallProc` (129), "new with the Appearance
+  Manager" — *Mac OS 8 Toolbox Reference*, Control Manager, Developer CD June 1998
 - `scripts/specimen.sh [page|live]` — the specimen under QEMU
 - Circle `lib/input/usbkeyboard.cpp:200`, `lib/input/mouse.cpp:85`, `Rules.mk:271`

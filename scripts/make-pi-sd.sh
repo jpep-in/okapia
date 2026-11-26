@@ -2,7 +2,14 @@
 # Copyright (C) 2026  Jonathan Pepin
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Stage the boot files for a real Raspberry Pi 4 card in rpi4-sd-contents/.
-#   usage: make-pi-sd.sh
+#   usage: make-pi-sd.sh [jit-kernel]
+#
+# With a second argument — the path of a kernel8.img built with OKAPIA_JIT=1, which
+# you have set aside because the next build overwrites it — the card carries both:
+# kernel8-rpi4.img (the one in src/kernel, the interpreter) and kernel8-jit.img.
+# config.txt starts the first; `kernel=kernel8-jit.img` under [all] starts the
+# other, and the preferences get `jit true` for it. See
+# docs/notes/research/jit-68k.md, "The Pi 4 run".
 #
 # QEMU takes the kernel on its command line and needs nothing else; a real board
 # takes everything from the card, so this directory holds what QEMU never had:
@@ -18,6 +25,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOT="${REPO_ROOT}/external/circle-stdlib/libs/circle/boot"
 CONTENTS="${REPO_ROOT}/qemu/sd-contents"
 KERNEL="${REPO_ROOT}/src/kernel/kernel8.img"
+JIT_KERNEL="${1:-}"
 OUT="${REPO_ROOT}/rpi4-sd-contents"
 
 # shellcheck source=/dev/null
@@ -32,6 +40,12 @@ OUT="${REPO_ROOT}/rpi4-sd-contents"
 okapia_require_target "$REPO_ROOT" pi4 "$(basename "$0")" || exit 1
 
 [ -f "$KERNEL" ] || { echo "No kernel at ${KERNEL} — make -C src/kernel" >&2; exit 1; }
+if [ -n "$JIT_KERNEL" ]; then
+    [ -f "$JIT_KERNEL" ] || { echo "No JIT kernel at ${JIT_KERNEL}" >&2; exit 1; }
+    # Only the JIT build carries the arena's log line.
+    grep -q 'Arena: ' "$JIT_KERNEL" 2>/dev/null \
+        || echo "Warning: ${JIT_KERNEL} does not look like an OKAPIA_JIT=1 build." >&2
+fi
 
 # Downloaded, not built, and not in the repository. Ask rather than fetch: this
 # needs the network, and the rest of the script does not.
@@ -65,6 +79,7 @@ done
 # writes kernel8.img whatever the target. Rename here rather than patch the
 # config, so the card keeps Circle's own convention.
 cp "$KERNEL" "${OUT}/kernel8-rpi4.img"
+[ -z "$JIT_KERNEL" ] || cp "$JIT_KERNEL" "${OUT}/kernel8-jit.img"
 
 # The appended lines go under [all]: config.txt sections are sticky, and
 # config64.txt ends inside [pi5], so anything added without this would apply to
@@ -105,6 +120,15 @@ boot_delay=0
 #max_framebuffer_width=2560
 #max_framebuffer_height=1440
 EOF
+    if [ -n "$JIT_KERNEL" ]; then
+        cat <<'EOF'
+#
+# The 68k JIT kernel (OKAPIA_JIT=1) instead of the interpreter: uncomment, and
+# the preferences below already say "jit true". A kernel= under [all] comes after
+# the [pi4] section's and wins.
+#kernel=kernel8-jit.img
+EOF
+    fi
 } > "${OUT}/config.txt"
 
 # Everything staged for QEMU that is not a disk image: the ROMs, the
@@ -120,6 +144,16 @@ if [ -d "$CONTENTS" ]; then
         esac
         cp -R "$entry" "$OUT/"
     done < <(find "$CONTENTS" -mindepth 1 -maxdepth 1)
+fi
+
+# The JIT kernel reads these and the interpreter kernel ignores them, so one set
+# of preferences serves both and the choice is config.txt's alone.
+if [ -n "$JIT_KERNEL" ] && [ -f "${OUT}/Okapia_Prefs" ]; then
+    {
+        printf '\n# The 68k JIT (kernel8-jit.img only; ignored by the interpreter kernel).\n'
+        printf '# Lazy invalidation stays off whatever is written here.\n'
+        printf 'jit true\njitcachesize 16384\n'
+    } >> "${OUT}/Okapia_Prefs"
 fi
 
 # The Wi-Fi's firmware, for "ether wlan": the Broadcom files Circle's own

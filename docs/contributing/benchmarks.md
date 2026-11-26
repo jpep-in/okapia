@@ -17,6 +17,56 @@ the QEMU capture on CPU (6.84 against 5.14), so the QEMU/Pi ratio says nothing a
 
 Speedometer's averages are pulled by `K'Whet`; the median of the ten integer subtests reads less distorted.
 
+### MacBench
+
+**Not the Ziff-Davis MacBench of the period**: Okapia's own 68k application, in [`tools/macbench/`](../../tools/macbench/)
+(C for [Retro68](https://github.com/autc04/Retro68), under the MIT licence so that Basilisk II or anyone else can take it). It runs twenty tests
+by itself at startup — five of the processor (`cpu_*`), three of the Toolbox (`tb_*`), twelve of QuickDraw (`qd_*`) —
+and seven of the FPU when Gestalt reports one (`fpu_*`, [`fpu.c`](../../tools/macbench/fpu.c), compiled for the 68881: a
+Fourier transform, a Whetstone, a matrix product, the transcendentals, extended values to and from memory;
+`fpu_forms`, written instruction by instruction, every source format from every kind of address including immediate
+data, every operation, `FMOVECR`, packed decimal with both k-factors, `FMOVEM` with static and dynamic lists and of the
+control registers, every rounding mode and precision, `FBcc`, `FDBcc` and `FScc` on all 32 predicates with a NaN now
+and then, and the 68040's `FS…`/`FD…` forms on a 68040; `fpu_calls`, small functions that save their FPU registers
+with `FMOVEM` at every call, as compiled code of the period does) —
+each a fixed amount of work timed with `TickCount`, and writes `name ticks check` lines to **MacBench Results**: at the
+root of a volume named `Unix` when there is one (a desktop Basilisk II's shared folder), otherwise next to the
+application. `check` hashes what the test computed or drew, the window read from the frame buffer at any depth: two
+runs that disagree on it did not do the same work, which is what makes it the test of an engine or of native
+drawing.
+
+```
+RETRO68=~/github-repositories/Retro68-build ./scripts/build-macbench.sh               # build/macbench/MacBench.bin
+./scripts/build-macbench.sh qemu/sd-contents/boot755.img                               # ...and into Startup Items
+./scripts/build-macbench.sh -- -DDEPTH=16 -DAPPEND_RESULTS                             # with switches
+```
+
+Retro68 is built once by hand (`./build-toolchain.bash` in its clone); `RETRO68` names the directory holding its
+`toolchain/`. The script copies with Retro68's hfsutils straight into the image: **never on a card an emulator is
+using**. Compile-time switches: `-DAPPEND_RESULTS` keeps every run, one block after the other (a machine run by hand);
+`-DHOLD_TICKS=<n>` leaves the last drawing on screen n ticks; `-DONLY='"qd_text"'` runs one test; `-DDEPTH=<bits>`
+switches the screen first; `-DREPEAT=<n>` runs each test n times to see whether its check is stable;
+`-DSCALE=<n>` multiplies every iteration count; `-DSTRETCH_DEBUG` hashes `qd_stretch` part by part.
+`tools/macbench/run.py` boots a desktop Basilisk II once per configuration and prints the table; on Okapia, read the
+results file off the volume after Special → Shut Down.
+
+**On the Mac, automatically.** `scripts/build-native-basilisk.sh <name> [configure options]` builds a desktop Basilisk II
+from a copy of the `kanjitalk755/macemu` clone (`MACEMU_CLONE`) with Okapia's FPU patches and its translator, against the
+dependencies of `MACEMU_DEPS`, into `build/native/<name>/BasiliskII`. `run.py` then compares builds and settings:
+
+```
+./scripts/build-native-basilisk.sh softfloat --enable-fpe=softfloat --enable-jit-arm64
+./scripts/build-native-basilisk.sh mpfr --enable-jit-arm64                       # upstream's FPU on ARM
+python3 tools/macbench/run.py --repeat 3 --only fpu_ --save base.json \
+    build/native/softfloat/BasiliskII qemu/sd-contents/okapia.rom systems/prepared/sys755.img /tmp/mb \
+    "jit=jit true" "interp=jit false" "mpfr=build/native/mpfr/BasiliskII|jit true"
+python3 tools/macbench/run.py --repeat 3 --compare base.json ...                 # after a change
+```
+
+A configuration is `name=prefs` or `name=binary|prefs`; `--repeat` keeps each test's median, `--save` and `--compare`
+keep a baseline, and the last column says whether every configuration computed the same: an exact FPU gives a 68881's
+bits on any host, so `fpu_*` checks agree between exact cores and runs, interpreted or translated.
+
 ## Results
 
 ### Summary
@@ -28,6 +78,7 @@ Speedometer's averages are pulled by `K'Whet`; the median of the ten integer sub
 | [Okapia, QEMU raspi3b on M4 — later](<../../benchmark/okapia in rpi3 qemu in macbook pro m4 - basilisk.png>) | 68k | 5.14 | 1.68 | 4.48 | 65.77 | 3.30 | 5.78 | 2.82 | 2.48 | Quadra 650 |
 | [Okapia, Raspberry Pi 4 — first](<../../benchmark/okapia rpi4 68K basilisk.png>) | 68k | 2.25 | 1.06 | 3.40 | 28.76 | 1.91 | 2.38 | 1.12 | 1.92 | Quadra 650 |
 | [Okapia, Raspberry Pi 4 — rev2](<../../benchmark/okapia rpi4 68K basilisk-rev2.png>) | 68k | 6.84 | 3.18 | 3.72 | 94.45 | 4.82 | 7.15 | 2.98 | 5.58 | Quadra 650 |
+| [Okapia, Raspberry Pi 4 — translator](#raspberry-pi-4-with-the-68k-translator-2026-11-15)³ | 68k | 35.01 | 28.08 | 3.53 | 177.67 | 12.60 | 55.26 | 3.81 | 33.94 | Quadra 650 |
 | [Okapia, QEMU raspi3b on M4](<../../benchmark/okapia in rpi3 qemu in macbook pro m4 - sheepshaver.png>) | PowerPC | 1.56 | 0.00² | 3.36 | 319.94 | 3.16 | 7.50 | 3.02 | 1.13² | Power Mac 8100/80AV |
 | [Okapia, Raspberry Pi 4 — first](<../../benchmark/okapia rpi4 ppc sheepshaver.png>) | PowerPC | 1.24 | 0.46 | 4.72 | 208.52 | 0.98 | 5.17 | 1.87 | 0.90 | Power Mac 6100/60 |
 | [Okapia, Raspberry Pi 4 — rev2](<../../benchmark/okapia rpi4 ppc sheepshaver-rev2.png>) | PowerPC | 2.96 | 0.95 | 3.08 | 492.45 | 1.99 | 11.08 | 4.62 | 2.08 | Power Mac 6100/60 |
@@ -38,6 +89,8 @@ in the depths offered (8-bit only, then all), with no revision recorded, so thei
 
 ¹ The native capture shows CPU 1.32 and Math 19.17 for the same record; a rounding difference.
 ² `0.00` means the test or depth was not run; the colour average is then 8-bit only and not comparable.
+³ `OKAPIA_JIT_ARM64=1`, `jit true`, binary128 FPU (2026-11-15). With the FPU translated in softfloat the FPU average
+is 6.26 ([below](#raspberry-pi-4-the-fpu-translated-2026-11-16)).
 
 ### 68k engine, detailed
 
@@ -160,17 +213,176 @@ The first Pi run amplified the hardware gap (the M4 led by 19 to 22× on integer
 after rev2 it leads by 6.34× on CPU. The initial shortfall was configuration and porting, not a fundamental limit of
 Basilisk. Subsystems do not scale with Geekbench: they include maths libraries, storage and video presentation.
 
+### Raspberry Pi 4 with the 68k translator (2026-11-15)
+
+Kernel `a6e93db` built with `OKAPIA_JIT_ARM64=1`, `jit true`, ARM clock 1500 MHz, Mac at 1280×720 in thousands of
+colours shown at ×2. Speedometer 4.0.2 run by the owner, once with `qdaccel off` and once with `qdaccel sync`,
+each session ended with Shut Down. The reference column is a record made on the same board without the
+translator. System version and `frameskip` were not noted. In a session of the same day the Mac's tick count
+stayed within 0.2 % of the clock under the translator, so the scores are not flattered by lost ticks.
+
+| Test | Interpreter | Translator | Translator + `qdaccel sync` | Translator / interpreter |
+|---|---:|---:|---:|---:|
+| CPU | 6.53 | 35.01 | 35.17 | 5.4× |
+| Graf | 3.96 | 28.08 | 35.48 | 7.1× |
+| Disk | 3.47 | 3.53 | 3.46 | 1.0× |
+| Math | 95.04 | 177.67 | 174.76 | 1.9× |
+| PR | 5.11 | 12.60 | 12.78 | 2.5× |
+| K'Whet | 24.14 | 36.09 | 36.41 | 1.5× |
+| Dhry | 3.19 | 50.68 | 52.09 | 15.9× |
+| Towers | 4.75 | 60.03 | 59.71 | 12.6× |
+| Quicksort | 4.55 | 46.05 | 46.07 | 10.1× |
+| Bubble Sort |  | 55.75 | 55.65 |  |
+| Queens | 4.10 | 57.09 | 56.31 | 13.9× |
+| Puzzle | 5.77 | 58.56 | 58.02 | 10.1× |
+| Permute | 5.84 | 58.78 | 56.96 | 10.1× |
+| Int. Matrix | 6.73 | 76.29 | 76.67 | 11.3× |
+| Sieve | 4.06 | 53.32 | 53.45 | 13.1× |
+| **Bench. Ave.** |  | **55.26** | **55.13** |  |
+| FPU FFT | 2.07 | 2.68 | 2.69 | 1.3× |
+| FPU K'Whet | 4.34 | 5.09 | 4.69 | 1.2× |
+| FPU Matrix | 2.45 | 3.66 | 3.58 | 1.5× |
+| **FPU Ave.** | 2.96 | 3.81 | 3.64 | 1.3× |
+| B&W | 4.46 | 23.18 | 25.36 | 5.2× |
+| 2 Bit |  | 24.07 | 24.27 |  |
+| 4 Bit |  | 29.16 | 26.56 |  |
+| 8 Bit | 6.44 | 34.51 | 38.20 | 5.4× |
+| 16 Bit | 6.78 | 58.81 | 54.78 | 8.7× |
+| **Color Ave.** | 5.64 | 33.94 | 33.83 | 6.0× |
+
+Read off two screenshots; the reference values of Bubble Sort, 2 Bit, 4 Bit and Bench. Ave. were not legible.
+
+- **The translator**: 5.4× on CPU, 10 to 16× on the integer tests, 7.1× on Graf, 6× on the colour average.
+  What does not move is what it does not touch: the disk, and floating point, which stays in the binary128
+  core. Against a Quadra 650 (CPU 1.31) the CPU line is 27×; the integer average is above the interpreted
+  Basilisk II on the MacBook Pro M4 of the first table (55 against 46.64).
+- **The `qdaccel sync` column measures almost nothing of `qdaccel`.** Until the fix of the same day the hooks
+  were the Finder's own patch and were out of the trap table whenever Speedometer was in front (the hooks
+  are on the `wip-quickdraw` branch since 2026-11-26). Graf at 35.48 against 28.08 cannot be credited to them; one run
+  each, and the cause of that gap is not known. The column stays as a second run of the translator: its lines
+  differ from the first by 1 to 3 %, the colour lines by up to 11 %, Graf by 26 %.
+- **Owed**: both columns again with a kernel that carries the fix, MacBench beside Speedometer, the System
+  version, depth and `frameskip` written down. Done in part the same night: next section.
+
+### Raspberry Pi 4, the FPU translated (2026-11-16)
+
+Speedometer 4.0.2, read off the screen by the owner, one run; kernel with the softfloat FPU and the translator's
+FPU instructions (T1–T3), `jit true`, System 7.6.1, ARM at 1500 MHz. Not the trace build, so no `okapia-fpu` timing.
+Earlier columns from the runs above, with the translator:
+
+| Test | binary128 (2026-11-15) | softfloat before T1 (2026-11-16) | softfloat, T1–T3 | vs binary128 |
+|---|---:|---:|---:|---:|
+| FPU FFT | 2.68 | 2.29 | 4.70 | 1.75× |
+| FPU K'Whet | 5.09 | 6.09 | 7.89 | 1.55× |
+| FPU Matrix | 3.66 | 3.00 | 6.18 | 1.69× |
+| FPU average (computed) | 3.81 | 3.79 | 6.26 | 1.64× |
+| Math | 177.67 | 241.45 | 276 | 1.55× |
+| K'Whet (benchmark section) | 36.09 | 44.97 | 72.22 | 2.00× |
+
+**Then with `FMOVEM` translated and declined F-line instructions no longer chained** (kernel of 10:21, one run, trace
+build): FFT 4.36, Matrix 5.86, FPU K'Whet 2.4 on its first pass and 10.2 on the next ones, Math 387, the benchmark
+section's K'Whet 34 then 84. The trace showed about 250,000 `FDIV`, `FSUB` and `FMOVE.D` a second still run by the
+interpreter during the first passes, each now ending its block on its own where the chaining used to run a run of
+them in one call: the likely cost of the first passes and of FFT and Matrix slipping 5 to 7 %. Immediate operands,
+the one mode still declined, are translated since; `jit: declined` in a trace build names what is left.
+
+**Then with immediates translated** (kernel of 10:47, one run, trace build): FFT 4.64, Matrix 5.87, FPU K'Whet 8.1 on
+its first pass and 10.7 after, Math 377, the benchmark section's K'Whet 85 then 97. Not one FPU instruction reached
+the interpreter after the boot (no `okapia-fpu` line at all), and `jit: declined` named only `CPUSHA`, `FSAVE`,
+`FRESTORE` and Basilisk's own `FE05` trap. What is left of the first pass's deficit is not the FPU's.
+
+- FFT and Matrix, which the softfloat core had made slower than binary128, are now twice what they were before T1;
+  K'Whet, heavy in transcendentals, gains least, as the M4 profile said it would.
+- 6.26 against 9.21 for interpreted Basilisk II on the M4 (MPFR) and 27.74 for the iMac G3, whose Speedometer runs
+  PowerPC code on a hardware double FPU.
+
+### MacBench's FPU tests on the MacBook Pro M4 (2026-11-16)
+
+Desktop Basilisk II built from the translator's clone, System 7.5.5, 8-bit 640×480, median of three runs, in ticks
+(lower is better):
+
+| Test | MPFR, translator | softfloat, interpreter | softfloat, translator (before) | softfloat, translator (T1–T3) |
+|---|---:|---:|---:|---:|
+| `fpu_fft` | 177 | 45 | 43 | 24 |
+| `fpu_whet` | 192 | 48 | 48 | 25 |
+| `fpu_matrix` | 134 | 39 | 38 | 19 |
+| `fpu_trig` | 105 | 22 | 21 | 17 |
+| `fpu_move` | 164 | 34 | 35 | 21 |
+| **total** | **772** | **188** | **185** | **106** |
+
+- **softfloat is 4.2 times as fast as MPFR**, upstream's FPU on Apple silicon, with the same results on everything but
+  the transcendentals (MPFR rounds them correctly, the 68040's FPSP does not).
+- **Before T1, the translator gave the FPU nothing** (185 against 188 interpreted): every FPU instruction left the block.
+  With it calling the FPU core from inside the block (T1), translating `FBcc`, `FDBcc` and `FScc` (T2) and direct paths
+  for `FADD`, `FSUB`, `FMUL`, `FMOVE` and `FMOVE.D` out (T3), 1.75 times as fast; checks identical to the interpreter's
+  on all twenty-five tests. Profiled after: the arithmetic itself is most of what is left, the call into the core about
+  a tenth.
+- **The C tests do not see what the Pi's trace saw.** The translator from before `FMOVEM` and immediates were
+  translated runs `fpu_fft` to `fpu_move` within 4 % of the one after, but `fpu_calls` 1.53 times and `fpu_forms` 1.15
+  times slower (75 and 55 ticks against 49 and 48): those two exist for that. Baseline in
+  `build/native/baseline-forms.json` (not kept in the repository).
+- **Okapia's own kernel computes the same numbers**: built with GCC, under QEMU's AArch64 with `jit true` and the
+  translator's FPU, its five `fpu_*` checks are the M4's to the bit (and so are the `cpu_*` ones). Its times under
+  QEMU mean nothing.
+
+### Raspberry Pi 4, the night of 2026-11-15
+
+Run by the owner: `jit true`, System 7.6.1, Mac at 1280×720 in thousands of colours (16 bits), a kernel built
+after the softfloat FPU and the boot-menu commits (`80cb577`, `f47f91e`; the exact revision was not noted, nor
+`frameskip` or the clock). One run of each. The result files and screenshots stayed with the owner.
+
+**MacBench**, `qdaccel` off then on: 152.0 s → 132.2 s for the twenty tests, the same checks in both files.
+The eight computing tests do not move; the gain is copies (`qd_copybits` 4.8×), scrolling (3.2×) and regions
+(−31 %), the tests whose transfers are whole windows. The table and its reading are on the `wip-quickdraw` branch,
+with the hooks ([Decisions](../project/decisions.md#quickdraw-acceleration-set-aside)).
+
+**Speedometer 3**, top lines read off three screenshots (several lower lines lose their first digit to the
+column width and are not copied here):
+
+| | CPU | Graf | Disk | Math | FPU Ave. | Color Ave. |
+|---|---:|---:|---:|---:|---:|---:|
+| Interpreter, `qdaccel` off | 101.76 | 66.62 | 26.33 | 662.06 | 27.83 | 28.51 |
+| Interpreter, `qdaccel` on | 108.12 | 63.44 | 24.69 | 661.65 | 27.24 | 28.20 |
+| Translator, `qdaccel` off | 576.67 | 285.50 | 27.84 | 595.97 | 40.66 | 131.86 |
+
+- **Speedometer does not see the hooks**: Graf and the colour average are within the 6 % by which CPU, which
+  they do not touch, differs between the first two runs. Its drawing tests are small objects; MacBench's are
+  whole windows.
+- **Translator**: 5.3× on CPU, 4.5× on Graf, 4.7× on the colour average. `Int. Matrix` reads 0.00 in that
+  run, which is not a score, and Math is 10 % lower than with the interpreter: neither is explained.
+
+**Speedometer 4.0.2**, translator (whether `qdaccel` was on was not noted), against the run of the afternoon
+above:
+
+| | CPU | Graf | Disk | Math | FPU Ave. | B&W | 2 Bit | 4 Bit | 8 Bit | 16 Bit | Color Ave. |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Afternoon, `a6e93db` | 35.01 | 28.08 | 3.53 | 177.67 | 3.81 | 23.18 | 24.07 | 29.16 | 34.51 | 58.81 | 33.94 |
+| Night | 34.53 | 27.14 | 2.31 | 241.45 | 3.79 | 22.84 | 18.02 | 18.15 | 18.91 | 25.92 | 20.77 |
+
+- **Math is up by a third** (K'Whet 36.09 → 44.97), with the 68881 now in softfloat.
+- **The colour tests from 2 bits up are 25 to 56 % lower, and Disk a third lower.** One run each, different
+  kernels, a state of `qdaccel` that was not written down: nothing can be attributed yet. It is the first
+  thing to reproduce, twice on one kernel (without the hooks since they left for `wip-quickdraw`).
+
 ## Status
 
 - [x] First QEMU baseline (2026-08-27)
 - [x] First Pi 4 runs, both engines (2026-09-12)
 - [x] rev2 after seven changes: 68k Quadra-class with margin (2026-09-13)
+- [x] First Speedometer runs with the 68k translator on a Pi 4 (2026-11-15)
+- [x] MacBench on a Pi 4 with the QuickDraw hooks off and on: 152.0 s → 132.2 s (2026-11-15)
+- [x] Speedometer's FPU tests on a Pi 4 with the FPU translated: average 3.81 → 6.26 (2026-11-16)
+- [ ] Speedometer 4's colour tests fell by 25 to 56 % between two kernels of 2026-11-15: reproduce on one
+      kernel before reading anything into it
+- [ ] `Int. Matrix` at 0.00 in Speedometer 3 under the translator
 - [ ] Five runs per configuration with revision, frequency, temperature, System, mode and preferences recorded
 - [ ] Measure the seven changes separately, or by family (frequency, libraries, CPU loop, video, I/O)
 - [ ] Reproduce SheepShaver's `Disk` regression (4.72 → 3.08) noting cluster size, fragmentation and file position
       before changing the I/O path
 - [ ] Profile PowerPC gaps: `Dhry`, `Towers`, `FPU FFT`, `FPU Matrix`, `Graf` — opcode rate, PMU counters, composite
       time
+- [x] MacBench's FPU tests, and native builds compared automatically on the Mac (2026-11-16)
+- [ ] MacBench's FPU tests on the Pi 4, interpreter and translator
 - [ ] Real workloads: StuffIt decompression, file copies, Finder, Doom, MacBench
 - [ ] A native SheepShaver run on the M4 for a homogeneous PowerPC comparison
 - [ ] Period references also worth recording: Norton System Info, MacBench

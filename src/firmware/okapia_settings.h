@@ -8,12 +8,6 @@
  * unblock a machine that will not start. Everything else stays in the file,
  * where it has always been editable, and the README documents it.
  *
- * So the resolution is absent (the display's, not ours — and a manual override
- * would work on a Pi 3 and be a no-op on a Pi 5, which is the worst kind of
- * setting), the date and time are absent (Mac OS has a control panel for them
- * and its write is intercepted, §7.7), and the network is absent until there is
- * a choice worth making beyond on and off.
- *
  * Like the chooser, this knows nothing about a preferences file. It is handed
  * values and answers values; the caller reads and writes. That is what lets the
  * whole screen be driven by synthetic events on a development machine.
@@ -25,9 +19,10 @@
 #define _okapia_settings_h
 
 #include "okapia_widgets.h"
+#include "okapia_datetime.h"
 
 // Where the Mac's sound comes out. Four states and not a boolean, because
-// audio_circle.cpp hard-codes the jack — which a Pi 5 does not have, and which
+// audio_okapia.cpp hard-codes the jack — which a Pi 5 does not have, and which
 // is the wrong socket on a television. Off is first so that a card whose value
 // is missing or unreadable stays silent: a device claimed and not working is
 // what froze the guest once already (docs/topics/sound.md).
@@ -37,6 +32,7 @@ enum TSoundOutput
     SoundHDMI,
     SoundJack,
     SoundUSB,
+    SoundBuiltIn,                       // a desktop's own output, the host's default
     SoundOutputCount
 };
 
@@ -51,7 +47,6 @@ static const unsigned SETTINGS_PATH = 64;
 struct TSettingsValues
 {
     unsigned nMemoryMB;
-    int      nFrameSkip;                // 0 is Dynamic; otherwise VBLs per frame
     int      nMouseDpi;                 // what the pointing device reports per inch
     unsigned nSound;                    // TSoundOutput
     unsigned nLanguage;                 // TLanguage
@@ -60,6 +55,11 @@ struct TSettingsValues
     // whoever changes System every day wants it, whoever changes it twice a
     // year does not — and a board with no keyboard has no other way to ask.
     bool     bBootMenu;
+    // The 68k engine's experimental translator (preference jit), read at every
+    // start of the Macintosh. On this page rather than only in the file because
+    // a mode that hangs the Macintosh is exactly what has to be undone without
+    // taking the card out.
+    bool     bJit;
     bool     bShared;                   // the shared folder is offered at all
     char     SharedPath[SETTINGS_PATH]; // where it is on the card
     char     SharedName[SETTINGS_NAME]; // what the Mac calls it on the desktop
@@ -75,10 +75,26 @@ struct TSettings
     // what is true. Zero means "offer them all", so a caller that has not
     // thought about it does not silently offer nothing.
     unsigned nSoundAvailable;
+    // One bit per TSoundOutput the list shows at all, enabled or grey. Zero
+    // means the board's four. A desktop shows only what it has — Off and its
+    // built-in output — since an HDMI socket greyed on a laptop says nothing.
+    unsigned nSoundOffered;
+    // Whether this image carries the translator at all (OKAPIA_JIT_ARM64). A
+    // fact about the image, like the sound outputs about the board: without it
+    // the box is there and grey, and its value is kept as the file had it.
+    bool bJitAvailable;
+    // A desktop's network, on this page rather than a page of its own: the
+    // host's, shared (1), or none (0). The caller turns it into the network's
+    // kind; a board leaves bNetworkOffered false and has its Network page.
+    bool     bNetworkOffered;
+    unsigned nNetwork;
     // What they were when the screen opened. Kept so that the screen can say
     // whether anything asked for a restart, which is not the same question as
     // whether anything changed.
     TSettingsValues Opened;
+    // The group "Date & Time", whose values are kept apart: they act on the
+    // clock at once and are stored on their own (okapia_datetime.h).
+    TDateTime Clock;
 };
 
 enum TSettingsAction
@@ -88,14 +104,14 @@ enum TSettingsAction
     // are not the same width twice. Lay the page out again rather than repaint
     // a geometry that no longer fits its words.
     SettingsRelayout,
-    SettingsBack,                       // leave, keeping nothing
-    SettingsSave,
-    SettingsSaveRestart
+    // The zone or the time server changed: the clock may be told at once.
+    SettingsClock,
+    SettingsClockHelp                   // the date's (i): say how the clock is kept
 };
 
 // Whether what has been changed needs the board to start again — as opposed to
-// the Macintosh, which starts again every time the chooser's own button is
-// pressed and therefore needs no ceremony at all.
+// the Macintosh, which starts again every time Start is pressed and therefore
+// needs no ceremony at all.
 bool SettingsNeedsRestart (const TSettings *pSettings);
 
 // The nearest memory size this screen can offer. A card naming one it cannot —
@@ -112,6 +128,9 @@ unsigned SettingsWidgets (TWidget **ppList);
 // into its border. Every element spilling out was invisible in the numbers
 // until the numbers were asked for.
 TRect SettingsDialog (void);
+
+// Whether the last SettingsDraw ran out of room.
+bool SettingsOverflowed (void);
 void SettingsSync (TSettings *pSettings);
 TSettingsAction SettingsOperate (TSettings *pSettings, int nIndex);
 

@@ -10,6 +10,7 @@
 
 #include "okapia_boot.h"
 #include "hal_circle.h"
+#include "clock_okapia.h"
 
 #define FROM "okapia-boot"
 
@@ -38,11 +39,13 @@ int main (void)
             continue;
 
         case OkapiaReboot:
+            ClockSessionEnd ();
             BoardLogFlush ();
             return EXIT_REBOOT;
 
         case OkapiaHalt:
         default:
+            BoardSerialReplay ();       // whatever stopped the board, on the cable too
             BoardPowerOff ();
             halt ();
             return EXIT_HALT;

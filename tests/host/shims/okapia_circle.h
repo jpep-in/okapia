@@ -2,8 +2,8 @@
  * okapia_circle.h — the host's stand-in for the Circle bridge.
  *
  * Two of the platform files are worth testing here rather than on a card:
- * prefs_circle.cpp, where a mistake silently loses somebody's settings, and
- * hfs_volume_circle.cpp, which reads volumes we must never damage. Neither
+ * prefs_okapia.cpp, where a mistake silently loses somebody's settings, and
+ * hfs_volume_okapia.cpp, which reads volumes we must never damage. Neither
  * touches Circle for anything but the log, so this header is the whole cost of
  * building them with the host compiler — it is force-included ahead of the real
  * one, whose include guard then makes it a no-op.

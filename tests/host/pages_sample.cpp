@@ -15,24 +15,33 @@
 #include <string.h>
 
 #include "okapia_confirm.h"
+#include "okapia_datetime.h"
 #include "okapia_info.h"
+#include "okapia_network.h"
 #include "okapia_newvolume.h"
 #include "okapia_settings.h"
 #include "okapia_strings.h"
+#include "okapia_clock.h"
+
+void DateTimeSample (TDateTime *p);
 
 void SettingsSample (TSettings *p)
 {
     p->V.nMemoryMB = 256;
-    p->V.nFrameSkip = 0;
     p->V.nSound = SoundJack;
     p->V.nLanguage = (unsigned) StringsLanguage ();
     p->V.bShared = true;
+    // The translator ticked in an image that has none: grey and still ticked,
+    // the awkward case again.
+    p->V.bJit = true;
+    p->bJitAvailable = false;
     // Everything but USB, which is what a Pi 3 offers — the awkward case, since
     // it is the one where an entry has to be there and unusable.
     p->nSoundAvailable = (1u << SoundOff) | (1u << SoundHDMI) | (1u << SoundJack);
     StrAppend (p->V.SharedPath, SETTINGS_PATH, 0, "/shared");
     StrAppend (p->V.SharedName, SETTINGS_NAME, 0, "Okapia");
     p->Opened = p->V;
+    DateTimeSample (&p->Clock);
 }
 
 void InfoSample (TInfo *p)
@@ -69,6 +78,7 @@ void ConfirmSample (TConfirm *p)
     p->pBody  = Str (StrForgetPramBody);
     p->pYes   = Str (StrForgetPram);
     p->pNo    = Str (StrCancel);
+    p->pOther = 0;
     // With its row of choices, as the firmware asks it: the longest form of an
     // alert, so the one whose layout has the most to lose.
     p->pChoices[0] = Str (StrForgetPram68k);
@@ -76,6 +86,19 @@ void ConfirmSample (TConfirm *p)
     p->pChoices[2] = Str (StrForgetPramBoth);
     p->nChoices    = 3;
     p->nChoice     = 1;
+}
+
+// The shut down alert as the firmware asks it: a note, with Restart between
+// Cancel and Shut down.
+void ShutDownSample (TConfirm *p)
+{
+    memset (p, 0, sizeof *p);
+    p->Level  = ConfirmNote;
+    p->pTitle = Str (StrShutDownTitle);
+    p->pBody  = Str (StrShutDownBody);
+    p->pYes   = Str (StrShutDown);
+    p->pNo    = Str (StrCancel);
+    p->pOther = Str (StrRestart);
 }
 
 // A card with room for a few volumes but not for every rung: the sizes that do
@@ -92,4 +115,54 @@ void NewVolumeSample (TNewVolume *p)
     p->nSizes    = 5;
     p->nPick     = 2;
     p->nFreeMB   = 612;
+}
+
+// The Wi-Fi joined, a street's worth of networks around it, and the awkward
+// ones among them: a name of 32 bytes, a name in accented letters, a hidden
+// network that must not show, and the same network heard twice.
+void NetworkSample (TNetwork *p)
+{
+    memset (p, 0, sizeof *p);
+    p->V.nKind = NetworkWiFi;
+    strcpy (p->V.SSID, "Maison-5G");
+    strcpy (p->V.Password, "correct horse battery");
+    strcpy (p->V.Country, "FR");
+    p->Opened = p->V;
+    p->nRunning = NetworkWiFi;
+    static const struct { const char *pSSID; int nDbm; bool bSecured; } Heard[] =
+    {
+        { "Voisin du dessus",                 -71, true  },
+        { "Maison-5G",                        -48, true  },
+        { "",                                 -60, true  },
+        { "Café de la Gare",                  -80, false },
+        { "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", -66, true  },
+        { "Maison-5G",                        -58, true  },
+        { "Freebox-3A21C9",                   -77, true  },
+        { "Imprimante HP",                    -84, false }
+    };
+    unsigned n = 0;
+    for (unsigned i = 0; i < sizeof Heard / sizeof Heard[0]; i++, n++)
+    {
+        snprintf (p->Seen[n].SSID, sizeof p->Seen[n].SSID, "%s", Heard[i].pSSID);
+        p->Seen[n].nDbm     = Heard[i].nDbm;
+        p->Seen[n].bSecured = Heard[i].bSecured;
+    }
+    p->nSeen = NetworkSortSeen (p->Seen, n);
+    p->State = NetStateConnected;
+    strcpy (p->Subject, "Maison-5G");
+    p->nDbm = -48;
+}
+
+// Paris, the pool, a Wednesday in September — the longest day name and the
+// longest month name in French, so the widest the date can be.
+void DateTimeSample (TDateTime *p)
+{
+    memset (p, 0, sizeof *p);
+    p->V.nZone = (unsigned) ClockZoneFind ("paris");
+    p->V.bNetTime = true;
+    StrAppend (p->V.Server, DATETIME_SERVER, 0, "pool.ntp.org");
+    p->Opened = p->V;
+    p->nLocal = ClockSecondsOf (2026, 9, 30) + 23 * 3600 + 5 * 60;
+    unsigned n = StrAppend (p->Source, sizeof p->Source, 0, Str (StrClockFromNtp));
+    StrAppend (p->Source, sizeof p->Source, n, " pool.ntp.org · UTC+2");
 }

@@ -3,7 +3,7 @@
 //
 // Does not use circle-stdlib's CStdlibApp helpers: Okapia needs control over
 // initialisation order, because the 257 MB Mac RAM block must be allocated before
-// any driver claims contiguous space. This is the shape main_circle.cpp will take.
+// any driver claims contiguous space. This is the shape main_okapia.cpp will take.
 //
 // Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later

@@ -4,7 +4,7 @@
 // The SheepShaver kernel, and deliberately smaller than the other one. What the
 // card is owed before any Macintosh opens it — the inventory, the clock floor,
 // the repair and the name of the startup volume — it does exactly as kernel.cpp
-// does, through card_circle.cpp: a card is not less at risk for starting the
+// does, through card_okapia.cpp: a card is not less at risk for starting the
 // other engine. No shared folder preparation and no restart loop yet.
 //
 // Copyright (C) 2026  Jonathan Pepin
@@ -12,8 +12,9 @@
 //
 #include "kernel_ppc.h"
 #include "okapia_input.h"
+#include "okapia_circle.h"
 #include "okapia_firmware.h"
-#include "card_circle.h"
+#include "card_okapia.h"
 
 #include <stdio.h>
 
@@ -25,7 +26,7 @@
 
 #define FROM "okapia-ppc"
 
-// src/circle/sheepshaver/main_circle.cpp
+// src/common/sheepshaver/main_okapia.cpp
 extern bool MacMemoryAllocate (uint32 nRAMSize);
 extern bool MacROMLoad (const char *pFileName);
 
@@ -36,12 +37,12 @@ extern void init_emul_ppc (void);
 extern void emul_ppc (uint32 nStart);
 extern void exit_emul_ppc (void);
 
-// src/circle/tick_circle.cpp
+// src/common/tick_okapia.cpp
 extern void TickInit (void);
 extern void TickStart (void);
 extern void TickStop (void);
 
-// src/circle/input_circle.cpp
+// src/common/input_okapia.cpp
 extern void InputInit (void);
 
 // A PowerMacintosh wants more than a Quadra before it will start at all.
@@ -107,8 +108,11 @@ TOkapiaExit CKernelPPC::Run (bool bSwitched)
     // the card's answer to "which emulator", and this image carries one — so a
     // startup volume asking for the other one is handed over to it.
     // Skipped on the pass that follows a hand-over: see CKernel::Run.
+    FirmwareSetLogFlush (BoardLogFlush);
     const TFirmwareResult Result = bSwitched ? FirmwareBoot
                                              : FirmwareRun (FirmwareEnginePowerPC);
+    // The Journal page may have changed it.
+    BoardSerialLog (SerialLogWanted ());
     switch (Result)
     {
     case FirmwareHalt:

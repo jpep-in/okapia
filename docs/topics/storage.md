@@ -2,19 +2,24 @@
 
 > Disk and CD images on the SD card, what an interrupted session does to them, how Okapia repairs a volume,
 > the inventory of the card, and provisioning. Data safety outranks every other constraint in this project.
-> Main files: `src/circle/hfs_volume_circle.{h,cpp}`, `src/circle/card_circle.cpp` (`CardPrepareVolumes`),
-> `src/circle/trace_disk_circle.cpp`, `external/hfsutils` (libhfs), `patches/circle-stdlib/0002`,
+> Main files: `src/common/hfs_volume_okapia.{h,cpp}`, `src/common/card_okapia.cpp` (`CardPrepareVolumes`),
+> `src/hosts/circle/trace_disk_circle.cpp`, `external/hfsutils` (libhfs), `patches/circle-stdlib/0002`,
 > `scripts/run-test.sh`, `scripts/check-large-volume.sh`, `scripts/make-sd-image.sh`.
 
 ## Using it
 
 - **Disk images** are plain files at the card's root, listed by `disk` lines ([Preferences](../preferences.md));
-  **the order is the setting** and the [boot menu](boot-menu.md) writes it. A `*` prefix mounts read-only.
+  **the order is the setting** and the [boot menu](boot-menu.md) writes it. A `*` prefix mounts read-only, and the
+  startup repair leaves such a volume untouched even when it is marked in use.
+- **`Okapia_Prefs`** is never rewritten in place: `SavePrefs()` writes `Okapia_Prefs.new`, syncs it, then renames it
+  over the old one (FatFs will not rename over a file, so on the board the old one is removed first). A stop in
+  between leaves the new file alone, and `LoadPrefs()` reads it, as it does when `Okapia_Prefs` is empty.
 - **CD images** (Toast images work) are `cdrom` lines; a disc can be the startup volume through `bootdriver -62`.
 - **New volume**: the boot menu makes an empty HFS volume of a chosen name and size.
 - **Shut down from Mac OS.** Pulling the plug keeps your data but marks the volume in use; Okapia repairs it at the
   next power-on (`hfsrepair true`, the default) and Mac OS then shows its period "not shut down properly" message.
-  With `hfsrepair false` the Mac refuses to start from that volume (question-mark floppy).
+  With `hfsrepair false`, or a `*` volume, the volume is handed over as it is, unscavenged, and Mac OS starts from it
+  with the same message.
 - **Large volumes**: an image can be read to the end up to FAT32's limit of 4 GiB − 1 per file.
 - **In the log**: the inventory of every HFS volume on the card (name, size, free space, files, System version,
   clean or in use), then `Boot volume: <path>`.
@@ -47,16 +52,20 @@ Investigation of 2026-08-28, from a volume Disk First Aid certified healthy, wit
 Traced at the Toolbox (`op_illg_1`, watching `ioResult`): `MountVol` on a clean volume returns `noErr` and writes
 (Mac OS clears bit 8 to mark it in use); on a volume already marked in use it returns **`badMDBErr` (−60)**, the only
 non-zero result in the whole run. `Status` csCode 8 and `Control` csCode 9 of the substituted `.Disk` driver return
-`noErr` in both cases. **The refusal is the Mac OS File Manager's deliberate safety policy**, not a bug of Basilisk or
-Okapia; the same happens on a real Mac, and with Basilisk on macOS.
+`noErr` in both cases.
 
 Eliminated one by one: lost writes, structural damage, the partition map (the same volume inside an Apple partition
 map refuses identically — Basilisk only uses the map to locate the volume, `disk.cpp:120`), the embedded driver
 (Basilisk never loads it; substituting `.Disk` has no measurable effect).
 
-**A Mac refuses to start from a volume marked in use, but mounts it as a secondary disk, and that mount runs the HFS
-scavenge that repairs it.** Demonstrated here with two disks: boot from a clean volume, the dirty one appears on the
-desktop and Mac OS writes to it (`drAtrb` `0000` → `0003`).
+A volume marked in use mounted as a secondary disk, and that mount runs the HFS scavenge that repairs it.
+Demonstrated with two disks: boot from a clean volume, the dirty one appears on the desktop and Mac OS writes to it
+(`drAtrb` `0000` → `0003`).
+
+**The refusal is not reproduced (2026-11-26).** Under QEMU and on the desktop host, each volume first left dirty by a
+SIGKILL (`drAtrb` `0000`), then handed over unrepaired (`hfsrepair false`, or a `*` line): System 7.0.1, System 7.5.5
+and Mac OS 8.1 all start from it, to their "not shut down properly" message. With two disks, a dirty read-only 7.5.5
+ahead of a clean 7.0.1, the Mac starts from the dirty 7.5.5 one.
 
 ### Repairing the volume ourselves: libhfs
 
@@ -64,18 +73,26 @@ desktop and Mac OS writes to it (`drAtrb` `0000` → `0003`).
 read-write runs `v_scavenge()` when `HFS_ATRB_UMOUNTED` is clear (`volume.c:440`), and unmounting sets the bit back
 (`volume.c:140`). Its system calls are isolated in `os.h`; `os.c` works unchanged on newlib. 14 objects, 48 KB.
 
-`CardPrepareVolumes()` (`card_circle.cpp`), before **either** engine starts — `CKernel::StartMacintosh()` and
+`CardPrepareVolumes()` (`card_okapia.cpp`), before **either** engine starts — `CKernel::StartMacintosh()` and
 `CKernelPPC::Run()` both call it once the firmware has chosen the engine, after `CardInventory()` and
 `CardRefineClock()`:
 
 1. `HfsInspect()` reads the unmount bit **before** any mount (mounting repairs), locating the volume as Basilisk
    does (`find_hfs_partition`), not as libhfs does.
-2. If it is clear and `hfsrepair` is on, `HfsRepair()` mounts read-write and unmounts:
+2. If it is clear, `hfsrepair` is on and the `disk` line has no `*` prefix, `HfsRepair()` mounts read-write and
+   unmounts:
 
    ```
    okapia-hfs: marked in use (drAtrb 0000) — the last session did not shut down
    okapia-hfs: repairing
    okapia-hfs: repaired and marked clean
+   ```
+
+   A volume left marked in use (read-only, or `hfsrepair false`) stays a candidate startup volume, since the Mac
+   starts from it, and is logged instead:
+
+   ```
+   card: /boot755.img: left as it is (read-only), still marked in use and not scavenged
    ```
 
 3. CD images are checked, never touched: `CDROMInit()` opens them read-only whatever is asked (`cdrom.cpp:324`).
@@ -137,11 +154,13 @@ Verified on System 7.1 and 7.6: flag `0100` and `fsck_hfs` clean after repair.
 - [x] Raw images on the card, read and write; a SIGKILL leaves the volume structurally sound (2026-08-26)
 - [x] Block-level disk trace with short-read detection, `OKAPIA_TRACE=1` (2026-08-26)
 - [x] Pulled-plug investigation down to `badMDBErr` (2026-08-28)
+- [x] A dirty volume handed over unrepaired starts the Mac (7.0.1, 7.5.5 and 8.1, under QEMU and on the desktop
+      host), so it stays the startup volume (2026-11-26)
 - [x] Volume pre-check and libhfs repair at startup; `run-test.sh` verdict after repair (2026-08-28)
 - [x] Inventory, System version, bootable fallback (2026-08-29)
 - [x] CD images, partition 1, Toast block size; a disc as startup volume (2026-09-09)
 - [x] New empty volume from the boot menu (2026-09-09)
-- [x] Repair, inventory and boot volume on the PowerPC path: `card_circle.cpp`, called by both kernels; verified under
+- [x] Repair, inventory and boot volume on the PowerPC path: `card_okapia.cpp`, called by both kernels; verified under
       QEMU on a 7.6 volume marked in use and started on SheepShaver (2026-09-15)
 - [x] Images read past 2 GiB, up to FAT32's 4 GiB − 1: `patches/circle-stdlib/0002`, `check-large-volume.sh`
       (2026-09-15)
@@ -174,6 +193,8 @@ On a Pi 3 (Ethernet over USB) downloads will be slow.
 
 - **Never mark a volume clean ourselves.** Setting `drAtrb` bit 8 would hide real corruption; the repair runs the
   scavenge, which checks before it sets the bit.
+- **Boot the case before reasoning from Mac OS behaviour.** The August refusal was taken as what any Mac does, and a
+  fix built on it named a clean second disk as the startup volume while the Mac started from the dirty first one.
 - **Never run two emulators on the same card.** Two QEMUs writing `qemu/sd.img` destroy the volume, and it looks like
   random corruption — most of what early boot "non-determinism" really was. `run-live.sh` refuses to start when the
   image is open; `run-test.sh` and `screenshot.sh` work on copies.
@@ -216,7 +237,8 @@ On a Pi 3 (Ethernet over USB) downloads will be slow.
   format check rather than a power-cut guard.
 - **2026-08-29** — Preferences from the card, inventory, `modelid` from the System.
 - **2026-09-09** — Volumes as hard disk, read-only or CD-ROM from the boot menu; new volume.
-- **2026-09-15** — Card preparation moved to `card_circle.cpp` for both engines; volumes past 2 GiB.
+- **2026-09-15** — Card preparation moved to `card_okapia.cpp` for both engines; volumes past 2 GiB.
+- **2026-11-26** — An unrepaired dirty volume boots (7.0.1, 7.5.5, 8.1); the August refusal is not reproduced.
 
 ## References
 

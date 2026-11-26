@@ -17,19 +17,22 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <initializer_list>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "hfs_volume_circle.h"
+#include "hfs_volume_okapia.h"
 #include "mac_layout.h"
-#include "mac_ram_circle.h"
-#include "compositor_circle.h"
-#include "video_sizes_circle.h"
+#include "mac_ram_okapia.h"
+#include "compositor_okapia.h"
+#include "video_sizes_okapia.h"
+#include "sysdeps.h"
+#include "prefs.h"
 #include "rom_chime.h"
 
-// prefs_circle.cpp. Declared here rather than in a header of its own: it has
+// prefs_okapia.cpp. Declared here rather than in a header of its own: it has
 // exactly one caller in the kernel, SavePrefs(), a few lines below it.
 extern unsigned PrefsCollectUnknown (const char *pPath, char *pBuffer, size_t nSize,
                                      unsigned *pnKept);
@@ -38,7 +41,7 @@ extern unsigned PrefsCollectUnknown (const char *pPath, char *pBuffer, size_t nS
 // what is under test.
 void SysAddSerialPrefs (void) {}
 
-// hfs_volume_circle.cpp reaches the card through these. Nothing below mounts a
+// hfs_volume_okapia.cpp reaches the card through these. Nothing below mounts a
 // volume — the flavour rule is asked about a version, not about an image — so
 // they only have to exist.
 size_t Sys_read (void *fh, void *buffer, long long offset, size_t length)
@@ -212,7 +215,7 @@ static void CheckLayout (void)
     Expect (L.nHostBytes == 256u * 1024 * 1024 + OKAPIA_ROM_AREA_SIZE
                             + OKAPIA_SIG_STACK_SIZE + OKAPIA_SHEEP_SIZE + OKAPIA_FRAME_SIZE,
             "that is 277.6 MB for 256 MB of Mac RAM");
-    // And the overhead mac_ram_circle.h claims for both engines must cover this
+    // And the overhead mac_ram_okapia.h claims for both engines must cover this
     // layout, or the second engine asks for a block again.
     Expect (L.nHostBytes - L.nRAMSize <= OKAPIA_MAC_BLOCK_OVERHEAD,
             "the shared overhead covers the hungriest layout");
@@ -261,7 +264,7 @@ static void CheckSizes (void)
     {
         Ids[i] = 0x100 + i;
     }
-    const u32 Extra[VIDEO_SCREEN_EXTRA] = { 0x200, 0x201 };
+    const u32 Extra[VIDEO_SCREEN_EXTRA] = { 0x200, 0x201, 0x202, 0x203 };
     TVideoScreenSize L[VIDEO_SCREEN_SIZES_MAX];
 
     bool bOrdered = true;
@@ -273,33 +276,84 @@ static void CheckSizes (void)
     Expect (bOrdered, "the fixed list is ordered like the Monitors control panel, with no duplicate");
 
     unsigned n = VideoScreenSizeList (Ids, Extra, 2560, 1440, 1280, 720, L);
-    bool bSame = n == VIDEO_SCREEN_STANDARD;
-    for (unsigned i = 0; bSame && i < n; i++)
+    bool bSame = n == VIDEO_SCREEN_STANDARD + 1;
+    for (unsigned i = 0; bSame && i < VIDEO_SCREEN_STANDARD; i++)
     {
         bSame = L[i].nWidth == VideoScreenStandard[i][0]
              && L[i].nHeight == VideoScreenStandard[i][1] && L[i].nId == Ids[i];
     }
-    Expect (bSame, "a 1440p display and screen 1280/720: the fixed list alone, each size under its identifier");
+    Expect (bSame && L[VIDEO_SCREEN_STANDARD].nWidth == 1704 && L[VIDEO_SCREEN_STANDARD].nHeight == 960 && L[VIDEO_SCREEN_STANDARD].nId == 0x200,
+            "a 1440p display and screen 1280/720: the fixed list, each size under its identifier, then two thirds");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1280, 720, L);
-    Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1366
-            && L[n - 1].nHeight == 768 && L[n - 1].nId == 0x200,
+    Expect (n == VIDEO_SCREEN_STANDARD + 3 && L[VIDEO_SCREEN_STANDARD].nWidth == 1366
+            && L[VIDEO_SCREEN_STANDARD].nHeight == 768 && L[VIDEO_SCREEN_STANDARD].nId == 0x200,
             "the own size of a display not in the list comes after, under the first free identifier");
+    Expect (L[VIDEO_SCREEN_STANDARD + 1].nWidth == 680 && L[VIDEO_SCREEN_STANDARD + 1].nHeight == 384 && L[VIDEO_SCREEN_STANDARD + 1].nId == 0x201,
+            "then half the display, its width down to whole bytes, under the next");
+    Expect (L[VIDEO_SCREEN_STANDARD + 2].nWidth == 904 && L[VIDEO_SCREEN_STANDARD + 2].nHeight == 512 && L[VIDEO_SCREEN_STANDARD + 2].nId == 0x202,
+            "then two thirds of it, the same way");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1000, 700, L);
-    Expect (n == VIDEO_SCREEN_SIZES_MAX && L[n - 2].nId == 0x200
-            && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x201,
-            "then the one the preferences ask for, under the second");
+    Expect (n == VIDEO_SCREEN_LEGACY_MAX && L[VIDEO_SCREEN_STANDARD].nId == 0x200
+            && L[VIDEO_SCREEN_STANDARD + 1].nWidth == 1000 && L[VIDEO_SCREEN_STANDARD + 1].nId == 0x201
+            && L[VIDEO_SCREEN_STANDARD + 2].nId == 0x202 && L[VIDEO_SCREEN_STANDARD + 3].nId == 0x203,
+            "then the one the preferences ask for, under the second, and half and two thirds last");
 
     n = VideoScreenSizeList (Ids, Extra, 0, 0, 1000, 700, L);
     Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 1000 && L[n - 1].nId == 0x200,
             "with no usable display size, the preference takes the first");
 
     n = VideoScreenSizeList (Ids, Extra, 1366, 768, 1366, 768, L);
-    Expect (n == VIDEO_SCREEN_STANDARD + 1, "a preference equal to the display is not offered twice");
+    Expect (n == VIDEO_SCREEN_STANDARD + 3, "a preference equal to the display is not offered twice");
 
     n = VideoScreenSizeList (Ids, Extra, 1920, 1080, 0, 0, L);
-    Expect (n == VIDEO_SCREEN_STANDARD, "with no preference, nothing more");
+    Expect (n == VIDEO_SCREEN_STANDARD + 1 && L[n - 1].nWidth == 960 && L[n - 1].nHeight == 540,
+            "with no preference, half the display more (two thirds is 1280x720, listed)");
+
+    TVideoScreenConfig Config = {};
+    Config.Custom[2] = {960, 600};
+    Config.Custom[4] = {1000, 700};
+    const u32 First = 0x300;
+    for (const TVideoSize Output : {TVideoSize {1920, 1200}, TVideoSize {960, 600}})
+    {
+        n = VideoScreenSizeList (Ids, Extra, Output.nWidth, Output.nHeight, 960, 600, L,
+                                 &Config, First);
+        Expect (L[n - 2].nWidth == 960 && L[n - 2].nId == First + 2
+                && L[n - 1].nWidth == 1000 && L[n - 1].nId == First + 4,
+                "custom slots keep their IDs over a display change and a duplicate starting mode");
+    }
+    Expect (!VideoModeSetHidden (&Config, {640, 480}, true)
+            && VideoModeSetHidden (&Config, {960, 600}, true)
+            && VideoModeHidden (Config, {960, 600})
+            && VideoModeSetHidden (&Config, {960, 600}, false)
+            && !VideoModeHidden (Config, {960, 600}),
+            "hide and restore a mode by its dimensions while keeping VGA");
+    Expect (VideoCustomSizeValid ({960, 600}) && !VideoCustomSizeValid ({961, 600})
+            && !VideoScreenFits ({1920, 1200}, {1280, 720})
+            && VideoScreenBufferBytes ({3840, 2160}) == VIDEO_SCREEN_BUFFER,
+            "custom dimensions fit the output and preserve the framebuffer limit");
+
+    VideoModeSetHidden (&Config, {1280, 720}, true);
+    VideoPrefsWrite (Config);
+    FILE *pStream = tmpfile ();
+    Expect (pStream != nullptr, "open a temporary preference stream");
+    if (pStream != nullptr)
+    {
+        SavePrefsToStream (pStream);
+        rewind (pStream);
+        VideoPrefsWrite (TVideoScreenConfig {});
+        LoadPrefsFromStream (pStream);
+        fclose (pStream);
+    }
+    TVideoScreenConfig Restored;
+    VideoPrefsRead (&Restored);
+    Expect (Restored.Custom[0].nWidth == 0 && VideoSizeEqual (Restored.Custom[2], {960, 600})
+            && VideoSizeEqual (Restored.Custom[4], {1000, 700})
+            && VideoModeHidden (Restored, {1280, 720}),
+            "preference round trip preserves explicit custom slots and hidden sizes");
+    VideoPrefsWrite (TVideoScreenConfig {});
+
 }
 
 /*

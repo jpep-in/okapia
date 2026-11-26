@@ -2,9 +2,9 @@
 
 > The Macintosh's sound on the jack, HDMI or USB: the board-owned device, the pull from the Mac's mixer,
 > volume, switching outputs, and the startup chime read from the ROM. Main files:
-> `src/circle/audio_circle.cpp` (compiled once per engine), `src/circle/hal_circle.h` (the declarations)
-> and `src/circle/board_sound_circle.cpp` (`BoardSoundClaim`, `BoardChime*`), `src/circle/rom_chime.{h,cpp}`,
-> `src/firmware/circle/okapia_firmware.cpp` (the setting).
+> `src/common/audio_okapia.cpp` (compiled once per engine), `src/hosts/circle/hal_circle.h` (the declarations)
+> and `src/hosts/circle/board_sound_circle.cpp` (`BoardSoundClaim`, `BoardChime*`), `src/common/rom_chime.{h,cpp}`,
+> `src/common/okapia_menu.cpp` (the setting).
 
 ## Using it
 
@@ -34,7 +34,7 @@ Circle's sound devices cannot be given back while they play. `Cancel()` only ask
 buffer, and deleting the device before it has trips `CHDMISoundBaseDevice`'s destructor assertion
 (`hdmisoundbasedevice.cpp:166`) or frees a PWM device its interrupt still calls into. A Circle assertion halts, and
 `AudioExit()` runs inside `ExitAll()` **before** `DiskExit()`: every restart with sound on could freeze the board
-with the disk image still open. And `audio_circle.cpp` is compiled once per engine, so a device per engine would be
+with the disk image still open. And `audio_okapia.cpp` is compiled once per engine, so a device per engine would be
 two claims on one socket.
 
 So `BoardSoundClaim (pWhere, nQueueMsecs)` (`board_sound_circle.cpp`) creates the device once — 44.1 kHz, 16-bit signed
@@ -84,8 +84,10 @@ it is. Nothing Apple ships in the repository; Okapia reads the ROM the user put 
 `BoardChimePlay()` runs at power-on right after the Mac RAM block is allocated, and again at every restart (68k: the
 `CKernel::Run` loop; PowerPC: `ether_reset`, [in place](startup-and-shutdown.md#restart-from-mac-os)):
 
-1. **Which ROM**: the one the startup volume's Macintosh will use — the first `disk` and its `engine` line pick
-   `rom` or `romppc`. If it keeps no chime this reader knows, the other ROM of the preferences, then any file at the
+1. **Which ROM**: the one the startup volume's Macintosh will use — `romppc` when it starts on the PowerPC engine,
+   `rom` otherwise, decided as the boot menu decides it (`FirmwareStartupEngine`, `okapia_menu.cpp`): the
+   volume's System, then its `engine` line, then the engine running for a universal System with nothing remembered
+   (the PowerPC on its own restart, `BoardChimePlay (true)`). If it keeps no chime this reader knows, the other ROM of the preferences, then any file at the
    card's root sized 512 KB to 4 MB. The search is redone only when the wanted ROM changes.
 2. **Read** whole into a 4 MB buffer, then searched in memory (field-by-field reads took 1.6 s under QEMU, a single
    read 0.68 s; QEMU's SD is slow, the Pi log says `found in … ms`).
@@ -141,6 +143,10 @@ duration fitted by least squares — and approved by ear. See the
 - [ ] Trials: system sounds, AIFF playback, games
 
 ## Pitfalls
+
+- **An `engine` line is not the engine.** The menu writes one only for a universal System, where there was a choice;
+  a Mac OS 8.6 volume, PowerPC only, has none. The chime read the lines alone and played the Quadra's on every 8.6
+  start and restart (2026-11-26). It now asks the menu's rule (`check_chooser`: a PowerPC-only System with no line).
 
 - **A screen hears nothing of a new HDMI audio stream for a second or two.** The chime is 1.4 s: at power-on, and
   after any restart of the board, it was played whole into that silence — the log said `Chime: playing on hdmi` and

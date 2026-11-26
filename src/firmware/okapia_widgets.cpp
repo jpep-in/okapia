@@ -20,6 +20,7 @@ void WidgetClear (TWidget *pWidget)
     pWidget->nGroup    = 0;
     pWidget->pItems    = 0;
     pWidget->nItems    = 0;
+    pWidget->nListRowHeight = 0;
     pWidget->nTop      = 0;
     pWidget->nChoice   = -1;
     pWidget->pEdit     = 0;
@@ -29,6 +30,75 @@ void WidgetClear (TWidget *pWidget)
     pWidget->pColumns  = 0;
     pWidget->nColumns  = 0;
     pWidget->nCell     = 0;
+    pWidget->bSecret   = false;
+}
+
+
+// A field's bytes are UTF-8: a character is a lead byte and its continuations.
+static bool Continuation (char c)
+{
+    return ((unsigned char) c & 0xC0) == 0x80;
+}
+
+// How many characters stand before byte nByte, and the byte where character
+// nChar begins: a secret field shows one star per character, so its marks and
+// its clicks are counted in characters and turned back into bytes here.
+static unsigned CharsBefore (const char *p, unsigned nByte)
+{
+    unsigned n = 0;
+    for (unsigned i = 0; i < nByte && p[i] != '\0'; i++)
+    {
+        if (!Continuation (p[i]))
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+static unsigned ByteOfChar (const char *p, unsigned nChar)
+{
+    unsigned i = 0;
+    for (unsigned n = 0; p[i] != '\0'; i++)
+    {
+        if (!Continuation (p[i]))
+        {
+            if (n == nChar)
+            {
+                return i;
+            }
+            n++;
+        }
+    }
+    return i;
+}
+
+/*
+ *  Tabs
+ */
+
+static unsigned TabLabels (const TWidget *pWidget, const char **pLabels)
+{
+    unsigned n = 0;
+    for (; n < pWidget->nItems && n < THEME_TABS_MAX; n++)
+    {
+        pLabels[n] = pWidget->pItems[n].pText != 0 ? pWidget->pItems[n].pText : "";
+    }
+    return n;
+}
+
+int WidgetTabAt (const TWidget *pWidget, const TTheme *pTheme, int nX, int nY)
+{
+    const char *Labels[THEME_TABS_MAX];
+    const unsigned nCount = TabLabels (pWidget, Labels);
+    for (unsigned i = 0; i < nCount; i++)
+    {
+        if (RectContains (ThemeTabRect (pTheme, pWidget->Rect, Labels, nCount, i), nX, nY))
+        {
+            return (int) i;
+        }
+    }
+    return -1;
 }
 
 /*
@@ -45,7 +115,9 @@ static TRect ListInner (const TWidget *pWidget)
 // folder icon, and a menu carries words.
 static unsigned RowHeight (const TWidget *pWidget, const TTheme *pTheme)
 {
-    return pWidget->Type == WidgetMenu ? pTheme->M.nMenuRow : pTheme->M.nRowHeight;
+    if (pWidget->Type == WidgetMenu)
+        return pTheme->M.nMenuRow;
+    return pWidget->nListRowHeight != 0 ? pWidget->nListRowHeight : pTheme->M.nRowHeight;
 }
 
 // A column is as wide as its heading or its mark, whichever is the broader, with
@@ -292,6 +364,25 @@ static void DrawList (TSurface *pSurface, const TTheme *pTheme, const TWidget *p
             }
         }
 
+        // The painted marks, rightmost last in the array: a network's signal
+        // stands at the edge where the eye compares them down the list, and
+        // its lock just inside.
+        for (int m = 1; m >= 0; m--)
+        {
+            if (pItem->Marks[m] == 0)
+            {
+                continue;
+            }
+            const unsigned nSide = pTheme->M.nLineHeight;
+            nRight -= (int) nSide;
+            pItem->Marks[m] (pSurface,
+                             Rect (nRight, Row.nY + ((int) Row.nHeight - (int) nSide) / 2,
+                                   nSide, nSide),
+                             (pItem->nState & StateDisabled) ? ColorDim : ColorBlack,
+                             ColorWhite);
+            nRight -= (int) pTheme->M.nGap;
+        }
+
         if ((pItem->nState & StateChecked) && pWidget->nColumns == 0)
         {
             const unsigned nDot = pTheme->M.nCheckSize / 3 < 3 ? 3
@@ -392,8 +483,38 @@ void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidge
         break;
 
     case WidgetField:
-        pTheme->DrawField (pSurface, pWidget->Rect, pWidget->pText, pWidget->nState,
-                           WidgetFieldMark (pWidget), pTheme);
+        if (pWidget->bSecret && pWidget->pText != 0)
+        {
+            // One star per character, and the marks counted in characters: the
+            // stars are one byte each where the letters may not be.
+            static char Masked[80];
+            unsigned n = 0;
+            for (const char *p = pWidget->pText; *p != '\0' && n + 1 < sizeof Masked; p++)
+            {
+                if (!Continuation (*p))
+                {
+                    Masked[n++] = '*';
+                }
+            }
+            Masked[n] = '\0';
+            const TFieldMark Mark = { CharsBefore (pWidget->pText, pWidget->nCaret),
+                                      CharsBefore (pWidget->pText, pWidget->nAnchor) };
+            pTheme->DrawField (pSurface, pWidget->Rect, Masked, pWidget->nState, Mark, pTheme);
+        }
+        else
+        {
+            pTheme->DrawField (pSurface, pWidget->Rect, pWidget->pText, pWidget->nState,
+                               WidgetFieldMark (pWidget), pTheme);
+        }
+        break;
+
+    case WidgetTabs:
+        {
+            const char *Labels[THEME_TABS_MAX];
+            const unsigned nCount = TabLabels (pWidget, Labels);
+            pTheme->DrawTabs (pSurface, pWidget->Rect, Labels, nCount, pWidget->nChoice,
+                              pWidget->nState, pTheme);
+        }
         break;
 
     case WidgetProgress:
@@ -402,6 +523,10 @@ void WidgetDraw (TSurface *pSurface, const TTheme *pTheme, const TWidget *pWidge
 
     case WidgetSeparator:
         pTheme->DrawSeparator (pSurface, pWidget->Rect, pTheme);
+        break;
+
+    case WidgetGroup:
+        pTheme->DrawGroup (pSurface, pWidget->Rect, pWidget->pText, pTheme);
         break;
     }
 }
@@ -435,6 +560,7 @@ int WidgetHit (const TWidget *pList, unsigned nCount, int nX, int nY)
         case WidgetIcon:
         case WidgetProgress:
         case WidgetSeparator:
+        case WidgetGroup:
             continue;                   // decoration takes no clicks
         default:
             break;
@@ -467,6 +593,7 @@ bool WidgetFocusable (const TWidget *pWidget)
     case WidgetList:
     case WidgetPopup:
     case WidgetField:
+    case WidgetTabs:
         return true;
     default:
         return false;
@@ -501,19 +628,30 @@ static unsigned Length (const char *p)
     return n;
 }
 
-static bool Continuation (char c)
-{
-    return ((unsigned char) c & 0xC0) == 0x80;
-}
-
 void WidgetFieldClick (TWidget *pWidget, const TTheme *pTheme, int nX, bool bExtend)
 {
     if (pWidget->pEdit == 0)
     {
         return;
     }
-    pWidget->nCaret = GfxTextOffsetAt (pTheme->pBodyFont, pWidget->pEdit,
-                                       nX - pWidget->Rect.nX - ThemeFieldInset (pTheme));
+    const int nAt = nX - pWidget->Rect.nX - (int) ThemeFieldInset (pTheme);
+    if (pWidget->bSecret)
+    {
+        // Every star is as wide as every other, so the character under the
+        // pointer is a division; the byte it starts at is then looked up.
+        const unsigned nStar = GfxTextWidth (pTheme->pBodyFont, "*");
+        const unsigned nChars = CharsBefore (pWidget->pEdit, Length (pWidget->pEdit));
+        unsigned nChar = nAt <= 0 || nStar == 0 ? 0 : ((unsigned) nAt + nStar / 2) / nStar;
+        if (nChar > nChars)
+        {
+            nChar = nChars;
+        }
+        pWidget->nCaret = ByteOfChar (pWidget->pEdit, nChar);
+    }
+    else
+    {
+        pWidget->nCaret = GfxTextOffsetAt (pTheme->pBodyFont, pWidget->pEdit, nAt);
+    }
     if (!bExtend)
     {
         pWidget->nAnchor = pWidget->nCaret;
@@ -527,9 +665,9 @@ TFieldMark WidgetFieldMark (const TWidget *pWidget)
 }
 
 // One scrap for the whole firmware: there is one field on a screen at a time
-// and nothing here allocates. Twenty-eight bytes, the same as a field, because
-// what it carries between two of them is a volume name.
-static char s_Scrap[28];
+// and nothing here allocates. Sixty-four bytes: a volume name, a path, or a
+// Wi-Fi network's name — never a password, which is not copied out.
+static char s_Scrap[64];
 
 bool WidgetFieldHasSelection (const TWidget *pWidget)
 {
@@ -578,7 +716,7 @@ void WidgetFieldSelectAll (TWidget *pWidget)
 
 void WidgetFieldCopy (const TWidget *pWidget)
 {
-    if (!WidgetFieldHasSelection (pWidget))
+    if (!WidgetFieldHasSelection (pWidget) || pWidget->bSecret)
     {
         return;                         // copying nothing must not empty the scrap
     }
@@ -603,6 +741,10 @@ void WidgetFieldCopy (const TWidget *pWidget)
 
 void WidgetFieldCut (TWidget *pWidget)
 {
+    if (pWidget->bSecret)
+    {
+        return;                         // a password is not carried anywhere
+    }
     WidgetFieldCopy (pWidget);
     DeleteSelection (pWidget);
 }
