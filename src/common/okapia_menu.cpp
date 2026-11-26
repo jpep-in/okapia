@@ -995,6 +995,18 @@ static int RunPage (TSurface *pOutput, TSurface *pShadow, const TTheme *pTheme,
  */
 static TChooser  s_Chooser;
 
+void FirmwareStartupRead (TFirmwareStartup *pOut)
+{
+    const char *pDisk  = PrefsFindString ("disk", 0);
+    const char *pCdrom = PrefsFindString ("cdrom", 0);
+    const char *pSound = PrefsFindString ("soundoutput");
+    snprintf (pOut->Disk,  sizeof pOut->Disk,  "%s", pDisk  != 0 ? pDisk  : "");
+    snprintf (pOut->Cdrom, sizeof pOut->Cdrom, "%s", pCdrom != 0 ? pCdrom : "");
+    snprintf (pOut->Sound, sizeof pOut->Sound, "%s", pSound != 0 ? pSound : "");
+    pOut->bNoSound    = PrefsFindBool ("nosound");
+    pOut->nBootDriver = (int) PrefsFindInt32 ("bootdriver");
+}
+
 TFirmwareEngine FirmwareWantedEngine (void)
 {
     return ChooserStartupEngine (&s_Chooser) == CPUPowerPC ? FirmwareEnginePowerPC

@@ -103,7 +103,9 @@ re-entering the Toolbox needs — telling the ROM the mouse resolution, for inst
 - [x] Power-on sequence with the board brought up once (2026-09-05)
 - [x] One image, engine switch by function call (2026-09-07)
 - [x] 68k restart loop with the firmware window after every restart (2026-09-01)
-- [x] PowerPC restart in place when the startup is unchanged (2026-09-14)
+- [x] PowerPC restart in place when the startup is unchanged (2026-09-14); judged against the firmware's preferences
+      since 2026-11-26 (`FirmwareStartupRead()`), the PowerPC engine's own copy never being written by the menu, so
+      another volume chosen at a restart is no longer started as the old one
 - [x] Clean shut down on both engines, disk closed, display blanked (2026-09-14)
 - [x] Startup chime at power-on and at every restart (2026-09-14)
 - [x] `Macintosh idle` boot signal on the 68k engine

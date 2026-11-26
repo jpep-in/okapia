@@ -34,6 +34,21 @@ enum TFirmwareEngine
 // FirmwareBoot. The screen belongs to the Mac a moment later either way.
 TFirmwareResult FirmwareRun (TFirmwareEngine Built);
 
+// The startup the preferences now state, as the firmware wrote them: what an
+// engine restarting in place compares with what it was started with. Read from
+// the firmware's own list, not the engine's: each engine has its copy (the
+// PowerPC one renamed ppc__ on the board, made local on a desktop), and the
+// firmware writes only the one it shares with the 68k engine.
+struct TFirmwareStartup
+{
+    char Disk[256];
+    char Cdrom[256];
+    char Sound[16];         // the device is chosen as the engine starts
+    bool bNoSound;
+    int  nBootDriver;
+};
+void FirmwareStartupRead (TFirmwareStartup *pOut);
+
 // The function that drains the board's log ring onto the card, which the
 // Journal page calls before it reads the file so that it shows the lines logged
 // since the last drain. Optional: the specimen has no board and passes none.
