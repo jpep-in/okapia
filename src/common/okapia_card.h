@@ -18,6 +18,11 @@
 #ifndef _okapia_card_h
 #define _okapia_card_h
 
+// Okapia_Prefs left by a save that stopped between removing the old file and
+// renaming the new one, renamed into place (prefs_okapia.cpp). Called before
+// the preferences file is read or written, by the engines and the firmware.
+void CardPrefsRecover (void);
+
 #ifdef OKAPIA_HOSTED
 // The host's name for a card path; any other path is returned unchanged. The
 // answer lives in a small ring of buffers, enough for the two or three a call

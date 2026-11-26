@@ -6,7 +6,10 @@
 // will not). LoadPrefs() reads the new file when the old one is missing or
 // empty. The stops in between are reproduced here by leaving the files as
 // they would be found: prefs_okapia.cpp is compiled as the desktop compiles
-// it (OKAPIA_HOSTED), with the card in a temporary folder.
+// it (OKAPIA_HOSTED), with the card in a temporary folder, and its rename()
+// is this file's, which refuses to replace a file when asked to, as FatFs does.
+// After a stop, the next load finishes the interrupted save
+// (CardPrefsRecover()), so the following save keeps the lines it does not know.
 //
 // Copyright (C) 2026  Jonathan Pepin
 // SPDX-License-Identifier: GPL-3.0-or-later
@@ -14,6 +17,7 @@
 #include "sysdeps.h"
 #include "prefs.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +26,25 @@
 
 static char s_Card[256];
 static int  s_nFailures;
+static bool s_bFatFs;           // rename() refuses to replace, as on the board
+
+extern "C" int OkapiaTestRename (const char *pFrom, const char *pTo)
+{
+    struct stat Info;
+    if (s_bFatFs && stat (pTo, &Info) == 0)
+    {
+        errno = EEXIST;
+        return -1;
+    }
+    return rename (pFrom, pTo);
+}
+
+// The desktop syncs through its own policy (sync_desktop.cpp); a folder on the
+// host's disk needs nothing more for this check.
+bool CardSync (const char *pPath)
+{
+    return true;
+}
 
 // The desktop's CardPath(): a card path, under the card's folder.
 const char *CardPath (const char *pPath)
@@ -98,6 +121,7 @@ int main (void)
 
     // An empty file, as an older Okapia left it when stopped while truncating
     // it in place, beside a whole new one.
+    rename (CardPath ("/Okapia_Prefs"), CardPath ("/Okapia_Prefs.new"));
     FILE *pEmpty = fopen (CardPath ("/Okapia_Prefs"), "w");
     if (pEmpty != 0)
         fclose (pEmpty);
@@ -109,6 +133,36 @@ int main (void)
     Expect (RamAfterLoad () == (128 << 20) && FileSize ("/Okapia_Prefs") > 0
             && FileSize ("/Okapia_Prefs.new") < 0,
             "the next save leaves one whole Okapia_Prefs and nothing beside it");
+
+    // The board's order: FatFs will not rename over a file, so the old one is
+    // removed first.
+    s_bFatFs = true;
+    Save (160 << 20);
+    Expect (RamAfterLoad () == (160 << 20) && FileSize ("/Okapia_Prefs.new") < 0,
+            "where rename will not replace, the old file is removed and the new one renamed");
+
+    // A line this build does not know, kept by a stop in the board's window:
+    // the load finishes the save, and the next save keeps the line.
+    FILE *pAdd = fopen (CardPath ("/Okapia_Prefs"), "a");
+    if (pAdd != 0)
+    {
+        fputs ("okapiafuturekeyword 42\n", pAdd);
+        fclose (pAdd);
+    }
+    rename (CardPath ("/Okapia_Prefs"), CardPath ("/Okapia_Prefs.new"));
+    Expect (RamAfterLoad () == (160 << 20) && FileSize ("/Okapia_Prefs") > 0
+            && FileSize ("/Okapia_Prefs.new") < 0,
+            "a load after the stop renames the new file into place");
+    Save (192 << 20);
+    char Text[16384] = "";
+    FILE *pRead = fopen (CardPath ("/Okapia_Prefs"), "r");
+    if (pRead != 0)
+    {
+        Text[fread (Text, 1, sizeof Text - 1, pRead)] = '\0';
+        fclose (pRead);
+    }
+    Expect (RamAfterLoad () == (192 << 20) && strstr (Text, "okapiafuturekeyword 42") != 0,
+            "the save after it keeps the line it does not know");
 
     unlink (CardPath ("/Okapia_Prefs"));
     unlink (CardPath ("/Okapia_Prefs.new"));

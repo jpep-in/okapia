@@ -404,12 +404,56 @@ unsigned PrefsCollectUnknown(const char *pPath, char *pBuffer, size_t nSize,
 }
 
 /*
+ *  An interrupted replace of the preferences, finished
+ *
+ *  SavePrefs() writes Okapia_Prefs.new and syncs it before the old file goes,
+ *  so a non-empty .new beside a missing or empty Okapia_Prefs is whole: a stop
+ *  between the removal and the rename, or an older Okapia stopped while it
+ *  truncated the file in place. It is renamed into place before anything
+ *  reads or writes the preferences, so that the next save neither rewrites the
+ *  only good copy in place nor misses the lines it keeps unknown. A .new beside
+ *  a whole Okapia_Prefs is a save that stopped while writing it: left, and
+ *  overwritten by the next one.
+ */
+
+static long CardFileBytes(const char *pName)
+{
+	FILE *f = fopen(CardPath(pName), "r");
+	if (f == NULL)
+		return -1;
+	const long nBytes = fseek(f, 0, SEEK_END) == 0 ? ftell(f) : -1;
+	fclose(f);
+	return nBytes;
+}
+
+void CardPrefsRecover(void)
+{
+	const long nNew = CardFileBytes(PREFS_NEW_NAME);
+	if (nNew <= 0 || CardFileBytes(PREFS_FILE_NAME) > 0)
+		return;
+	static char s_Final[1024];
+	snprintf(s_Final, sizeof s_Final, "%s", CardPath(PREFS_FILE_NAME));
+	unlink(s_Final);			// an empty one, if any: FatFs will not rename over it
+	if (rename(CardPath(PREFS_NEW_NAME), s_Final) != 0) {
+		CLogger::Get()->Write(FROM, LogWarning, "Cannot rename %s into place", PREFS_NEW_NAME);
+		return;
+	}
+#ifdef OKAPIA_HOSTED
+	CardSync("/");
+#endif
+	CLogger::Get()->Write(FROM, LogNotice, "%s: an interrupted save finished (%ld bytes)",
+			      PREFS_FILE_NAME, nNew);
+}
+
+/*
  *  Load preferences from the card
  */
 
 void LoadPrefs(const char *vmdir)
 {
 	(void) vmdir;			// no VM directory: the card is the VM
+
+	CardPrefsRecover();
 
 	bool bLoaded = false;
 	const char *pName = PREFS_FILE_NAME;
@@ -460,6 +504,7 @@ void SavePrefs(void)
 	// File scope and not a local: 2 KB is more than this kernel's taste for
 	// stack frames, and SavePrefs() is called from the firmware too.
 	static char s_Unknown[2048];
+	CardPrefsRecover();
 	unsigned nKept  = 0;
 	unsigned nFound = PrefsCollectUnknown(PREFS_FILE_NAME, s_Unknown,
 	                                      sizeof s_Unknown, &nKept);
@@ -605,6 +650,14 @@ void SavePrefs(void)
 		CLogger::Get()->Write(FROM, LogWarning, "Cannot write %s", PREFS_NEW_NAME);
 		return;
 	}
+#ifdef OKAPIA_HOSTED
+	// fsync() on macOS stops at the drive's cache: the host's own policy
+	// (sync_desktop.cpp) goes the rest of the way.
+	if (!CardSync(PREFS_NEW_NAME)) {
+		CLogger::Get()->Write(FROM, LogWarning, "Cannot write %s", PREFS_NEW_NAME);
+		return;
+	}
+#endif
 	// rename() replaces the old file on a desktop. FatFs refuses to rename
 	// over an existing file, so on the board the old one goes first; a stop
 	// in between leaves the new one alone, which LoadPrefs() reads.
@@ -615,6 +668,10 @@ void SavePrefs(void)
 		CLogger::Get()->Write(FROM, LogWarning, "Cannot replace %s", PREFS_FILE_NAME);
 		return;
 	}
+#ifdef OKAPIA_HOSTED
+	// The rename is the folder's to keep
+	CardSync("/");
+#endif
 
 	// Never quietly: a preferences file that loses a line is exactly the kind
 	// of failure nobody notices until the setting is needed.

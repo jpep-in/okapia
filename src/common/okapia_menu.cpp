@@ -2224,6 +2224,9 @@ static bool RunCards (char *pMount, unsigned nSize)
 // leaves the old file or the new one, never half of one.
 static bool PrefsFileSet (const char *pName, const char *pValue, bool bAdd)
 {
+    // A save of the engine's that stopped half-way leaves the only good copy
+    // in Okapia_Prefs.new: finished first, or this would rewrite it as one line.
+    CardPrefsRecover ();
     static char Old[64 * 1024];
     size_t nOld = 0;
     FILE *pIn = fopen (CardPath ("/Okapia_Prefs"), "r");
@@ -2440,6 +2443,7 @@ static void WelcomeGather (void)
 // welcome page reads before any engine has read the file.
 static bool PrefsFileGet (const char *pName, char *pOut, unsigned nSize)
 {
+    CardPrefsRecover ();
     pOut[0] = '\0';
     FILE *pIn = fopen (CardPath ("/Okapia_Prefs"), "r");
     if (pIn == 0)

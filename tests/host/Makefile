@@ -143,9 +143,11 @@ check_platform: check_platform.o $(PLATFORM_OBJS) $(HFS_OBJS)
 	$(CXX) -o $@ $^
 
 # Okapia_Prefs written beside and renamed: prefs_okapia.cpp compiled as the
-# desktop compiles it, with CardPath() pointing into a temporary folder.
+# desktop compiles it, with CardPath() pointing into a temporary folder, and its
+# rename() routed through the check, which can refuse to replace a file as
+# FatFs does on the board.
 ph_prefs_okapia.o: $(CIRCLE)/prefs_okapia.cpp
-	$(CXX) $(PLATFORM_CXXFLAGS) -DOKAPIA_HOSTED -MMD -MP -c -o $@ $<
+	$(CXX) $(PLATFORM_CXXFLAGS) -DOKAPIA_HOSTED -Drename=OkapiaTestRename -MMD -MP -c -o $@ $<
 
 check_prefs_file.o: check_prefs_file.cpp
 	$(CXX) $(PLATFORM_CXXFLAGS) -DOKAPIA_HOSTED -MMD -MP -c -o $@ $<
