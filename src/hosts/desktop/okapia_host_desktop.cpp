@@ -1456,7 +1456,13 @@ bool HostCopyToCard (const char *pHostPath, char *pCardPath, unsigned nSize)
     }
     // The rename is the directory's: synced too, or a stop could leave the
     // image's blocks on the card and no name pointing at them.
-    HostSyncDirectory (s_Root);
+    if (!HostSyncDirectory (s_Root))
+    {
+        // The image is whole and synced; its name may not outlive a power cut.
+        HostLog ("desktop", HostLogWarning, "Copied %s to %s, but the folder did not confirm the new name",
+                 Real, pCardPath);
+        return true;
+    }
     HostLog ("desktop", HostLogNotice, "Copied %s to %s", Real, pCardPath);
     return true;
 }
