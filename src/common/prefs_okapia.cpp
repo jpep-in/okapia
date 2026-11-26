@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <string>
 
 #include "okapia_circle.h"
@@ -32,6 +33,8 @@
 // FatFs mounts the card as the root of the filesystem, so this is the card's
 // top-level directory next to the ROM and the disk images.
 static const char PREFS_FILE_NAME[] = "/Okapia_Prefs";
+// Written whole beside it, then renamed over it (SavePrefs())
+static const char PREFS_NEW_NAME[] = "/Okapia_Prefs.new";
 
 // Only reached when the card carries no preferences file. They name the files
 // scripts/make-sd-image.sh puts on the card.
@@ -409,12 +412,26 @@ void LoadPrefs(const char *vmdir)
 	(void) vmdir;			// no VM directory: the card is the VM
 
 	bool bLoaded = false;
-	FILE *f = fopen(CardPath(PREFS_FILE_NAME), "r");
+	const char *pName = PREFS_FILE_NAME;
+	FILE *f = fopen(CardPath(pName), "r");
+	if (f == NULL || (fseek(f, 0, SEEK_END) == 0 && ftell(f) == 0)) {
+		// A stop between SavePrefs()'s removal of the old file and its rename
+		// leaves only the new one, complete; and a card written by an older
+		// Okapia, which truncated the file in place, may hold an empty one.
+		FILE *pNew = fopen(CardPath(PREFS_NEW_NAME), "r");
+		if (pNew != NULL) {
+			if (f != NULL)
+				fclose(f);
+			f = pNew;
+			pName = PREFS_NEW_NAME;
+		}
+	}
 	if (f != NULL) {
+		rewind(f);
 		LoadPrefsFromStream(f);
 		fclose(f);
 		bLoaded = true;
-		CLogger::Get()->Write(FROM, LogNotice, "Read %s", PREFS_FILE_NAME);
+		CLogger::Get()->Write(FROM, LogNotice, "Read %s", pName);
 	} else
 		CLogger::Get()->Write(FROM, LogNotice,
 				      "No %s on the card, writing one with the defaults",
@@ -440,7 +457,6 @@ void LoadPrefs(const char *vmdir)
 
 void SavePrefs(void)
 {
-	// Before the file is opened for writing, because opening it truncates it.
 	// File scope and not a local: 2 KB is more than this kernel's taste for
 	// stack frames, and SavePrefs() is called from the firmware too.
 	static char s_Unknown[2048];
@@ -448,7 +464,10 @@ void SavePrefs(void)
 	unsigned nFound = PrefsCollectUnknown(PREFS_FILE_NAME, s_Unknown,
 	                                      sizeof s_Unknown, &nKept);
 
-	FILE *f = fopen(CardPath(PREFS_FILE_NAME), "w");
+	// Never rewritten in place: opening it for writing empties it on the card
+	// at once, and a stop before it is whole would leave every setting at its
+	// default. The new file is written beside it, synced, then renamed over it.
+	FILE *f = fopen(CardPath(PREFS_NEW_NAME), "w");
 	if (f == NULL) {
 		CLogger::Get()->Write(FROM, LogWarning, "Cannot write %s", PREFS_FILE_NAME);
 		return;
@@ -581,7 +600,21 @@ void SavePrefs(void)
 			nKept);
 		fputs(s_Unknown, f);
 	}
-	fclose(f);
+	const bool bWritten = fflush(f) == 0 && !ferror(f) && fsync(fileno(f)) == 0;
+	if (fclose(f) != 0 || !bWritten) {
+		CLogger::Get()->Write(FROM, LogWarning, "Cannot write %s", PREFS_NEW_NAME);
+		return;
+	}
+	// rename() replaces the old file on a desktop. FatFs refuses to rename
+	// over an existing file, so on the board the old one goes first; a stop
+	// in between leaves the new one alone, which LoadPrefs() reads.
+	static char s_Final[1024];
+	snprintf(s_Final, sizeof s_Final, "%s", CardPath(PREFS_FILE_NAME));
+	if (rename(CardPath(PREFS_NEW_NAME), s_Final) != 0
+	    && (unlink(s_Final) != 0 || rename(CardPath(PREFS_NEW_NAME), s_Final) != 0)) {
+		CLogger::Get()->Write(FROM, LogWarning, "Cannot replace %s", PREFS_FILE_NAME);
+		return;
+	}
 
 	// Never quietly: a preferences file that loses a line is exactly the kind
 	// of failure nobody notices until the setting is needed.
