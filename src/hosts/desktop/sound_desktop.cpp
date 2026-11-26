@@ -20,6 +20,7 @@
 #include "hal_circle.h"
 #include "okapia_card.h"
 #include "okapia_host.h"
+#include "okapia_firmware.h"
 #include "rom_chime.h"
 
 #include <circle/sound/soundbasedevice.h>
@@ -115,33 +116,13 @@ bool CSoundBaseDevice::IsActive (void)
  */
 static const unsigned ROM_MIN = 512 * 1024, ROM_MAX = 4 * 1024 * 1024;
 
-// The ROM the startup volume asks for: its engine line says PowerPC, romppc;
-// otherwise rom (board_sound_circle.cpp, ChimeRomPath).
-static const char *ChimeRomPath (void)
+// The ROM the startup volume asks for: romppc when it starts on the PowerPC
+// engine, as the boot menu decides it, rom otherwise (board_sound_circle.cpp,
+// ChimeRomPath).
+static const char *ChimeRomPath (bool bPowerPCRunning)
 {
-    const char *pDisk = PrefsFindString ("disk", 0);
-    bool bPowerPC = false;
-    if (pDisk != 0)
-    {
-        if (*pDisk == '*')
-        {
-            pDisk++;
-        }
-        const size_t nDisk = strlen (pDisk);
-        for (int i = 0; ; i++)
-        {
-            const char *pLine = PrefsFindString ("engine", i);
-            if (pLine == 0)
-            {
-                break;
-            }
-            if (strncmp (pLine, pDisk, nDisk) == 0 && pLine[nDisk] == ' ')
-            {
-                bPowerPC = pLine[nDisk + 1] == 'p';
-                break;
-            }
-        }
-    }
+    const bool bPowerPC = FirmwareStartupEngine (bPowerPCRunning ? FirmwareEnginePowerPC : FirmwareEngine68k)
+                        == FirmwareEnginePowerPC;
     const char *pROM = bPowerPC ? PrefsFindString ("romppc") : 0;
     return pROM != 0 && *pROM != '\0' ? pROM : PrefsFindString ("rom");
 }
@@ -209,7 +190,7 @@ bool HostChimeListen (const char *pCardPath)
     return ChimeQueue (pCardPath);
 }
 
-void BoardChimePlay (void)
+void BoardChimePlay (bool bPowerPC)
 {
     const char *pWhere = PrefsFindString ("soundoutput");
     if (PrefsFindBool ("nosound") || (pWhere != 0 && strcmp (pWhere, "off") == 0)
@@ -221,7 +202,7 @@ void BoardChimePlay (void)
     {
         return;
     }
-    const char *pWanted = ChimeRomPath ();
+    const char *pWanted = ChimeRomPath (bPowerPC);
     if (!ChimeQueue (pWanted)
         && !ChimeQueue (PrefsFindString ("romppc"))
         && !ChimeQueue (PrefsFindString ("rom")))

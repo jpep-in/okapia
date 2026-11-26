@@ -152,7 +152,7 @@ void ether_reset (void)
 
     InputRelease ();
     FwInputReclaim ();
-    BoardChimePlay ();          // a Macintosh chimes when it restarts
+    BoardChimePlay (true);      // a Macintosh chimes when it restarts
     const TFirmwareResult Result = FirmwareRun (FirmwareEnginePowerPC);
     FirmwareStartupRead (&After);
     // The Macintosh is about to feed the same device, and nothing on this path

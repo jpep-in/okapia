@@ -248,7 +248,9 @@ CSoundBaseDevice *BoardSoundClaim (const char *pWhere, unsigned nQueueMsecs);
  *  engine calls it before it feeds the same device. BoardChimeStop() does not
  *  wait.
  */
-void BoardChimePlay (void);
+// bPowerPC: the PowerPC engine is the one running (its restart), which a
+// universal System with no engine remembered starts again on.
+void BoardChimePlay (bool bPowerPC = false);
 void BoardChimeFinish (void);
 void BoardChimeStop (void);
 

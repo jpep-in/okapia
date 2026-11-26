@@ -445,6 +445,31 @@ int main (void)
             "the startup disk asks for the other engine");
     s_Model.nStartup = 0;
 
+    // What the chime asks before any menu (FirmwareStartupEngine): the engine
+    // settled from the card alone. A PowerPC-only System has no engine line,
+    // the card having had no choice to remember, and is a PowerPC all the same;
+    // that was the Quadra's chime on a Mac OS 8.6 restart (2026-11-26).
+    {
+        TChooser Card;
+        ChooserSample (&Card);
+        for (unsigned i = 0; i < Card.nCount; i++)
+            Card.Volumes[i].Engine = CPUUnknown;
+        Card.Built = CPU68k;
+        Card.nStartup = 5;                          // /macos86.img
+        ChooserSettleEngines (&Card);
+        Expect (ChooserStartupEngine (&Card) == CPUPowerPC,
+                "a PowerPC-only System with no engine line starts on the PowerPC");
+        Card.nStartup = 1;                          // /machd76.image, universal
+        Expect (ChooserStartupEngine (&Card) == CPU68k,
+                "a universal one with nothing remembered, on the engine running");
+        for (unsigned i = 0; i < Card.nCount; i++)
+            Card.Volumes[i].Engine = CPUUnknown;
+        Card.Built = CPUPowerPC;
+        ChooserSettleEngines (&Card);
+        Expect (ChooserStartupEngine (&Card) == CPUPowerPC,
+                "and on the PowerPC when that is the one restarting");
+    }
+
     // A choice made on a universal volume must not follow the selection onto a
     // volume that has no choice — the popup speaks about the selected row.
     Select (5);

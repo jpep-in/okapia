@@ -41,7 +41,9 @@ void BoardSerialLog (bool bOn);
 void BoardSerialReplay (void);
 class CSoundBaseDevice;
 CSoundBaseDevice *BoardSoundClaim (const char *pWhere, unsigned nQueueMsecs);
-void BoardChimePlay (void);
+// bPowerPC: the PowerPC engine is the one running (its restart), which a
+// universal System with no engine remembered starts again on.
+void BoardChimePlay (bool bPowerPC = false);
 void BoardChimeFinish (void);
 void BoardChimeStop (void);
 void BoardPowerOff (void);

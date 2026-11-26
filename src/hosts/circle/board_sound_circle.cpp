@@ -31,6 +31,7 @@
 
 #include "hal_circle.h"
 #include "clock_okapia.h"
+#include "okapia_firmware.h"
 
 #include <circle/bcmpropertytags.h>
 #include <circle/logger.h>
@@ -221,33 +222,14 @@ static void ChimeTick (TKernelTimerHandle hTimer, void *pParam, void *pContext)
     s_hChimeTimer = CTimer::Get ()->StartKernelTimer (2, ChimeTick, 0, 0);
 }
 
-// Which ROM the startup volume's Macintosh takes: the first disk, and the
-// engine the card remembers for it. A volume with no line is a 68k one.
-static const char *ChimeRomPath (void)
+// Which ROM the startup volume's Macintosh takes: romppc when it starts on the
+// PowerPC engine, as the boot menu decides it (FirmwareStartupEngine), rom
+// otherwise. Not from the `engine` lines alone: the menu writes one only for a
+// universal System, so a Mac OS 8.6 volume, PowerPC only, has none.
+static const char *ChimeRomPath (bool bPowerPCRunning)
 {
-    const char *pDisk = PrefsFindString ("disk", 0);
-    bool bPowerPC = false;
-    if (pDisk != 0)
-    {
-        if (*pDisk == '*')
-        {
-            pDisk++;
-        }
-        const size_t nDisk = strlen (pDisk);
-        for (int i = 0; ; i++)
-        {
-            const char *pLine = PrefsFindString ("engine", i);
-            if (pLine == 0)
-            {
-                break;
-            }
-            if (strncmp (pLine, pDisk, nDisk) == 0 && pLine[nDisk] == ' ')
-            {
-                bPowerPC = pLine[nDisk + 1] == 'p';
-                break;
-            }
-        }
-    }
+    const bool bPowerPC = FirmwareStartupEngine (bPowerPCRunning ? FirmwareEnginePowerPC : FirmwareEngine68k)
+                        == FirmwareEnginePowerPC;
     const char *pROM = bPowerPC ? PrefsFindString ("romppc") : 0;
     return pROM != 0 && *pROM != '\0' ? pROM : PrefsFindString ("rom");
 }
@@ -315,9 +297,8 @@ static bool ChimeLoad (const char *pROM, bool bExplain)
 // The ROM the startup volume asks for first; then, when that one keeps no
 // chime, the first on the card that does — the preferences' other ROM, then any
 // .rom file at the root — so an unknown ROM still leaves the card a chime.
-static bool ChimeFind (const char **ppFrom, char *pFound, size_t nFound)
+static bool ChimeFind (const char *pWanted, const char **ppFrom, char *pFound, size_t nFound)
 {
-    const char *pWanted = ChimeRomPath ();
     if (pWanted != 0 && *pWanted != '\0' && ChimeLoad (pWanted, true))
     {
         *ppFrom = pWanted;
@@ -362,7 +343,7 @@ static bool ChimeFind (const char **ppFrom, char *pFound, size_t nFound)
     return bFound;
 }
 
-void BoardChimePlay (void)
+void BoardChimePlay (bool bPowerPC)
 {
     // audio_okapia.cpp's reading of the same two preferences.
     const char *pWhere = PrefsFindString ("soundoutput");
@@ -380,7 +361,7 @@ void BoardChimePlay (void)
     // starts the same Macintosh reuses what the last search found, or did not.
     static bool s_bSearched, s_bHave;
     static char Wanted[256], Found[256];
-    const char *pWanted = ChimeRomPath ();
+    const char *pWanted = ChimeRomPath (bPowerPC);
     if (pWanted == 0)
     {
         pWanted = "";
@@ -392,7 +373,7 @@ void BoardChimePlay (void)
         const unsigned nStart = CTimer::GetClockTicks ();
         const char *pFrom = 0;
         static char Scanned[256];
-        s_bHave = ChimeFind (&pFrom, Scanned, sizeof Scanned);
+        s_bHave = ChimeFind (pWanted, &pFrom, Scanned, sizeof Scanned);
         if (!s_bHave)
         {
             CLogger::Get ()->Write (FROM, LogNotice, "Chime: no ROM on the card keeps one");

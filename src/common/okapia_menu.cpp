@@ -1042,6 +1042,16 @@ TFirmwareEngine FirmwareWantedEngine (void)
     return ChooserStartupEngine (&s_Chooser) == CPUPowerPC ? FirmwareEnginePowerPC
                                                            : FirmwareEngine68k;
 }
+
+// A chooser of its own: the menu's keeps its selection between two runs.
+TFirmwareEngine FirmwareStartupEngine (TFirmwareEngine Running)
+{
+    static TChooser s_Startup;
+    s_Startup.Built = Running == FirmwareEnginePowerPC ? CPUPowerPC : CPU68k;
+    GatherVolumes (&s_Startup);
+    ChooserSettleEngines (&s_Startup);
+    return ChooserStartupEngine (&s_Startup) == CPUPowerPC ? FirmwareEnginePowerPC : FirmwareEngine68k;
+}
 static TSettings  s_Settings;
 static TDisplaySettings s_Display;
 static TNetwork   s_Network;

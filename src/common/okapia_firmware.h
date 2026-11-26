@@ -66,4 +66,10 @@ bool FirmwareWelcome (void);
 // kernel's business — it is the only thing that can go and fetch another image.
 TFirmwareEngine FirmwareWantedEngine (void);
 
+// Which emulator the card's startup volume starts on, decided as the boot
+// menu decides it (its System, then what the card remembers, then Running for
+// a universal System with nothing remembered), without the menu having run:
+// the chime takes its ROM from it. Reads the card's volumes, not the menu's.
+TFirmwareEngine FirmwareStartupEngine (TFirmwareEngine Running);
+
 #endif

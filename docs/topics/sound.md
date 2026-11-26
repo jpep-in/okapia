@@ -84,8 +84,10 @@ it is. Nothing Apple ships in the repository; Okapia reads the ROM the user put 
 `BoardChimePlay()` runs at power-on right after the Mac RAM block is allocated, and again at every restart (68k: the
 `CKernel::Run` loop; PowerPC: `ether_reset`, [in place](startup-and-shutdown.md#restart-from-mac-os)):
 
-1. **Which ROM**: the one the startup volume's Macintosh will use — the first `disk` and its `engine` line pick
-   `rom` or `romppc`. If it keeps no chime this reader knows, the other ROM of the preferences, then any file at the
+1. **Which ROM**: the one the startup volume's Macintosh will use — `romppc` when it starts on the PowerPC engine,
+   `rom` otherwise, decided as the boot menu decides it (`FirmwareStartupEngine`, `okapia_menu.cpp`): the
+   volume's System, then its `engine` line, then the engine running for a universal System with nothing remembered
+   (the PowerPC on its own restart, `BoardChimePlay (true)`). If it keeps no chime this reader knows, the other ROM of the preferences, then any file at the
    card's root sized 512 KB to 4 MB. The search is redone only when the wanted ROM changes.
 2. **Read** whole into a 4 MB buffer, then searched in memory (field-by-field reads took 1.6 s under QEMU, a single
    read 0.68 s; QEMU's SD is slow, the Pi log says `found in … ms`).
@@ -141,6 +143,10 @@ duration fitted by least squares — and approved by ear. See the
 - [ ] Trials: system sounds, AIFF playback, games
 
 ## Pitfalls
+
+- **An `engine` line is not the engine.** The menu writes one only for a universal System, where there was a choice;
+  a Mac OS 8.6 volume, PowerPC only, has none. The chime read the lines alone and played the Quadra's on every 8.6
+  start and restart (2026-11-26). It now asks the menu's rule (`check_chooser`: a PowerPC-only System with no line).
 
 - **A screen hears nothing of a new HDMI audio stream for a second or two.** The chime is 1.4 s: at power-on, and
   after any restart of the board, it was played whole into that silence — the log said `Chime: playing on hdmi` and
