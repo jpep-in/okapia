@@ -9,7 +9,11 @@
 ## Using it
 
 - **Disk images** are plain files at the card's root, listed by `disk` lines ([Preferences](../preferences.md));
-  **the order is the setting** and the [boot menu](boot-menu.md) writes it. A `*` prefix mounts read-only.
+  **the order is the setting** and the [boot menu](boot-menu.md) writes it. A `*` prefix mounts read-only, and the
+  startup repair leaves such a volume untouched even when it is marked in use.
+- **`Okapia_Prefs`** is never rewritten in place: `SavePrefs()` writes `Okapia_Prefs.new`, syncs it, then renames it
+  over the old one (FatFs will not rename over a file, so on the board the old one is removed first). A stop in
+  between leaves the new file alone, and `LoadPrefs()` reads it, as it does when `Okapia_Prefs` is empty.
 - **CD images** (Toast images work) are `cdrom` lines; a disc can be the startup volume through `bootdriver -62`.
 - **New volume**: the boot menu makes an empty HFS volume of a chosen name and size.
 - **Shut down from Mac OS.** Pulling the plug keeps your data but marks the volume in use; Okapia repairs it at the

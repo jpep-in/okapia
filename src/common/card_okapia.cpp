@@ -281,7 +281,8 @@ bool CardPrepareVolumes (void)
 
         // A '*' prefix means read-only to the emulator (disk.cpp:161); the path
         // on the card starts after it.
-        const char *pPath = (*pDisk == '*') ? pDisk + 1 : pDisk;
+        const bool bReadOnly = *pDisk == '*';
+        const char *pPath = bReadOnly ? pDisk + 1 : pDisk;
 
         FILE *pFile = fopen (CardPath (pPath), "rb");
         if (pFile == 0)
@@ -313,6 +314,15 @@ bool CardPrepareVolumes (void)
         {
             CLogger::Get ()->Write (FROM, LogWarning,
                             "%s: left as it is (hfsrepair false); the Mac will refuse it",
+                            pPath);
+            continue;
+        }
+        // Read-only was asked of the volume, and a repair writes it: it is
+        // left exactly as it is, and said so.
+        if (bReadOnly)
+        {
+            CLogger::Get ()->Write (FROM, LogWarning,
+                            "%s: left as it is (read-only); the Mac will refuse it",
                             pPath);
             continue;
         }
