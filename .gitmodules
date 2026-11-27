@@ -16,3 +16,9 @@
 [submodule "external/miniz"]
 	path = external/miniz
 	url = https://github.com/richgel999/miniz.git
+[submodule "external/embench-iot"]
+	path = external/embench-iot
+	url = https://github.com/embench/embench-iot.git
+[submodule "external/coremark"]
+	path = external/coremark
+	url = https://github.com/eembc/coremark.git

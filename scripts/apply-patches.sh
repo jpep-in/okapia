@@ -3,8 +3,8 @@
 #   usage: apply-patches.sh [--check]
 #
 # The contributor guide says never to edit external/ by hand. This is how the exceptions
-# get in: patches/<submodule>/*.patch, applied to external/<submodule> — macemu
-# and circle-stdlib so far — each minimal, each explaining itself in its own
+# get in: patches/<submodule>/*.patch, applied to external/<submodule> — macemu,
+# circle-stdlib, macemu-jit and embench-iot so far — each minimal, each explaining itself in its own
 # header, each a candidate to send upstream.
 #
 # Idempotent on purpose — bootstrap runs it, and so does anyone who is not sure.

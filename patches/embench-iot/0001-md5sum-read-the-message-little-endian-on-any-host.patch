@@ -1,0 +1,44 @@
+md5sum: read the message little-endian on any host
+
+MD5 defines its sixteen message words and the trailing bit count as
+little-endian. md5.c cast the byte buffer to uint32_t * and copied the
+length with memcpy, so it was correct only on a little-endian host: on a
+big-endian one (a 68k or PowerPC Macintosh, OkapiaBench's targets) it hashes
+other words, returns another digest, and verify_benchmark fails against
+RESULT, which was computed on x86.
+
+Assemble each word from its four bytes and write the length byte by byte.
+The digest, and so RESULT, is unchanged on a little-endian host. A candidate
+to send upstream (github.com/embench/embench-iot).
+
+diff --git a/src/md5sum/md5.c b/src/md5sum/md5.c
+index 092e183..ba91628 100644
+--- a/src/md5sum/md5.c
++++ b/src/md5sum/md5.c
+@@ -90,7 +90,10 @@ void md5(uint8_t *initial_msg, size_t initial_len) {
+     msg[initial_len] = 128; // write the "1" bit
+ 
+     uint32_t bits_len = 8*initial_len; // note, we append the len
+-    memcpy(msg + new_len, &bits_len, 4);           // in bits at the end of the buffer
++    msg[new_len] = (uint8_t) bits_len;             // in bits at the end of the buffer,
++    msg[new_len + 1] = (uint8_t) (bits_len >> 8);  // little-endian as MD5 defines it
++    msg[new_len + 2] = (uint8_t) (bits_len >> 16); // whatever the host's byte order
++    msg[new_len + 3] = (uint8_t) (bits_len >> 24);
+ 
+     // Process the message in successive 512-bit chunks:
+     //for each 512-bit chunk of message:
+@@ -98,7 +101,13 @@ void md5(uint8_t *initial_msg, size_t initial_len) {
+     for(offset=0; offset<new_len; offset += (512/8)) {
+ 
+         // break chunk into sixteen 32-bit words w[j], 0 ≤ j ≤ 15
+-        uint32_t *w = (uint32_t *) (msg + offset);
++        uint32_t w[16];
++        int wi;
++        for (wi = 0; wi < 16; wi++)
++          w[wi] = (uint32_t) msg[offset + 4 * wi]
++                  | (uint32_t) msg[offset + 4 * wi + 1] << 8
++                  | (uint32_t) msg[offset + 4 * wi + 2] << 16
++                  | (uint32_t) msg[offset + 4 * wi + 3] << 24;
+ 
+ #ifdef DEBUG
+         printf("offset: %d %x\n", offset, offset);

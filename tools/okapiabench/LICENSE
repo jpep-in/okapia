@@ -1,3 +1,19 @@
+OkapiaBench: which licence covers what
+======================================
+
+- The files of this directory are under the MIT License below, except
+  coremark_port/, adapted from CoreMark's barebones port and so under the
+  Apache License 2.0 (its files say so).
+- The application as built also contains, compiled as they are published:
+  Embench-IoT (external/embench-iot, GPL-3.0-or-later; some programs MIT or
+  Apache-2.0, as their files say), CoreMark (external/coremark, Apache-2.0,
+  with EEMBC's acceptable use agreement for the name), stb (external/stb, MIT
+  or public domain) and miniz (external/miniz, MIT). Because of Embench, the
+  application is distributed under the GNU General Public License, version 3
+  or later. Built with NO_EMBENCH=1, it contains no GPL code.
+- CoreMark is a trademark of EEMBC. A result reported as a CoreMark score
+  follows the rules of external/coremark/README.md.
+
 MIT License
 
 Copyright (c) 2026 Jonathan Pepin

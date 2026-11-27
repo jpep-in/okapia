@@ -20,6 +20,14 @@ STB_REF="52a4ba61ef8d75b4be0d24bc70c08fb02499d7b7"
 # miniz (MIT), the desktop's reader of release zips (src/hosts/desktop/install*).
 MINIZ_URL="https://github.com/richgel999/miniz.git"
 MINIZ_REF="3.1.2"
+# OkapiaBench's borrowed benchmarks (tools/okapiabench), compiled as published.
+# Embench-IoT (GPL-3.0-or-later): no 2.0 tag yet; the commit after "Correct
+# baseline values" of 2026-02-13, whose baseline-data/speed.json scores it.
+EMBENCH_URL="https://github.com/embench/embench-iot.git"
+EMBENCH_REF="09c2ed8c3b7008c95d08b038de4a3f6dc103ed70"
+# CoreMark (Apache-2.0): v1.01 is from 2018, master since only reformatted and fixed.
+COREMARK_URL="https://github.com/eembc/coremark.git"
+COREMARK_REF="1f483d5b8316753a742cbf5590caf5bd0a4e4777"
 
 # circle-stdlib also declares doctest, json, mbedtls and mongoose. Those serve
 # its TLS support and its samples only: we never build them.
@@ -60,6 +68,8 @@ add "$MACEMU_URL" external/macemu "$MACEMU_REF"
 add "$MACEMU_JIT_URL" external/macemu-jit "$MACEMU_JIT_REF"
 add "$STB_URL" external/stb "$STB_REF"
 add "$MINIZ_URL" external/miniz "$MINIZ_REF"
+add "$EMBENCH_URL" external/embench-iot "$EMBENCH_REF"
+add "$COREMARK_URL" external/coremark "$COREMARK_REF"
 
 # The exceptions to "never edit external/", each explaining itself in its own
 # header. Idempotent, so running bootstrap again is safe.

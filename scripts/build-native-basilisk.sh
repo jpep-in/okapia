@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Build a desktop Basilisk II (SDL, macOS or Linux) from a kanjitalk755/macemu
 # clone with Okapia's FPU and translator in it, to measure them on the host
-# with tools/macbench/run.py before a card ever sees them.
+# with tools/okapiabench/run.py before a card ever sees them.
 #   usage: build-native-basilisk.sh <name> [configure options...]
 #
 #   build-native-basilisk.sh softfloat --enable-fpe=softfloat --enable-jit-arm64
