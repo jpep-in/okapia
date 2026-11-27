@@ -48,7 +48,7 @@
 | [Network](../topics/network.md) | 12 | 12 | Why Wi-Fi drops while the Mac starts; DHCP by cable; a group rekey |
 | [Build](../contributing/build.md) | 5 | 3 | Continuous integration without Apple ROMs |
 | [Testing and debugging](../contributing/testing-and-debugging.md) | 5 | 5 | Automated QEMU boot check in CI; a PowerPC boot signal |
-| [Benchmarks](../contributing/benchmarks.md) | 7 | 10 | Five runs per configuration; MacBench's FPU tests on the Pi 4 |
+| [Benchmarks](../contributing/benchmarks.md) | 7 | 10 | Five runs per configuration; OkapiaBench's FPU tests on the Pi 4 |
 | [Desktop](../topics/desktop.md) | 18 | 7 | Validate guest sound/network, restarts and the disk flush policy; Linux build |
 
 ## Distribution

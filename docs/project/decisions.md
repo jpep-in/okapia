@@ -152,7 +152,7 @@ validated default, and it does not change the interpreted PowerPC engine.
   the interpreter, and every call into the host is a journey out of translated code. Speedometer does not see the
   hooks, with or without the translator. Their code and their modes (`sync`, `parallel`, `probe`, `verify`) were a
   maintenance cost on every start path.
-- **Evidence for, kept on record**: MacBench on a Pi 4 with the translator, 152.0 s → 132.2 s, from whole-window
+- **Evidence for, kept on record**: OkapiaBench on a Pi 4 with the translator, 152.0 s → 132.2 s, from whole-window
   copies (4.8×), scrolling (3.2×) and regions (−31 %); nothing else moves
   ([Benchmarks](../contributing/benchmarks.md#raspberry-pi-4-the-night-of-2026-11-15)).
 - **Would reopen**: a real application (the Finder's windows, a game, a scrolling editor) measured faster by a margin

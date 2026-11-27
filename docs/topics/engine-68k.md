@@ -206,7 +206,7 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [ ] The fast paths on a Pi 4: the traced boot's lines, Speedometer's FPU tests, and the time per operation
       from `trace_fpu_circle.cpp`
 - [x] FPU instructions in the translator: the core called from inside the block (T1), `FBcc`, `FDBcc`, `FScc`
-      translated (T2), direct paths for the common operations (T3); MacBench's FPU tests 1.75 times as fast on the
+      translated (T2), direct paths for the common operations (T3); OkapiaBench's FPU tests 1.75 times as fast on the
       M4, same checks as the interpreter (2026-11-16)
 - [x] The same on a Pi 4: Speedometer's FPU average 6.26 against 3.81 with binary128, FFT and Matrix doubled
       ([Benchmarks](../contributing/benchmarks.md#raspberry-pi-4-the-fpu-translated-2026-11-16), 2026-11-16)
@@ -235,8 +235,8 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
 - [x] 68k translator (`OKAPIA_JIT_ARM64=1`, `patches/macemu/0012`): boots System 7.5.5 under QEMU and passes
       `run-test.sh` with `jit true` (2026-11-15)
 - [x] The code buffer bounded instruction by instruction: a block of sixty-four `MOVEM.W` near the end of the
-      buffer could be written past it (found in review, 2026-11-26); MacBench identical with a 128 KB buffer
-- [x] The translator on a Pi 4: System 7.6.1, Speedometer and MacBench timed, sessions ended with Shut Down, the
+      buffer could be written past it (found in review, 2026-11-26); OkapiaBench identical with a 128 KB buffer
+- [x] The translator on a Pi 4: System 7.6.1, Speedometer and OkapiaBench timed, sessions ended with Shut Down, the
       tick count within 0.2 % of the clock (2026-11-15)
 - [ ] The translator, before it can be the default ([Decisions](../project/decisions.md#no-jit-by-default-two-experimental-ones)):
       System 7.1, five restarts in a row, `run-test.sh` on the Pi's card, then the allocations it makes while the
@@ -253,11 +253,11 @@ clock, so it counts visits times a quantum (about 500 k/s whatever the Macintosh
   it; `jit true` does not.
 - **Leaving translated code is the unit of cost under the translator**, and QEMU overstates it: every indirect
   branch leaves TCG's chained code. On the QuickDraw hooks (`wip-quickdraw`), a call the host declined cost 1.3 µs
-  under QEMU with three journeys, 0.5 µs with one, and a hook declined 21.8 million times in one MacBench turned
+  under QEMU with three journeys, 0.5 µs with one, and a hook declined 21.8 million times in one OkapiaBench turned
   126 ticks of lines into 1,063. A call into the host has to save more than the guest's own loop costs, which is
   why native stand-ins for guest code pay less once that code is translated
   ([Decisions](../project/decisions.md#quickdraw-acceleration-set-aside)).
-- **A fault that moves with timing is not yet a fault of the translator.** One drawing check of MacBench
+- **A fault that moves with timing is not yet a fault of the translator.** One drawing check of OkapiaBench
   differed by nine pixels between two configurations, stably, and only with `jit true`. A long run of
   suspicion went to the carry shortcut between blocks; the cause was the Font Manager failing to reallocate a
   scaled Chicago strike in a full system heap and drawing from the 12 point one. Trace the guest (which

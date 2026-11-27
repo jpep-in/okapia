@@ -78,6 +78,8 @@ which `env.sh` exports as `$MAKE`), `dtc` and `gnu-getopt` with Homebrew, and th
 | `external/stb` | `github.com/nothings/stb` | a SHA | `stb_truetype`, used for firmware outline fonts |
 | `external/miniz` | `github.com/richgel999/miniz` | a SHA | ZIP reading for desktop card preparation |
 | `external/macemu-jit` | `github.com/rcarmo/macemu-jit` | a SHA | alternate experimental 68k core, selected by `OKAPIA_JIT=1` |
+| `external/embench-iot` | `github.com/embench/embench-iot` | a SHA (no 2.0 tag yet) | Embench-IoT, GPL-3.0-or-later: OkapiaBench's `emb_` tests; `patches/embench-iot/0001` makes `md5sum` correct on a big-endian host |
+| `external/coremark` | `github.com/eembc/coremark` | a SHA (v1.01 dates from 2018) | CoreMark, Apache-2.0: OkapiaBench's `cpu_coremark`, compiled unmodified |
 
 **Why this fork of hfsutils.** Robert Leslie's last release is 3.2.6 (`mars.org/home/rob/proj/hfs/`); the other
 GitHub copies are frozen imports of it, and no other maintained libhfs exists. JotaRandom's is the only active fork —

@@ -51,8 +51,8 @@ model; it does not replace the 68881 with the host’s hardware floating-point u
 
 ## Apple silicon: a controlled FPU comparison
 
-Okapia’s MacBench application, built with Retro68, ran inside **desktop Basilisk II with Okapia’s translator and
-FPU patches** on a **MacBook Pro M4**. This is not a benchmark of the packaged Okapia Mac application.
+OkapiaBench, Okapia’s own benchmark application built with Retro68 (version 1, then called MacBench), ran inside
+**desktop Basilisk II with Okapia’s translator and FPU patches** on a **MacBook Pro M4**. This is not a benchmark of the packaged Okapia Mac application.
 System 7.5.5, **640×480, 8-bit**, median of **three runs**. Times are guest ticks; **lower is better**.
 
 | FPU test | Softfloat, interpreted | Softfloat, translated T1–T3 |
@@ -68,7 +68,7 @@ The total falls by about **44%**, or roughly **1.77× faster**. The recorded res
 interpreter’s. These five tests do not cover every FPU instruction form: later call-heavy and instruction-form
 tests were added to catch gaps they missed.
 
-[Full Mac FPU comparison](../contributing/benchmarks.md#macbenchs-fpu-tests-on-the-macbook-pro-m4-2026-11-16).
+[Full Mac FPU comparison](../contributing/benchmarks.md#okapiabenchs-fpu-tests-on-the-macbook-pro-m4-2026-11-16).
 
 ## What is still being checked?
 
@@ -85,3 +85,11 @@ functional checks, but its speed is not a prediction of Pi performance.
 
 See the [measurement method](../contributing/benchmarks.md#using-it) and
 [translator safety criteria](../project/decisions.md#no-jit-by-default-two-experimental-ones).
+
+## Run it yourself
+
+OkapiaBench now runs on both engines: one application with 68k and PowerPC code, CoreMark and Embench-IoT
+included, real work (ZIP, JPEG, PNG, a spreadsheet, sound), and a recap on screen at the end. Put it in the
+System Folder's Startup Items, start the Macintosh, and read the dated result file in the shared folder. It is
+not part of a release yet: it is built from the repository with Retro68
+([how it works, how to build it and how to compare](../contributing/benchmarks.md#okapiabench)).

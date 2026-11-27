@@ -123,7 +123,7 @@ The test mode needs no SDL driver after all: headless means no window, and the s
     behind the `jit` preference until the durability tests pass with it on the desktop.
 - **Existing flags**: `OKAPIA_TRACE`, `OKAPIA_FPU` and `OKAPIA_JIT_ARM64` keep their meaning. `OKAPIA_NETBENCH` and
   `OKAPIA_QD_MULTICORE` have none on a desktop.
-- **`scripts/build-native-basilisk.sh`** (a bare SDL Basilisk II for MacBench) would be superseded: the desktop binary
+- **`scripts/build-native-basilisk.sh`** (a bare SDL Basilisk II for OkapiaBench) would be superseded: the desktop binary
   measures Okapia itself.
 
 ## SDL on Circle: considered, not chosen
@@ -223,7 +223,7 @@ go to SDL's `disk` audio driver (not tried).
 | `--screenshot`, `--screenshot-at MS` | PNG of the Mac's screen and of the composed output | the Mac's frame buffer, the compositor |
 | `--click`, `--double-click`, `--drag`, `--keys MS,…` | the same, in emulated time, through `HostPostKey` and `HostPostMouse`; the mouse in ADB absolute mode to aim at X,Y | the input ring |
 | — (Snow has no boot menu) | the same in the boot menu: Option held, navigation, choice of volume, in host time | `TEvent`, `ScreenEvent` |
-| `--until text` (modem port) | the Mac's serial port redirected to a file, or a file in the shared folder (MacBench already writes `MacBench Results` there) | `seriala`, `extfs` |
+| `--until text` (modem port) | the Mac's serial port redirected to a file, or a file in the shared folder (OkapiaBench already writes an `OkapiaBench <date>` file there) | `seriala`, `extfs` |
 | `--traps` | trap history | `trace_traps_circle.cpp` (`OKAPIA_TRACE`) |
 | `--dump address,length` | dump of Mac RAM at the end | the single RAM block |
 | `--break`, `--watch` | later: needs a hook in the interpreter | the trace build |
@@ -238,7 +238,7 @@ go to SDL's `disk` audio driver (not tried).
   "at 3,200 ms" lands at the same instant every time. Sound and network stay outside that determinism.
 - **What it would replace:**
   - `screenshot.sh` and `run-test.sh`, run natively, in seconds;
-  - `tools/macbench/run.py` would aim at this binary instead of a bare Basilisk;
+  - `tools/okapiabench/run.py` would aim at this binary instead of a bare Basilisk;
   - the agents' trials, which move from QEMU to native.
 - **What it cannot cover:** what lies below the interface on the Circle side (USB, HDMI, SD, Wi-Fi). The Pi stays the
   judge.
@@ -449,7 +449,7 @@ re-adaptation; the new work gathers in three risky places.
 - **J2.** The Mach-O linking trial, then the 68k engine in-process: System 7.1's Finder, and back to the menu on
   Restart. Native durability tests from here.
 - **J3.** PowerPC, and the switch between engines.
-- **J4.** The optimised build, the translator, MacBench measurements (`tools/macbench/run.py`).
+- **J4.** The optimised build, the translator, OkapiaBench measurements (`tools/okapiabench/run.py`).
 - **J5.** A `.app` signed ad hoc with `com.apple.security.cs.allow-jit`, SDL3 bundled, folder association, and the
   installer's button.
 

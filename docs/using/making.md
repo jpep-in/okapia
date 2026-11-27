@@ -58,7 +58,11 @@ in the vendored softfloat README and the [FPU documentation](../topics/engine-68
 ## Tools, reference projects and inspiration
 
 [Retro68](https://github.com/autc04/Retro68), by Wolfgang Thaller and contributors, is used to build the project’s
-MacBench guest application. Retro68 carries GPL and component-specific licences; Okapia’s MacBench tool is MIT.
+OkapiaBench guest application, for the 68k and the PowerPC. Retro68 carries GPL and component-specific licences.
+OkapiaBench’s own files are MIT. It runs [Embench-IoT](https://github.com/embench/embench-iot) (Embench and
+contributors, GPL-3.0-or-later) and [CoreMark](https://github.com/eembc/coremark) (EEMBC, Apache-2.0 with EEMBC’s
+acceptable use agreement) as they are published, and uses stb and miniz for its JPEG, PNG and ZIP tests; the
+application as built is therefore distributed under GPL-3.0-or-later. CoreMark is a trademark of EEMBC.
 
 The wider community has been generous with examples and ideas: [M5Tab-Macintosh](https://github.com/amcchord/M5Tab-Macintosh),
 [Mini vMac](https://www.gryphel.com/c/minivmac/), [Snow](https://github.com/twvd/snow),
