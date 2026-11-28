@@ -95,5 +95,6 @@ Dated development notes and research studies, kept for the reasoning behind a re
 | [68k JIT](notes/research/jit-68k.md) | Whether and how to enable a 68k→AArch64 JIT; `macemu-jit` measured at parity, our own translator taken instead |
 | [pom68k](notes/research/pom68k.md) | Whether a low-level 68k emulator with an AArch64 JIT would beat Basilisk on a Pi |
 | [Emu68](notes/research/emu68.md) | The 68k→AArch64 JIT built for AArch64, and what a JIT shaped like it would ask of Okapia |
+| [PowerPC JIT](notes/research/jit-ppc.md) | The PowerPC→AArch64 translators that exist, why none can be taken, and the plan for one of our own |
 | [AppleTalk and SMB gateways](notes/research/appletalk-smb-gateways.md) | Existing projects bridging classic Macs to modern shares |
 | [Okapia on a desktop](notes/research/desktop-host.md) | A macOS, Linux and Windows variant that opens a card folder: what is kept, the host interface, the test mode |

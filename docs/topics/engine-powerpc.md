@@ -142,6 +142,8 @@ setting from `SPVolCtl` — see [Input](input.md).
 - [ ] A bottleneck study for `kpx_cpu` on the Pi 4, as done for the 68k engine; `Graf` is at 63% of a
       Power Mac 6100/60, and `Disk` fell from 4.72 to 3.08 between two runs (to reproduce first)
 - [ ] Evaluate `jit68k`, the ROM's own 68k recompiler
+- [ ] A PowerPC translator: `macemu-jit`'s measured first, then our own if it does not pay
+      ([plan](../notes/research/jit-ppc.md), 2026-11-28)
 - [ ] Boot-finished signal; a boot from a New World ROM file recorded
 - [ ] A second entry into the engine without a board reset (see [Startup and shutdown](startup-and-shutdown.md))
 
